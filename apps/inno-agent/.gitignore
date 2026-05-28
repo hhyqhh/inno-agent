@@ -1,0 +1,8 @@
+node_modules/
+dist/
+data/
+*.log
+.DS_Store
+
+# Local secrets — copy from .inno/config.example.json
+.inno/config.json

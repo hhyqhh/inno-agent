@@ -1,0 +1,10 @@
+export interface SkillInfo {
+	name: string;
+	description: string;
+	enabled: boolean;
+	loaded: boolean;
+	filePath: string;
+	size: number;
+	updatedAt: string;
+	diagnostics: string[];
+}

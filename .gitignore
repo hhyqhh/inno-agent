@@ -1,0 +1,22 @@
+node_modules/
+dist/
+apps/*/dist/
+apps/*/web/dist/
+
+# Local runtime + workspace state (machine-specific)
+runtime/
+workspace/
+.inno/
+.pi/
+data/
+
+# Logs and editor noise
+*.log
+.DS_Store
+.env
+.idea/
+.vscode/
+
+# Local agent / tooling outputs
+graphify-out/
+.claude/

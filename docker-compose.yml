@@ -1,0 +1,16 @@
+services:
+  inno-agent:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      INNO_CONFIG_DIR: /etc/inno-agent
+      INNO_DATA_DIR: /var/lib/inno-agent/data
+      INNO_SKILLS_DIR: /var/lib/inno-agent/skills
+      INNO_WORKSPACE_DIR: /srv/inno-workspace
+      INNO_PORT: 3000
+    volumes:
+      - ./runtime/config:/etc/inno-agent
+      - ./runtime/data:/var/lib/inno-agent/data
+      - ./runtime/skills:/var/lib/inno-agent/skills
+      - ./workspace:/srv/inno-workspace

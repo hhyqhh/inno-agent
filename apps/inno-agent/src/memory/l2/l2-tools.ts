@@ -1,0 +1,200 @@
+import { StringEnum } from "@earendil-works/pi-ai";
+import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { randomUUID, createHash } from "node:crypto";
+import { join } from "node:path";
+
+import type { ManifestEntry, RawSourceType } from "./types.js";
+import { saveRaw } from "./raw-store.js";
+import { convertToExtracted } from "./source-converter.js";
+import { appendManifest, readManifest, findManifestByHash } from "./manifest-store.js";
+import {
+	createSourcePage,
+	rebuildIndex,
+	appendLog,
+	ensureL2Directories,
+	readMaintenanceContext,
+} from "./wiki-maintainer.js";
+import { queryWiki } from "./wiki-query.js";
+import { summarizeContent } from "./summarizer.js";
+import { maintainLinkedWikiPages } from "./wiki-linker.js";
+import { readText } from "../../storage/file-store.js";
+
+/**
+ * Create L2 Wiki memory tools for the Inno Agent.
+ */
+export function createL2Tools(l2DataDir: string): ToolDefinition[] {
+	// ---- Tool 1: l2_archive ----
+	const archiveTool = defineTool({
+		name: "l2_archive",
+		label: "归档到 L2 Wiki",
+		description:
+			"将学习资料归档到 L2 Wiki 知识库。用户说「归档」「保存到知识库」「帮我记下来」或上传资料要求学习/总结时调用。" +
+			"支持文本(text)、Markdown(markdown)、对话片段(conversation)。PDF/Word/Image 暂未实现。",
+		parameters: Type.Object({
+			title: Type.String({ description: "资料标题" }),
+			content: Type.String({ description: "要归档的文本内容" }),
+			sourceType: StringEnum(["text", "markdown", "conversation"] as const, {
+				description: "资料类型：text（纯文本）、markdown、conversation（对话片段）",
+			}),
+			tags: Type.Optional(Type.Array(Type.String(), { description: "标签列表，如 ['python', 'async']" })),
+			origin: Type.Optional(
+				StringEnum(["user_upload", "conversation", "web", "research", "agent_inferred"] as const, {
+					description: "来源类型，默认根据 sourceType 自动推断",
+				}),
+			),
+			url: Type.Optional(Type.String({ description: "来源 URL（网页、论文链接等）" })),
+			sessionId: Type.Optional(Type.String({ description: "关联的会话 ID" })),
+			force: Type.Optional(Type.Boolean({ description: "为 true 时跳过重复检查，强制归档" })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			ensureL2Directories(l2DataDir);
+			const maintenanceContext = readMaintenanceContext(l2DataDir);
+
+			const contentHash = createHash("sha256").update(params.content).digest("hex").slice(0, 16);
+
+			// Dedup: check if same content already archived
+			if (!params.force) {
+				const existing = findManifestByHash(l2DataDir, contentHash);
+				if (existing) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text:
+									`该内容已归档，无需重复保存。\n\n` +
+									`- ID: ${existing.id}\n` +
+									`- 标题: ${existing.title}\n` +
+									`- Wiki 页面: ${existing.wikiPages.join(", ") || "无"}\n\n` +
+									`如需强制归档，请设置 force: true。`,
+							},
+						],
+						details: { id: existing.id, duplicate: true },
+					};
+				}
+			}
+
+			const id = `l2src_${randomUUID().slice(0, 8)}`;
+			const tags = params.tags ?? [];
+			const sourceType = params.sourceType as RawSourceType;
+
+			// 1. Save raw
+			const rawPath = saveRaw(l2DataDir, params.title, params.content, sourceType, params.url);
+
+			// 2. Convert to extracted
+			const extractedPath = convertToExtracted(l2DataDir, params.title, params.content, sourceType);
+
+			// 3. Build manifest entry
+			const inferredOrigin = sourceType === "conversation" ? "conversation" : "user_upload";
+			const entry: ManifestEntry = {
+				id,
+				title: params.title,
+				sourceType,
+				rawPath,
+				extractedPath,
+				wikiPages: [],
+				tags,
+				contentHash,
+				status: "extracted",
+				source: {
+					origin: (params.origin ?? inferredOrigin) as ManifestEntry["source"]["origin"],
+					...(params.url && { url: params.url }),
+					...(params.sessionId && { sessionId: params.sessionId }),
+				},
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+			};
+
+			// 4. Create wiki source page (with LLM summary)
+			const extractedContent = readText(join(l2DataDir, extractedPath));
+			let summaryBody = `## 摘要\n\n${extractedContent}`;
+			if (ctx.model) {
+				const summary = await summarizeContent(ctx.model, ctx.modelRegistry, params.title, extractedContent);
+				if (summary) summaryBody = summary;
+			}
+			const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, extractedPath);
+			const linkMaintenance = await maintainLinkedWikiPages(
+				l2DataDir,
+				entry,
+				wikiPagePath,
+				summaryBody,
+				ctx.model,
+				ctx.modelRegistry,
+			);
+			entry.wikiPages = [wikiPagePath, ...linkMaintenance.pages];
+			entry.status = "indexed";
+
+			// 5. Write manifest
+			appendManifest(l2DataDir, entry);
+
+			// 6. Rebuild index
+			const allEntries = readManifest(l2DataDir);
+			rebuildIndex(l2DataDir, allEntries);
+
+			// 7. Append log
+			appendLog(
+				l2DataDir,
+				"ingest",
+				params.title,
+				[
+					`- ID: ${id}`,
+					`- 类型: ${sourceType}`,
+					`- 原始文件: ${rawPath}`,
+					`- 提取文本: ${extractedPath}`,
+					`- Source 页面: ${wikiPagePath}`,
+					`- concepts/entities: 新建 ${linkMaintenance.created.length}, 更新 ${linkMaintenance.updated.length}, 不变 ${linkMaintenance.unchanged.length}`,
+					`- 维护前上下文: schema ${maintenanceContext.schema.length} chars, index ${maintenanceContext.index.length} chars, recent log ${maintenanceContext.recentLog.length} chars`,
+				].join("\n"),
+			);
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text:
+							`资料已归档到 L2 Wiki。\n\n` +
+							`- ID: ${id}\n` +
+							`- 标题: ${params.title}\n` +
+							`- 原始文件: ${rawPath}\n` +
+							`- Wiki 页面: ${wikiPagePath}\n` +
+							`- 自动维护: 新建 ${linkMaintenance.created.length} 个概念/实体页，更新 ${linkMaintenance.updated.length} 个\n` +
+							`- 标签: ${tags.join(", ") || "无"}\n\n` +
+							`Wiki 索引已更新。`,
+					},
+				],
+				details: { id, rawPath, wikiPagePath, linkedPages: linkMaintenance.pages },
+			};
+		},
+	});
+
+	// ---- Tool 2: l2_query ----
+	const queryTool = defineTool({
+		name: "l2_query",
+		label: "查询 L2 Wiki",
+		description:
+			"查询 L2 Wiki 知识库。当需要回答与已归档学习资料相关的问题时调用。" +
+			"先读取索引，再定位和读取相关页面，综合回答。" +
+			"参数 query 可省略或留空字符串，此时返回 Wiki 索引概览（用于查看有哪些内容）。",
+		parameters: Type.Object({
+			query: Type.Optional(
+				Type.String({
+					default: "",
+					description:
+						"查询关键词或问题，如「Python async」「上次读的论文」。留空或省略则返回 Wiki 索引概览。",
+				}),
+			),
+		}),
+		async execute(_toolCallId, params) {
+			ensureL2Directories(l2DataDir);
+			const query = params.query ?? "";
+			const result = queryWiki(l2DataDir, query);
+			appendLog(l2DataDir, "query", query, "- L2 query executed through l2_query.");
+			return {
+				content: [{ type: "text" as const, text: result }],
+				details: {},
+			};
+		},
+	});
+
+	return [archiveTool, queryTool];
+}

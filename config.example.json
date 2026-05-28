@@ -1,0 +1,50 @@
+{
+	"defaultProvider": "innospark",
+	"defaultModel": "claude-sonnet-4-6",
+	"providers": {
+		"innospark": {
+			"baseUrl": "https://api.innospark.cn",
+			"api": "anthropic-messages",
+			"apiKey": "replace-me",
+			"models": [
+				{
+					"id": "claude-sonnet-4-6",
+					"name": "Claude Sonnet 4.6 via InnoSpark",
+					"reasoning": true,
+					"contextWindow": 200000,
+					"maxTokens": 16384
+				}
+			]
+		}
+	},
+	"server": {
+		"port": 3000
+	},
+	"channels": {
+		"feishu": {
+			"enabled": false,
+			"personalOnly": true,
+			"allowedUserIds": []
+		},
+		"qq": {
+			"enabled": false,
+			"mode": "bridge",
+			"personalOnly": true,
+			"allowedUserIds": [],
+			"sidecarBaseUrl": "http://127.0.0.1:4318"
+		},
+		"wechat": {
+			"enabled": false,
+			"mode": "bridge",
+			"personalOnly": true,
+			"allowedUserIds": [],
+			"sidecarBaseUrl": "http://127.0.0.1:4319"
+		}
+	},
+	"bridge": {
+		"token": "replace-me-with-a-secret"
+	},
+	"subagents": {
+		"enabled": false
+	}
+}

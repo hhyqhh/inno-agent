@@ -1,0 +1,45 @@
+{
+	"name": "inno-agent",
+	"version": "0.2.0",
+	"private": true,
+	"type": "module",
+	"workspaces": [
+		"apps/inno-agent",
+		"apps/inno-agent/web"
+	],
+	"scripts": {
+		"build": "npm --workspace inno-agent run build && npm --workspace inno-agent-web run build",
+		"start": "npm --workspace inno-agent run start --",
+		"sandbox": "npm --workspace inno-agent run start -- --sandbox",
+		"server": "npm --workspace inno-agent run server --",
+		"server:sandbox": "npm --workspace inno-agent run server -- --sandbox",
+		"web:dev": "npm --workspace inno-agent-web run dev",
+		"dev:server": "npm --workspace inno-agent run server --",
+		"restart": "bash restart-dev.sh",
+		"restart:fast": "bash restart-dev.sh --skip-build"
+	},
+	"engines": {
+		"node": ">=20.6.0"
+	},
+	"devDependencies": {
+		"@tailwindcss/cli": "^4.0.0-beta.14",
+		"@tailwindcss/vite": "^4.1.7",
+		"@types/node": "^24.3.0",
+		"concurrently": "^9.2.1",
+		"shx": "^0.4.0",
+		"tailwindcss": "^4.1.7",
+		"tsx": "^4.20.3",
+		"typescript": "^5.9.2",
+		"vite": "^6.3.5",
+		"vitest": "^3.2.4"
+	},
+	"overrides": {
+		"@larksuiteoapi/node-sdk": {
+			"axios": "^1.16.1"
+		},
+		"rimraf": "6.1.2",
+		"gaxios": {
+			"rimraf": "6.1.2"
+		}
+	}
+}

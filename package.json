@@ -7,6 +7,7 @@
 		"apps/inno-agent",
 		"apps/inno-agent/web"
 	],
+	"main": "electron/main.js",
 	"scripts": {
 		"build": "npm --workspace inno-agent run build && npm --workspace inno-agent-web run build",
 		"start": "npm --workspace inno-agent run start --",
@@ -16,16 +17,46 @@
 		"web:dev": "npm --workspace inno-agent-web run dev",
 		"dev:server": "npm --workspace inno-agent run server --",
 		"restart": "bash restart-dev.sh",
-		"restart:fast": "bash restart-dev.sh --skip-build"
+		"restart:fast": "bash restart-dev.sh --skip-build",
+		"electron": "electron .",
+		"electron:build": "npm run build && electron-builder --mac"
 	},
 	"engines": {
 		"node": ">=20.6.0"
+	},
+	"build": {
+		"appId": "com.inno.agent",
+		"productName": "Inno Agent",
+		"directories": {
+			"output": "dist-electron"
+		},
+		"files": [
+			"electron/**/*",
+			"apps/inno-agent/dist/**/*",
+			"apps/inno-agent/web/dist/**/*",
+			"node_modules/**/*",
+			"!node_modules/.cache/**/*"
+		],
+		"asarUnpack": [
+			"**/node_modules/node-pty/**/*",
+			"**/node_modules/@homebridge/**/*"
+		],
+		"mac": {
+			"target": [{ "target": "dmg", "arch": ["arm64"] }],
+			"category": "public.app-category.productivity",
+			"darkModeSupport": true
+		},
+		"dmg": {
+			"title": "Inno Agent"
+		}
 	},
 	"devDependencies": {
 		"@tailwindcss/cli": "^4.0.0-beta.14",
 		"@tailwindcss/vite": "^4.1.7",
 		"@types/node": "^24.3.0",
 		"concurrently": "^9.2.1",
+		"electron": "^42.3.0",
+		"electron-builder": "^26.8.1",
 		"shx": "^0.4.0",
 		"tailwindcss": "^4.1.7",
 		"tsx": "^4.20.3",

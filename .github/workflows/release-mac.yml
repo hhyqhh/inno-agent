@@ -1,0 +1,93 @@
+name: macOS Release
+
+# 触发方式：
+#   1. 推送版本 tag（如 git tag v0.3.0 && git push origin v0.3.0）
+#   2. GitHub 页面手动触发（可指定版本号）
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 0.3.0，留空则读 package.json）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write   # 允许创建 GitHub Release 并上传产物
+
+jobs:
+  build-mac:
+    runs-on: macos-14   # Apple Silicon（M1/M2）runner
+
+    steps:
+      # ── 1. 检出代码 ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. 安装 Node.js ──────────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ── 3. 覆盖版本号（仅 workflow_dispatch 且输入了版本） ──────────────────
+      - name: Bump version
+        if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+        run: npm version "${{ inputs.version }}" --no-git-tag-version
+
+      # ── 4. 安装依赖 ──────────────────────────────────────────────────────────
+      - name: Install dependencies
+        run: npm ci
+
+      # ── 5. 编译后端 TypeScript ───────────────────────────────────────────────
+      - name: Build backend (tsc)
+        run: npm --workspace inno-agent run build
+
+      # ── 6. 编译前端（Vite）──────────────────────────────────────────────────
+      - name: Build frontend (vite)
+        run: npm --workspace inno-agent-web run build
+
+      # ── 7. 打包 Electron DMG ─────────────────────────────────────────────────
+      #   未签名版：不需要 Apple 证书，用户首次打开需右键→打开
+      - name: Package Electron (unsigned DMG)
+        run: npx electron-builder --mac dmg --arm64
+        env:
+          # 跳过代码签名（无证书时必须）
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # ── 7b. [可选] 签名 + 公证版（取消注释并配置 Secrets 后生效） ────────────
+      # - name: Package Electron (signed + notarized DMG)
+      #   run: npx electron-builder --mac dmg --arm64
+      #   env:
+      #     CSC_LINK: ${{ secrets.CSC_LINK }}                          # base64 编码的 .p12 证书
+      #     CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}          # .p12 密码
+      #     APPLE_ID: ${{ secrets.APPLE_ID }}                          # Apple ID 邮箱
+      #     APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      #     APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      # ── 8. 读取实际版本号 ────────────────────────────────────────────────────
+      - name: Read version
+        id: pkg
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> $GITHUB_OUTPUT
+
+      # ── 9. 上传产物（可在 Actions 页面直接下载，不走 Release） ───────────────
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: InnoAgent-${{ steps.pkg.outputs.version }}-arm64
+          path: dist-electron/*.dmg
+          retention-days: 30
+
+      # ── 10. 创建 GitHub Release（仅 tag 触发时） ────────────────────────────
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Inno Agent v${{ steps.pkg.outputs.version }}"
+          files: dist-electron/*.dmg
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-rc') }}

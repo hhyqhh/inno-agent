@@ -5,6 +5,8 @@ import type { ChatMessage } from "../types/chat.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
+import { workspaceStore } from "../stores/workspace-store.js";
+import { appStore } from "../stores/app-store.js";
 import type { CreateSessionInput } from "../api/sessions.js";
 import { uploadRawFile, type RawUploadResult } from "../api/uploads.js";
 import { useStoreSnapshot } from "./hooks.js";
@@ -140,13 +142,17 @@ export function ChatCenter() {
 	const sessions = useStoreSnapshot(sessionsStore, () => ({
 		pendingNewSession: sessionsStore.pendingNewSession,
 		currentSessionId: sessionsStore.currentSessionId,
+		preselectedWorkspaceId: sessionsStore.preselectedWorkspaceId,
 	}));
 	const workspaces = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
 	}));
 
 	const reusableWorkspaces = useMemo(
-		() => workspaces.list.filter((w) => !w.isTemp).slice().sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
+		() => workspaces.list
+			.filter((w) => !w.isTemp && !w.id.startsWith("channel-"))
+			.slice()
+			.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
 		[workspaces.list],
 	);
 
@@ -166,6 +172,25 @@ export function ChatCenter() {
 			setWsExistingId(reusableWorkspaces[0].id);
 		}
 	}, [wsMode, reusableWorkspaces, wsExistingId]);
+
+	// A workspace preselected from the sidebar ("+ 新建对话" on a group) drives the
+	// chooser to "existing" mode bound to that workspace.
+	useEffect(() => {
+		if (sessions.preselectedWorkspaceId) {
+			setWsMode("existing");
+			setWsExistingId(sessions.preselectedWorkspaceId);
+		}
+	}, [sessions.preselectedWorkspaceId]);
+
+	// When picking an existing workspace for a new chat, preview it immediately
+	// (before the first message) so the user sees its files in the right panel.
+	useEffect(() => {
+		if (isWelcome && wsMode === "existing" && wsExistingId) {
+			void workspaceStore.setActiveWorkspace(wsExistingId);
+			appStore.setRightPanelTab("preview");
+			if (appStore.workspaceMode === "collapsed") appStore.setWorkspaceMode("half");
+		}
+	}, [isWelcome, wsMode, wsExistingId]);
 
 	useEffect(() => {
 		requestAnimationFrame(() => {
@@ -386,7 +411,7 @@ export function ChatCenter() {
 										<option value="">尚无可复用工作区</option>
 									) : reusableWorkspaces.map((w) => (
 										<option key={w.id} value={w.id}>
-											{w.name}{w.id === "default" ? " (默认)" : ""}
+											{w.name}
 										</option>
 									))}
 								</select>

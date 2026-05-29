@@ -29,7 +29,7 @@ export function NewSessionWorkspaceChooser() {
 
 	const reusable = useMemo<WorkspaceMeta[]>(() => {
 		return workspaces.list
-			.filter((w) => !w.isTemp)
+			.filter((w) => !w.isTemp && !w.id.startsWith("channel-"))
 			.slice()
 			.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 	}, [workspaces.list]);
@@ -108,7 +108,7 @@ export function NewSessionWorkspaceChooser() {
 						) : (
 							reusable.map((w) => (
 								<option key={w.id} value={w.id}>
-									{w.name}{w.id === "default" ? " (默认)" : ""}
+									{w.name}
 								</option>
 							))
 						)}

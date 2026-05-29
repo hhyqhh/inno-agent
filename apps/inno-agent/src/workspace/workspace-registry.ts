@@ -18,6 +18,8 @@ export interface WorkspaceMeta {
 
 interface RegistryFile {
 	workspaces: WorkspaceMeta[];
+	/** One-time flag: legacy unbound sessions have been bound to the default workspace. */
+	migratedUnboundToDefault?: boolean;
 }
 
 type SessionWorkspaceMap = Record<string, string>;
@@ -30,6 +32,13 @@ export const DEFAULT_WORKSPACE_ID = "default";
 export const TEMP_WORKSPACE_ID = "tmp";
 const DEFAULT_WORKSPACE_REL_PATH = ".pub";
 const TEMP_WORKSPACE_REL_PATH = ".tmp";
+
+/** Human-readable names for channel-backed workspaces. */
+const CHANNEL_WORKSPACE_NAMES: Record<string, string> = {
+	feishu: "飞书",
+	wechat: "微信",
+	qq: "QQ",
+};
 
 // ---------------------------------------------------------------------------
 // Slug helpers
@@ -98,7 +107,7 @@ export class WorkspaceRegistry {
 		if (defaultIdx < 0) {
 			reg.workspaces.unshift({
 				id: DEFAULT_WORKSPACE_ID,
-				name: "公共空间",
+				name: "默认工作区",
 				relPath: DEFAULT_WORKSPACE_REL_PATH,
 				createdAt: now,
 				updatedAt: now,
@@ -107,7 +116,9 @@ export class WorkspaceRegistry {
 			changed = true;
 		} else {
 			const def = reg.workspaces[defaultIdx];
-			if (def.name === "默认工作区") { def.name = "公共空间"; changed = true; }
+			// Legacy installs labelled this the shared "公共空间"; it is now an
+			// ordinary, deletable workspace with no special fallback role.
+			if (def.name === "公共空间") { def.name = "默认工作区"; changed = true; }
 			if (def.relPath !== DEFAULT_WORKSPACE_REL_PATH) {
 				def.relPath = DEFAULT_WORKSPACE_REL_PATH;
 				changed = true;
@@ -130,10 +141,9 @@ export class WorkspaceRegistry {
 	}
 
 	/**
-	 * List workspaces with their bound session ids (default first, then by lastUsedAt desc).
-	 * If `allSessionIds` is provided, any session id NOT in the registry's session map
-	 * is treated as bound to the default workspace (so CLI / channel sessions that
-	 * lack explicit bindings still appear under "公共空间").
+	 * List workspaces with their bound session ids (most recently updated first).
+	 * If `allSessionIds` is provided, any session id NOT in the registry's session
+	 * map is treated as bound to the shared temp workspace (the unbound fallback).
 	 */
 	listWorkspaces(allSessionIds?: string[]): WorkspaceWithSessions[] {
 		const reg = this.loadRegistry();
@@ -151,19 +161,15 @@ export class WorkspaceRegistry {
 				if (!mapped.has(sid)) orphans.push(sid);
 			}
 			if (orphans.length > 0) {
-				const existing = sessionsByWs.get(DEFAULT_WORKSPACE_ID) ?? [];
-				sessionsByWs.set(DEFAULT_WORKSPACE_ID, [...existing, ...orphans]);
+				const existing = sessionsByWs.get(TEMP_WORKSPACE_ID) ?? [];
+				sessionsByWs.set(TEMP_WORKSPACE_ID, [...existing, ...orphans]);
 			}
 		}
 		const enriched = reg.workspaces.map((w) => ({
 			...w,
 			sessionIds: sessionsByWs.get(w.id) ?? [],
 		}));
-		enriched.sort((a, b) => {
-			if (a.id === DEFAULT_WORKSPACE_ID) return -1;
-			if (b.id === DEFAULT_WORKSPACE_ID) return 1;
-			return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
-		});
+		enriched.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 		return enriched;
 	}
 
@@ -174,7 +180,7 @@ export class WorkspaceRegistry {
 
 	/** Resolve a workspace id to its absolute directory. Returns null if invalid or escapes workspaceDir. */
 	resolveWorkspaceDir(id: string | null | undefined): string | null {
-		const wsId = id || DEFAULT_WORKSPACE_ID;
+		const wsId = id || TEMP_WORKSPACE_ID;
 		const ws = this.getWorkspace(wsId);
 		if (!ws) return null;
 		const resolved = resolve(this.workspaceDir, ws.relPath);
@@ -240,6 +246,58 @@ export class WorkspaceRegistry {
 		return ws;
 	}
 
+	/**
+	 * Return (creating if needed) a stable workspace dedicated to a chat channel
+	 * (e.g. feishu/wechat/qq). Channel-originated sessions bind here because they
+	 * cannot prompt the user for a workspace choice.
+	 */
+	ensureChannelWorkspace(channel: string): WorkspaceMeta {
+		const id = `channel-${channel}`;
+		const reg = this.loadRegistry();
+		const now = new Date().toISOString();
+		let ws = reg.workspaces.find((w) => w.id === id);
+		if (!ws) {
+			ws = {
+				id,
+				name: CHANNEL_WORKSPACE_NAMES[channel] ?? channel,
+				relPath: join(".channels", channel),
+				createdAt: now,
+				updatedAt: now,
+				isTemp: false,
+			};
+			reg.workspaces.push(ws);
+			this.saveRegistry(reg);
+		}
+		ensureDir(join(this.workspaceDir, ws.relPath));
+		return ws;
+	}
+
+	/**
+	 * One-time migration: bind any session not present in the session→workspace
+	 * map to `targetWorkspaceId`. This preserves the working directory of legacy
+	 * sessions that used to fall back to the shared public workspace.
+	 */
+	migrateUnboundSessions(sessionIds: string[], targetWorkspaceId: string): void {
+		const reg = this.loadRegistry();
+		if (reg.migratedUnboundToDefault) return;
+		if (!reg.workspaces.some((w) => w.id === targetWorkspaceId)) {
+			reg.migratedUnboundToDefault = true;
+			this.saveRegistry(reg);
+			return;
+		}
+		const map = this.loadSessionMap();
+		let changed = false;
+		for (const sid of sessionIds) {
+			if (!(sid in map)) {
+				map[sid] = targetWorkspaceId;
+				changed = true;
+			}
+		}
+		if (changed) this.saveSessionMap(map);
+		reg.migratedUnboundToDefault = true;
+		this.saveRegistry(reg);
+	}
+
 	renameWorkspace(id: string, name: string): WorkspaceMeta | null {
 		const reg = this.loadRegistry();
 		const ws = reg.workspaces.find((w) => w.id === id);
@@ -250,9 +308,9 @@ export class WorkspaceRegistry {
 		return ws;
 	}
 
-	/** Delete a workspace. Refuses default and the shared tmp. */
+	/** Delete a workspace. Refuses only the shared tmp (the unbound fallback). */
 	deleteWorkspace(id: string, options: { removeFiles?: boolean } = {}): boolean {
-		if (id === DEFAULT_WORKSPACE_ID || id === TEMP_WORKSPACE_ID) return false;
+		if (id === TEMP_WORKSPACE_ID) return false;
 		const reg = this.loadRegistry();
 		const index = reg.workspaces.findIndex((w) => w.id === id);
 		if (index < 0) return false;
@@ -293,7 +351,7 @@ export class WorkspaceRegistry {
 
 	getSessionWorkspaceId(sessionId: string): string {
 		const map = this.loadSessionMap();
-		return map[sessionId] ?? DEFAULT_WORKSPACE_ID;
+		return map[sessionId] ?? TEMP_WORKSPACE_ID;
 	}
 
 	bindSession(sessionId: string, workspaceId: string): boolean {

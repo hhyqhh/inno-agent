@@ -22,7 +22,7 @@ export interface PersonalChannelDispatcherOptions {
 	/** Fire-and-forget: auto-generate a topic for a session if it lacks one. */
 	maybeAutoGenerateTopic?: (sessionId: string) => void;
 	/** Called after a new session is created for a channel chat. */
-	onSessionCreated?: (sessionId: string) => void;
+	onSessionCreated?: (sessionId: string, channel: string) => void;
 	channelsDataDir: string;
 	sessionDir: string;
 }
@@ -67,7 +67,7 @@ export class PersonalChannelDispatcher {
 		if (NEW_SESSION_COMMANDS.has(rawText)) {
 			try {
 				const newSessionId = await this.opts.createNewSession();
-				this.opts.onSessionCreated?.(newSessionId);
+				this.opts.onSessionCreated?.(newSessionId, msg.channel);
 				this.opts.recordSessionChannel(msg.channel, newSessionId);
 				// Bind this chatId to the new session
 				if (chatKey) {
@@ -118,7 +118,7 @@ export class PersonalChannelDispatcher {
 		if (!targetSessionPath && chatKey) {
 			try {
 				const newSessionId = await this.opts.createNewSession();
-				this.opts.onSessionCreated?.(newSessionId);
+				this.opts.onSessionCreated?.(newSessionId, msg.channel);
 				this.chatSessionMap[chatKey] = newSessionId;
 				this.saveChatSessionMap();
 				this.opts.recordSessionChannel(msg.channel, newSessionId);

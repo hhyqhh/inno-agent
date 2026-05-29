@@ -1,4 +1,11 @@
-import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+	formatSkillsForPrompt,
+	loadSkillsFromDir,
+	type ExtensionAPI,
+	type ExtensionFactory,
+} from "@earendil-works/pi-coding-agent";
 import { saveConfig, setDefaultModel, type InnoConfig } from "../config.js";
 import { createLearnerTools } from "../memory/learner/learner-tools.js";
 import { loadEvents, loadProfile } from "../memory/learner/profile-store.js";
@@ -37,6 +44,70 @@ export interface InnoExtensionDeps {
 	workspaceRegistry?: WorkspaceRegistry;
 	runRecordStore?: RunRecordStore;
 	getCurrentSessionId?: () => string;
+}
+
+/** File name for per-workspace agent context, loaded into the prompt each turn. */
+const WORKSPACE_AGENT_FILE = "agent.md";
+/** Directory holding per-workspace private skills (merged with global skills). */
+const WORKSPACE_SKILLS_DIR = ".skills";
+
+/**
+ * Resolve the directory of the workspace bound to the active session.
+ * Server: maps the current session id → workspace via the registry.
+ * CLI / no registry: falls back to the runtime workspace root.
+ */
+function resolveActiveWorkspaceDir(paths: RuntimePaths, deps?: InnoExtensionDeps): string {
+	if (deps?.workspaceRegistry && deps.getCurrentSessionId) {
+		try {
+			const sessionId = deps.getCurrentSessionId();
+			if (sessionId) {
+				const workspaceId = deps.workspaceRegistry.getSessionWorkspaceId(sessionId);
+				const dir = deps.workspaceRegistry.resolveWorkspaceDir(workspaceId);
+				if (dir) return dir;
+			}
+		} catch {
+			// Fall through to the workspace root.
+		}
+	}
+	return paths.workspaceDir;
+}
+
+/**
+ * Build extra system-prompt sections for the active workspace:
+ * - the workspace's `agent.md` content (if present)
+ * - a private-skills block discovered under `<workspace>/.skills`
+ */
+function buildWorkspaceContextSections(workspaceDir: string): string[] {
+	const sections: string[] = [];
+
+	const agentFile = join(workspaceDir, WORKSPACE_AGENT_FILE);
+	if (existsSync(agentFile)) {
+		try {
+			const content = readFileSync(agentFile, "utf-8").trim();
+			if (content) {
+				sections.push(`# 工作区上下文 (${WORKSPACE_AGENT_FILE})\n\n${content}`);
+			}
+		} catch {
+			// Ignore unreadable agent.md
+		}
+	}
+
+	const skillsDir = join(workspaceDir, WORKSPACE_SKILLS_DIR);
+	if (existsSync(skillsDir)) {
+		try {
+			const { skills } = loadSkillsFromDir({ dir: skillsDir, source: "path" });
+			if (skills.length > 0) {
+				const block = formatSkillsForPrompt(skills);
+				if (block.trim()) {
+					sections.push(`# 本工作区私有技能${block}`);
+				}
+			}
+		} catch {
+			// Ignore skill discovery failures
+		}
+	}
+
+	return sections;
 }
 
 export function createInnoExtension(
@@ -122,6 +193,10 @@ export function createInnoExtension(
 				const contextSection = formatContextPackForPrompt(contextPack);
 
 				const sections: string[] = [INNO_SYSTEM_PROMPT, contextSection];
+
+				// Inject per-workspace context: agent.md + private skills.
+				const workspaceDir = resolveActiveWorkspaceDir(paths, deps);
+				sections.push(...buildWorkspaceContextSections(workspaceDir));
 
 				// Inject the latest run record for this session, so the agent can
 				// answer "explain the last run" without separate tool calls.

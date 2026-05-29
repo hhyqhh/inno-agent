@@ -75,6 +75,16 @@ const skillsDir = paths.skillsDir;
 const channelRegistry = new ChannelRegistry(join(dataDir, "channels", "default-targets.json"));
 const workspaceRegistry = new WorkspaceRegistry(paths.workspaceDir, dataDir);
 workspaceRegistry.ensureBootstrapped();
+// One-time: bind legacy unbound sessions (which used to fall back to the public
+// workspace) to the now-ordinary default workspace so their files stay reachable.
+try {
+	const sessionFiles = existsSync(paths.sessionDir)
+		? readdirSync(paths.sessionDir).filter((f) => f.endsWith(".jsonl"))
+		: [];
+	workspaceRegistry.migrateUnboundSessions(sessionFiles, DEFAULT_WORKSPACE_ID);
+} catch (err) {
+	console.warn("[sessions] unbound-session migration failed:", err instanceof Error ? err.message : err);
+}
 const runRecordStore = new RunRecordStore(join(dataDir, "runs"));
 const terminalManager = new TerminalSessionManager(workspaceRegistry, runRecordStore);
 
@@ -333,7 +343,7 @@ function safeJoin(baseDir: string, userPath: string): string | null {
 }
 
 function safeWorkspacePath(workspaceId: string | null | undefined, userPath: string): string | null {
-	const root = workspaceRegistry.resolveWorkspaceDir(workspaceId ?? DEFAULT_WORKSPACE_ID);
+	const root = workspaceRegistry.resolveWorkspaceDir(workspaceId ?? TEMP_WORKSPACE_ID);
 	if (!root) return null;
 	return safeJoin(root, userPath.replace(/^\/+/, ""));
 }
@@ -342,15 +352,15 @@ function workspaceIdFromQuery(url: string): string {
 	try {
 		const params = new URL(url, "http://localhost").searchParams;
 		const id = params.get("workspaceId");
-		return id && id.trim() ? id.trim() : DEFAULT_WORKSPACE_ID;
+		return id && id.trim() ? id.trim() : TEMP_WORKSPACE_ID;
 	} catch {
-		return DEFAULT_WORKSPACE_ID;
+		return TEMP_WORKSPACE_ID;
 	}
 }
 
 function workspaceIdFromBody(body: Record<string, unknown>): string {
 	const id = typeof body.workspaceId === "string" ? body.workspaceId.trim() : "";
-	return id || DEFAULT_WORKSPACE_ID;
+	return id || TEMP_WORKSPACE_ID;
 }
 
 function clamp01(n: number): number {
@@ -500,7 +510,7 @@ function validateZipEntries(zipPath: string): void {
 	}
 }
 
-function installSkillZip(fileName: string, data: Buffer): { name: string; filePath: string } {
+function installSkillZip(fileName: string, data: Buffer, targetRoot: string = skillsDir): { name: string; filePath: string } {
 	const fallbackName = slugifySkillName(basename(fileName, extname(fileName)));
 	const tempRoot = join(tmpdir(), `inno-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 	const zipPath = join(tempRoot, `${fallbackName}.zip`);
@@ -521,7 +531,7 @@ function installSkillZip(fileName: string, data: Buffer): { name: string; filePa
 		}
 		const skillRoot = dirname(skillFile);
 		const skill = ensureSkillDocument(readText(skillFile), fallbackName);
-		const targetDir = join(skillsDir, skill.name);
+		const targetDir = join(targetRoot, skill.name);
 		rmSync(targetDir, { recursive: true, force: true });
 		copyDirectoryContents(skillRoot, targetDir);
 		writeText(join(targetDir, "SKILL.md"), skill.content);
@@ -531,9 +541,9 @@ function installSkillZip(fileName: string, data: Buffer): { name: string; filePa
 	}
 }
 
-function installSkillMarkdown(fileName: string, data: Buffer): { name: string; filePath: string } {
+function installSkillMarkdown(fileName: string, data: Buffer, targetRoot: string = skillsDir): { name: string; filePath: string } {
 	const skill = ensureSkillDocument(data.toString("utf-8"), basename(fileName, extname(fileName)));
-	const skillDir = join(skillsDir, skill.name);
+	const skillDir = join(targetRoot, skill.name);
 	rmSync(skillDir, { recursive: true, force: true });
 	ensureDir(skillDir);
 	writeText(join(skillDir, "SKILL.md"), skill.content);
@@ -642,8 +652,26 @@ function listProjectSkills(): unknown[] {
 		.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Refresh the agent's in-memory skills in the background.
+ *
+ * Skill listings (`listProjectSkills`) read from disk, so callers can respond
+ * immediately without waiting for the agent runtime to reload. Awaiting the
+ * reload inside a request handler could block the HTTP response indefinitely
+ * (the reload is serialized behind the agent prompt queue), which left the
+ * upload UI stuck on "uploading". Fire-and-forget keeps the request snappy.
+ */
+function scheduleSkillsReload(): void {
+	void reloadResources().catch((err) => {
+		console.warn(`[inno-server] skills reload failed: ${err instanceof Error ? err.message : String(err)}`);
+	});
+}
+
+
 const WIKI_PAGE_DIRS = ["sources", "entities", "concepts", "analysis"] as const;
 const WORKSPACE_IGNORES = new Set([".git", "node_modules", "dist", ".DS_Store"]);
+/** Per-workspace private skills directory (matches inno-extension WORKSPACE_SKILLS_DIR). */
+const WORKSPACE_PRIVATE_SKILLS_DIR = ".skills";
 const TEXT_PREVIEW_EXTENSIONS = new Set([
 	".txt",
 	".md",
@@ -731,10 +759,23 @@ function workspaceRelativePath(rootDir: string, filePath: string): string {
 	return relative(rootDir, filePath) || "";
 }
 
+/** Build a tree node for an installed private skill directory under `<root>/.skills`. */
+function workspaceSkillNode(root: string, skillName: string): { name: string; path: string; type: string; size: number; updatedAt: string } {
+	const dir = join(root, WORKSPACE_PRIVATE_SKILLS_DIR, skillName);
+	const stat = statSync(dir);
+	return {
+		name: skillName,
+		path: workspaceRelativePath(root, dir),
+		type: "directory",
+		size: stat.size,
+		updatedAt: stat.mtime.toISOString(),
+	};
+}
+
 function readWorkspaceTree(rootDir: string, dir: string, depth = 0): WorkspaceTreeNode[] {
 	if (depth > 4) return [];
 	return readdirSync(dir, { withFileTypes: true })
-		.filter((entry) => !WORKSPACE_IGNORES.has(entry.name) && !entry.name.startsWith("."))
+		.filter((entry) => !WORKSPACE_IGNORES.has(entry.name))
 		.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name, "zh-CN"))
 		.slice(0, 200)
 		.map((entry) => {
@@ -1415,13 +1456,14 @@ const server = createServer(async (req, res) => {
 				? installSkillZip(fileName, data)
 				: installSkillMarkdown(fileName, data);
 			setSkillEnabled(skill.name, true);
-			await reloadResources();
-			json(res, 201, listProjectSkills().find((entry) => (entry as { name: string }).name === skill.name));
+			const installed = listProjectSkills().find((entry) => (entry as { name: string }).name === skill.name);
+			json(res, 201, installed ?? { name: skill.name });
+			scheduleSkillsReload();
 			return;
 		}
 
 		if (method === "POST" && url === "/api/skills/reload") {
-			await reloadResources();
+			scheduleSkillsReload();
 			json(res, 200, { reloaded: true, skills: listProjectSkills() });
 			return;
 		}
@@ -1438,7 +1480,7 @@ const server = createServer(async (req, res) => {
 			if (typeof body.enabled === "boolean") {
 				setSkillEnabled(name, body.enabled);
 			}
-			await reloadResources();
+			scheduleSkillsReload();
 			json(res, 200, listProjectSkills().find((entry) => (entry as { name: string }).name === name));
 			return;
 		}
@@ -1453,7 +1495,7 @@ const server = createServer(async (req, res) => {
 			}
 			rmSync(skillDir, { recursive: true, force: true });
 			setSkillEnabled(name, true);
-			await reloadResources();
+			scheduleSkillsReload();
 			json(res, 204, null);
 			return;
 		}
@@ -1713,8 +1755,9 @@ const server = createServer(async (req, res) => {
 			const body = await readBody(req).catch(() => ({})) as Record<string, unknown>;
 			const id = await createNewSession();
 
-			// Determine target workspace.
-			let workspaceId: string = DEFAULT_WORKSPACE_ID;
+			// Determine target workspace. The UI chooser always sends an explicit
+			// choice (new/existing); temp is only a safety fallback.
+			let workspaceId: string = TEMP_WORKSPACE_ID;
 			const explicitWorkspaceId = typeof body.workspaceId === "string" ? body.workspaceId.trim() : "";
 			const newWorkspaceSpec = body.newWorkspace && typeof body.newWorkspace === "object"
 				? body.newWorkspace as { name?: unknown; isTemp?: unknown }
@@ -2292,14 +2335,33 @@ const server = createServer(async (req, res) => {
 			const files = Array.isArray(body.files) ? body.files : [];
 			if (!files.length) { json(res, 400, { error: "No files provided" }); return; }
 			const uploaded: Array<{ name: string; path: string; type: string; size: number; updatedAt: string }> = [];
+			let installedSkill = false;
 			for (const entry of files) {
 				const filePath = typeof entry.path === "string" ? entry.path.trim() : "";
 				const dataBase64 = typeof entry.dataBase64 === "string" ? entry.dataBase64 : "";
 				if (!filePath || !dataBase64) continue;
 				const fullPath = safeWorkspacePath(wsId, filePath);
 				if (!fullPath) continue;
-				ensureDir(dirname(fullPath));
 				const data = Buffer.from(dataBase64, "base64");
+				const ext = extname(filePath).toLowerCase();
+
+				// A .zip or .md dropped into the workspace's private skills dir is
+				// installed as a skill (zip is extracted) rather than written raw.
+				if (filePath.split("/").includes(WORKSPACE_PRIVATE_SKILLS_DIR) && (ext === ".zip" || ext === ".md")) {
+					try {
+						const skill = ext === ".zip"
+							? installSkillZip(basename(filePath), data, join(root, WORKSPACE_PRIVATE_SKILLS_DIR))
+							: installSkillMarkdown(basename(filePath), data, join(root, WORKSPACE_PRIVATE_SKILLS_DIR));
+						uploaded.push(workspaceSkillNode(root, skill.name));
+						installedSkill = true;
+						continue;
+					} catch (err) {
+						json(res, 400, { error: err instanceof Error ? err.message : "Failed to install skill package" });
+						return;
+					}
+				}
+
+				ensureDir(dirname(fullPath));
 				writeFileSync(fullPath, data);
 				const stat = statSync(fullPath);
 				uploaded.push({
@@ -2310,7 +2372,32 @@ const server = createServer(async (req, res) => {
 					updatedAt: stat.mtime.toISOString(),
 				});
 			}
+			if (installedSkill) scheduleSkillsReload();
 			json(res, 201, { uploaded });
+			return;
+		}
+
+		// Install a skill package (.zip / .md) into the workspace's private .skills dir.
+		if (method === "POST" && url === "/api/workspace/skills/upload") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const wsId = workspaceIdFromBody(body);
+			const root = workspaceRegistry.resolveWorkspaceDir(wsId);
+			if (!root) { json(res, 404, { error: "Workspace not found" }); return; }
+			const fileName = typeof body.fileName === "string" ? body.fileName : "";
+			const dataBase64 = typeof body.dataBase64 === "string" ? body.dataBase64 : "";
+			if (!fileName || !dataBase64) { json(res, 400, { error: "Missing fileName or dataBase64" }); return; }
+			const ext = extname(fileName).toLowerCase();
+			if (ext !== ".zip" && ext !== ".md") { json(res, 400, { error: "Only .zip or .md skill packages are supported" }); return; }
+			const data = Buffer.from(dataBase64, "base64");
+			try {
+				const skill = ext === ".zip"
+					? installSkillZip(fileName, data, join(root, WORKSPACE_PRIVATE_SKILLS_DIR))
+					: installSkillMarkdown(fileName, data, join(root, WORKSPACE_PRIVATE_SKILLS_DIR));
+				scheduleSkillsReload();
+				json(res, 201, workspaceSkillNode(root, skill.name));
+			} catch (err) {
+				json(res, 400, { error: err instanceof Error ? err.message : "Failed to install skill package" });
+			}
 			return;
 		}
 
@@ -2351,8 +2438,8 @@ const server = createServer(async (req, res) => {
 		const workspaceDeleteMatch = matchRoute("DELETE", method, url.split("?")[0], "/api/workspaces/:id");
 		if (workspaceDeleteMatch) {
 			const id = decodeURIComponent(workspaceDeleteMatch.id);
-			if (id === DEFAULT_WORKSPACE_ID || id === TEMP_WORKSPACE_ID) {
-				json(res, 400, { error: "Cannot delete default or shared tmp workspace" });
+			if (id === TEMP_WORKSPACE_ID) {
+				json(res, 400, { error: "Cannot delete the shared tmp workspace" });
 				return;
 			}
 			const params = new URL(url, "http://localhost").searchParams;
@@ -2838,10 +2925,12 @@ initSession(config, paths, channelRegistry, {
 			getCurrentSessionId,
 			recordSessionChannel: (ch, sid?) => recordCurrentSessionChannel(ch as SessionChannel, sid),
 			maybeAutoGenerateTopic,
-			onSessionCreated: (sessionId) => {
-				// Channel-originated sessions land in the public workspace by default.
+			onSessionCreated: (sessionId, channel) => {
+				// Channel-originated sessions bind to a fixed per-channel workspace
+				// (they cannot prompt the user to choose one).
 				try {
-					workspaceRegistry.bindSession(sessionId, DEFAULT_WORKSPACE_ID);
+					const ws = workspaceRegistry.ensureChannelWorkspace(channel);
+					workspaceRegistry.bindSession(sessionId, ws.id);
 				} catch (err) {
 					console.warn(`[sessions] failed to bind channel session ${sessionId}:`, err instanceof Error ? err.message : err);
 				}

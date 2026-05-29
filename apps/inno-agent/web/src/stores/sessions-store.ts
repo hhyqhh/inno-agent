@@ -64,6 +64,8 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	searchQuery = "";
 	/** When true, ChatCenter shows the workspace chooser instead of opening a session. */
 	pendingNewSession = false;
+	/** When set, a new session should be pre-bound to this workspace (set from the sidebar). */
+	preselectedWorkspaceId: string | null = null;
 	private _openRequestId = 0;
 	private _messageCache = new Map<string, Awaited<ReturnType<typeof getSession>>["messages"]>();
 
@@ -203,14 +205,27 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	beginNewSession(): void {
 		this.currentSessionId = null;
 		this.pendingNewSession = true;
+		this.preselectedWorkspaceId = null;
 		chatStore.cancel();
 		chatStore.clear();
 		void terminalStore.disconnect();
 		this.emit("change", undefined);
 	}
 
+	/**
+	 * Enter "new session" mode pre-bound to a specific workspace (from the
+	 * sidebar). ChatCenter's chooser reads `preselectedWorkspaceId` to default to
+	 * that workspace and previews it immediately.
+	 */
+	beginNewSessionIn(workspaceId: string): void {
+		this.beginNewSession();
+		this.preselectedWorkspaceId = workspaceId;
+		this.emit("change", undefined);
+	}
+
 	cancelPendingNewSession(): void {
 		this.pendingNewSession = false;
+		this.preselectedWorkspaceId = null;
 		this.emit("change", undefined);
 	}
 
@@ -220,6 +235,7 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	async createSessionWith(input: CreateSessionInput = {}): Promise<void> {
 		this.isLoading = true;
 		this.pendingNewSession = false;
+		this.preselectedWorkspaceId = null;
 		// Make sure no previous stream / terminal lingers.
 		chatStore.cancel();
 		void terminalStore.disconnect();

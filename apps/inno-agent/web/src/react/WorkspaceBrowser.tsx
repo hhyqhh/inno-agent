@@ -17,7 +17,7 @@ import { cpp } from "@codemirror/lang-cpp";
 import { rust } from "@codemirror/lang-rust";
 import { go } from "@codemirror/lang-go";
 import type { Extension } from "@codemirror/state";
-import { RefreshCw, FilePlus, FolderPlus, Upload, Trash2, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles } from "lucide-react";
 import { workspaceStore } from "../stores/workspace-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
@@ -354,6 +354,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 			}}
 			onContextMenu={(e) => {
 				e.preventDefault();
+				e.stopPropagation();
 				node.select();
 				const ev = new CustomEvent("workspace-ctx", { detail: { x: e.clientX, y: e.clientY, node: node.data }, bubbles: true });
 				e.currentTarget.dispatchEvent(ev);
@@ -396,18 +397,25 @@ interface CtxMenuState {
 	nodePath: string;
 	nodeName: string;
 	isDir: boolean;
+	/** True when the menu was opened on empty tree space (create at root). */
+	isRoot?: boolean;
 }
 
 function ContextMenu({ state, onClose, treeRef }: { state: CtxMenuState; onClose: () => void; treeRef: React.RefObject<TreeApi<ArboristNode> | null> }) {
 	const { t } = useTranslation();
-	const items = [
-		{ label: t("files.rename", "Rename"), action: () => { const n = treeRef.current?.get(state.nodePath); n?.edit(); } },
-		{ label: t("files.delete", "Delete"), action: () => { const n = treeRef.current?.get(state.nodePath); if (n) treeRef.current?.delete(n.id); } },
-		...(state.isDir ? [
-			{ label: t("files.newFileHere", "New File Here"), action: () => { const n = treeRef.current?.get(state.nodePath); n?.open(); treeRef.current?.create({ parentId: state.nodePath, type: "leaf" }); } },
-			{ label: t("files.newFolderHere", "New Folder Here"), action: () => { const n = treeRef.current?.get(state.nodePath); n?.open(); treeRef.current?.create({ parentId: state.nodePath, type: "internal" }); } },
-		] : []),
-	];
+	const items = state.isRoot
+		? [
+			{ label: t("files.newFile", "New File"), action: () => { treeRef.current?.create({ parentId: null, type: "leaf" }); } },
+			{ label: t("files.newFolder", "New Folder"), action: () => { treeRef.current?.create({ parentId: null, type: "internal" }); } },
+		]
+		: [
+			{ label: t("files.rename", "Rename"), action: () => { const n = treeRef.current?.get(state.nodePath); n?.edit(); } },
+			{ label: t("files.delete", "Delete"), action: () => { const n = treeRef.current?.get(state.nodePath); if (n) treeRef.current?.delete(n.id); } },
+			...(state.isDir ? [
+				{ label: t("files.newFileHere", "New File Here"), action: () => { const n = treeRef.current?.get(state.nodePath); n?.open(); treeRef.current?.create({ parentId: state.nodePath, type: "leaf" }); } },
+				{ label: t("files.newFolderHere", "New Folder Here"), action: () => { const n = treeRef.current?.get(state.nodePath); n?.open(); treeRef.current?.create({ parentId: state.nodePath, type: "internal" }); } },
+			] : []),
+		];
 
 	return (
 		<>
@@ -458,7 +466,7 @@ function DeleteConfirm({ paths, onConfirm, onCancel }: { paths: string[]; onConf
 export function WorkspaceBrowser() {
 	const { t } = useTranslation();
 	const treeRef = useRef<TreeApi<ArboristNode>>(null);
-	const uploadRef = useRef<HTMLInputElement>(null);
+	const skillUploadRef = useRef<HTMLInputElement>(null);
 	const treeContainerRef = useRef<HTMLDivElement>(null);
 	const [treeHeight, setTreeHeight] = useState(400);
 	const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -511,23 +519,20 @@ export function WorkspaceBrowser() {
 		return () => { cancelled = true; };
 	}, [sessState.currentSessionId]);
 
-	// Dropdown visible options: the session's bound workspace + the public ("default") workspace.
-	const visibleWorkspaces = useMemo(() => {
-		const list = wsState.list;
-		const pub = list.find((w) => w.id === "default")
-			?? { id: "default", name: "公共空间", relPath: "", createdAt: "", updatedAt: "", isTemp: false };
-		const bound = boundWorkspaceId ? list.find((w) => w.id === boundWorkspaceId) : null;
-		const items = [pub];
-		if (bound && bound.id !== "default") items.unshift(bound);
-		return items;
-	}, [wsState.list, boundWorkspaceId]);
+	// Default the panel view to the session's bound workspace once known.
+	useEffect(() => {
+		if (boundWorkspaceId && state.activeWorkspaceId == null) {
+			void workspaceStore.setActiveWorkspace(boundWorkspaceId);
+		}
+	}, [boundWorkspaceId, state.activeWorkspaceId]);
 
-	const handleWorkspaceSelect = useCallback(async (workspaceId: string) => {
-		if (workspaceId === (state.activeWorkspaceId ?? "default")) return;
-		// View-only switch — no rebind. The session's bound workspace (and the
-		// agent's cwd) stays fixed for the lifetime of the conversation.
-		await workspaceStore.setActiveWorkspace(workspaceId);
-	}, [state.activeWorkspaceId]);
+	// The session is fixed to one workspace; show its name (no switcher).
+	const activeWorkspaceName = useMemo(() => {
+		const id = state.activeWorkspaceId ?? boundWorkspaceId;
+		if (!id) return "";
+		const ws = wsState.list.find((w) => w.id === id);
+		return ws ? `${ws.isTemp ? "🗒 " : ""}${ws.name}` : id;
+	}, [state.activeWorkspaceId, boundWorkspaceId, wsState.list]);
 
 	// Listen for custom context-menu events from node renderer
 	useEffect(() => {
@@ -590,12 +595,15 @@ export function WorkspaceBrowser() {
 		return sel.isLeaf ? (sel.parent?.id ?? "") : sel.id;
 	}, []);
 
-	const handleUploadChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-		if (e.target.files?.length) {
-			void workspaceStore.uploadFiles(selectedParentPath(), e.target.files);
+	const handleSkillUploadChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+		const files = e.target.files;
+		if (files?.length) {
+			for (const file of Array.from(files)) {
+				void workspaceStore.uploadSkillPackage(file);
+			}
 			e.target.value = "";
 		}
-	}, [selectedParentPath]);
+	}, []);
 
 	/** Only true when dragging files from OS (not internal react-dnd tree drags) */
 	const isExternalFileDrag = useCallback((e: DragEvent) => {
@@ -638,40 +646,29 @@ export function WorkspaceBrowser() {
 				{/* Toolbar */}
 				<div className="flex h-10 items-center gap-1 border-b border-slate-200 bg-slate-50 px-2">
 					<div className="min-w-0 flex-1">
-						<select
-							className="w-full max-w-[200px] truncate rounded bg-transparent px-1 py-0.5 text-xs font-medium text-slate-700 outline-none hover:bg-slate-100 focus:bg-white"
-							value={state.activeWorkspaceId ?? "default"}
-							onChange={(e) => void handleWorkspaceSelect(e.target.value)}
-							title="查看工作区"
-							disabled={visibleWorkspaces.length <= 1}
-						>
-							{visibleWorkspaces.map((w) => (
-								<option key={w.id} value={w.id}>
-									{w.isTemp ? "🗒 " : ""}{w.name}{w.id === boundWorkspaceId && visibleWorkspaces.length > 1 ? " · 当前" : ""}
-								</option>
-							))}
-						</select>
+						<span className="block max-w-[220px] truncate px-1 text-xs font-medium text-slate-700" title={activeWorkspaceName}>
+							{activeWorkspaceName || "工作区"}
+						</span>
 					</div>
-					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-40" title={t("files.newFile", "New File")} onClick={() => treeRef.current?.createLeaf()}>
-						<FilePlus size={13} />
-					</button>
-					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-40" title={t("files.newFolder", "New Folder")} onClick={() => treeRef.current?.createInternal()}>
-						<FolderPlus size={13} />
-					</button>
-					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-40" title={t("files.upload", "Upload")} onClick={() => uploadRef.current?.click()}>
-						<Upload size={13} />
-					</button>
-					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-40" title={t("files.deleteSelected", "Delete")} onClick={() => { const ids = treeRef.current?.selectedIds; if (ids?.size) setDeleteConfirm({ ids: [...ids] }); }}>
-						<Trash2 size={13} />
+					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition-colors hover:bg-violet-100 hover:text-violet-600 disabled:opacity-40" title={t("files.uploadSkill", "上传技能包 (.zip/.md) 到 .skills")} onClick={() => skillUploadRef.current?.click()}>
+						<Sparkles size={13} />
 					</button>
 					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-40" title={t("preview.refresh", "Refresh")} onClick={() => void workspaceStore.loadTree()}>
 						<RefreshCw size={13} />
 					</button>
-					<input ref={uploadRef} type="file" multiple className="hidden" onChange={handleUploadChange} />
+					<input ref={skillUploadRef} type="file" multiple accept=".zip,application/zip,.md,text/markdown" className="hidden" onChange={handleSkillUploadChange} />
 				</div>
 
 				{/* Tree */}
-				<div ref={treeContainerRef} className="workspace-scroll min-h-0 flex-1 overflow-hidden">
+				<div
+					ref={treeContainerRef}
+					className="workspace-scroll min-h-0 flex-1 overflow-hidden"
+					onContextMenu={(e) => {
+						// Right-click on empty space → create at workspace root.
+						e.preventDefault();
+						setCtxMenu({ x: e.clientX, y: e.clientY, nodePath: "", nodeName: "", isDir: true, isRoot: true });
+					}}
+				>
 					{state.isLoadingTree && !arboristData.length ? (
 						<div className="p-3 text-xs text-slate-500">{t("preview.loading", "Loading...")}</div>
 					) : !arboristData.length ? (

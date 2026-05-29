@@ -60,3 +60,11 @@ export async function uploadWorkspaceFiles(files: Array<{ path: string; dataBase
 		body: JSON.stringify(withWorkspace({ files }, workspaceId)),
 	});
 }
+
+/** Install a skill package (.zip / .md) into the workspace's private `.skills` dir. */
+export async function uploadWorkspaceSkill(fileName: string, dataBase64: string, workspaceId?: string): Promise<WorkspaceTreeNode> {
+	return apiFetch<WorkspaceTreeNode>("/api/workspace/skills/upload", {
+		method: "POST",
+		body: JSON.stringify(withWorkspace({ fileName, dataBase64 }, workspaceId)),
+	});
+}

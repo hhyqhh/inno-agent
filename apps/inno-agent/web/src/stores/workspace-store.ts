@@ -8,6 +8,7 @@ import {
 	moveWorkspaceItem,
 	uploadWorkspaceFiles,
 	saveWorkspaceFile,
+	uploadWorkspaceSkill,
 } from "../api/workspace.js";
 import type { WorkspaceFileDetail, WorkspaceTree } from "../types/workspace.js";
 
@@ -212,6 +213,31 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 			await this.loadTree();
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : "Failed to upload";
+		} finally {
+			this.isMutating = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	/** Install a skill package (.zip / .md) into the workspace's private `.skills` dir. */
+	async uploadSkillPackage(file: File): Promise<void> {
+		this.isMutating = true;
+		this.error = "";
+		this.emit("change", undefined);
+		try {
+			const dataBase64 = await new Promise<string>((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onload = () => {
+					const result = String(reader.result ?? "");
+					resolve(result.includes(",") ? result.split(",")[1] : result);
+				};
+				reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+				reader.readAsDataURL(file);
+			});
+			await uploadWorkspaceSkill(file.name, dataBase64, this.wsId);
+			await this.loadTree();
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to install skill";
 		} finally {
 			this.isMutating = false;
 			this.emit("change", undefined);

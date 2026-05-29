@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
 	PanelLeftOpen,
@@ -13,10 +13,14 @@ import {
 	ChevronRight,
 	Search,
 	X,
+	FolderKanban,
 } from "lucide-react";
 import { appStore } from "../stores/app-store.js";
 import { chatStore } from "../stores/chat-store.js";
-import { sessionsStore, type DateGroup, type SessionGroup } from "../stores/sessions-store.js";
+import { sessionsStore } from "../stores/sessions-store.js";
+import { workspacesStore } from "../stores/workspaces-store.js";
+import { workspaceStore } from "../stores/workspace-store.js";
+import type { WorkspaceMeta } from "../api/workspaces.js";
 import type { SessionChannel, SessionMeta } from "../api/sessions.js";
 import { useStoreSnapshot } from "./hooks.js";
 
@@ -82,23 +86,120 @@ function channelFilterClass(channel: SessionChannel | null, active: boolean): st
 	return map[channel] ?? "bg-slate-700 text-white ring-1 ring-slate-700";
 }
 
+/* ── Workspace group definition ── */
+
+interface WsGroup {
+	id: string;
+	name: string;
+	/** Whether rename/delete actions are offered (false for temp + archived bucket). */
+	manageable: boolean;
+	/** Whether a new chat can be started directly in this workspace (false for synthetic groups). */
+	canCreate: boolean;
+	sessions: SessionMeta[];
+}
+
 /* ── Group header component ── */
 
-function GroupHeader({ group, collapsed, onToggle }: { group: SessionGroup; collapsed: boolean; onToggle: () => void }) {
+function GroupHeader({
+	group,
+	collapsed,
+	active,
+	onToggle,
+	onSelect,
+	onNewChat,
+	editing,
+	editingName,
+	onStartEdit,
+	onEditChange,
+	onEditSave,
+	onEditCancel,
+	onDelete,
+}: {
+	group: WsGroup;
+	collapsed: boolean;
+	active: boolean;
+	onToggle: () => void;
+	onSelect: () => void;
+	onNewChat: () => void;
+	editing: boolean;
+	editingName: string;
+	onStartEdit: () => void;
+	onEditChange: (v: string) => void;
+	onEditSave: () => void;
+	onEditCancel: () => void;
+	onDelete: () => void;
+}) {
 	return (
-		<button
-			className="inno-sidebar-meta sticky top-0 z-10 flex w-full items-center gap-1.5 bg-[var(--inno-sidebar-bg)] px-2 py-1.5 font-semibold uppercase text-slate-400 transition-colors hover:text-slate-600"
-			onClick={onToggle}
-		>
-			<ChevronRight
-				size={12}
-				className={`shrink-0 transition-transform duration-150 ${collapsed ? "" : "rotate-90"}`}
-			/>
-			<span>{group.label}</span>
-			<span className="inno-sidebar-meta ml-auto rounded-full bg-slate-200 px-1.5 py-0 font-medium text-slate-500 tabular-nums">
+		<div className={`group/wsh sticky top-0 z-10 flex w-full items-center gap-1.5 px-2 py-1.5 ${active ? "bg-slate-100" : "bg-[var(--inno-sidebar-bg)]"}`}>
+			<button
+				className="shrink-0 text-slate-400 transition-colors hover:text-slate-600"
+				title={collapsed ? "展开" : "折叠"}
+				onClick={onToggle}
+			>
+				<ChevronRight
+					size={12}
+					className={`transition-transform duration-150 ${collapsed ? "" : "rotate-90"}`}
+				/>
+			</button>
+			<button
+				className="inno-sidebar-meta flex min-w-0 flex-1 items-center gap-1.5 font-semibold uppercase text-slate-400 transition-colors hover:text-slate-600"
+				title={group.canCreate ? "加载此工作区到预览面板" : undefined}
+				onClick={onSelect}
+			>
+				<FolderKanban size={12} className="shrink-0 text-slate-400" />
+				{editing ? (
+					<input
+						className="min-w-0 flex-1 rounded border border-blue-300 bg-white px-1 py-0.5 text-[11px] normal-case text-slate-800 outline-none focus:ring-1 focus:ring-blue-200"
+						value={editingName}
+						autoFocus
+						onClick={(e) => { e.stopPropagation(); }}
+						onChange={(e) => onEditChange(e.target.value)}
+						onBlur={onEditSave}
+						onKeyDown={(e) => {
+							e.stopPropagation();
+							if (e.key === "Enter") onEditSave();
+							if (e.key === "Escape") onEditCancel();
+						}}
+					/>
+				) : (
+					<span className="min-w-0 truncate normal-case text-slate-500">{group.name}</span>
+				)}
+			</button>
+			{!editing ? (
+				<div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/wsh:opacity-100">
+					{group.canCreate ? (
+						<button
+							className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+							title="在此工作区新建对话"
+							onClick={(e) => { e.stopPropagation(); onNewChat(); }}
+						>
+							<Plus size={12} />
+						</button>
+					) : null}
+					{group.manageable ? (
+						<>
+							<button
+								className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+								title="重命名工作区"
+								onClick={(e) => { e.stopPropagation(); onStartEdit(); }}
+							>
+								<Pencil size={11} />
+							</button>
+							<button
+								className="rounded p-0.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+								title="删除工作区"
+								onClick={(e) => { e.stopPropagation(); onDelete(); }}
+							>
+								<Trash2 size={11} />
+							</button>
+						</>
+					) : null}
+				</div>
+			) : null}
+			<span className="inno-sidebar-meta rounded-full bg-slate-200 px-1.5 py-0 font-medium text-slate-500 tabular-nums">
 				{group.sessions.length}
 			</span>
-		</button>
+		</div>
 	);
 }
 
@@ -240,12 +341,13 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [editingName, setEditingName] = useState("");
 	const [generatingId, setGeneratingId] = useState<string | null>(null);
-	const [collapsedGroups, setCollapsedGroups] = useState<Set<DateGroup>>(() => new Set(["archived"]));
+	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set(["archived"]));
 	const [showSearch, setShowSearch] = useState(false);
+	const [editingWsId, setEditingWsId] = useState<string | null>(null);
+	const [editingWsName, setEditingWsName] = useState("");
 
 	const state = useStoreSnapshot(sessionsStore, () => ({
 		sessions: sessionsStore.sessions,
-		groups: sessionsStore.groupedSessions,
 		currentSessionId: sessionsStore.currentSessionId,
 		isLoading: sessionsStore.isLoading,
 		openingSessionId: sessionsStore.openingSessionId,
@@ -254,11 +356,51 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 		availableChannels: sessionsStore.availableChannels,
 		filteredSessions: sessionsStore.filteredSessions,
 	}));
+	const wsState = useStoreSnapshot(workspacesStore, () => ({
+		list: workspacesStore.workspaces,
+	}));
+	const wsActive = useStoreSnapshot(workspaceStore, () => ({
+		activeWorkspaceId: workspaceStore.activeWorkspaceId,
+	}));
 	const orderedChannels = CHANNEL_FILTER_ORDER.filter((ch) => state.availableChannels.includes(ch as SessionChannel));
 
 	useEffect(() => {
 		void sessionsStore.load();
+		void workspacesStore.load();
 	}, []);
+
+	// Build workspace-grouped session list. Non-archived sessions are grouped by
+	// their bound workspace (in workspace recency order); archived sessions go to
+	// a single trailing group.
+	const groups = useMemo<WsGroup[]>(() => {
+		const sessionToWs = new Map<string, WorkspaceMeta>();
+		for (const w of wsState.list) {
+			for (const sid of w.sessionIds ?? []) sessionToWs.set(sid, w);
+		}
+		const archived: SessionMeta[] = [];
+		const byWs = new Map<string, SessionMeta[]>();
+		const unknown: SessionMeta[] = [];
+		for (const s of state.filteredSessions) {
+			if (s.archived) { archived.push(s); continue; }
+			const w = sessionToWs.get(s.id);
+			if (!w) { unknown.push(s); continue; }
+			if (!byWs.has(w.id)) byWs.set(w.id, []);
+			byWs.get(w.id)!.push(s);
+		}
+		const result: WsGroup[] = [];
+		for (const w of wsState.list) {
+			const sessions = byWs.get(w.id);
+			if (!sessions || sessions.length === 0) continue;
+			result.push({ id: w.id, name: w.name, manageable: !w.isTemp, canCreate: true, sessions });
+		}
+		if (unknown.length > 0) {
+			result.push({ id: "__unknown__", name: "未分组", manageable: false, canCreate: false, sessions: unknown });
+		}
+		if (archived.length > 0) {
+			result.push({ id: "archived", name: "已归档", manageable: false, canCreate: false, sessions: archived });
+		}
+		return result;
+	}, [wsState.list, state.filteredSessions]);
 
 	const newChat = useCallback(() => {
 		void (async () => {
@@ -266,6 +408,22 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			chatStore.clear();
 			appStore.setRightPanelTab("preview");
 		})();
+	}, []);
+
+	// Click a workspace group header → load that workspace into the right panel.
+	const selectWorkspace = useCallback((group: WsGroup) => {
+		if (!group.canCreate) return; // synthetic groups (未分组 / 已归档)
+		void workspaceStore.setActiveWorkspace(group.id);
+		appStore.setRightPanelTab("preview");
+		if (appStore.workspaceMode === "collapsed") appStore.setWorkspaceMode("half");
+	}, []);
+
+	// Start a new chat pre-bound to this workspace.
+	const newChatIn = useCallback((group: WsGroup) => {
+		sessionsStore.beginNewSessionIn(group.id);
+		void workspaceStore.setActiveWorkspace(group.id);
+		appStore.setRightPanelTab("preview");
+		if (appStore.workspaceMode === "collapsed") appStore.setWorkspaceMode("half");
 	}, []);
 
 	const openSession = useCallback((session: SessionMeta) => {
@@ -305,13 +463,31 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 		void sessionsStore.deleteSession(session.id);
 	}, []);
 
-	const toggleGroup = useCallback((key: DateGroup) => {
+	const toggleGroup = useCallback((key: string) => {
 		setCollapsedGroups((prev) => {
 			const next = new Set(prev);
 			if (next.has(key)) next.delete(key);
 			else next.add(key);
 			return next;
 		});
+	}, []);
+
+	const saveWsName = useCallback((id: string) => {
+		const name = editingWsName.trim();
+		setEditingWsId(null);
+		if (!name) return;
+		void workspacesStore.rename(id, name);
+	}, [editingWsName]);
+
+	const handleDeleteWorkspace = useCallback((group: WsGroup) => {
+		const confirmed = typeof window === "undefined" ? true : window.confirm(
+			`删除工作区「${group.name}」？\n其中的 ${group.sessions.length} 个会话将解绑(归入临时工作区),会话记录与文件不会被删除。`,
+		);
+		if (!confirmed) return;
+		void (async () => {
+			await workspacesStore.remove(group.id);
+			await Promise.all([workspacesStore.load(), sessionsStore.refresh()]);
+		})();
 	}, []);
 
 	/* ── Collapsed sidebar ── */
@@ -434,16 +610,30 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 					<div className="flex items-center justify-center py-8">
 						<span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
 					</div>
-				) : state.groups.length === 0 ? (
+				) : groups.length === 0 ? (
 					<div className="inno-sidebar-text px-2 py-8 text-center text-slate-400">
 						{state.searchQuery || state.channelFilter ? "无匹配结果" : "暂无对话记录"}
 					</div>
 				) : (
-					state.groups.map((group) => {
-						const isGroupCollapsed = collapsedGroups.has(group.key);
+					groups.map((group) => {
+						const isGroupCollapsed = collapsedGroups.has(group.id);
 						return (
-							<div key={group.key} className="mt-0.5">
-								<GroupHeader group={group} collapsed={isGroupCollapsed} onToggle={() => toggleGroup(group.key)} />
+							<div key={group.id} className="mt-0.5">
+								<GroupHeader
+									group={group}
+									collapsed={isGroupCollapsed}
+									active={group.canCreate && wsActive.activeWorkspaceId === group.id}
+									onToggle={() => toggleGroup(group.id)}
+									onSelect={() => selectWorkspace(group)}
+									onNewChat={() => newChatIn(group)}
+									editing={editingWsId === group.id}
+									editingName={editingWsName}
+									onStartEdit={() => { setEditingWsId(group.id); setEditingWsName(group.name); }}
+									onEditChange={setEditingWsName}
+									onEditSave={() => saveWsName(group.id)}
+									onEditCancel={() => setEditingWsId(null)}
+									onDelete={() => handleDeleteWorkspace(group)}
+								/>
 								<AnimatePresence initial={false}>
 									{!isGroupCollapsed && (
 										<motion.div

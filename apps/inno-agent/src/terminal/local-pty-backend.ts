@@ -5,11 +5,14 @@ import { spawn, type IPty } from "node-pty";
 
 /**
  * node-pty ships its macOS/Linux `spawn-helper` binary without the executable
- * bit in some published artifacts (and electron-builder's asar unpack can drop
- * it too). When the bit is missing, node-pty's `posix_spawn` of the helper
- * fails with the opaque error "posix_spawnp failed." and the terminal never
- * connects. Restore the bit before the first spawn so this self-heals in both
- * the dev tree and the packaged app.
+ * bit. node-pty `posix_spawn`s this helper, so a missing bit fails with the
+ * opaque error "posix_spawnp failed." and the terminal never connects.
+ *
+ * The primary fix lives in the electron-builder `afterPack` hook (the installed
+ * app bundle is read-only, so the bit must be set at pack time). This runtime
+ * guard is a best-effort fallback for dev runs and any writable install. It
+ * mirrors node-pty's own asar→asar.unpacked path translation so it targets the
+ * file that is actually executed, not the virtual copy inside app.asar.
  */
 let _helperChecked = false;
 function ensureSpawnHelperExecutable(): void {
@@ -23,7 +26,11 @@ function ensureSpawnHelperExecutable(): void {
 			join(root, "build", "Debug", "spawn-helper"),
 			join(root, "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper"),
 		];
-		for (const helper of candidates) {
+		for (const candidate of candidates) {
+			// node-pty execs the asar.unpacked copy, never the one inside app.asar.
+			const helper = candidate
+				.replace("app.asar", "app.asar.unpacked")
+				.replace("node_modules.asar", "node_modules.asar.unpacked");
 			if (!existsSync(helper)) continue;
 			const mode = statSync(helper).mode;
 			if ((mode & 0o111) === 0) {

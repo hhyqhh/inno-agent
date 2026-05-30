@@ -27,6 +27,7 @@
 	"build": {
 		"appId": "com.inno.agent",
 		"productName": "Inno Agent",
+		"afterPack": "scripts/after-pack.cjs",
 		"directories": {
 			"output": "dist-electron"
 		},

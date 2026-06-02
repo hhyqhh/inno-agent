@@ -5,6 +5,7 @@ export interface ChatMessage {
 	thinking?: string;
 	tools?: ChatToolRecord[];
 	channel?: string;
+	images?: Array<{ previewUrl: string; mimeType: string }>;
 }
 
 export interface ChatToolRecord {

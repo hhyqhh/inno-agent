@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { Paperclip, X, SendHorizonal, Square, RotateCcw, Check } from "lucide-react";
+import { Paperclip, X, SendHorizonal, Square, RotateCcw, Check, Image } from "lucide-react";
 import type { ChatMessage } from "../types/chat.js";
+import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
@@ -51,6 +52,13 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 				<div className="inno-message w-fit whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-[13px] leading-relaxed text-slate-950" style={{ maxWidth: "min(70%, 38rem)" }}>
 					{showChannel && message.channel ? (
 						<div className="mb-1 flex justify-end"><ChannelBadge channel={message.channel} /></div>
+					) : null}
+					{message.images?.length ? (
+						<div className="mb-2 flex flex-wrap gap-1.5">
+							{message.images.map((img, i) => (
+								<img key={i} src={img.previewUrl} alt="attached" className="max-h-48 max-w-full rounded object-contain" />
+							))}
+						</div>
 					) : null}
 					{message.content.trim()}
 				</div>
@@ -118,9 +126,11 @@ function ModeChip({ selected, onClick, disabled, children }: { selected: boolean
 export function ChatCenter() {
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
+	const imageInputRef = useRef<HTMLInputElement | null>(null);
 	const scrollRef = useRef<HTMLDivElement | null>(null);
 	const [uploads, setUploads] = useState<RawUploadResult[]>([]);
 	const [isUploading, setIsUploading] = useState(false);
+	const [inlineImages, setInlineImages] = useState<(InlineImage & { name: string; previewUrl: string })[]>([]);
 
 	// Inline workspace chooser state (welcome screen only).
 	const [wsMode, setWsMode] = useState<WsMode>("temp");
@@ -235,12 +245,15 @@ export function ChatCenter() {
 
 	const handleSend = useCallback(() => {
 		const input = inputRef.current?.value.trim() ?? "";
-		if ((!input && uploads.length === 0) || chat.isSending || isUploading) return;
+		if ((!input && uploads.length === 0 && inlineImages.length === 0) || chat.isSending || isUploading) return;
 
 		const uploadNote = uploads.length > 0
 			? `\n\n[已上传到 L2 raw 原始数据]\n${uploads.map((file: RawUploadResult) => `- ${file.fileName}: ${file.rawPath}`).join("\n")}`
 			: "";
-		const messageContent = `${input}${uploadNote}`;
+		const messageContent = `${input}${uploadNote}` || (inlineImages.length > 0 ? "请描述这张图片" : "");
+		const imagesToSend = inlineImages.length > 0
+			? inlineImages.map(({ data, mimeType }) => ({ data, mimeType }))
+			: undefined;
 
 		if (isWelcome) {
 			const wsInput = buildSessionInput();
@@ -254,10 +267,11 @@ export function ChatCenter() {
 				inputRef.current.style.height = "auto";
 			}
 			setUploads([]);
+			setInlineImages([]);
 			void (async () => {
 				try {
 					await sessionsStore.createSessionWith(wsInput);
-					void chatStore.send(messageContent);
+					void chatStore.send(messageContent, imagesToSend);
 				} catch (err) {
 					setWsError(err instanceof Error ? err.message : "创建会话失败");
 				}
@@ -270,8 +284,9 @@ export function ChatCenter() {
 			inputRef.current.style.height = "auto";
 		}
 		setUploads([]);
-		void chatStore.send(messageContent);
-	}, [isWelcome, buildSessionInput, uploads, chat.isSending, isUploading]);
+		setInlineImages([]);
+		void chatStore.send(messageContent, imagesToSend);
+	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading]);
 
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		// Don't fire Send while the user is composing with an IME (e.g. picking
@@ -291,6 +306,40 @@ export function ChatCenter() {
 
 	const handleRetry = useCallback(() => {
 		void chatStore.retry();
+	}, []);
+
+	const addImageFiles = useCallback((files: File[]) => {
+		files.forEach((file) => {
+			const reader = new FileReader();
+			reader.onload = () => {
+				const dataUrl = reader.result as string;
+				const commaIdx = dataUrl.indexOf(",");
+				const header = dataUrl.slice(0, commaIdx);
+				const data = dataUrl.slice(commaIdx + 1);
+				const mimeType = header.match(/:(.*?);/)?.[1] ?? file.type;
+				setInlineImages((prev) => [...prev, { data, mimeType, name: file.name || "image", previewUrl: dataUrl }]);
+			};
+			reader.readAsDataURL(file);
+		});
+	}, []);
+
+	const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+		const imageItems = Array.from(e.clipboardData.items).filter((item) => item.type.startsWith("image/"));
+		if (imageItems.length === 0) return;
+		e.preventDefault();
+		const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
+		addImageFiles(files);
+	}, [addImageFiles]);
+
+	const handleImageFiles = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+		const files = Array.from(event.target.files ?? []).filter((f) => f.type.startsWith("image/"));
+		if (files.length === 0) return;
+		addImageFiles(files);
+		if (event.target) event.target.value = "";
+	}, [addImageFiles]);
+
+	const removeInlineImage = useCallback((index: number) => {
+		setInlineImages((prev) => prev.filter((_, i) => i !== index));
 	}, []);
 
 	const handleFiles = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -334,11 +383,34 @@ export function ChatCenter() {
 		) : null
 	);
 
+	const renderInlineImagePreviews = () => (
+		inlineImages.length > 0 ? (
+			<div className="mb-2 flex flex-wrap gap-1.5">
+				{inlineImages.map((img, index) => (
+					<span key={`${img.name}-${index}`} className="relative inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 p-1 shadow-sm">
+						<img src={img.previewUrl} alt={img.name} className="h-12 w-12 rounded object-cover" />
+						<button
+							className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-slate-600 text-white hover:bg-slate-800"
+							title="Remove image"
+							onClick={() => removeInlineImage(index)}
+						>
+							<X size={10} />
+						</button>
+					</span>
+				))}
+			</div>
+		) : null
+	);
+
 	const renderComposer = (placeholder: string) => (
 		<div className="inno-composer flex items-end gap-2 rounded-lg p-2">
 			<input ref={fileInputRef} id="file-input" type="file" className="hidden" multiple onChange={handleFiles} />
+			<input ref={imageInputRef} id="image-input" type="file" className="hidden" multiple accept="image/*" onChange={handleImageFiles} />
 			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title="Upload files to L2 raw" disabled={chat.isSending || isUploading} onClick={() => fileInputRef.current?.click()}>
 				{isUploading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Paperclip size={18} />}
+			</button>
+			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title="Attach image" disabled={chat.isSending} onClick={() => imageInputRef.current?.click()}>
+				<Image size={18} />
 			</button>
 			<textarea
 				ref={inputRef}
@@ -348,6 +420,7 @@ export function ChatCenter() {
 				rows={1}
 				onKeyDown={handleKeyDown}
 				onInput={handleInput}
+				onPaste={handlePaste}
 				disabled={chat.isSending || isUploading}
 			/>
 			{chat.isSending ? (
@@ -395,6 +468,7 @@ export function ChatCenter() {
 						</div>
 
 						{renderUploadChips()}
+						{renderInlineImagePreviews()}
 						{renderComposer("有什么想学习或实践的?发送消息开始…")}
 
 						{preselectedWs ? (
@@ -556,6 +630,7 @@ export function ChatCenter() {
 			<div className="shrink-0 border-t border-slate-200 bg-white p-3">
 				<div className="mx-auto max-w-3xl">
 					{renderUploadChips()}
+					{renderInlineImagePreviews()}
 					{renderComposer("Type a message...")}
 				</div>
 			</div>

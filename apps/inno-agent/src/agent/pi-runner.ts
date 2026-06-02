@@ -194,7 +194,7 @@ function modelConfigToProviderModel(model: InnoConfig["providers"][string]["mode
 		id: model.id,
 		name: model.name,
 		reasoning: model.reasoning,
-		input: ["text" as const],
+		input: ["text" as const, "image" as const],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: model.contextWindow,
 		maxTokens: model.maxTokens,

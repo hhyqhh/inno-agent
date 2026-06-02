@@ -128,7 +128,7 @@ export function createInnoExtension(
 					id: m.id,
 					name: m.name,
 					reasoning: m.reasoning,
-					input: ["text" as const],
+					input: ["text" as const, "image" as const],
 					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 					contextWindow: m.contextWindow,
 					maxTokens: m.maxTokens,

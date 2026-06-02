@@ -2754,18 +2754,23 @@ const server = createServer(async (req, res) => {
 				json(res, 400, { error: "Missing prompt" });
 				return;
 			}
+			const rawImages = Array.isArray(body.images) ? body.images : [];
+			const images = rawImages
+				.filter((img): img is { data: string; mimeType: string } =>
+					img && typeof img.data === "string" && typeof img.mimeType === "string")
+				.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
 			// Use atomic switch+prompt when a specific session is requested.
 			const requestedSessionId = typeof body.sessionId === "string" ? body.sessionId : null;
 			let output: string;
 			if (requestedSessionId) {
 				const sessionPath = sessionFileFromId(join(dataDir, "sessions"), requestedSessionId);
 				if (sessionPath && existsSync(sessionPath)) {
-					output = await runPromptInSession(sessionPath, prompt);
+					output = await runPromptInSession(sessionPath, prompt, images.length ? images : undefined);
 				} else {
-					output = await runPromptSerialized(prompt);
+					output = await runPromptSerialized(prompt, images.length ? images : undefined);
 				}
 			} else {
-				output = await runPromptSerialized(prompt);
+				output = await runPromptSerialized(prompt, images.length ? images : undefined);
 			}
 			recordCurrentSessionChannel("web", requestedSessionId || undefined);
 			maybeAutoGenerateTopic(requestedSessionId || getCurrentSessionId());
@@ -2795,6 +2800,12 @@ const server = createServer(async (req, res) => {
 				json(res, 400, { error: "Missing prompt" });
 				return;
 			}
+			const rawImages = Array.isArray(body.images) ? body.images : [];
+			const images = rawImages
+				.filter((img): img is { data: string; mimeType: string } =>
+					img && typeof img.data === "string" && typeof img.mimeType === "string")
+				.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
+			const imageArgs = images.length ? images : undefined;
 
 			// Resolve target session path for atomic switch+stream.
 			const requestedSessionId = typeof body.sessionId === "string" ? body.sessionId : null;
@@ -2863,8 +2874,8 @@ const server = createServer(async (req, res) => {
 				// Use atomic switch+stream when a specific session is requested,
 				// preventing race conditions with channel session switches.
 				const fullText = targetSessionPath
-					? await runPromptStreamingInSession(targetSessionPath, prompt, onEvent)
-					: await runPromptStreaming(prompt, onEvent);
+					? await runPromptStreamingInSession(targetSessionPath, prompt, onEvent, imageArgs)
+					: await runPromptStreaming(prompt, onEvent, imageArgs);
 				recordCurrentSessionChannel("web", capturedSessionId);
 				if (!aborted) sseWrite({ type: "done", fullText });
 				maybeAutoGenerateTopic(capturedSessionId);

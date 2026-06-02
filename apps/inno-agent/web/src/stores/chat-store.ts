@@ -1,5 +1,6 @@
 import { EventEmitter } from "./event-emitter.js";
 import { streamChat } from "../api/chat.js";
+import type { InlineImage } from "../api/chat.js";
 import type { ChatMessage, ChatStreamEvent, ChatToolRecord, PendingQuestion, QuestionnaireResult } from "../types/chat.js";
 import { notebookStore } from "./notebook-store.js";
 
@@ -19,13 +20,15 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	completedTools: ChatToolRecord[] = [];
 	/** Last user prompt sent, kept so users can Retry. */
 	lastUserPrompt: string | null = null;
+	/** Images from the last send, kept so users can Retry. */
+	lastImages: InlineImage[] | undefined = undefined;
 	/** Pending question from agent's ask_user_question tool */
 	pendingQuestion: PendingQuestion | null = null;
 	private abortController: AbortController | null = null;
 	private wikiInvalidated = false;
 
-	async send(prompt: string): Promise<void> {
-		if (!prompt.trim() || this.isSending) return;
+	async send(prompt: string, images?: InlineImage[]): Promise<void> {
+		if ((!prompt.trim() && !images?.length) || this.isSending) return;
 
 		// Capture the target session at send time to prevent misalignment
 		// if the user switches sessions while the request is queued.
@@ -33,7 +36,16 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		const targetSessionId = sessionsStore.currentSessionId;
 
 		this.lastUserPrompt = prompt;
-		this.messages = [...this.messages, { role: "user", content: prompt, timestamp: Date.now() }];
+		this.lastImages = images;
+		this.messages = [...this.messages, {
+			role: "user",
+			content: prompt,
+			timestamp: Date.now(),
+			images: images?.map(({ data, mimeType }) => ({
+				previewUrl: `data:${mimeType};base64,${data}`,
+				mimeType,
+			})),
+		}];
 		this.isSending = true;
 		this.streamingText = "";
 		this.streamingThinking = "";
@@ -45,7 +57,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.emit("change", undefined);
 
 		try {
-			for await (const event of streamChat(prompt, targetSessionId, controller.signal)) {
+			for await (const event of streamChat(prompt, targetSessionId, controller.signal, images)) {
 				this._handleStreamEvent(event);
 			}
 			const aborted = controller.signal.aborted;
@@ -106,7 +118,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	/** Re-send the last user prompt. No-op while a send is in flight. */
 	async retry(): Promise<void> {
 		if (this.isSending || !this.lastUserPrompt) return;
-		await this.send(this.lastUserPrompt);
+		await this.send(this.lastUserPrompt, this.lastImages);
 	}
 
 	private _handleStreamEvent(event: ChatStreamEvent) {

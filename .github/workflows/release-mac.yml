@@ -58,6 +58,11 @@ jobs:
         env:
           # 跳过代码签名（无证书时必须）
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          # 强制走官方源下载 electron-builder 衍生工具（dmg-builder 等）。
+          # 项目根的 .npmrc 把 mirror 指向 npmmirror，但 npmmirror 没有镜像
+          # dmg-builder 包，会导致 404。本地保留 .npmrc 加速 electron 本体下载，
+          # CI 这里覆盖回官方源避免 dmg-builder 下载失败。
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
 
       # ── 7b. [可选] 签名 + 公证版（取消注释并配置 Secrets 后生效） ────────────
       # - name: Package Electron (signed + notarized DMG)

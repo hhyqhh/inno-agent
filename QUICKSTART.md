@@ -135,7 +135,6 @@ npm run web:dev        # 终端 2 — Vite :5173（代理 /api 到 :3000）
 ## 下一步
 
 - 完整文档见 [README.md](./README.md)
-- 架构和设计：`apps/inno-agent/docs/`
 - 自定义 skill：把 `<skill-name>.zip` 通过 Web UI 的 Skills 页面上传，或直接放进 `runtime/skills/<name>/`
-- 配 Feishu / QQ / WeChat 渠道：编辑 `runtime/config/config.json` 的 `channels` 块，参考 `apps/inno-agent/docs/personal-im-channel-design.md`
+- 配 Feishu / QQ / WeChat 渠道：编辑 `runtime/config/config.json` 的 `channels` 块
 - 部署到生产：参考 README 的 Production Shape 一节，或用 `Dockerfile` / `docker-compose.yml`

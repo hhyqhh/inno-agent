@@ -1,6 +1,8 @@
 # Inno Agent
 
-基于 PI SDK 的个人学习 Agent，支持多渠道交互（CLI / Web UI / 飞书）、三层记忆系统（L1 学习者画像 + L2 Wiki 知识库）、定时任务调度。
+基于 PI SDK 的个人学习 Agent，支持多渠道交互（CLI / Web UI / 飞书 / QQ / 微信）、三层记忆系统（L1 学习者画像 + L2 Wiki 知识库 + L3 会话记录及跨对话检索）、定时任务调度、Practice Lab 网页终端。
+
+> 本文档聚焦后端开发与运行细节。项目整体介绍、架构和定位见仓库根目录的 [README.md](../../README.md)。
 
 ## 前置条件
 
@@ -140,20 +142,26 @@ npm run server -- --sandbox
 src/                  # 后端 (Node.js)
 ├── cli.ts            # CLI 入口
 ├── server.ts         # HTTP Server + SSE + REST API
-├── agent/            # PI SDK AgentSession 封装
-├── channels/         # 飞书等渠道
+├── runtime.ts        # 运行时路径解析（CLI flag > env > 默认）
+├── agent/            # PI SDK AgentSession 封装 + inno 扩展
+├── channels/         # 飞书 / QQ / 微信等渠道
 ├── scheduler/        # 定时任务
-├── memory/           # L1 学习者 + L2 Wiki 记忆
+├── memory/           # L1 学习者 + L2 Wiki + L3 跨对话检索记忆
+│   ├── learner/      # L1 学习者画像
+│   ├── l2/           # L2 Wiki 知识库
+│   └── l3/           # L3 会话记录的 sqlite 索引与阈值召回
+├── terminal/         # Practice Lab WebSocket 终端与运行记录
 └── storage/          # 文件存储
 
 .inno/skills/         # Inno Agent 实际加载的项目级 Skills 目录
 
-web/                  # 前端 (Lit + Tailwind + Vite)
+web/                  # 前端 (React + Lit + Tailwind + Vite)
 ├── src/
 │   ├── api/          # 纯 TS fetch 封装（无框架依赖）
 │   ├── stores/       # EventEmitter 状态管理（无框架依赖）
-│   ├── types/        # 共享类型
+│   ├── react/        # React 组件
 │   ├── components/   # Lit Web Components
+│   ├── types/        # 共享类型
 │   └── utils/        # 工具函数
 └── index.html
 ```

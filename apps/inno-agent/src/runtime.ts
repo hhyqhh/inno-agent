@@ -12,6 +12,7 @@ export interface RuntimePaths {
 	sessionDir: string;
 	jobsDir: string;
 	l2DataDir: string;
+	l3DataDir: string;
 	skillsDir: string;
 	workspaceDir: string;
 	webDistDir: string;
@@ -129,6 +130,7 @@ export function resolveRuntimePaths(options: RuntimeCliOptions = {}): RuntimePat
 		sessionDir: join(dataDir, "sessions"),
 		jobsDir: join(dataDir, "jobs"),
 		l2DataDir: join(dataDir, "l2"),
+		l3DataDir: join(dataDir, "l3"),
 		skillsDir,
 		workspaceDir,
 		webDistDir: join(codeDir, "web", "dist"),

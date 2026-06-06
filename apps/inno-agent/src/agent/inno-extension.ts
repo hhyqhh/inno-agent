@@ -13,6 +13,7 @@ import { buildContextPack, formatContextPackForPrompt } from "../memory/learner/
 import { JobStore } from "../scheduler/job-store.js";
 import { createSchedulerTools } from "../scheduler/scheduler-tools.js";
 import { createL2Tools } from "../memory/l2/l2-tools.js";
+import { L3Memory, createL3Tools, formatRecallForPrompt } from "../memory/l3/l3-tools.js";
 import { createPracticeTools } from "./practice-tools.js";
 import { createDocumentTools } from "./document-tools.js";
 import { INNO_SYSTEM_PROMPT } from "./system-prompt.js";
@@ -168,6 +169,15 @@ export function createInnoExtension(
 			pi.registerTool(tool);
 		}
 
+		// 4a. Register L3 cross-conversation memory (sqlite-backed recall)
+		const l3Memory = new L3Memory(paths.l3DataDir, paths.sessionDir);
+		const l3Tools = createL3Tools(l3Memory, deps?.getCurrentSessionId);
+		for (const tool of l3Tools) {
+			pi.registerTool(tool);
+		}
+		// Backfill the index from existing sessions in the background; never block boot.
+		void l3Memory.backfill();
+
 		// 4b. Register document parsing tools
 		const documentTools = createDocumentTools();
 		for (const tool of documentTools) {
@@ -186,7 +196,7 @@ export function createInnoExtension(
 		}
 
 		// 5. Inject L1 context and custom system prompt before each agent turn
-			pi.on("before_agent_start", async (event) => {
+			pi.on("before_agent_start", async (event, ctx) => {
 				const profile = loadProfile(paths.learnerDataDir);
 				const recentEvents = loadEvents(paths.learnerDataDir).slice(-8);
 				const contextPack = buildContextPack(profile, recentEvents);
@@ -197,6 +207,21 @@ export function createInnoExtension(
 				// Inject per-workspace context: agent.md + private skills.
 				const workspaceDir = resolveActiveWorkspaceDir(paths, deps);
 				sections.push(...buildWorkspaceContextSections(workspaceDir));
+
+				// Inject threshold-gated cross-conversation recall (L3). Only
+				// injects when past snippets clear the relevance threshold, so
+				// unrelated turns stay clean.
+				try {
+					let currentSessionId = "";
+					const sessionFile = ctx.sessionManager.getSessionFile?.();
+					if (sessionFile) currentSessionId = sessionFile.split(/[\\/]/).pop() ?? "";
+					if (!currentSessionId && deps?.getCurrentSessionId) currentSessionId = deps.getCurrentSessionId();
+					const recalled = await l3Memory.recall(event.prompt, currentSessionId || undefined);
+					const recallSection = formatRecallForPrompt(recalled);
+					if (recallSection) sections.push(recallSection);
+				} catch {
+					// best-effort — recall failures must not block the turn
+				}
 
 				// Inject the latest run record for this session, so the agent can
 				// answer "explain the last run" without separate tool calls.
@@ -253,6 +278,18 @@ export function createInnoExtension(
 					invalidate() {},
 				}));
 				ctx.ui.setTitle("inno");
+			}
+		});
+
+		// 6b. Incrementally index the active session into L3 after each turn, so
+		// the just-finished exchange becomes recallable in future conversations.
+		pi.on("turn_end", async (_event, ctx) => {
+			try {
+				const sessionFile = ctx.sessionManager.getSessionFile?.();
+				const sessionId = sessionFile ? sessionFile.split(/[\\/]/).pop() ?? "" : "";
+				if (sessionId) await l3Memory.indexById(sessionId);
+			} catch {
+				// best-effort — indexing must not affect the turn
 			}
 		});
 

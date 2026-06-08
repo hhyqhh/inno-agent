@@ -78,6 +78,16 @@ Open **http://localhost:3000**.
 
 ---
 
+## Use Cases
+
+Real-world usage guides live in [`docs/use-cases/`](https://github.com/hhyqhh/inno-agent/tree/main/docs/use-cases).
+
+| Guide | Description |
+|---|---|
+| [Skill Tutorial — Building a Workspace Agent](./docs/use-cases/skill-tutorial.md) | Use `agent.md` and `.skills/` to build a custom learning agent scoped to a workspace, with a concrete English study example |
+
+---
+
 ## Run Modes
 
 **Web UI** (serves the API and the built frontend):

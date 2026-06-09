@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, r
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
-import { getConfiguredPort, loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
+import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, type InnoConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
 import { ensureDir, readJson, readText, writeJson, writeText } from "./storage/file-store.js";
 import {
 	createNewSession,
@@ -56,8 +56,14 @@ setGlobalDispatcher(new EnvHttpProxyAgent({ bodyTimeout: 0, headersTimeout: 0 })
 const parsed = parseRuntimeArgs(process.argv.slice(2));
 const paths = resolveRuntimePaths(parsed.options);
 applyRuntimeEnvironment(paths);
-let config = loadConfig(paths.configPath);
-const port = getConfiguredPort(config, parsed.options.port);
+
+// Port is resolved from CLI / env only — config.json is read lazily.
+const port = parsed.options.port
+	?? (process.env.INNO_PORT ? Number.parseInt(process.env.INNO_PORT, 10) : undefined)
+	?? 3000;
+
+// Config is loaded on first API request, not at startup.
+let config!: InnoConfig;
 
 // ---------------------------------------------------------------------------
 // Lazy bootstrap — directories, stores, channels, and agent session are
@@ -95,6 +101,9 @@ async function ensureBootstrapped(): Promise<void> {
 
 	bootstrapPromise = (async () => {
 		console.log("[inno-server] first meaningful request — bootstrapping...");
+
+		// ---- config (loaded lazily, not at process start) ----
+		config = loadConfig(paths.configPath);
 
 		// ---- data directories ----
 		ensureDir(paths.learnerDataDir);

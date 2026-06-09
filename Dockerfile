@@ -44,8 +44,8 @@ COPY --from=build /app/apps/inno-agent/package.json ./apps/inno-agent/
 COPY --from=build /app/apps/inno-agent/dist ./apps/inno-agent/dist
 COPY --from=build /app/apps/inno-agent/web/dist ./apps/inno-agent/web/dist
 
-COPY config.example.json /etc/inno-agent/config.json
-RUN mkdir -p /var/lib/inno-agent/data /var/lib/inno-agent/skills /srv/inno-workspace
+#COPY config.example.json /etc/inno-agent/config.json
+#RUN mkdir -p /var/lib/inno-agent/data /var/lib/inno-agent/skills /srv/inno-workspace
 
 EXPOSE 3000
 

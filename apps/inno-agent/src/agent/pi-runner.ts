@@ -455,16 +455,26 @@ export function runPromptInSession(
 /**
  * Complete a small prompt through the current model without appending anything
  * to the active chat session. Useful for UI metadata such as session titles.
+ *
+ * IMPORTANT: this is a stateless side-channel completion and must NOT go through
+ * the shared prompt/session `enqueue` queue. It makes its own network call that
+ * `abortCurrentPrompt()` cannot cancel, so queueing it would let a slow/dead API
+ * hold the queue and block `createNewSession` / `switchSessionFile` / chat — the
+ * exact "new conversation hangs, sidebar won't load" lockup. We also hard-cap it
+ * with an abortable timeout so it can never wait on the provider's long default.
  */
-export function completePromptOnce(prompt: string, maxTokens = 64): Promise<string> {
-	return enqueue(async () => {
-		const session = getSession();
-		const model = session.model;
-		if (!model) return "";
+export async function completePromptOnce(prompt: string, maxTokens = 64, timeoutMs = 20_000): Promise<string> {
+	if (!_runtime) return "";
+	const session = _runtime.session;
+	const model = session.model;
+	if (!model) return "";
 
-		const auth = await session.modelRegistry.getApiKeyAndHeaders(model);
-		if (!auth.ok || !auth.apiKey) return "";
+	const auth = await session.modelRegistry.getApiKeyAndHeaders(model);
+	if (!auth.ok || !auth.apiKey) return "";
 
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	try {
 		const response = await complete(
 			model,
 			{
@@ -480,6 +490,8 @@ export function completePromptOnce(prompt: string, maxTokens = 64): Promise<stri
 				apiKey: auth.apiKey,
 				headers: auth.headers,
 				maxTokens,
+				signal: controller.signal,
+				timeoutMs,
 			},
 		);
 
@@ -489,7 +501,12 @@ export function completePromptOnce(prompt: string, maxTokens = 64): Promise<stri
 			.map((item) => item.text)
 			.join("\n")
 			.trim();
-	});
+	} catch {
+		// best-effort metadata generation — timeout/abort/network errors are non-fatal
+		return "";
+	} finally {
+		clearTimeout(timer);
+	}
 }
 
 /**

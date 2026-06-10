@@ -1,5 +1,5 @@
 # Stage 1: Build — compile TypeScript backend + Vite frontend
-FROM node:22-bookworm-slim AS build
+FROM node:22-bookworm AS build
 WORKDIR /app
 
 # Install build tools for native modules (node-pty)
@@ -26,7 +26,7 @@ RUN npm run build
 RUN npm prune --production
 
 # Stage 2: Production runtime — web UI mode
-FROM node:22-bookworm-slim AS runtime
+FROM node:22-bookworm AS runtime
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y unzip && rm -rf /var/lib/apt/lists/*

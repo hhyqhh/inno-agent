@@ -305,7 +305,15 @@
     "emptyDesc": "Upload <skill-name>.zip. It will be unpacked and loaded.",
     "noDescription": "No description",
     "loaded": "loaded",
-    "notLoaded": "not loaded"
+    "notLoaded": "not loaded",
+    "library": "Skills Library",
+    "libraryTitle": "Skills Library",
+    "librarySubtitle": "Browse and import skills from the inno-agent-hub library",
+    "libraryEmpty": "No skills available in the library",
+    "import": "Import",
+    "importing": "Importing…",
+    "installed": "Installed",
+    "libraryError": "Failed to load skills library"
   },
   "settings": {
     "title": "Settings",
@@ -328,6 +336,13 @@
       "title": "Cross-conversation memory (L3)",
       "onDesc": "On: searches past conversations via SQLite and auto-recalls relevant context.",
       "offDesc": "Off: replies use only the current workspace contents and the current conversation context."
+    },
+    "github": {
+      "title": "GitHub token",
+      "desc": "Optional. Used to fetch the skill library from GitHub. Without a token the unauthenticated API is limited to 60 requests/hour per IP; a token raises it to 5000/hour. A token with no scopes is enough for public repos.",
+      "placeholder": "ghp_… or github_pat_…",
+      "saved": "Saved",
+      "clear": "Clear"
     },
     "form": {
       "providerId": "Provider id",

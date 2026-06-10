@@ -1,9 +1,20 @@
 import { apiFetch } from "./client.js";
-import type { SkillInfo } from "../types/skills.js";
+import type { SkillInfo, SkillLibraryItem } from "../types/skills.js";
 import type { WorkspaceTreeNode, WorkspaceFileDetail } from "../types/workspace.js";
 
 export async function listSkills(): Promise<SkillInfo[]> {
 	return apiFetch<SkillInfo[]>("/api/skills");
+}
+
+export async function listSkillLibrary(forceRefresh = false): Promise<SkillLibraryItem[]> {
+	return apiFetch<SkillLibraryItem[]>(`/api/skill-library${forceRefresh ? "?refresh=1" : ""}`);
+}
+
+export async function importSkillFromLibrary(name: string): Promise<SkillInfo> {
+	return apiFetch<SkillInfo>("/api/skill-library/import", {
+		method: "POST",
+		body: JSON.stringify({ name }),
+	});
 }
 
 export async function uploadSkill(file: File): Promise<SkillInfo> {

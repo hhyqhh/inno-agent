@@ -17,7 +17,7 @@ import { cpp } from "@codemirror/lang-cpp";
 import { rust } from "@codemirror/lang-rust";
 import { go } from "@codemirror/lang-go";
 import type { Extension } from "@codemirror/state";
-import { RefreshCw, Upload, Trash2, ChevronLeft, File, FileText, FileType, Folder, FolderOpen, Globe, Pencil, Save, X, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { RefreshCw, Upload, Trash2, ChevronLeft, File, FileText, FileType, Folder, FolderOpen, Globe, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Library, Download, Check } from "lucide-react";
 import { skillsStore } from "../stores/skills-store.js";
 import { skillRawUrl } from "../api/skills.js";
 import type { SkillInfo } from "../types/skills.js";
@@ -357,6 +357,95 @@ function SkillRow({ skill, onClick }: { skill: SkillInfo; onClick: () => void })
 	);
 }
 
+/* ---------- Skill Library Modal ---------- */
+
+function SkillLibraryModal({ onClose }: { onClose: () => void }) {
+	const { t } = useTranslation();
+	const state = useStoreSnapshot(skillsStore, () => ({
+		library: skillsStore.library,
+		isLoading: skillsStore.isLoadingLibrary,
+		error: skillsStore.libraryError,
+		importing: skillsStore.importing,
+	}));
+
+	return (
+		<div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+			<div
+				className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
+				onClick={(e) => e.stopPropagation()}
+			>
+				{/* Header */}
+				<div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+					<div className="flex min-w-0 items-center gap-2">
+						<Library size={16} className="shrink-0 text-blue-600" />
+						<div className="min-w-0">
+							<div className="truncate text-sm font-medium text-slate-950">{t("skills.libraryTitle")}</div>
+							<div className="truncate text-[11px] text-slate-500">{t("skills.librarySubtitle")}</div>
+						</div>
+					</div>
+					<div className="flex shrink-0 items-center gap-1">
+						<button
+							className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+							title={t("skills.reload")}
+							onClick={() => void skillsStore.loadLibrary(true)}
+						>
+							<RefreshCw size={14} />
+						</button>
+						<button
+							className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+							onClick={onClose}
+						>
+							<X size={16} />
+						</button>
+					</div>
+				</div>
+
+				{state.error ? <div className="border-b border-slate-200 bg-red-50 px-4 py-2 text-xs text-red-700">{state.error}</div> : null}
+
+				{/* Body */}
+				<div className="min-h-0 flex-1 overflow-y-auto">
+					{state.isLoading ? (
+						<div className="flex items-center justify-center py-12 text-slate-500">
+							<span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+							{t("common.loading")}
+						</div>
+					) : state.library.length === 0 ? (
+						<div className="flex h-full flex-col items-center justify-center py-12 text-center text-sm text-slate-500">
+							{t("skills.libraryEmpty")}
+						</div>
+					) : (
+						state.library.map((item) => {
+							const isImporting = state.importing.has(item.name);
+							return (
+								<div key={item.name} className="flex items-start gap-3 border-b border-slate-100 px-4 py-3">
+									<div className="min-w-0 flex-1">
+										<div className="truncate text-sm font-medium text-slate-950">{item.name}</div>
+										{item.description && <div className="mt-0.5 line-clamp-3 text-xs leading-relaxed text-slate-500">{item.description}</div>}
+									</div>
+									{item.installed ? (
+										<span className="flex shrink-0 items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 ring-1 ring-green-100">
+											<Check size={12} /> {t("skills.installed")}
+										</span>
+									) : (
+										<button
+											disabled={isImporting}
+											className="flex h-7 shrink-0 items-center gap-1 rounded-md bg-slate-900 px-2.5 text-xs text-white hover:bg-slate-800 disabled:opacity-50"
+											onClick={() => void skillsStore.importFromLibrary(item.name)}
+										>
+											<Download size={12} />
+											{isImporting ? t("skills.importing") : t("skills.import")}
+										</button>
+									)}
+								</div>
+							);
+						})
+					)}
+				</div>
+			</div>
+		</div>
+	);
+}
+
 /* ---------- Main SkillsPanel ---------- */
 
 export function SkillsPanel() {
@@ -368,6 +457,7 @@ export function SkillsPanel() {
 		isLoading: skillsStore.isLoading,
 		isUploading: skillsStore.isUploading,
 		error: skillsStore.error,
+		libraryOpen: skillsStore.libraryOpen,
 	}));
 
 	useEffect(() => {
@@ -396,13 +486,17 @@ export function SkillsPanel() {
 
 	// List view — one skill per row
 	return (
-		<div className="flex h-full flex-col p-3">
+		<div className="relative flex h-full flex-col p-3">
 			<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
 				{/* Toolbar */}
 				<div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2.5">
 					<h3 className="text-sm font-medium text-slate-950">{t("skills.title")}</h3>
 					<div className="flex shrink-0 items-center gap-2">
 						<input ref={uploadRef} type="file" className="hidden" accept=".zip,application/zip,.md,text/markdown,text/plain" onChange={handleUpload} />
+						<button className="flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2.5 text-xs text-slate-600 hover:bg-slate-100 hover:text-slate-950" onClick={() => skillsStore.openLibrary()}>
+							<Library size={13} />
+							{t("skills.library")}
+						</button>
 						<button className="flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-950" onClick={() => void skillsStore.reload()}>
 							<RefreshCw size={13} />
 						</button>
@@ -433,6 +527,7 @@ export function SkillsPanel() {
 					)}
 				</div>
 			</div>
+			{state.libraryOpen ? <SkillLibraryModal onClose={() => skillsStore.closeLibrary()} /> : null}
 		</div>
 	);
 }

@@ -225,6 +225,9 @@ function buildSafeSettings() {
 		bridge: config.bridge
 			? { token: maskSecret(config.bridge.token) }
 			: undefined,
+		github: config.github
+			? { token: maskSecret(config.github.token) }
+			: undefined,
 	};
 }
 
@@ -619,20 +622,29 @@ function installSkillZip(fileName: string, data: Buffer, targetRoot: string = sk
 			}
 		}
 
-		const skillFile = findSkillFile(extractDir);
-		if (!skillFile) {
-			throw new Error("Zip package must contain a SKILL.md file");
-		}
-		const skillRoot = dirname(skillFile);
-		const skill = ensureSkillDocument(readText(skillFile), fallbackName);
-		const targetDir = join(targetRoot, skill.name);
-		rmSync(targetDir, { recursive: true, force: true });
-		copyDirectoryContents(skillRoot, targetDir);
-		writeText(join(targetDir, "SKILL.md"), skill.content);
-		return { name: skill.name, filePath: join(targetDir, "SKILL.md") };
+		return installSkillFromExtractedDir(extractDir, fallbackName, targetRoot);
 	} finally {
 		rmSync(tempRoot, { recursive: true, force: true });
 	}
+}
+
+/**
+ * Install a skill from an already-extracted directory: locate the SKILL.md,
+ * normalize its frontmatter, and copy the package into the skills directory.
+ * Shared by zip upload and skill-library import.
+ */
+function installSkillFromExtractedDir(extractDir: string, fallbackName: string, targetRoot: string = skillsDir): { name: string; filePath: string } {
+	const skillFile = findSkillFile(extractDir);
+	if (!skillFile) {
+		throw new Error("Skill package must contain a SKILL.md file");
+	}
+	const skillRoot = dirname(skillFile);
+	const skill = ensureSkillDocument(readText(skillFile), fallbackName);
+	const targetDir = join(targetRoot, skill.name);
+	rmSync(targetDir, { recursive: true, force: true });
+	copyDirectoryContents(skillRoot, targetDir);
+	writeText(join(targetDir, "SKILL.md"), skill.content);
+	return { name: skill.name, filePath: join(targetDir, "SKILL.md") };
 }
 
 function installSkillMarkdown(fileName: string, data: Buffer, targetRoot: string = skillsDir): { name: string; filePath: string } {
@@ -642,6 +654,216 @@ function installSkillMarkdown(fileName: string, data: Buffer, targetRoot: string
 	ensureDir(skillDir);
 	writeText(join(skillDir, "SKILL.md"), skill.content);
 	return { name: skill.name, filePath: join(skillDir, "SKILL.md") };
+}
+
+// ---------------------------------------------------------------------------
+// Remote skill library (GitHub: Chloris-Blaxk/inno-agent-hub/skill-library)
+// ---------------------------------------------------------------------------
+
+const SKILL_LIBRARY_OWNER = "Chloris-Blaxk";
+const SKILL_LIBRARY_REPO = "inno-agent-hub";
+const SKILL_LIBRARY_PATH = "skill-library";
+const SKILL_LIBRARY_REF = "main";
+/** Directories under skill-library/ that are not installable skills. */
+const SKILL_LIBRARY_IGNORE_DIRS = new Set(["assets", "__MACOSX"]);
+
+interface SkillLibraryItem {
+	/** Directory name under skill-library/ (used as the skill name). */
+	name: string;
+	/** description from SKILL.md frontmatter (may be empty). */
+	description: string;
+	/** Whether a skill with this slug already exists locally. */
+	installed: boolean;
+}
+
+interface GitTreeEntry {
+	path: string;
+	type: "blob" | "tree";
+	url: string;
+}
+
+interface GitTreeResponse {
+	tree: GitTreeEntry[];
+	truncated: boolean;
+}
+
+function githubHeaders(): Record<string, string> {
+	const headers: Record<string, string> = {
+		Accept: "application/vnd.github+json",
+		"User-Agent": "inno-agent",
+	};
+	const token = config.github?.token?.trim() || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+	if (token) headers.Authorization = `Bearer ${token}`;
+	return headers;
+}
+
+async function githubGetJson<T>(url: string): Promise<T> {
+	const res = await fetch(url, { headers: githubHeaders() });
+	if (!res.ok) {
+		// Surface rate-limit exhaustion with a clearer hint than a raw 403.
+		if (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") {
+			const reset = Number(res.headers.get("x-ratelimit-reset"));
+			const when = Number.isFinite(reset) ? new Date(reset * 1000).toLocaleTimeString() : "later";
+			throw new Error(
+				`GitHub API rate limit reached (unauthenticated is 60/hour). Try again after ${when}, ` +
+				`or set a GITHUB_TOKEN env var to raise the limit.`,
+			);
+		}
+		throw new Error(`GitHub request failed (${res.status} ${res.statusText}) for ${url}`);
+	}
+	return (await res.json()) as T;
+}
+
+function rawUrlFor(repoPath: string): string {
+	const encoded = repoPath.split("/").map(encodeURIComponent).join("/");
+	return `https://raw.githubusercontent.com/${SKILL_LIBRARY_OWNER}/${SKILL_LIBRARY_REPO}/${SKILL_LIBRARY_REF}/${encoded}`;
+}
+
+/**
+ * Extract the `description` field from a SKILL.md frontmatter block. Supports
+ * both single-line and YAML folded/literal block scalars (`>-`, `|`).
+ */
+function extractFrontmatterDescription(content: string): string {
+	const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+	const fmMatch = normalized.match(/^---\n([\s\S]*?)\n---/);
+	if (!fmMatch) return "";
+	const lines = fmMatch[1].split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		const m = lines[i].match(/^description:\s*(.*)$/);
+		if (!m) continue;
+		const inline = m[1].trim();
+		// Block scalar (>- , |, > , |- ...) → gather indented continuation lines.
+		if (/^[>|][+-]?\s*$/.test(inline)) {
+			const block: string[] = [];
+			for (let j = i + 1; j < lines.length; j++) {
+				if (/^\s+\S/.test(lines[j]) || lines[j].trim() === "") {
+					block.push(lines[j].trim());
+				} else {
+					break;
+				}
+			}
+			return block.join(" ").replace(/\s+/g, " ").trim();
+		}
+		return inline.replace(/^["']|["']$/g, "").trim();
+	}
+	return "";
+}
+
+/**
+ * Fetch the full repo file tree in a single Git Trees API call (`recursive=1`).
+ *
+ * This costs exactly one rate-limited request regardless of how many skills or
+ * nested files exist — the previous per-directory `contents` walk burned a
+ * call per folder and quickly exhausted the unauthenticated 60/hour budget.
+ */
+async function fetchSkillLibraryTree(): Promise<GitTreeEntry[]> {
+	const url =
+		`https://api.github.com/repos/${SKILL_LIBRARY_OWNER}/${SKILL_LIBRARY_REPO}` +
+		`/git/trees/${SKILL_LIBRARY_REF}?recursive=1`;
+	const data = await githubGetJson<GitTreeResponse>(url);
+	const prefix = `${SKILL_LIBRARY_PATH}/`;
+	return data.tree.filter((e) => e.path.startsWith(prefix));
+}
+
+/** Short-lived cache so repeated panel opens don't each spend an API call. */
+let skillLibraryTreeCache: { entries: GitTreeEntry[]; fetchedAt: number } | null = null;
+const SKILL_LIBRARY_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function getSkillLibraryTree(forceRefresh = false): Promise<GitTreeEntry[]> {
+	const now = Date.now();
+	if (!forceRefresh && skillLibraryTreeCache && now - skillLibraryTreeCache.fetchedAt < SKILL_LIBRARY_CACHE_TTL_MS) {
+		return skillLibraryTreeCache.entries;
+	}
+	const entries = await fetchSkillLibraryTree();
+	skillLibraryTreeCache = { entries, fetchedAt: now };
+	return entries;
+}
+
+/**
+ * List installable skills from the remote skill-library.
+ *
+ * Costs one Git Trees API call (cached) plus, for each skill, a raw.githubusercontent.com
+ * fetch of SKILL.md to surface the description. Raw fetches are served from a CDN and do
+ * NOT count against the GitHub API rate limit.
+ */
+async function listSkillLibrary(forceRefresh = false): Promise<SkillLibraryItem[]> {
+	const tree = await getSkillLibraryTree(forceRefresh);
+	const prefix = `${SKILL_LIBRARY_PATH}/`;
+	// A directory is an installable skill if it directly contains SKILL.md.
+	const skillNames = new Set<string>();
+	for (const entry of tree) {
+		if (entry.type !== "blob") continue;
+		const rel = entry.path.slice(prefix.length); // e.g. "edu-solid-geometry/SKILL.md"
+		const parts = rel.split("/");
+		if (parts.length === 2 && parts[1] === "SKILL.md" && !SKILL_LIBRARY_IGNORE_DIRS.has(parts[0])) {
+			skillNames.add(parts[0]);
+		}
+	}
+
+	const localNames = new Set(
+		existsSync(skillsDir)
+			? readdirSync(skillsDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
+			: [],
+	);
+
+	const items = await Promise.all(
+		Array.from(skillNames).map(async (name): Promise<SkillLibraryItem> => {
+			let description = "";
+			try {
+				const res = await fetch(rawUrlFor(`${SKILL_LIBRARY_PATH}/${name}/SKILL.md`), {
+					headers: { "User-Agent": "inno-agent" },
+				});
+				if (res.ok) description = extractFrontmatterDescription(await res.text());
+			} catch {
+				// Description is best-effort; skip on failure.
+			}
+			return {
+				name,
+				description,
+				installed: localNames.has(slugifySkillName(name)),
+			};
+		}),
+	);
+	return items.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Import a skill from the remote library into the global skills directory.
+ *
+ * Uses the cached repo tree to enumerate the skill's files, then downloads each
+ * blob from raw.githubusercontent.com (CDN, not rate limited). Installs through
+ * the same path as a zip upload (validates SKILL.md, normalizes frontmatter).
+ */
+async function importSkillFromLibrary(skillName: string): Promise<{ name: string; filePath: string }> {
+	// Guard against path traversal: only a single directory segment is allowed.
+	if (!skillName || skillName.includes("/") || skillName.includes("\\") || skillName.includes("..")) {
+		throw new Error("Invalid skill name");
+	}
+	const tree = await getSkillLibraryTree();
+	const dirPrefix = `${SKILL_LIBRARY_PATH}/${skillName}/`;
+	const blobs = tree.filter((e) => e.type === "blob" && e.path.startsWith(dirPrefix));
+	if (blobs.length === 0) {
+		throw new Error(`Skill "${skillName}" not found in the library`);
+	}
+
+	const tempRoot = join(tmpdir(), `inno-libskill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	const extractDir = join(tempRoot, "extract");
+	ensureDir(extractDir);
+	try {
+		for (const blob of blobs) {
+			const rel = blob.path.slice(dirPrefix.length);
+			if (!rel || rel.includes("..")) continue;
+			const localPath = join(extractDir, rel);
+			const res = await fetch(rawUrlFor(blob.path), { headers: { "User-Agent": "inno-agent" } });
+			if (!res.ok) throw new Error(`Failed to download ${blob.path} (${res.status})`);
+			const buf = Buffer.from(await res.arrayBuffer());
+			ensureDir(dirname(localPath));
+			writeFileSync(localPath, buf);
+		}
+		return installSkillFromExtractedDir(extractDir, slugifySkillName(skillName), skillsDir);
+	} finally {
+		rmSync(tempRoot, { recursive: true, force: true });
+	}
 }
 
 function migrateLegacyPiSkills(): void {
@@ -729,12 +951,11 @@ function listProjectSkills(): unknown[] {
 			const name = entry.name;
 			const filePath = join(skillsDir, name, "SKILL.md");
 			const content = existsSync(filePath) ? readText(filePath) : "";
-			const frontmatter = parseSkillFrontmatter(content);
 			const stat = existsSync(filePath) ? statSync(filePath) : statSync(join(skillsDir, name));
 			const loadedSkill = loadedByPath.get(resolve(filePath));
 			return {
 				name,
-				description: typeof frontmatter.description === "string" ? frontmatter.description : "",
+				description: extractFrontmatterDescription(content),
 				enabled: !disabled.has(name),
 				loaded: Boolean(loadedSkill),
 				filePath: relative(paths.workspaceDir, filePath),
@@ -1611,6 +1832,36 @@ const server = createServer(async (req, res) => {
 		if (method === "POST" && url === "/api/skills/reload") {
 			scheduleSkillsReload();
 			json(res, 200, { reloaded: true, skills: listProjectSkills() });
+			return;
+		}
+
+		// --- Remote skill library (GitHub) ---
+		if (method === "GET" && url.split("?")[0] === "/api/skill-library") {
+			const forceRefresh = new URL(url, "http://localhost").searchParams.get("refresh") === "1";
+			try {
+				json(res, 200, await listSkillLibrary(forceRefresh));
+			} catch (err) {
+				json(res, 502, { error: err instanceof Error ? err.message : "Failed to load skill library" });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/skill-library/import") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const skillName = typeof body.name === "string" ? body.name.trim() : "";
+			if (!skillName) {
+				json(res, 400, { error: "Missing skill name" });
+				return;
+			}
+			try {
+				const installed = await importSkillFromLibrary(skillName);
+				setSkillEnabled(installed.name, true);
+				const entry = listProjectSkills().find((s) => (s as { name: string }).name === installed.name);
+				json(res, 201, entry ?? { name: installed.name });
+				scheduleSkillsReload();
+			} catch (err) {
+				json(res, 502, { error: err instanceof Error ? err.message : "Failed to import skill" });
+			}
 			return;
 		}
 
@@ -2976,6 +3227,25 @@ const server = createServer(async (req, res) => {
 			config.memory = { l3Enabled: body.l3Enabled };
 			config = saveConfig(paths.configPath, config);
 			syncConfig(config);
+			json(res, 200, buildSafeSettings());
+			return;
+		}
+
+		// --- GitHub settings (token to raise skill-library API rate limit) ---
+		if (method === "PUT" && url === "/api/settings/github") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			if (typeof body.token !== "string") {
+				json(res, 400, { error: "Missing token (string)" });
+				return;
+			}
+			const incoming = body.token.trim();
+			// A masked value (e.g. "****abcd") means "keep the existing token".
+			const token = incoming.startsWith("****") ? (config.github?.token ?? "") : incoming;
+			config.github = token ? { token } : undefined;
+			config = saveConfig(paths.configPath, config);
+			syncConfig(config);
+			// Reset the cached tree so the new auth (and higher limit) takes effect.
+			skillLibraryTreeCache = null;
 			json(res, 200, buildSafeSettings());
 			return;
 		}

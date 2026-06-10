@@ -39,6 +39,13 @@ export async function saveMemorySettings(l3Enabled: boolean): Promise<InnoSettin
 	});
 }
 
+export async function saveGithubSettings(token: string): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>("/api/settings/github", {
+		method: "PUT",
+		body: JSON.stringify({ token }),
+	});
+}
+
 export async function wechatQrLogin(): Promise<{ qrId: string; qrUrl: string }> {
 	return apiFetch<{ qrId: string; qrUrl: string }>("/api/channels/wechat/qr-login", {
 		method: "POST",

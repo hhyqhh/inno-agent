@@ -1,6 +1,6 @@
 import { EventEmitter } from "./event-emitter.js";
-import { deleteSkill, listSkills, reloadSkills, updateSkill, uploadSkill, getSkillTree, getSkillFile, saveSkillFile } from "../api/skills.js";
-import type { SkillInfo } from "../types/skills.js";
+import { deleteSkill, listSkills, reloadSkills, updateSkill, uploadSkill, getSkillTree, getSkillFile, saveSkillFile, listSkillLibrary, importSkillFromLibrary } from "../api/skills.js";
+import type { SkillInfo, SkillLibraryItem } from "../types/skills.js";
 import type { WorkspaceTreeNode, WorkspaceFileDetail } from "../types/workspace.js";
 
 interface SkillsStoreEvents {
@@ -22,6 +22,14 @@ class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 	isEditing = false;
 	editBuffer = "";
 	isSaving = false;
+
+	// Remote skill library state
+	libraryOpen = false;
+	library: SkillLibraryItem[] = [];
+	isLoadingLibrary = false;
+	libraryError: string | null = null;
+	/** Names currently being imported (for per-row spinners). */
+	importing = new Set<string>();
 
 	async load() {
 		this.isLoading = true;
@@ -75,6 +83,51 @@ class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 		const result = await reloadSkills();
 		this.skills = result.skills;
 		this.emit("change", undefined);
+	}
+
+	/* --- Remote skill library --- */
+
+	openLibrary() {
+		this.libraryOpen = true;
+		this.emit("change", undefined);
+		void this.loadLibrary();
+	}
+
+	closeLibrary() {
+		this.libraryOpen = false;
+		this.emit("change", undefined);
+	}
+
+	async loadLibrary(forceRefresh = false) {
+		this.isLoadingLibrary = true;
+		this.libraryError = null;
+		this.emit("change", undefined);
+		try {
+			this.library = await listSkillLibrary(forceRefresh);
+		} catch (err) {
+			this.libraryError = err instanceof Error ? err.message : "Failed to load skill library";
+			this.library = [];
+		} finally {
+			this.isLoadingLibrary = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async importFromLibrary(name: string) {
+		if (this.importing.has(name)) return;
+		this.importing.add(name);
+		this.libraryError = null;
+		this.emit("change", undefined);
+		try {
+			const skill = await importSkillFromLibrary(name);
+			this.skills = [skill, ...this.skills.filter((item) => item.name !== skill.name)].sort((a, b) => a.name.localeCompare(b.name));
+			this.library = this.library.map((item) => (item.name === name ? { ...item, installed: true } : item));
+		} catch (err) {
+			this.libraryError = err instanceof Error ? err.message : "Failed to import skill";
+		} finally {
+			this.importing.delete(name);
+			this.emit("change", undefined);
+		}
 	}
 
 	/* --- File browsing --- */

@@ -68,6 +68,10 @@ export interface InnoConfig {
 	bridge?: {
 		token: string;
 	};
+	github?: {
+		/** Personal access token to raise GitHub API rate limits for the skill library. */
+		token: string;
+	};
 	subagents?: InnoSubagentsConfig;
 	memory?: InnoMemoryConfig;
 }
@@ -150,6 +154,7 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		feishu: config.feishu,
 		channels: config.channels,
 		bridge: config.bridge,
+		github: config.github,
 		subagents: config.subagents,
 		memory: normalizeMemoryConfig(config.memory),
 	} as InnoConfig;

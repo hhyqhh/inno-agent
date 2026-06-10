@@ -78,5 +78,6 @@ export interface InnoSettings {
 		wecom?: { enabled: boolean };
 	};
 	bridge?: { token: string }; // masked
+	github?: { token: string }; // masked
 	memory?: { l3Enabled: boolean };
 }

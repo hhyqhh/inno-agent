@@ -8,3 +8,9 @@ export interface SkillInfo {
 	updatedAt: string;
 	diagnostics: string[];
 }
+
+export interface SkillLibraryItem {
+	name: string;
+	description: string;
+	installed: boolean;
+}

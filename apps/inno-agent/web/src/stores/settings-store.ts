@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, saveChannelsSettings, saveMemorySettings } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, saveChannelsSettings, saveMemorySettings, saveGithubSettings } from "../api/settings.js";
 import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
 interface SettingsStoreEvents {
@@ -13,6 +13,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingProvider = false;
 	isSavingChannels = false;
 	isSavingMemory = false;
+	isSavingGithub = false;
 	error: string | null = null;
 
 	async load(): Promise<void> {
@@ -114,6 +115,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			this.emit("change", undefined);
 		} finally {
 			this.isSavingMemory = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveGithub(token: string): Promise<void> {
+		this.isSavingGithub = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveGithubSettings(token);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save GitHub settings";
+			this.emit("change", undefined);
+			throw err;
+		} finally {
+			this.isSavingGithub = false;
 			this.emit("change", undefined);
 		}
 	}

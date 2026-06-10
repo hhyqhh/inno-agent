@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Trash2, Pencil, X, ChevronDown, ChevronRight, Plus, QrCode as QrCodeIcon, CheckCircle, Wifi, WifiOff } from "lucide-react";
+import { Trash2, Pencil, X, ChevronDown, ChevronRight, Plus, QrCode as QrCodeIcon, CheckCircle, Wifi, WifiOff, KeyRound } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { getWikiStats } from "../api/wiki.js";
 import { settingsStore } from "../stores/settings-store.js";
@@ -632,6 +632,87 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 	);
 }
 
+/* ---------- GitHub Settings (token to raise skill-library API rate limit) ---------- */
+
+function GithubSettings({ settings }: { settings: InnoSettings }) {
+	const { t } = useTranslation();
+	const hasToken = Boolean(settings.github?.token);
+	const [token, setToken] = useState(settings.github?.token ?? "");
+	const [saving, setSaving] = useState(false);
+	const [saved, setSaved] = useState(false);
+
+	useEffect(() => {
+		setToken(settings.github?.token ?? "");
+		setSaved(false);
+	}, [settings.github?.token]);
+
+	const dirty = token !== (settings.github?.token ?? "");
+
+	async function handleSave() {
+		setSaving(true);
+		setSaved(false);
+		try {
+			await settingsStore.saveGithub(token.trim());
+			setSaved(true);
+		} catch {
+			// error surfaced via store
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	async function handleClear() {
+		setSaving(true);
+		setSaved(false);
+		try {
+			await settingsStore.saveGithub("");
+			setToken("");
+		} catch {
+			// error surfaced via store
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	return (
+		<div className="rounded-lg border border-slate-200 bg-white p-4">
+			<div className="flex items-start gap-2">
+				<KeyRound size={16} className="mt-0.5 shrink-0 text-slate-700" />
+				<div className="min-w-0 flex-1">
+					<h4 className="text-sm font-medium text-slate-950">{t("settings.github.title")}</h4>
+					<p className="mt-1 text-xs leading-relaxed text-slate-500">{t("settings.github.desc")}</p>
+					<div className="mt-3 flex items-center gap-2">
+						<input
+							type="password"
+							value={token}
+							onChange={(e) => { setToken(e.target.value); setSaved(false); }}
+							placeholder={t("settings.github.placeholder")}
+							autoComplete="off"
+							className="h-8 min-w-0 flex-1 rounded-md border border-slate-200 px-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+						/>
+						<button
+							disabled={saving || !dirty || !token.trim()}
+							onClick={() => void handleSave()}
+							className="flex h-8 shrink-0 items-center rounded-md bg-slate-900 px-3 text-xs text-white hover:bg-slate-800 disabled:opacity-50"
+						>
+							{saving ? t("common.loading") : saved ? t("settings.github.saved") : t("common.save")}
+						</button>
+						{hasToken && (
+							<button
+								disabled={saving}
+								onClick={() => void handleClear()}
+								className="flex h-8 shrink-0 items-center rounded-md border border-slate-200 px-3 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+							>
+								{t("settings.github.clear")}
+							</button>
+						)}
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
 /* ---------- Memory Settings (L3 cross-conversation recall toggle) ---------- */
 
 function MemorySettings({ settings }: { settings: InnoSettings }) {
@@ -814,6 +895,9 @@ export function SettingsPanel() {
 
 				{/* Memory Settings (L3 cross-conversation recall) */}
 				{state.settings && <MemorySettings settings={state.settings} />}
+
+				{/* GitHub token (raises skill-library API rate limit) */}
+				{state.settings && <GithubSettings settings={state.settings} />}
 
 				{/* Channels Settings */}
 				{state.settings && <ChannelsSettings settings={state.settings} />}

@@ -305,7 +305,15 @@
     "emptyDesc": "上传 <skill-name>.zip，Inno Agent 会自动解压并加载。",
     "noDescription": "暂无描述",
     "loaded": "已加载",
-    "notLoaded": "未加载"
+    "notLoaded": "未加载",
+    "library": "技能库",
+    "libraryTitle": "技能库",
+    "librarySubtitle": "浏览并导入 inno-agent-hub 技能库中的技能",
+    "libraryEmpty": "技能库中暂无可用技能",
+    "import": "导入",
+    "importing": "导入中…",
+    "installed": "已安装",
+    "libraryError": "加载技能库失败"
   },
   "settings": {
     "title": "设置",
@@ -328,6 +336,13 @@
       "title": "跨对话记忆 (L3)",
       "onDesc": "已开启：可通过 SQLite 检索历史对话内容，自动召回相关上下文。",
       "offDesc": "已关闭：仅基于当前工作区内容与当前对话上下文进行回复。"
+    },
+    "github": {
+      "title": "GitHub 令牌",
+      "desc": "可选。用于从 GitHub 拉取技能库。未配置令牌时，未认证 API 每 IP 每小时仅 60 次；配置后可提升至每小时 5000 次。公开仓库用无任何权限的令牌即可。",
+      "placeholder": "ghp_… 或 github_pat_…",
+      "saved": "已保存",
+      "clear": "清除"
     },
     "form": {
       "providerId": "提供方 ID",

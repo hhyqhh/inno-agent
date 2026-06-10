@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
-import { Paperclip, X, SendHorizonal, Square, RotateCcw, Check, Image } from "lucide-react";
+import { Paperclip, X, SendHorizonal, Square, RotateCcw, Check, Image, AlertTriangle } from "lucide-react";
 import type { ChatMessage } from "../types/chat.js";
 import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
@@ -67,6 +67,26 @@ function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
 			</button>
 		</div>,
 		document.body,
+	);
+}
+
+/**
+ * Collapsible red-tinted block for surfacing backend / model API errors
+ * (e.g. HTTP 413 when the context is too long). Shows a short headline by
+ * default and reveals the full backend message when expanded, so users know
+ * something failed instead of seeing a silent dead end.
+ */
+function ErrorBlock({ error }: { error: string }) {
+	const isLong = error.length > 80 || error.includes("\n");
+	return (
+		<details className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-700" open={!isLong}>
+			<summary className="flex cursor-pointer select-none items-center gap-1.5 font-medium">
+				<AlertTriangle size={13} className="shrink-0" />
+				Request failed
+				{isLong ? <span className="text-red-400">· click to expand</span> : null}
+			</summary>
+			<pre className="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-red-600">{error}</pre>
+		</details>
 	);
 }
 
@@ -138,6 +158,11 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 					</details>
 				) : null}
 				<markdown-artifact content={message.content} />
+				{message.error ? (
+					<div className={message.content.trim() ? "mt-2" : ""}>
+						<ErrorBlock error={message.error} />
+					</div>
+				) : null}
 			</div>
 		</motion.div>
 	);
@@ -183,6 +208,7 @@ export function ChatCenter() {
 		isLoadingHistory: chatStore.isLoadingHistory,
 		streamingText: chatStore.streamingText,
 		streamingThinking: chatStore.streamingThinking,
+		streamingError: chatStore.streamingError,
 		activeTools: chatStore.activeTools,
 		completedTools: chatStore.completedTools,
 		lastUserPrompt: chatStore.lastUserPrompt,
@@ -671,7 +697,20 @@ export function ChatCenter() {
 						</motion.div>
 					) : null}
 
-					{chat.isSending && !chat.streamingText && chat.activeTools.length === 0 ? (
+					{chat.streamingError ? (
+						<motion.div
+							className="flex justify-start"
+							initial={{ opacity: 0, y: 8 }}
+							animate={{ opacity: 1, y: 0 }}
+							transition={{ duration: 0.2, ease: "easeOut" }}
+						>
+							<div className="inno-message max-w-[78%]">
+								<ErrorBlock error={chat.streamingError} />
+							</div>
+						</motion.div>
+					) : null}
+
+					{chat.isSending && !chat.streamingText && !chat.streamingError && chat.activeTools.length === 0 ? (
 						<motion.div
 							className="flex justify-start"
 							initial={{ opacity: 0 }}

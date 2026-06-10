@@ -3085,6 +3085,13 @@ const server = createServer(async (req, res) => {
 
 			questionBridge.setEmitter(sseWrite);
 
+			// Track whether the model API surfaced an error this turn. The PI SDK
+			// does NOT throw on model API errors (e.g. HTTP 413 from an over-long
+			// context) — it converts them into a terminal assistant message with
+			// stopReason "error" + errorMessage, delivered via message_end. If we
+			// don't forward that, runPromptStreaming resolves with empty text and
+			// the UI shows nothing. So we detect it here and emit an error event.
+			let emittedError = false;
 			const onEvent = (event: import("@earendil-works/pi-coding-agent").AgentSessionEvent) => {
 				if (aborted) return;
 				switch (event.type) {
@@ -3094,6 +3101,18 @@ const server = createServer(async (req, res) => {
 							sseWrite({ type: "text_delta", delta: ev.delta });
 						} else if (ev.type === "thinking_delta") {
 							sseWrite({ type: "thinking_delta", delta: ev.delta });
+						}
+						break;
+					}
+					case "message_end": {
+						const msg = event.message;
+						if (
+							msg && typeof msg === "object" && "stopReason" in msg &&
+							(msg as { stopReason?: string }).stopReason === "error"
+						) {
+							emittedError = true;
+							const detail = (msg as { errorMessage?: string }).errorMessage;
+							sseWrite({ type: "error", message: detail || "The model request failed." });
 						}
 						break;
 					}
@@ -3124,9 +3143,12 @@ const server = createServer(async (req, res) => {
 					? await runPromptStreamingInSession(targetSessionPath, prompt, onEvent, imageArgs)
 					: await runPromptStreaming(prompt, onEvent, imageArgs);
 				if (!aborted) sseWrite({ type: "done", fullText });
-				maybeAutoGenerateTopic(capturedSessionId);
+				// Skip topic auto-generation when the turn errored — there is no
+				// meaningful assistant reply to summarize and the model API is
+				// likely still failing (which would just block again).
+				if (!emittedError) maybeAutoGenerateTopic(capturedSessionId);
 			} catch (err) {
-				if (!aborted) {
+				if (!aborted && !emittedError) {
 					sseWrite({ type: "error", message: err instanceof Error ? err.message : "Unknown error" });
 				}
 			} finally {

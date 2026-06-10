@@ -15,6 +15,8 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	isLoadingHistory = false;
 	streamingText = "";
 	streamingThinking = "";
+	/** Backend/model error for the in-flight turn, surfaced in the UI (collapsible). */
+	streamingError = "";
 	/** Active tool calls in progress */
 	activeTools: ChatToolRecord[] = [];
 	completedTools: ChatToolRecord[] = [];
@@ -49,6 +51,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.isSending = true;
 		this.streamingText = "";
 		this.streamingThinking = "";
+		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
 		this.wikiInvalidated = false;
@@ -61,8 +64,10 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				this._handleStreamEvent(event);
 			}
 			const aborted = controller.signal.aborted;
-			// Finalize: add accumulated text as assistant message
-			if (this.streamingText || aborted) {
+			// Finalize: add accumulated text as assistant message. Also finalize
+			// when the turn produced only an error (no text), so the error is
+			// preserved in history instead of vanishing when streaming state resets.
+			if (this.streamingText || this.streamingError || aborted) {
 				this.messages = [
 					...this.messages,
 					{
@@ -73,6 +78,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 						timestamp: Date.now(),
 						thinking: this.streamingThinking || undefined,
 						tools: this.completedTools.length > 0 ? this.completedTools : undefined,
+						error: this.streamingError || undefined,
 					},
 				];
 			}
@@ -81,13 +87,14 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				const message = err instanceof Error ? err.message : "Unknown error";
 				this.messages = [
 					...this.messages,
-					{ role: "assistant", content: `Error: ${message}`, timestamp: Date.now() },
+					{ role: "assistant", content: "", timestamp: Date.now(), error: message },
 				];
 			}
 		} finally {
 			this.isSending = false;
 			this.streamingText = "";
 			this.streamingThinking = "";
+			this.streamingError = "";
 			this.activeTools = [];
 			this.completedTools = [];
 			this.abortController = null;
@@ -170,7 +177,11 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				this.emit("change", undefined);
 				break;
 			case "error":
-				this.streamingText += `\n\nError: ${event.message}`;
+				// Keep the error separate from the reply text so the UI can render
+				// it as a distinct, collapsible block rather than inline markdown.
+				this.streamingError = this.streamingError
+					? `${this.streamingError}\n${event.message}`
+					: event.message;
 				this.emit("change", undefined);
 				break;
 			case "question":
@@ -218,6 +229,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.isSending = false;
 		this.streamingText = "";
 		this.streamingThinking = "";
+		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
 		this.pendingQuestion = null;
@@ -229,6 +241,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.isSending = false;
 		this.streamingText = "";
 		this.streamingThinking = "";
+		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
 		this.emit("change", undefined);

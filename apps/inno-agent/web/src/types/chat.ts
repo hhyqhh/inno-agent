@@ -6,6 +6,8 @@ export interface ChatMessage {
 	tools?: ChatToolRecord[];
 	channel?: string;
 	images?: Array<{ previewUrl: string; mimeType: string }>;
+	/** Backend/model error surfaced for this turn (e.g. HTTP 413 over-long context). */
+	error?: string;
 }
 
 export interface ChatToolRecord {

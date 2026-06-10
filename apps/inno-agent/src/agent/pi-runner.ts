@@ -135,8 +135,22 @@ export async function initSession(
 				noThemes: true,
 			},
 		});
+		// Register Inno's configured providers into the fresh services registry so
+		// that find() below can locate the current default model — even if it was
+		// switched *after* initSession was called (the closure-captured `config`
+		// reference goes stale once server.ts reassigns its own `config` variable
+		// via saveConfig, which returns a new normalised object).
+		const currentConfig = configHolder.current;
+		for (const [providerId, providerConfig] of Object.entries(currentConfig.providers)) {
+			services.modelRegistry.registerProvider(providerId, {
+				baseUrl: providerConfig.baseUrl,
+				apiKey: providerConfig.apiKey || "local",
+				api: providerConfig.api ?? "openai-completions",
+				models: providerConfig.models.map(modelConfigToProviderModel),
+			});
+		}
 		services.modelRegistry.refresh();
-		const defaultModel = services.modelRegistry.find(config.defaultProvider, config.defaultModel);
+		const defaultModel = services.modelRegistry.find(currentConfig.defaultProvider, currentConfig.defaultModel);
 		const created = await createAgentSessionFromServices({
 			services,
 			sessionManager,

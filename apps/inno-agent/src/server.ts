@@ -644,7 +644,7 @@ function validateZipEntries(zipPath: string): void {
 	}
 	const result = spawnSync("/usr/bin/unzip", ["-Z1", zipPath], { encoding: "utf-8" });
 	if (result.status !== 0) {
-		throw new Error(result.stderr.trim() || "Unable to inspect zip file");
+			throw new Error((result.stderr || "").trim() || "Unable to inspect zip file");
 	}
 	for (const rawLine of result.stdout.split("\n")) {
 		const entry = rawLine.trim();
@@ -721,7 +721,7 @@ function installSkillZip(fileName: string, data: Buffer, targetRoot: string = sk
 		} else {
 			const unzipResult = spawnSync("/usr/bin/unzip", ["-qq", "-o", zipPath, "-d", extractDir], { encoding: "utf-8" });
 			if (unzipResult.status !== 0) {
-				throw new Error(unzipResult.stderr.trim() || "Unable to unzip skill package");
+				throw new Error((unzipResult.stderr || "").trim() || "Unable to unzip skill package");
 			}
 		}
 

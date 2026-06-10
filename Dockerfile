@@ -29,6 +29,8 @@ RUN npm prune --production
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y unzip && rm -rf /var/lib/apt/lists/*
+
 ENV NODE_ENV=production \
     INNO_HOME=/var/lib/inno-agent \
     INNO_CONFIG_DIR=/etc/inno-agent \

@@ -1916,7 +1916,7 @@ const server = createServer(async (req, res) => {
 			const body = (await readBody(req)) as Record<string, unknown>;
 			const content = typeof body.content === "string" ? body.content : "";
 			writeFileSync(filePath, content, "utf-8");
-			await reloadResources();
+			scheduleSkillsReload();
 			json(res, 200, { name, saved: true });
 			return;
 		}
@@ -2018,7 +2018,7 @@ const server = createServer(async (req, res) => {
 				return;
 			}
 			writeFileSync(fullPath, content, "utf-8");
-			if (basename(fullPath) === "SKILL.md") await reloadResources();
+			if (basename(fullPath) === "SKILL.md") scheduleSkillsReload();
 			const st = statSync(fullPath);
 			json(res, 200, { path: relPath, saved: true, size: st.size, updatedAt: st.mtime.toISOString() });
 			return;

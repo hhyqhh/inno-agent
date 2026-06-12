@@ -8,6 +8,7 @@
     "resize": "Drag to resize",
     "tabs": {
       "notebook": "Notebook",
+      "sources": "Sources",
       "preview": "Preview",
       "profile": "Profile",
       "skills": "Skills",
@@ -112,6 +113,81 @@
     "contested": "contested",
     "noPages": "No wiki pages",
     "selectPage": "Select a page to preview"
+  },
+  "sources": {
+    "search": "Search sources…",
+    "empty": "No source materials yet",
+    "selectHint": "Select a source from the sidebar",
+    "preview": "Preview",
+    "download": "Download",
+    "linkedCount": "{{count}} wiki page(s)",
+    "contentKind": {
+      "markdown": "Markdown",
+      "attachment": "Attachment"
+    },
+    "filter": {
+      "draft": {
+        "all": "All",
+        "draft": "Draft",
+        "archived": "Archived"
+      }
+    },
+    "draft": {
+      "section": "Draft",
+      "badge": "Draft"
+    },
+    "origin": {
+      "user_upload": "User upload",
+      "conversation": "Conversation",
+      "web": "Web",
+      "research": "Research",
+      "agent_inferred": "Agent inferred"
+    },
+    "detail": {
+      "markdown": "Markdown",
+      "attachment": "Attachment",
+      "linkedWiki": "Linked wiki pages"
+    },
+    "orphan": {
+      "hint": "Uploaded but not yet archived. Use “Ask Agent to archive” or describe it in chat."
+    },
+    "actions": {
+      "upload": "Upload files",
+      "importMd": "Import .md",
+      "archive": "Ask Agent to archive"
+    },
+    "create": {
+      "newNote": "New note",
+      "blankHint": "New blank note"
+    },
+    "note": {
+      "attachments": "Attachments",
+      "uploadAttachment": "Add attachment",
+      "attachmentsEmpty": "No attachments yet. Upload PDFs, images, and other files.",
+      "confirmDeleteAttachment": "Delete attachment “{{name}}”?",
+      "attachmentsFlash": {
+        "load_failed": "Failed to load attachments.",
+        "upload_failed": "Failed to upload attachment.",
+        "delete_failed": "Failed to delete attachment."
+      }
+    },
+    "archivePrompt": "Please archive this source into the L2 wiki:\n- File: {{name}}\n- Path: {{path}}",
+    "confirmDelete": "Delete “{{name}}”? Archived wiki content will also be removed. This cannot be undone.",
+    "flash": {
+      "upload_ok": "File uploaded. See “Pending archive” in the list.",
+      "import_ok": "Markdown imported as wiki page(s). Open Notebook to edit.",
+      "create_blank_ok": "New note is ready to edit.",
+      "delete_ok": "File deleted.",
+      "save_ok": "Saved.",
+      "archive_ok": "Saved and archived to the knowledge base.",
+      "upload_failed": "Upload failed. Please retry.",
+      "import_failed": "Import failed. Check the Markdown file.",
+      "create_failed": "Failed to create note.",
+      "save_failed": "Save failed.",
+      "delete_failed": "Delete failed. The file may be referenced by manifest.",
+      "load_failed": "Failed to load sources.",
+      "load_stale_backend": "Backend missing /api/l2/sources. Run npm run build and restart the server."
+    }
   },
   "preview": {
     "workspace": "Workspace",

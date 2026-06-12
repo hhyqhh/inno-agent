@@ -26,6 +26,8 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	lastImages: InlineImage[] | undefined = undefined;
 	/** Pending question from agent's ask_user_question tool */
 	pendingQuestion: PendingQuestion | null = null;
+	/** Prefill chat input (consumed by ChatCenter). */
+	prefillInput: string | null = null;
 	private abortController: AbortController | null = null;
 	private wikiInvalidated = false;
 
@@ -106,6 +108,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				// L2 tools mutated the wiki — refresh pages + graph so the
 				// Notebook tab reflects the new state without manual reload.
 				void notebookStore.loadAll();
+				void import("./sources-store.js").then((m) => m.sourcesStore.loadAll());
 			}
 			// Refresh the sessions sidebar so the current conversation
 			// (especially a freshly-created one) appears with its updated
@@ -132,6 +135,17 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	async retry(): Promise<void> {
 		if (this.isSending || !this.lastUserPrompt) return;
 		await this.send(this.lastUserPrompt, this.lastImages);
+	}
+
+	setPrefillInput(text: string): void {
+		this.prefillInput = text;
+		this.emit("change", undefined);
+	}
+
+	consumePrefillInput(): string | null {
+		const value = this.prefillInput;
+		this.prefillInput = null;
+		return value;
 	}
 
 	private _handleStreamEvent(event: ChatStreamEvent) {

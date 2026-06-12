@@ -411,6 +411,7 @@ export function appendLog(l2DataDir: string, action: string, title: string, deta
 export function ensureL2Directories(l2DataDir: string): void {
 	const dirs = [
 		"raw/uploads",
+		"raw/notes",
 		"raw/web",
 		"raw/conversations",
 		"raw/research",

@@ -430,13 +430,21 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 		const channelGroups = new Map<string, WsGroup>();
 		const projectGroups: WsGroup[] = [];
 		const tempGroups: WsGroup[] = [];
+		// When a search/filter is active, only show groups that have matching
+		// sessions so the list narrows as expected.
+		const filtering = !!state.searchQuery || !!state.channelFilter;
 		for (const w of wsState.list) {
-			const sessions = byWs.get(w.id);
-			if (!sessions || sessions.length === 0) continue;
-			const g: WsGroup = { id: w.id, name: w.name, manageable: !w.isTemp && !CHANNEL_WS_ORDER.includes(w.id), canCreate: true, sessions };
+			const sessions = byWs.get(w.id) ?? [];
+			const isChannel = CHANNEL_WS_ORDER.includes(w.id);
+			// Channel and temp workspaces are synthetic/auto-managed — hide them
+			// when they have no sessions. Project (user) workspaces always show,
+			// even with zero sessions, so they stay visible and deletable after
+			// their last session is removed (unless a filter is narrowing the list).
+			if (sessions.length === 0 && (w.isTemp || isChannel || filtering)) continue;
+			const g: WsGroup = { id: w.id, name: w.name, manageable: !w.isTemp && !isChannel, canCreate: true, sessions };
 			if (w.isTemp) {
 				tempGroups.push(g);
-			} else if (CHANNEL_WS_ORDER.includes(w.id)) {
+			} else if (isChannel) {
 				channelGroups.set(w.id, g);
 			} else {
 				projectGroups.push(g);
@@ -457,7 +465,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			result.push({ id: "archived", name: "已归档", manageable: false, canCreate: false, sessions: archived });
 		}
 		return result;
-	}, [wsState.list, state.filteredSessions]);
+	}, [wsState.list, state.filteredSessions, state.searchQuery, state.channelFilter]);
 
 	const newChat = useCallback(() => {
 		void (async () => {
@@ -542,8 +550,11 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 	}, [editingWsName]);
 
 	const handleDeleteWorkspace = useCallback((group: WsGroup) => {
+		const detail = group.sessions.length > 0
+			? `其中的 ${group.sessions.length} 个会话将解绑(归入临时工作区),会话记录与文件不会被删除。`
+			: `该工作区当前没有会话,工作区记录将被移除。`;
 		const confirmed = typeof window === "undefined" ? true : window.confirm(
-			`删除工作区「${group.name}」？\n其中的 ${group.sessions.length} 个会话将解绑(归入临时工作区),会话记录与文件不会被删除。`,
+			`删除工作区「${group.name}」？\n${detail}`,
 		);
 		if (!confirmed) return;
 		void (async () => {

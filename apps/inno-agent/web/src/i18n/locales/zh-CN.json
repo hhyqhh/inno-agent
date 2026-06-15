@@ -8,6 +8,7 @@
     "resize": "拖动以调整宽度",
     "tabs": {
       "notebook": "笔记本",
+      "sources": "原始资料",
       "preview": "预览",
       "profile": "学习者画像",
       "skills": "技能",
@@ -112,6 +113,89 @@
     "contested": "存在争议",
     "noPages": "暂无 wiki 页面",
     "selectPage": "选择一个页面进行预览"
+  },
+  "sources": {
+    "search": "搜索原始资料…",
+    "empty": "暂无原始资料",
+    "selectHint": "从左侧选择一条原始资料",
+    "preview": "预览",
+    "download": "下载",
+    "linkedCount": "{{count}} 篇 Wiki",
+    "contentKind": {
+      "markdown": "Markdown",
+      "attachment": "附件"
+    },
+    "filter": {
+      "draft": {
+        "all": "全部",
+        "draft": "草稿",
+        "archived": "已归档"
+      }
+    },
+    "draft": {
+      "section": "草稿",
+      "badge": "草稿"
+    },
+    "origin": {
+      "user_upload": "用户上传",
+      "conversation": "对话摘录",
+      "web": "网页",
+      "research": "调研",
+      "agent_inferred": "Agent 推断"
+    },
+    "detail": {
+      "markdown": "Markdown",
+      "attachment": "附件",
+      "linkedWiki": "关联 Wiki 页面"
+    },
+    "orphan": {
+      "hint": "此文件已上传但尚未归档。点击「归档」将调用 AI 生成摘要并自动链接概念页，可能需要数十秒。"
+    },
+    "actions": {
+      "upload": "上传文件",
+      "importMd": "导入 .md",
+      "archive": "归档",
+      "unarchive": "撤回归档"
+    },
+    "create": {
+      "newNote": "新建笔记",
+      "blankHint": "新建空白笔记"
+    },
+    "note": {
+      "attachments": "附件",
+      "uploadAttachment": "添加附件",
+      "attachmentsEmpty": "暂无附件，可上传 PDF、图片等文件。",
+      "attachmentArchived": "已并入笔记",
+      "viewNoteWiki": "查看笔记 Wiki",
+      "confirmDeleteAttachment": "确定删除附件「{{name}}」？",
+      "attachmentsFlash": {
+        "load_failed": "附件加载失败。",
+        "upload_failed": "附件上传失败。",
+        "delete_failed": "附件删除失败。"
+      }
+    },
+    "archivePrompt": "请将以下原始资料归档到 L2 知识库：\n- 文件：{{name}}\n- 路径：{{path}}",
+      "confirmDelete": "确定删除「{{name}}」？已归档内容将一并移除，此操作不可恢复。",
+      "confirmUnarchive": "确定撤回「{{name}}」的归档？Wiki 页面将被移除，原始文件会保留在待归档列表。",
+    "flash": {
+      "upload_ok": "文件已上传，可在「待归档」中查看。",
+      "import_ok": "Markdown 已导入为 Wiki 页面，可在笔记本中编辑。",
+      "create_blank_ok": "新笔记已就绪，可直接编辑。",
+      "delete_ok": "文件已删除。",
+      "save_ok": "已保存。",
+      "archive_ok": "已归档到知识库（含 AI 摘要与概念链接）。",
+      "archive_failed": "归档失败，请检查文件格式或稍后重试。",
+      "archive_duplicate": "该内容已在知识库中，无需重复归档。",
+      "unarchive_ok": "已撤回归档，原始文件已移至待归档。",
+      "unarchive_failed": "撤回归档失败。",
+      "upload_failed": "上传失败，请重试。",
+      "import_failed": "导入失败，请检查 Markdown 格式。",
+      "create_failed": "新建笔记失败。",
+      "save_failed": "保存失败。",
+      "delete_failed": "删除失败，该文件可能已被归档引用。",
+      "load_failed": "加载列表失败。",
+      "load_stale_backend": "加载失败：后端未包含 /api/l2/sources，请执行 npm run build 并重启 server。"
+    }
   },
   "preview": {
     "workspace": "工作区",

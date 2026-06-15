@@ -213,6 +213,7 @@ export function ChatCenter() {
 		completedTools: chatStore.completedTools,
 		lastUserPrompt: chatStore.lastUserPrompt,
 		pendingQuestion: chatStore.pendingQuestion,
+		prefillInput: chatStore.prefillInput,
 	}));
 	const sessions = useStoreSnapshot(sessionsStore, () => ({
 		pendingNewSession: sessionsStore.pendingNewSession,
@@ -286,6 +287,16 @@ export function ChatCenter() {
 		el.style.height = "auto";
 		el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
 	}, []);
+
+	useEffect(() => {
+		if (!chat.prefillInput || !inputRef.current) return;
+		const text = chatStore.consumePrefillInput();
+		if (!text) return;
+		inputRef.current.value = text;
+		inputRef.current.focus();
+		inputRef.current.style.height = "auto";
+		inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 140)}px`;
+	}, [chat.prefillInput]);
 
 	const buildSessionInput = useCallback((): CreateSessionInput | { __error: string } => {
 		if (wsMode === "temp") return { newWorkspace: { isTemp: true } };

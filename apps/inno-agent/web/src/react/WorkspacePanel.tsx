@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
-import { PanelRightOpen, PanelRightClose, Columns2, Maximize2, BookOpen, BriefcaseBusiness, FolderKanban, Settings, Sparkles, UserRound } from "lucide-react";
+import { PanelRightOpen, PanelRightClose, Columns2, Maximize2, BookOpen, BriefcaseBusiness, FolderKanban, Settings, Sparkles, UserRound, FileStack } from "lucide-react";
 import type { RightPanelTab, WorkspaceMode } from "../stores/app-store.js";
 import { WorkspaceBrowser } from "./WorkspaceBrowser.js";
 import { Notebook } from "./Notebook.js";
+import { SourcesPanel } from "./SourcesPanel.js";
 import { JobsPanel } from "./JobsPanel.js";
 import { LearnerProfilePanel } from "./LearnerProfilePanel.js";
 import { SkillsPanel } from "./SkillsPanel.js";
@@ -19,10 +20,11 @@ interface WorkspacePanelProps {
 	onWidthChange(width: number): void;
 }
 
-const TAB_ORDER: RightPanelTab[] = ["preview", "notebook", "profile", "jobs", "skills", "settings"];
+const TAB_ORDER: RightPanelTab[] = ["preview", "notebook", "sources", "profile", "jobs", "skills", "settings"];
 
 const TAB_ICONS: Record<RightPanelTab, React.ReactNode> = {
 	notebook: <BookOpen size={13} />,
+	sources: <FileStack size={13} />,
 	preview: <FolderKanban size={13} />,
 	profile: <UserRound size={13} />,
 	jobs: <BriefcaseBusiness size={13} />,
@@ -34,6 +36,8 @@ function WorkspaceContent({ activeTab }: { activeTab: RightPanelTab }) {
 	switch (activeTab) {
 		case "notebook":
 			return <Notebook />;
+		case "sources":
+			return <SourcesPanel />;
 		case "preview":
 			return <WorkspaceBrowser />;
 		case "profile":

@@ -1,6 +1,6 @@
 import { EventEmitter } from "./event-emitter.js";
 
-export type RightPanelTab = "notebook" | "preview" | "profile" | "skills" | "jobs" | "settings";
+export type RightPanelTab = "notebook" | "sources" | "preview" | "profile" | "skills" | "jobs" | "settings";
 export type SidebarSection = "chat" | "wiki" | "jobs" | "settings";
 export type WorkspaceMode = "collapsed" | "quarter" | "half" | "full";
 
@@ -8,7 +8,7 @@ interface AppStoreEvents {
 	change: void;
 }
 
-const VALID_TABS: RightPanelTab[] = ["notebook", "preview", "profile", "skills", "jobs", "settings"];
+const VALID_TABS: RightPanelTab[] = ["notebook", "sources", "preview", "profile", "skills", "jobs", "settings"];
 // Legacy values mapped to current ones.
 const TAB_ALIASES: Record<string, RightPanelTab> = {
 	wiki: "notebook",

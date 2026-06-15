@@ -316,6 +316,36 @@ export function createSourcePage(
 	return join("wiki", "sources", filename);
 }
 
+/** Update an existing wiki source summary page in place. */
+export function updateSourcePage(
+	l2DataDir: string,
+	entry: ManifestEntry,
+	wikiPagePath: string,
+	summaryBody: string,
+	extractedPath?: string,
+	extraRawPaths: string[] = [],
+): void {
+	const fullPath = join(l2DataDir, wikiPagePath);
+	const content = fileExists(fullPath) ? readText(fullPath) : "";
+	const { frontmatter } = parseFrontmatter(content);
+	const today = new Date().toISOString().slice(0, 10);
+	const sources = [...new Set([entry.rawPath, ...extraRawPaths])];
+	const fm: WikiPageFrontmatter = {
+		title: frontmatter?.title ?? entry.title,
+		created: frontmatter?.created ?? today,
+		type: "source-summary",
+		tags: mergeUniqueTags(["source-summary"], entry.tags),
+		sources,
+		source_ids: [entry.id],
+		updated: today,
+		status: frontmatter?.status ?? "draft",
+		confidence: frontmatter?.confidence ?? "medium",
+	};
+	const ref = extractedPath ? `\n## 来源\n\n完整提取文本: \`${extractedPath}\`\n` : "";
+	const body = `\n# ${entry.title}\n\n${summaryBody}\n${ref}`;
+	writeText(fullPath, serializeFrontmatter(fm) + body);
+}
+
 // ============================================================================
 // Index maintenance
 // ============================================================================
@@ -411,6 +441,7 @@ export function appendLog(l2DataDir: string, action: string, title: string, deta
 export function ensureL2Directories(l2DataDir: string): void {
 	const dirs = [
 		"raw/uploads",
+		"raw/notes",
 		"raw/web",
 		"raw/conversations",
 		"raw/research",

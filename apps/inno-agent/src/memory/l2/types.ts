@@ -17,6 +17,16 @@ export type ConfidenceLevel = "low" | "medium" | "high";
 /** Processing status for manifest entries. */
 export type ManifestStatus = "pending" | "extracted" | "indexed" | "error";
 
+/** Extracted content from a note attachment, merged into the parent note wiki. */
+export interface NoteAttachmentExtract {
+	rawPath: string;
+	fileName: string;
+	extractedPath: string;
+	contentHash: string;
+	sourceType: RawSourceType;
+	updatedAt: string;
+}
+
 /**
  * Manifest entry — one per ingested source.
  * Stored as a line in data/l2/manifest.jsonl (append-only).
@@ -36,6 +46,10 @@ export interface ManifestEntry {
 		url?: string;
 		sessionId?: string;
 	};
+	/** Legacy: separate manifest rows for attachments. Prefer attachmentExtracts. */
+	parentSourceId?: string;
+	/** Parsed attachment texts merged into this note's wiki page. */
+	attachmentExtracts?: NoteAttachmentExtract[];
 	createdAt: string;
 	updatedAt: string;
 }

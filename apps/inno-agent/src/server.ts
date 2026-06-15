@@ -24,6 +24,7 @@ import {
 	syncConfig,
 	applyWorkspaceCwd,
 	setWorkspaceCwdResolver,
+	getArchiveModelContext,
 } from "./agent/pi-runner.js";
 import { completePromptOnce, runPromptSerialized, runPromptStreaming, runPromptStreamingInSession, runPromptInSession, abortCurrentPrompt, persistPendingUserTurn } from "./agent/pi-runner.js";
 import type { ImageContent } from "@earendil-works/pi-ai";
@@ -39,7 +40,17 @@ import { executeJob } from "./scheduler/job-runner.js";
 import { CronScheduler } from "./scheduler/cron-scheduler.js";
 import { validateCron } from "./scheduler/cron-utils.js";
 import { parseFrontmatter, serializeFrontmatter } from "./memory/l2/wiki-maintainer.js";
-import { readManifest } from "./memory/l2/manifest-store.js";
+import { findManifestByRawPath, readManifest } from "./memory/l2/manifest-store.js";
+import { ingestRawSourceFile } from "./memory/l2/source-ingest.js";
+import { isAttachmentMerged, mergeAttachmentIntoParentNote } from "./memory/l2/note-attachment-ingest.js";
+import { getSourceById, listAllSources, listOrphanRawFiles, orphanViewFromPath, safeL2RawPath } from "./memory/l2/source-resolver.js";
+import { isUserNotePath, saveUserNote } from "./memory/l2/note-archiver.js";
+import { archiveOrphanRaw, deleteSourceByRawPath, RawArchiveError, unarchiveSource } from "./memory/l2/raw-archiver.js";
+import {
+	isNoteAttachmentPath,
+	listNoteAttachments,
+	uploadNoteAttachment,
+} from "./memory/l2/note-attachments.js";
 import { loadProfile, saveProfile } from "./memory/learner/profile-store.js";
 import type { LearnerProfile, LearningGoal, KnowledgeState, Misconception, LearnerPreferences } from "./memory/learner/types.js";
 import { randomUUID } from "node:crypto";
@@ -3194,7 +3205,268 @@ const server = createServer(async (req, res) => {
 		}
 
 
-		// --- L2 Raw Upload API ---
+		// --- L2 Sources API ---
+		if (method === "GET" && url === "/api/l2/sources") {
+			try {
+				json(res, 200, {
+					sources: listAllSources(l2DataDir),
+					orphans: listOrphanRawFiles(l2DataDir),
+				});
+			} catch (err) {
+				logger.warn({ err }, "failed to list L2 sources");
+				json(res, 200, { sources: [], orphans: [] });
+			}
+			return;
+		}
+
+		if (method === "GET" && url.startsWith("/api/l2/sources/")) {
+			const id = decodeURIComponent(url.slice("/api/l2/sources/".length).split("?")[0] ?? "");
+			if (!id) {
+				json(res, 400, { error: "Missing source id" });
+				return;
+			}
+			const source = getSourceById(l2DataDir, id);
+			if (!source) {
+				json(res, 404, { error: "Source not found" });
+				return;
+			}
+			json(res, 200, source);
+			return;
+		}
+
+		const sourceUnarchiveMatch = matchRoute("POST", method, url, "/api/l2/sources/:id/unarchive");
+		if (sourceUnarchiveMatch) {
+			const id = decodeURIComponent(sourceUnarchiveMatch.id);
+			try {
+				const orphan = unarchiveSource(l2DataDir, id);
+				json(res, 200, { unarchived: true, orphan });
+			} catch (err) {
+				if (err instanceof RawArchiveError) {
+					const status = err.code === "NOT_ARCHIVED" || err.code === "NOT_FOUND" ? 404 : 400;
+					json(res, status, { error: err.message, code: err.code });
+					return;
+				}
+				logger.warn({ err, sourceId: id }, "failed to unarchive source");
+				json(res, 500, { error: "Failed to unarchive source" });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/raw/note") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const content = typeof body.content === "string" ? body.content : "";
+			const fileNameRaw = typeof body.fileName === "string" ? body.fileName : "note.md";
+			if (!content.trim()) {
+				json(res, 400, { error: "Missing content" });
+				return;
+			}
+			const safeName = sanitizeUploadName(fileNameRaw);
+			const fileName = safeName.toLowerCase().endsWith(".md") ? safeName : `${safeName}.md`;
+			const dir = join(l2DataDir, "raw", "notes");
+			ensureDir(dir);
+			const outputPath = join(dir, fileName);
+			if (existsSync(outputPath)) {
+				json(res, 409, { error: "Note file already exists" });
+				return;
+			}
+			writeText(outputPath, content);
+			const view = orphanViewFromPath(l2DataDir, join("raw", "notes", fileName).replace(/\\/g, "/"));
+			json(res, 201, view);
+			return;
+		}
+
+		if (method === "GET" && url.startsWith("/api/l2/raw/note/attachments?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const notePath = params.get("path") ?? "";
+			if (!isUserNotePath(notePath)) {
+				json(res, 400, { error: "Invalid note path" });
+				return;
+			}
+			const normalizedNote = notePath.replace(/^\/+/, "");
+			const noteEntry = findManifestByRawPath(l2DataDir, normalizedNote);
+			const attachments = listNoteAttachments(l2DataDir, notePath).map((attachment) => {
+				if (!noteEntry || !isAttachmentMerged(noteEntry, attachment.rawPath)) {
+					return { ...attachment, archived: false as const };
+				}
+				const source = getSourceById(l2DataDir, noteEntry.id);
+				return {
+					...attachment,
+					archived: true as const,
+					sourceId: noteEntry.id,
+					wikiPages: source?.wikiPages ?? [],
+				};
+			});
+			json(res, 200, { attachments });
+			return;
+		}
+
+		if (method === "POST" && url.startsWith("/api/l2/raw/note/attachments?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const notePath = params.get("path") ?? "";
+			if (!isUserNotePath(notePath)) {
+				json(res, 400, { error: "Invalid note path" });
+				return;
+			}
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const fileName = typeof body.fileName === "string" ? body.fileName : "";
+			const dataBase64 = typeof body.dataBase64 === "string" ? body.dataBase64 : "";
+			if (!fileName || !dataBase64) {
+				json(res, 400, { error: "Missing fileName or dataBase64" });
+				return;
+			}
+			try {
+				const attachment = uploadNoteAttachment(
+					l2DataDir,
+					notePath,
+					fileName,
+					Buffer.from(dataBase64, "base64"),
+				);
+				const normalizedNote = notePath.replace(/^\/+/, "");
+				const noteEntry = findManifestByRawPath(l2DataDir, normalizedNote);
+				if (noteEntry) {
+					try {
+						const modelContext = getArchiveModelContext() ?? undefined;
+						const noteFull = safeL2RawPath(l2DataDir, normalizedNote);
+						const noteContent = noteFull && existsSync(noteFull) ? readText(noteFull) : "";
+						await mergeAttachmentIntoParentNote(
+							l2DataDir,
+							noteEntry.id,
+							attachment.rawPath,
+							noteContent,
+							modelContext,
+						);
+					} catch (err) {
+						logger.warn({ err, attachment: attachment.rawPath }, "failed to merge note attachment into wiki");
+					}
+				}
+				const refreshedNote = findManifestByRawPath(l2DataDir, normalizedNote);
+				const merged = refreshedNote && isAttachmentMerged(refreshedNote, attachment.rawPath);
+				const payload = merged
+					? {
+							...attachment,
+							archived: true as const,
+							sourceId: refreshedNote!.id,
+							wikiPages: getSourceById(l2DataDir, refreshedNote!.id)?.wikiPages ?? [],
+						}
+					: { ...attachment, archived: false as const };
+				json(res, 201, payload);
+			} catch (err) {
+				logger.warn({ err, notePath }, "failed to upload note attachment");
+				json(res, 500, { error: "Failed to upload attachment" });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/raw/archive") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const rawPath = typeof body.path === "string" ? body.path : "";
+			if (!rawPath.trim()) {
+				json(res, 400, { error: "Missing path" });
+				return;
+			}
+			const title = typeof body.title === "string" ? body.title : undefined;
+			const tags = Array.isArray(body.tags)
+				? body.tags.filter((tag): tag is string => typeof tag === "string")
+				: undefined;
+			const force = body.force === true;
+			try {
+				const modelContext = getArchiveModelContext() ?? undefined;
+				const source = await archiveOrphanRaw(l2DataDir, rawPath, { title, tags, force, modelContext });
+				json(res, 200, { archived: true, source });
+			} catch (err) {
+				if (err instanceof RawArchiveError) {
+					const status =
+						err.code === "NOT_FOUND" ? 404 : err.code === "DUPLICATE" ? 409 : 400;
+					json(res, status, { error: err.message, code: err.code });
+					return;
+				}
+				logger.warn({ err, rawPath }, "failed to archive orphan raw file");
+				json(res, 500, { error: "Failed to archive raw file" });
+			}
+			return;
+		}
+
+		if (method === "PUT" && url.startsWith("/api/l2/raw?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const rawPath = params.get("path") ?? "";
+			const filePath = safeL2RawPath(l2DataDir, rawPath);
+			if (!filePath || !existsSync(filePath) || !statSync(filePath).isFile()) {
+				json(res, 404, { error: "L2 raw file not found" });
+				return;
+			}
+			const normalized = rawPath.replace(/^\/+/, "");
+			const inManifest = readManifest(l2DataDir).some((entry) => entry.rawPath.replace(/^\/+/, "") === normalized);
+			const isUserNote = isUserNotePath(normalized);
+			if (inManifest && !isUserNote) {
+				json(res, 409, { error: "Cannot edit raw file referenced by manifest" });
+				return;
+			}
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const content = typeof body.content === "string" ? body.content : "";
+			if (!content) {
+				json(res, 400, { error: "Missing content" });
+				return;
+			}
+			writeText(filePath, content);
+			if (isUserNote) {
+				try {
+					const modelContext = getArchiveModelContext() ?? undefined;
+					const source = await saveUserNote(l2DataDir, normalized, content, modelContext);
+					json(res, 200, { archived: true, source });
+					return;
+				} catch (err) {
+					logger.warn({ err, rawPath: normalized }, "failed to auto-archive user note");
+					json(res, 500, { error: "Failed to archive note" });
+					return;
+				}
+			}
+			const view = orphanViewFromPath(l2DataDir, normalized);
+			json(res, 200, { archived: false, orphan: view });
+			return;
+		}
+
+		if (method === "DELETE" && url.startsWith("/api/l2/raw?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const rawPath = params.get("path") ?? "";
+			const normalized = rawPath.replace(/^\/+/, "");
+			try {
+				const modelContext = getArchiveModelContext() ?? undefined;
+				await deleteSourceByRawPath(l2DataDir, normalized, modelContext);
+				json(res, 200, { deleted: true, path: normalized });
+			} catch (err) {
+				if (err instanceof RawArchiveError && err.code === "NOT_FOUND") {
+					json(res, 404, { error: err.message });
+					return;
+				}
+				logger.warn({ err, rawPath: normalized }, "failed to delete raw file");
+				json(res, 500, { error: "Failed to delete file" });
+			}
+			return;
+		}
+
+		if ((method === "GET" || method === "HEAD") && url.startsWith("/api/l2/raw?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const rawPath = params.get("path") ?? "";
+			const wantsDownload = params.get("download") === "1";
+			const filePath = safeL2RawPath(l2DataDir, rawPath);
+			if (!filePath || !existsSync(filePath) || !statSync(filePath).isFile()) {
+				json(res, 404, { error: "L2 raw file not found" });
+				return;
+			}
+			const fileContent = readFileSync(filePath);
+			const headers: Record<string, string | number> = {
+				"Content-Type": contentTypeForWorkspaceFile(filePath),
+				"Content-Length": fileContent.length,
+				"Cache-Control": "no-store",
+			};
+			if (wantsDownload) {
+				headers["Content-Disposition"] = contentDispositionAttachment(basename(filePath));
+			}
+			res.writeHead(200, headers);
+			res.end(method === "GET" ? fileContent : undefined);
+			return;
+		}
+
 		if (method === "POST" && url === "/api/l2/raw/upload") {
 			const body = (await readBody(req)) as Record<string, unknown>;
 			const fileName = typeof body.fileName === "string" ? body.fileName : "";

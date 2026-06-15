@@ -3523,6 +3523,10 @@ const server = createServer(async (req, res) => {
 						break;
 					}
 					case "tool_execution_start":
+						logger.info(
+							{ toolName: event.toolName, toolCallId: event.toolCallId },
+							"tool call started: %s", event.toolName,
+						);
 						sseWrite({
 							type: "tool_start",
 							toolCallId: event.toolCallId,
@@ -3531,6 +3535,17 @@ const server = createServer(async (req, res) => {
 						});
 						break;
 					case "tool_execution_end":
+						if (event.isError) {
+							const errText = Array.isArray(event.result?.content)
+								? event.result.content.map((c: { text?: string }) => c.text ?? "").join(" ").slice(0, 500)
+								: String(event.result?.content ?? "").slice(0, 500);
+							logger.warn(
+								{ toolName: event.toolName, toolCallId: event.toolCallId, result: event.result },
+								"tool call failed: %s — %s",
+								event.toolName,
+								errText || "(no error text)",
+							);
+						}
 						sseWrite({
 							type: "tool_end",
 							toolCallId: event.toolCallId,

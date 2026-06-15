@@ -46,6 +46,7 @@ export function createDocumentTools(): ToolDefinition[] {
 			try {
 				parsed = await parseDocument(resolvedPath);
 			} catch (err) {
+				logger.warn({ err, filePath: resolvedPath }, "parse_document tool: document parsing failed");
 				const msg = err instanceof DocumentParseError
 					? err.message
 					: (err instanceof Error ? err.message : String(err));

@@ -222,7 +222,25 @@ export function createInnoExtension(
 			}
 		}
 
-		// 5. Inject L1 context and custom system prompt before each agent turn
+		// 5. Log all tool execution errors centrally. This covers every tool
+			// registered with the PI SDK — both Inno's custom tools and the
+			// built-in bash/read/edit/write/grep/find/ls tools — without needing
+			// per-tool try/catch blocks.
+			pi.on("tool_result", async (event) => {
+				if (event.isError) {
+					const text = Array.isArray(event.content)
+						? event.content.map((c) => (c as { text?: string }).text ?? "").join(" ").slice(0, 500)
+						: String(event.content ?? "").slice(0, 500);
+					logger.warn(
+						{ toolName: event.toolName, toolCallId: event.toolCallId, input: event.input },
+						"Tool call failed: %s — %s",
+						event.toolName,
+						text || "(no error text)",
+					);
+				}
+			});
+
+			// 6. Inject L1 context and custom system prompt before each agent turn
 			pi.on("before_agent_start", async (event, ctx) => {
 				const profile = loadProfile(paths.learnerDataDir);
 				const recentEvents = loadEvents(paths.learnerDataDir).slice(-8);
@@ -291,7 +309,7 @@ export function createInnoExtension(
 				};
 		});
 
-		// 6. Custom startup header
+		// 7. Custom startup header
 		pi.on("session_start", async (_event, ctx) => {
 			if (ctx.hasUI) {
 				ctx.ui.setHeader((_tui, theme) => ({
@@ -313,7 +331,7 @@ export function createInnoExtension(
 			}
 		});
 
-		// 6b. Incrementally index the active session into L3 after each turn, so
+		// 7b. Incrementally index the active session into L3 after each turn, so
 		// the just-finished exchange becomes recallable in future conversations.
 		pi.on("turn_end", async (_event, ctx) => {
 			try {
@@ -326,7 +344,7 @@ export function createInnoExtension(
 			}
 		});
 
-		// 7. Register pi-subagents extension (when enabled)
+		// 8. Register pi-subagents extension (when enabled)
 		if (config.subagents?.enabled) {
 			try {
 				syncProvidersForSubagents(config);
@@ -343,7 +361,7 @@ export function createInnoExtension(
 			}
 		}
 
-		// 8. Register ask_user_question tool with TUI / Web dual path
+		// 9. Register ask_user_question tool with TUI / Web dual path
 		try {
 			const { createJiti: createJiti2 } = await import("jiti/static");
 			const jiti2 = createJiti2(import.meta.url, { moduleCache: false });

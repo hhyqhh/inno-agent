@@ -171,6 +171,7 @@ export function createChannelTools(deps: ChannelToolsDeps): ToolDefinition[] {
 			try {
 				await channel.sendFile({ channel: channelName, chatId }, resolved, params.fileName);
 			} catch (err) {
+				logger.warn({ err, channel: channelName, filePath: params.filePath }, "send_file_to_channel tool failed");
 				if (err instanceof FileSendNotSupportedError) {
 					return {
 						content: [{ type: "text" as const, text: err.message }],

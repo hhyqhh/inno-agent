@@ -17,17 +17,17 @@ This is an npm workspaces monorepo (Node.js >=20.6.0, ES modules) for **Inno Age
 
 PI SDK packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-web-ui`) are pulled from npm.
 
-Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (scheduler), `@larksuiteoapi/node-sdk` (Feishu), `typebox` (validation), `undici` (HTTP client), `pi-subagents` (optional subagent support), `pi-sandbox` (optional OS-level sandboxing).
+Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (scheduler), `@larksuiteoapi/node-sdk` (Feishu), `typebox` (validation), `undici` (HTTP client), `@juicesharp/rpiv-ask-user-question` (bridges agent `ask_user_question` tool calls to the web UI), `pi-subagents` (optional subagent support), `pi-sandbox` (optional OS-level sandboxing).
 
 `vitest` is a dev dependency but no test scripts or test files exist — the TypeScript build (`npm run build`) serves as the sanity check. No ESLint or Prettier configuration exists.
 
 ### TypeScript configs
 
-Three tsconfig files form the compilation setup:
+Three tsconfig files, each self-contained (no `extends` chain):
 
-- **`tsconfig.base.json`** (repo root) — base config: `ES2022` target, `Node16` module/resolution, strict mode, `sourceMap`, `declaration` + `declarationMap`, `experimentalDecorators`, `emitDecoratorMetadata`, `resolveJsonModule`.
-- **`apps/inno-agent/tsconfig.json`** — backend: extends base patterns, `outDir: ./dist`, `rootDir: ./src`, `types: ["node"]`. Compiles `src/foo.ts` → `dist/foo.js`. The compiled server entry point is `dist/server.js` and CLI entry is `dist/cli.js`.
-- **`apps/inno-agent/web/tsconfig.json`** — frontend: `ESNext` module, `bundler` resolution, `lib` includes DOM/DOM.Iterable, `jsx: "react-jsx"`, `noEmit: true`, `isolatedModules: true`. TypeScript is only for type-checking during `vite build` — Vite handles the actual bundling.
+- **`tsconfig.base.json`** (repo root) — reference base: `ES2022` target, `Node16` module/resolution, strict mode, `sourceMap`, `declaration` + `declarationMap`, `experimentalDecorators`, `emitDecoratorMetadata`, `resolveJsonModule`, `useDefineForClassFields: false`. Not directly referenced by the other configs but documents the shared settings.
+- **`apps/inno-agent/tsconfig.json`** — backend: `outDir: ./dist`, `rootDir: ./src`, `types: ["node"]`. Compiles `src/foo.ts` → `dist/foo.js`. The compiled server entry point is `dist/server.js` and CLI entry is `dist/cli.js`.
+- **`apps/inno-agent/web/tsconfig.json`** — frontend: `ESNext` module, `bundler` resolution, `lib` includes DOM/DOM.Iterable, `jsx: "react-jsx"`, `noEmit: true`, `isolatedModules: true`, `experimentalDecorators: true`, `useDefineForClassFields: false` (both needed for Lit decorator syntax in legacy components). TypeScript is only for type-checking during `vite build` — Vite handles the actual bundling.
 
 `tsx` is available as a dev dependency for running TypeScript files directly without compilation (e.g., `npx tsx some-script.ts`).
 

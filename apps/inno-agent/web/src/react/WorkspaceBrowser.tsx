@@ -818,7 +818,7 @@ export function WorkspaceBrowser() {
 				{/* Tree */}
 				<div
 					ref={treeContainerRef}
-					className="workspace-scroll min-h-0 flex-1 overflow-hidden"
+					className="workspace-scroll relative min-h-0 flex-1 overflow-hidden"
 					onContextMenu={(e) => {
 						// Right-click on empty space → create at workspace root.
 						e.preventDefault();
@@ -827,26 +827,33 @@ export function WorkspaceBrowser() {
 				>
 					{state.isLoadingTree && !arboristData.length ? (
 						<div className="p-3 text-xs text-slate-500">{t("preview.loading", "Loading...")}</div>
-					) : !arboristData.length ? (
-						<div className="p-3 text-xs text-slate-500">{t("preview.empty", "Empty workspace")}</div>
 					) : (
-						<Tree<ArboristNode>
-							ref={treeRef}
-							data={arboristData}
-							width={treeWidth}
-							height={treeHeight}
-							indent={16}
-							rowHeight={28}
-							openByDefault={false}
-							disableDrag={busy}
-							disableDrop={busy}
-							onCreate={onCreate}
-							onRename={onRename}
-							onDelete={onDelete}
-							onMove={onMove}
-						>
-							{Node}
-						</Tree>
+						<>
+							{/* Always mount the Tree (even when empty) so treeRef is available
+							    for root-level create actions from the context menu. */}
+							<Tree<ArboristNode>
+								ref={treeRef}
+								data={arboristData}
+								width={treeWidth}
+								height={treeHeight}
+								indent={16}
+								rowHeight={28}
+								openByDefault={false}
+								disableDrag={busy}
+								disableDrop={busy}
+								onCreate={onCreate}
+								onRename={onRename}
+								onDelete={onDelete}
+								onMove={onMove}
+							>
+								{Node}
+							</Tree>
+							{!arboristData.length && (
+								<div className="pointer-events-none absolute left-0 top-0 p-3 text-xs text-slate-500">
+									{t("preview.empty", "Empty workspace")}
+								</div>
+							)}
+						</>
 					)}
 				</div>
 

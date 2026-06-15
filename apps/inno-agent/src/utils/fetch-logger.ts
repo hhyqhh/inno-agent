@@ -19,6 +19,9 @@ const LLM_API_PATTERNS = [
 /** Maximum characters of the request body to log (avoid blowing up log files). */
 const MAX_BODY_LENGTH = 8000;
 
+/** Maximum characters of the response body to log. */
+const MAX_RESPONSE_BODY_LENGTH = 4000;
+
 type FetchFn = typeof globalThis.fetch;
 
 /**
@@ -47,7 +50,20 @@ export function installFetchLogger(): void {
       );
     }
 
-    return originalFetch.call(globalThis, input, init) as ReturnType<FetchFn>;
+    const response = (await originalFetch.call(
+      globalThis,
+      input,
+      init,
+    )) as Awaited<ReturnType<FetchFn>>;
+
+    // Log response for LLM API calls
+    if (method === "POST" && LLM_API_PATTERNS.some((p) => url.includes(p))) {
+      logResponse(url, response).catch(() => {
+        // Silently ignore logging errors to avoid breaking the caller.
+      });
+    }
+
+    return response;
   };
 }
 
@@ -75,4 +91,27 @@ function extractBodyString(
   }
   // ReadableStream / FormData / URLSearchParams / Blob — skip.
   return "[non-text body]";
+}
+
+async function logResponse(url: string, response: Response): Promise<void> {
+  const status = response.status;
+  let bodyStr = "";
+
+  try {
+    // Clone so we can read the body without consuming it for the caller.
+    const cloned = response.clone();
+    bodyStr = await cloned.text();
+  } catch {
+    bodyStr = "[unable to read response body]";
+  }
+
+  if (bodyStr.length > MAX_RESPONSE_BODY_LENGTH) {
+    bodyStr = bodyStr.slice(0, MAX_RESPONSE_BODY_LENGTH) + "...[truncated]";
+  }
+
+  const level = status >= 400 ? "warn" : "info";
+  logger[level](
+    { url, status, responseBody: bodyStr },
+    `LLM HTTP response: ${status} ${url}`,
+  );
 }

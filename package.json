@@ -1,6 +1,6 @@
 {
 	"name": "inno-agent",
-	"version": "0.2.7",
+	"version": "0.3.0",
 	"private": true,
 	"type": "module",
 	"workspaces": [
@@ -45,7 +45,14 @@
 		],
 		"mac": {
 			"icon": "build/icon.icns",
-			"target": [{ "target": "dmg", "arch": ["arm64"] }],
+			"target": [
+				{
+					"target": "dmg",
+					"arch": [
+						"arm64"
+					]
+				}
+			],
 			"category": "public.app-category.productivity",
 			"darkModeSupport": true
 		},
@@ -55,8 +62,18 @@
 		"win": {
 			"icon": "build/icon.png",
 			"target": [
-				{ "target": "nsis", "arch": ["x64"] },
-				{ "target": "msi", "arch": ["x64"] }
+				{
+					"target": "nsis",
+					"arch": [
+						"x64"
+					]
+				},
+				{
+					"target": "msi",
+					"arch": [
+						"x64"
+					]
+				}
 			]
 		},
 		"nsis": {

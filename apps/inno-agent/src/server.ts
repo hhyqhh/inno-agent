@@ -3903,6 +3903,6 @@ function bindTerminalWs(ws: WebSocket, terminalId: string): void {
 // ---------------------------------------------------------------------------
 
 server.listen(port, () => {
-	logger.info(`[inno-server] listening on http://localhost:${port}`);
-	logger.info(`[inno-server] config: ${paths.configPath}`);
+	console.log(`[inno-server] listening on http://localhost:${port}`);
+	console.log(`[inno-server] config: ${paths.configPath}`);
 });

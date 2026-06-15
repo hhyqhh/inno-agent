@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+import { installFetchLogger } from "./utils/fetch-logger.js";
 import { main, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "./config.js";
 import { createInnoExtension, type ConfigHolder } from "./agent/inno-extension.js";
@@ -13,6 +14,7 @@ process.title = "inno";
 
 // Disable undici timeouts for long streaming responses
 setGlobalDispatcher(new EnvHttpProxyAgent({ bodyTimeout: 0, headersTimeout: 0 }));
+installFetchLogger();
 
 const parsed = parseRuntimeArgs(process.argv.slice(2));
 const paths = resolveRuntimePaths(parsed.options);

@@ -8,6 +8,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, r
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+import { installFetchLogger } from "./utils/fetch-logger.js";
 import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, type InnoConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
 import { ensureDir, readJson, readText, writeJson, writeText } from "./storage/file-store.js";
 import {
@@ -57,6 +58,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 // ---------------------------------------------------------------------------
 
 setGlobalDispatcher(new EnvHttpProxyAgent({ bodyTimeout: 0, headersTimeout: 0 }));
+installFetchLogger();
 
 const parsed = parseRuntimeArgs(process.argv.slice(2));
 const paths = resolveRuntimePaths(parsed.options);

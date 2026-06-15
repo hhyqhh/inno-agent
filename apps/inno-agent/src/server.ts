@@ -3566,7 +3566,9 @@ const server = createServer(async (req, res) => {
 						) {
 							emittedError = true;
 							const detail = (msg as { errorMessage?: string }).errorMessage;
-							sseWrite({ type: "error", message: detail || "The model request failed." });
+							const errorMsg = detail || "The model request failed.";
+							logger.error({ stopReason: "error", errorMessage: errorMsg, message: msg }, "Model request failed (message_end stopReason=error)");
+							sseWrite({ type: "error", message: errorMsg });
 						}
 						break;
 					}
@@ -3593,6 +3595,11 @@ const server = createServer(async (req, res) => {
 								event.toolName,
 								errText || "(no error text)",
 							);
+						} else {
+							logger.info(
+								{ toolName: event.toolName, toolCallId: event.toolCallId },
+								"tool call completed: %s", event.toolName,
+							);
 						}
 						sseWrite({
 							type: "tool_end",
@@ -3609,6 +3616,9 @@ const server = createServer(async (req, res) => {
 						if (!event.success) {
 							logger.error({ finalError: event.finalError }, "LLM API auto-retry failed");
 						}
+						break;
+					default:
+						logger.info({ eventType: (event as { type?: string }).type }, "unhandled SSE event type: %s", (event as { type?: string }).type);
 						break;
 				}
 			};

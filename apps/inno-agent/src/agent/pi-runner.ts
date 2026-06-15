@@ -1,3 +1,4 @@
+import { complete, type AssistantMessage, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
@@ -9,9 +10,9 @@ import {
 	type AgentSessionRuntime,
 	type AgentSessionRuntimeDiagnostic,
 	type ExtensionFactory,
+	type ModelRegistry,
 	type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
-import { complete, type AssistantMessage, type ImageContent } from "@earendil-works/pi-ai";
 import { basename, resolve } from "node:path";
 import { existsSync, writeFileSync } from "node:fs";
 import { createInnoExtension, type ConfigHolder, type InnoExtensionDeps } from "./inno-extension.js";
@@ -291,6 +292,15 @@ export function getAvailableModels() {
 	if (!_runtime) return [];
 	_runtime.session.modelRegistry.refresh();
 	return _runtime.session.modelRegistry.getAvailable();
+}
+
+/** Model + registry for L2 archive enrichment (summarize + wiki linking) outside the agent loop. */
+export function getArchiveModelContext(): { model: Model<any>; modelRegistry: ModelRegistry } | null {
+	if (!_runtime) return null;
+	_runtime.session.modelRegistry.refresh();
+	const model = _runtime.session.model;
+	if (!model) return null;
+	return { model, modelRegistry: _runtime.session.modelRegistry };
 }
 
 /**

@@ -2,19 +2,19 @@ import { createHash, randomUUID } from "node:crypto";
 import { basename, join } from "node:path";
 import { existsSync, rmSync } from "node:fs";
 
-import { readText, writeText } from "../../storage/file-store.js";
-import { appendManifest, findManifestByRawPath, readManifest, removeManifestByRawPath } from "./manifest-store.js";
+import { readText } from "../../storage/file-store.js";
+import { appendManifest, findManifestByRawPath, readManifest, removeManifestByRawPath, updateManifestEntry } from "./manifest-store.js";
 import { convertToExtracted } from "./source-converter.js";
-import { removeNoteAttachmentDir } from "./note-attachments.js";
+import { createEnrichedSourcePages, type ArchiveModelContext } from "./archive-enricher.js";
+import { listNoteAttachments, removeNoteAttachmentDir } from "./note-attachments.js";
+import { refreshNoteWithAttachments } from "./note-attachment-ingest.js";
+import { logger } from "../../logger.js";
 import { getSourceById, type SourceSummaryView } from "./source-resolver.js";
 import type { ManifestEntry } from "./types.js";
 import {
 	appendLog,
-	createSourcePage,
 	ensureL2Directories,
-	parseFrontmatter,
 	rebuildIndex,
-	serializeFrontmatter,
 } from "./wiki-maintainer.js";
 
 function parseNoteContent(content: string): { title: string; tags: string[]; body: string } {
@@ -60,40 +60,38 @@ export function isUserNotePath(rawPath: string): boolean {
 	return normalized.startsWith("raw/notes/") && normalized.toLowerCase().endsWith(".md");
 }
 
-function syncWikiSourcePage(l2DataDir: string, entry: ManifestEntry, content: string): void {
-	const sourcePage =
-		entry.wikiPages.find((page) => page.includes("wiki/sources/")) ?? entry.wikiPages[0];
-	if (!sourcePage) return;
-
-	const { title, tags, body } = parseNoteContent(content);
-	const summaryBody = summaryBodyFromNote(body);
-	const fullPath = join(l2DataDir, sourcePage);
-	const { frontmatter } = parseFrontmatter(readText(fullPath));
-	if (!frontmatter) return;
-
-	const today = new Date().toISOString().slice(0, 10);
-	const updatedFrontmatter = {
-		...frontmatter,
-		title: title || frontmatter.title,
-		tags: tags.length > 0 ? tags : frontmatter.tags,
-		updated: today,
-	};
-	const ref = entry.extractedPath ? `\n## 来源\n\n完整提取文本: \`${entry.extractedPath}\`\n` : "";
-	const pageBody = `\n# ${title || frontmatter.title}\n\n${summaryBody}\n${ref}`;
-	writeText(fullPath, serializeFrontmatter(updatedFrontmatter) + pageBody);
+export interface NoteAttachmentArchiveResult {
+	merged: number;
+	skipped: number;
 }
 
-function syncArchivedNote(l2DataDir: string, entry: ManifestEntry, content: string): void {
-	const { body } = parseNoteContent(content);
-	const extractedBody = body.trim() || content;
-	if (entry.extractedPath) {
-		writeText(join(l2DataDir, entry.extractedPath), extractedBody);
+/** Extract note attachments and merge into the parent note wiki page. */
+export async function archiveNoteAttachments(
+	l2DataDir: string,
+	noteRawPath: string,
+	noteContent: string,
+	modelContext?: ArchiveModelContext,
+	parentEntry?: ManifestEntry,
+): Promise<NoteAttachmentArchiveResult> {
+	if (!isUserNotePath(noteRawPath) || !parentEntry) return { merged: 0, skipped: 0 };
+	const attachments = listNoteAttachments(l2DataDir, noteRawPath);
+	if (attachments.length === 0) return { merged: 0, skipped: 0 };
+	try {
+		await refreshNoteWithAttachments(l2DataDir, parentEntry, noteContent, modelContext);
+		return { merged: attachments.length, skipped: 0 };
+	} catch (err) {
+		logger.warn({ err, noteRawPath }, "failed to merge note attachments into wiki");
+		return { merged: 0, skipped: attachments.length };
 	}
-	syncWikiSourcePage(l2DataDir, entry, content);
 }
 
 /** Archive or sync a user note under raw/notes/*.md after save. */
-export function saveUserNote(l2DataDir: string, rawPath: string, content: string): SourceSummaryView {
+export async function saveUserNote(
+	l2DataDir: string,
+	rawPath: string,
+	content: string,
+	modelContext?: ArchiveModelContext,
+): Promise<SourceSummaryView> {
 	if (!isUserNotePath(rawPath)) {
 		throw new Error("Only raw/notes/*.md supports auto-archive");
 	}
@@ -102,8 +100,8 @@ export function saveUserNote(l2DataDir: string, rawPath: string, content: string
 	const normalized = rawPath.replace(/^\/+/, "");
 	const existing = findManifestByRawPath(l2DataDir, normalized);
 	if (existing) {
-		syncArchivedNote(l2DataDir, existing, content);
-		const source = getSourceById(l2DataDir, existing.id);
+		const refreshed = await refreshNoteWithAttachments(l2DataDir, existing, content, modelContext);
+		const source = getSourceById(l2DataDir, refreshed.id);
 		if (!source) throw new Error("Archived source not found");
 		return source;
 	}
@@ -131,17 +129,37 @@ export function saveUserNote(l2DataDir: string, rawPath: string, content: string
 		updatedAt: new Date().toISOString(),
 	};
 
-	const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBodyFromNote(body), extractedPath);
-	entry.wikiPages = [wikiPagePath];
-	entry.status = "indexed";
 	appendManifest(l2DataDir, entry);
 	rebuildIndex(l2DataDir, readManifest(l2DataDir));
-	appendLog(
-		l2DataDir,
-		"ingest",
-		title,
-		[`- User note archived: ${normalized}`, `- Source page: ${wikiPagePath}`].join("\n"),
-	);
+
+	if (listNoteAttachments(l2DataDir, normalized).length === 0) {
+		const { wikiPagePath, linkMaintenance } = await createEnrichedSourcePages(
+			l2DataDir,
+			entry,
+			title,
+			extractedPath,
+			summaryBodyFromNote(body),
+			modelContext,
+		);
+		updateManifestEntry(l2DataDir, id, {
+			wikiPages: [wikiPagePath, ...linkMaintenance.pages],
+			status: "indexed",
+		});
+		appendLog(
+			l2DataDir,
+			"ingest",
+			title,
+			[
+				`- User note archived: ${normalized}`,
+				`- Source page: ${wikiPagePath}`,
+				`- concepts/entities: 新建 ${linkMaintenance.created.length}, 更新 ${linkMaintenance.updated.length}, 不变 ${linkMaintenance.unchanged.length}`,
+			].join("\n"),
+		);
+	} else {
+		const current = findManifestByRawPath(l2DataDir, normalized)!;
+		await refreshNoteWithAttachments(l2DataDir, current, content, modelContext);
+		appendLog(l2DataDir, "ingest", title, `- User note archived with attachments: ${normalized}`);
+	}
 
 	const source = getSourceById(l2DataDir, id);
 	if (!source) throw new Error("Failed to load archived source");
@@ -162,6 +180,9 @@ export function deleteUserNote(l2DataDir: string, rawPath: string): boolean {
 	if (entry) {
 		if (entry.extractedPath) {
 			removeFileIfExists(join(l2DataDir, entry.extractedPath));
+		}
+		for (const extract of entry.attachmentExtracts ?? []) {
+			removeFileIfExists(join(l2DataDir, extract.extractedPath));
 		}
 		for (const wikiPage of entry.wikiPages) {
 			removeFileIfExists(join(l2DataDir, wikiPage));

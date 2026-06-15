@@ -24,6 +24,7 @@ import {
 	syncConfig,
 	applyWorkspaceCwd,
 	setWorkspaceCwdResolver,
+	getArchiveModelContext,
 } from "./agent/pi-runner.js";
 import { completePromptOnce, runPromptSerialized, runPromptStreaming, runPromptStreamingInSession, runPromptInSession, abortCurrentPrompt, persistPendingUserTurn } from "./agent/pi-runner.js";
 import type { ImageContent } from "@earendil-works/pi-ai";
@@ -39,9 +40,12 @@ import { executeJob } from "./scheduler/job-runner.js";
 import { CronScheduler } from "./scheduler/cron-scheduler.js";
 import { validateCron } from "./scheduler/cron-utils.js";
 import { parseFrontmatter, serializeFrontmatter } from "./memory/l2/wiki-maintainer.js";
-import { readManifest } from "./memory/l2/manifest-store.js";
+import { findManifestByRawPath, readManifest } from "./memory/l2/manifest-store.js";
+import { ingestRawSourceFile } from "./memory/l2/source-ingest.js";
+import { isAttachmentMerged, mergeAttachmentIntoParentNote } from "./memory/l2/note-attachment-ingest.js";
 import { getSourceById, listAllSources, listOrphanRawFiles, orphanViewFromPath, safeL2RawPath } from "./memory/l2/source-resolver.js";
-import { isUserNotePath, saveUserNote, deleteUserNote } from "./memory/l2/note-archiver.js";
+import { isUserNotePath, saveUserNote } from "./memory/l2/note-archiver.js";
+import { archiveOrphanRaw, deleteSourceByRawPath, RawArchiveError, unarchiveSource } from "./memory/l2/raw-archiver.js";
 import {
 	isNoteAttachmentPath,
 	listNoteAttachments,
@@ -3230,6 +3234,24 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		const sourceUnarchiveMatch = matchRoute("POST", method, url, "/api/l2/sources/:id/unarchive");
+		if (sourceUnarchiveMatch) {
+			const id = decodeURIComponent(sourceUnarchiveMatch.id);
+			try {
+				const orphan = unarchiveSource(l2DataDir, id);
+				json(res, 200, { unarchived: true, orphan });
+			} catch (err) {
+				if (err instanceof RawArchiveError) {
+					const status = err.code === "NOT_ARCHIVED" || err.code === "NOT_FOUND" ? 404 : 400;
+					json(res, status, { error: err.message, code: err.code });
+					return;
+				}
+				logger.warn({ err, sourceId: id }, "failed to unarchive source");
+				json(res, 500, { error: "Failed to unarchive source" });
+			}
+			return;
+		}
+
 		if (method === "POST" && url === "/api/l2/raw/note") {
 			const body = (await readBody(req)) as Record<string, unknown>;
 			const content = typeof body.content === "string" ? body.content : "";
@@ -3260,7 +3282,21 @@ const server = createServer(async (req, res) => {
 				json(res, 400, { error: "Invalid note path" });
 				return;
 			}
-			json(res, 200, { attachments: listNoteAttachments(l2DataDir, notePath) });
+			const normalizedNote = notePath.replace(/^\/+/, "");
+			const noteEntry = findManifestByRawPath(l2DataDir, normalizedNote);
+			const attachments = listNoteAttachments(l2DataDir, notePath).map((attachment) => {
+				if (!noteEntry || !isAttachmentMerged(noteEntry, attachment.rawPath)) {
+					return { ...attachment, archived: false as const };
+				}
+				const source = getSourceById(l2DataDir, noteEntry.id);
+				return {
+					...attachment,
+					archived: true as const,
+					sourceId: noteEntry.id,
+					wikiPages: source?.wikiPages ?? [],
+				};
+			});
+			json(res, 200, { attachments });
 			return;
 		}
 
@@ -3285,10 +3321,67 @@ const server = createServer(async (req, res) => {
 					fileName,
 					Buffer.from(dataBase64, "base64"),
 				);
-				json(res, 201, attachment);
+				const normalizedNote = notePath.replace(/^\/+/, "");
+				const noteEntry = findManifestByRawPath(l2DataDir, normalizedNote);
+				if (noteEntry) {
+					try {
+						const modelContext = getArchiveModelContext() ?? undefined;
+						const noteFull = safeL2RawPath(l2DataDir, normalizedNote);
+						const noteContent = noteFull && existsSync(noteFull) ? readText(noteFull) : "";
+						await mergeAttachmentIntoParentNote(
+							l2DataDir,
+							noteEntry.id,
+							attachment.rawPath,
+							noteContent,
+							modelContext,
+						);
+					} catch (err) {
+						logger.warn({ err, attachment: attachment.rawPath }, "failed to merge note attachment into wiki");
+					}
+				}
+				const refreshedNote = findManifestByRawPath(l2DataDir, normalizedNote);
+				const merged = refreshedNote && isAttachmentMerged(refreshedNote, attachment.rawPath);
+				const payload = merged
+					? {
+							...attachment,
+							archived: true as const,
+							sourceId: refreshedNote!.id,
+							wikiPages: getSourceById(l2DataDir, refreshedNote!.id)?.wikiPages ?? [],
+						}
+					: { ...attachment, archived: false as const };
+				json(res, 201, payload);
 			} catch (err) {
 				logger.warn({ err, notePath }, "failed to upload note attachment");
 				json(res, 500, { error: "Failed to upload attachment" });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/raw/archive") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const rawPath = typeof body.path === "string" ? body.path : "";
+			if (!rawPath.trim()) {
+				json(res, 400, { error: "Missing path" });
+				return;
+			}
+			const title = typeof body.title === "string" ? body.title : undefined;
+			const tags = Array.isArray(body.tags)
+				? body.tags.filter((tag): tag is string => typeof tag === "string")
+				: undefined;
+			const force = body.force === true;
+			try {
+				const modelContext = getArchiveModelContext() ?? undefined;
+				const source = await archiveOrphanRaw(l2DataDir, rawPath, { title, tags, force, modelContext });
+				json(res, 200, { archived: true, source });
+			} catch (err) {
+				if (err instanceof RawArchiveError) {
+					const status =
+						err.code === "NOT_FOUND" ? 404 : err.code === "DUPLICATE" ? 409 : 400;
+					json(res, status, { error: err.message, code: err.code });
+					return;
+				}
+				logger.warn({ err, rawPath }, "failed to archive orphan raw file");
+				json(res, 500, { error: "Failed to archive raw file" });
 			}
 			return;
 		}
@@ -3317,7 +3410,8 @@ const server = createServer(async (req, res) => {
 			writeText(filePath, content);
 			if (isUserNote) {
 				try {
-					const source = saveUserNote(l2DataDir, normalized, content);
+					const modelContext = getArchiveModelContext() ?? undefined;
+					const source = await saveUserNote(l2DataDir, normalized, content, modelContext);
 					json(res, 200, { archived: true, source });
 					return;
 				} catch (err) {
@@ -3334,32 +3428,19 @@ const server = createServer(async (req, res) => {
 		if (method === "DELETE" && url.startsWith("/api/l2/raw?")) {
 			const params = new URL(url, "http://localhost").searchParams;
 			const rawPath = params.get("path") ?? "";
-			const filePath = safeL2RawPath(l2DataDir, rawPath);
-			if (!filePath || !existsSync(filePath) || !statSync(filePath).isFile()) {
-				json(res, 404, { error: "L2 raw file not found" });
-				return;
-			}
 			const normalized = rawPath.replace(/^\/+/, "");
-			const isUserNote = isUserNotePath(normalized);
-			const isAttachment = isNoteAttachmentPath(normalized);
-			const inManifest = readManifest(l2DataDir).some((entry) => entry.rawPath.replace(/^\/+/, "") === normalized);
-			if (inManifest && !isUserNote && !isAttachment) {
-				json(res, 409, { error: "Cannot delete raw file referenced by manifest" });
-				return;
-			}
-			if (isUserNote) {
-				try {
-					deleteUserNote(l2DataDir, normalized);
-					json(res, 200, { deleted: true, path: normalized });
-					return;
-				} catch (err) {
-					logger.warn({ err, rawPath: normalized }, "failed to delete user note");
-					json(res, 500, { error: "Failed to delete note" });
+			try {
+				const modelContext = getArchiveModelContext() ?? undefined;
+				await deleteSourceByRawPath(l2DataDir, normalized, modelContext);
+				json(res, 200, { deleted: true, path: normalized });
+			} catch (err) {
+				if (err instanceof RawArchiveError && err.code === "NOT_FOUND") {
+					json(res, 404, { error: err.message });
 					return;
 				}
+				logger.warn({ err, rawPath: normalized }, "failed to delete raw file");
+				json(res, 500, { error: "Failed to delete file" });
 			}
-			rmSync(filePath);
-			json(res, 200, { deleted: true, path: normalized });
 			return;
 		}
 

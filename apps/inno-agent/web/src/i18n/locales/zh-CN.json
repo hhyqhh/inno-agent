@@ -149,12 +149,13 @@
       "linkedWiki": "关联 Wiki 页面"
     },
     "orphan": {
-      "hint": "此文件已上传但尚未通过 Agent 归档到知识库。可点击「请 Agent 归档」或在对话中说明。"
+      "hint": "此文件已上传但尚未归档。点击「归档」将调用 AI 生成摘要并自动链接概念页，可能需要数十秒。"
     },
     "actions": {
       "upload": "上传文件",
       "importMd": "导入 .md",
-      "archive": "请 Agent 归档"
+      "archive": "归档",
+      "unarchive": "撤回归档"
     },
     "create": {
       "newNote": "新建笔记",
@@ -164,6 +165,8 @@
       "attachments": "附件",
       "uploadAttachment": "添加附件",
       "attachmentsEmpty": "暂无附件，可上传 PDF、图片等文件。",
+      "attachmentArchived": "已并入笔记",
+      "viewNoteWiki": "查看笔记 Wiki",
       "confirmDeleteAttachment": "确定删除附件「{{name}}」？",
       "attachmentsFlash": {
         "load_failed": "附件加载失败。",
@@ -173,13 +176,18 @@
     },
     "archivePrompt": "请将以下原始资料归档到 L2 知识库：\n- 文件：{{name}}\n- 路径：{{path}}",
       "confirmDelete": "确定删除「{{name}}」？已归档内容将一并移除，此操作不可恢复。",
+      "confirmUnarchive": "确定撤回「{{name}}」的归档？Wiki 页面将被移除，原始文件会保留在待归档列表。",
     "flash": {
       "upload_ok": "文件已上传，可在「待归档」中查看。",
       "import_ok": "Markdown 已导入为 Wiki 页面，可在笔记本中编辑。",
       "create_blank_ok": "新笔记已就绪，可直接编辑。",
       "delete_ok": "文件已删除。",
       "save_ok": "已保存。",
-      "archive_ok": "已保存并归档到知识库。",
+      "archive_ok": "已归档到知识库（含 AI 摘要与概念链接）。",
+      "archive_failed": "归档失败，请检查文件格式或稍后重试。",
+      "archive_duplicate": "该内容已在知识库中，无需重复归档。",
+      "unarchive_ok": "已撤回归档，原始文件已移至待归档。",
+      "unarchive_failed": "撤回归档失败。",
       "upload_failed": "上传失败，请重试。",
       "import_failed": "导入失败，请检查 Markdown 格式。",
       "create_failed": "新建笔记失败。",

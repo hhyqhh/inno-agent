@@ -1,5 +1,12 @@
 import { apiFetch } from "./client.js";
-import type { NoteAttachment, SaveRawNoteResponse, SourceSummary, SourcesListResponse, OrphanRawFile } from "../types/sources.js";
+import type {
+	NoteAttachment,
+	SaveRawNoteResponse,
+	SourceSummary,
+	SourcesListResponse,
+	OrphanRawFile,
+	UnarchiveSourceResponse,
+} from "../types/sources.js";
 
 export async function listSources(): Promise<SourcesListResponse> {
 	return apiFetch<SourcesListResponse>("/api/l2/sources");
@@ -34,6 +41,22 @@ export async function updateRawFile(rawPath: string, content: string): Promise<S
 	return apiFetch<SaveRawNoteResponse>(`/api/l2/raw?path=${encodeURIComponent(rawPath)}`, {
 		method: "PUT",
 		body: JSON.stringify({ content }),
+	});
+}
+
+export async function archiveRawFile(
+	rawPath: string,
+	options: { title?: string; tags?: string[]; force?: boolean } = {},
+): Promise<{ archived: true; source: SourceSummary }> {
+	return apiFetch<{ archived: true; source: SourceSummary }>("/api/l2/raw/archive", {
+		method: "POST",
+		body: JSON.stringify({ path: rawPath, ...options }),
+	});
+}
+
+export async function unarchiveSource(sourceId: string): Promise<UnarchiveSourceResponse> {
+	return apiFetch<UnarchiveSourceResponse>(`/api/l2/sources/${encodeURIComponent(sourceId)}/unarchive`, {
+		method: "POST",
 	});
 }
 

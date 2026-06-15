@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, ExternalLink, Loader2, Paperclip, Trash2, Upload } from "lucide-react";
+import { Download, ExternalLink, Loader2, Paperclip, Sparkles, Trash2, Upload } from "lucide-react";
 import { deleteRawFile, l2RawUrl, listNoteAttachments, uploadNoteAttachment } from "../api/sources.js";
+import { appStore } from "../stores/app-store.js";
+import { notebookStore } from "../stores/notebook-store.js";
 import type { NoteAttachment } from "../types/sources.js";
 
 function formatSize(size: number): string {
@@ -13,6 +15,12 @@ function formatSize(size: number): string {
 function isPreviewable(fileName: string): boolean {
 	const lower = fileName.toLowerCase();
 	return [".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].some((ext) => lower.endsWith(ext));
+}
+
+function openWikiPage(path: string): void {
+	appStore.setRightPanelTab("notebook");
+	appStore.setWorkspaceMode("half");
+	void notebookStore.selectPage(path);
 }
 
 export function NoteAttachmentsPanel({ noteRawPath }: { noteRawPath: string }) {
@@ -112,6 +120,7 @@ export function NoteAttachmentsPanel({ noteRawPath }: { noteRawPath: string }) {
 					{attachments.map((attachment) => {
 						const canPreview = isPreviewable(attachment.fileName);
 						const isDeleting = deletingPath === attachment.rawPath;
+						const wikiPage = attachment.wikiPages?.find((page) => page.path.includes("wiki/sources/")) ?? attachment.wikiPages?.[0];
 						return (
 							<div
 								key={attachment.rawPath}
@@ -119,10 +128,28 @@ export function NoteAttachmentsPanel({ noteRawPath }: { noteRawPath: string }) {
 							>
 								<Paperclip size={14} className="shrink-0 text-slate-400" />
 								<div className="min-w-0 flex-1">
-									<div className="truncate text-sm font-medium text-slate-950">{attachment.fileName}</div>
+									<div className="flex items-center gap-2">
+										<div className="truncate text-sm font-medium text-slate-950">{attachment.fileName}</div>
+										{attachment.archived ? (
+											<span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700 ring-1 ring-emerald-100">
+												<Sparkles size={10} />
+												{t("sources.note.attachmentArchived")}
+											</span>
+										) : null}
+									</div>
 									<div className="text-xs text-slate-400">{formatSize(attachment.size)}</div>
 								</div>
 								<div className="flex shrink-0 items-center gap-1">
+									{wikiPage ? (
+										<button
+											type="button"
+											className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+											title={t("sources.note.viewNoteWiki")}
+											onClick={() => openWikiPage(wikiPage.path)}
+										>
+											<Sparkles size={14} />
+										</button>
+									) : null}
 									{canPreview ? (
 										<a
 											href={l2RawUrl(attachment.rawPath)}

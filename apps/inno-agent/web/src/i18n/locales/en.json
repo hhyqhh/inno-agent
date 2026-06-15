@@ -149,12 +149,13 @@
       "linkedWiki": "Linked wiki pages"
     },
     "orphan": {
-      "hint": "Uploaded but not yet archived. Use “Ask Agent to archive” or describe it in chat."
+      "hint": "Uploaded but not archived. Archive runs AI summary + concept linking and may take tens of seconds."
     },
     "actions": {
       "upload": "Upload files",
       "importMd": "Import .md",
-      "archive": "Ask Agent to archive"
+      "archive": "Archive",
+      "unarchive": "Unarchive"
     },
     "create": {
       "newNote": "New note",
@@ -164,6 +165,8 @@
       "attachments": "Attachments",
       "uploadAttachment": "Add attachment",
       "attachmentsEmpty": "No attachments yet. Upload PDFs, images, and other files.",
+      "attachmentArchived": "In note",
+      "viewNoteWiki": "View note wiki",
       "confirmDeleteAttachment": "Delete attachment “{{name}}”?",
       "attachmentsFlash": {
         "load_failed": "Failed to load attachments.",
@@ -173,13 +176,18 @@
     },
     "archivePrompt": "Please archive this source into the L2 wiki:\n- File: {{name}}\n- Path: {{path}}",
     "confirmDelete": "Delete “{{name}}”? Archived wiki content will also be removed. This cannot be undone.",
+    "confirmUnarchive": "Unarchive “{{name}}”? Wiki pages will be removed; the raw file stays in Pending archive.",
     "flash": {
       "upload_ok": "File uploaded. See “Pending archive” in the list.",
       "import_ok": "Markdown imported as wiki page(s). Open Notebook to edit.",
       "create_blank_ok": "New note is ready to edit.",
       "delete_ok": "File deleted.",
       "save_ok": "Saved.",
-      "archive_ok": "Saved and archived to the knowledge base.",
+      "archive_ok": "Archived with AI summary and concept links.",
+      "archive_failed": "Archive failed. Check the file format or try again.",
+      "archive_duplicate": "This content is already in the knowledge base.",
+      "unarchive_ok": "Unarchived. Raw file moved to pending archive.",
+      "unarchive_failed": "Failed to unarchive.",
       "upload_failed": "Upload failed. Please retry.",
       "import_failed": "Import failed. Check the Markdown file.",
       "create_failed": "Failed to create note.",

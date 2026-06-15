@@ -1,5 +1,6 @@
 import { EventEmitter } from "./event-emitter.js";
-import { createRawNote, deleteRawFile, listSources, updateRawFile } from "../api/sources.js";
+import { archiveRawFile, createRawNote, deleteRawFile, listSources, unarchiveSource, updateRawFile } from "../api/sources.js";
+import { ApiError } from "../api/client.js";
 import { uploadRawFile } from "../api/uploads.js";
 import { updateWikiPage } from "../api/wiki.js";
 import { buildBlankNote } from "../lib/build-blank-note.js";
@@ -24,6 +25,8 @@ class SourcesStoreImpl extends EventEmitter<SourcesStoreEvents> {
 	isCreating = false;
 	isDeleting = false;
 	isSavingOrphan = false;
+	isArchiving = false;
+	isUnarchiving = false;
 	searchQuery = "";
 	filterDraft: SourceDraftFilter = "all";
 	notice: string | null = null;
@@ -143,17 +146,11 @@ class SourcesStoreImpl extends EventEmitter<SourcesStoreEvents> {
 		}
 	}
 
-	/** Delete draft or archived user note (raw/notes/*.md). */
-	async deleteSelectedNote(): Promise<boolean> {
+	/** Delete selected source (draft note, draft attachment, or archived entry). */
+	async deleteSelected(): Promise<boolean> {
+		if (!this.selected) return false;
 		const rawPath =
-			this.selected?.kind === "orphan" && this.selected.file.fileName.toLowerCase().endsWith(".md")
-				? this.selected.file.rawPath
-				: this.selected?.kind === "manifest" &&
-					  this.selected.source.rawPath.replace(/^\/+/, "").startsWith("raw/notes/") &&
-					  this.selected.source.rawPath.toLowerCase().endsWith(".md")
-					? this.selected.source.rawPath
-					: null;
-		if (!rawPath) return false;
+			this.selected.kind === "manifest" ? this.selected.source.rawPath : this.selected.file.rawPath;
 
 		this.isDeleting = true;
 		this.error = null;
@@ -164,32 +161,6 @@ class SourcesStoreImpl extends EventEmitter<SourcesStoreEvents> {
 			this.selected = null;
 			await this.loadAll();
 			void import("./notebook-store.js").then((m) => m.notebookStore.loadAll());
-			this.notice = "delete_ok";
-			return true;
-		} catch {
-			this.error = "delete_failed";
-			return false;
-		} finally {
-			this.isDeleting = false;
-			this.emit("change", undefined);
-		}
-	}
-
-	/** Delete unarchived raw file (orphan attachment only). */
-	async deleteSelectedOrphan(): Promise<boolean> {
-		if (this.selected?.kind !== "orphan") return false;
-		if (this.selected.file.fileName.toLowerCase().endsWith(".md")) {
-			return this.deleteSelectedNote();
-		}
-		const rawPath = this.selected.file.rawPath;
-		this.isDeleting = true;
-		this.error = null;
-		this.notice = null;
-		this.emit("change", undefined);
-		try {
-			await deleteRawFile(rawPath);
-			this.selected = null;
-			await this.loadAll();
 			this.notice = "delete_ok";
 			return true;
 		} catch {
@@ -242,6 +213,55 @@ class SourcesStoreImpl extends EventEmitter<SourcesStoreEvents> {
 			return null;
 		} finally {
 			this.isCreating = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async unarchiveSelectedSource(): Promise<boolean> {
+		if (this.selected?.kind !== "manifest") return false;
+		const sourceId = this.selected.source.id;
+		this.isUnarchiving = true;
+		this.error = null;
+		this.notice = null;
+		this.emit("change", undefined);
+		try {
+			const result = await unarchiveSource(sourceId);
+			await this.loadAll();
+			const orphan = this.orphans.find((f) => f.rawPath === result.orphan.rawPath) ?? result.orphan;
+			this.selected = { kind: "orphan", file: orphan };
+			this.filterDraft = "draft";
+			this.notice = "unarchive_ok";
+			void import("./notebook-store.js").then((m) => m.notebookStore.loadAll());
+			return true;
+		} catch {
+			this.error = "unarchive_failed";
+			return false;
+		} finally {
+			this.isUnarchiving = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async archiveSelectedOrphan(options: { title?: string; force?: boolean } = {}): Promise<boolean> {
+		if (this.selected?.kind !== "orphan") return false;
+		const rawPath = this.selected.file.rawPath;
+		this.isArchiving = true;
+		this.error = null;
+		this.notice = null;
+		this.emit("change", undefined);
+		try {
+			const result = await archiveRawFile(rawPath, options);
+			await this.loadAll();
+			this.selected = { kind: "manifest", source: result.source };
+			this.filterDraft = "all";
+			this.notice = "archive_ok";
+			void import("./notebook-store.js").then((m) => m.notebookStore.loadAll());
+			return true;
+		} catch (err) {
+			this.error = err instanceof ApiError && err.status === 409 ? "archive_duplicate" : "archive_failed";
+			return false;
+		} finally {
+			this.isArchiving = false;
 			this.emit("change", undefined);
 		}
 	}

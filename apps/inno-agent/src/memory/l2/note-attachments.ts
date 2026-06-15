@@ -24,6 +24,14 @@ export function isNoteAttachmentPath(rawPath: string): boolean {
 	return /^raw\/notes\/[^/]+\/.+/.test(normalized);
 }
 
+/** Resolve parent note raw path from an attachment path under raw/notes/{stem}/. */
+export function parentNoteRawPathFromAttachment(rawPath: string): string | null {
+	const normalized = rawPath.replace(/^\/+/, "");
+	const match = normalized.match(/^raw\/notes\/([^/]+)\/.+$/);
+	if (!match) return null;
+	return `raw/notes/${match[1]}.md`;
+}
+
 export function listNoteAttachments(l2DataDir: string, noteRawPath: string): NoteAttachmentView[] {
 	if (!isUserNotePath(noteRawPath)) return [];
 	const dirRel = noteAttachmentDirRel(noteRawPath);

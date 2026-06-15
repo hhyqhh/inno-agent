@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import {
+	ArchiveRestore,
 	Download,
 	ExternalLink,
 	FileText,
@@ -17,7 +18,6 @@ import {
 } from "lucide-react";
 import { l2RawUrl, fetchRawFile } from "../api/sources.js";
 import { appStore } from "../stores/app-store.js";
-import { chatStore } from "../stores/chat-store.js";
 import { notebookStore } from "../stores/notebook-store.js";
 import { sourcesStore } from "../stores/sources-store.js";
 import type { OrphanRawFile, SourceDraftFilter, SourceSummary } from "../types/sources.js";
@@ -74,14 +74,26 @@ function UserNoteEditor({
 	title,
 	isSaving,
 	isDeleting,
+	isArchiving,
+	isUnarchiving,
+	showArchiveButton,
+	showUnarchiveButton,
 	onSave,
+	onArchive,
+	onUnarchive,
 	onDelete,
 }: {
 	rawPath: string;
 	title: string;
 	isSaving: boolean;
 	isDeleting: boolean;
+	isArchiving?: boolean;
+	isUnarchiving?: boolean;
+	showArchiveButton?: boolean;
+	showUnarchiveButton?: boolean;
 	onSave: (content: string) => Promise<boolean>;
+	onArchive?: (content: string) => Promise<boolean>;
+	onUnarchive?: () => void;
 	onDelete: () => void;
 }) {
 	const { t, i18n } = useTranslation();
@@ -118,15 +130,28 @@ function UserNoteEditor({
 			<div className="border-b border-slate-200 px-4 py-3">
 				<div className="flex items-start justify-between gap-2">
 					<h3 className="min-w-0 truncate text-base font-medium text-slate-950">{title}</h3>
-					<button
-						type="button"
-						className="inline-flex shrink-0 items-center gap-1 rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
-						disabled={isDeleting}
-						onClick={onDelete}
-					>
-						{isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-						{t("common.delete")}
-					</button>
+					<div className="flex shrink-0 items-center gap-1.5">
+						{showUnarchiveButton && onUnarchive ? (
+							<button
+								type="button"
+								className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+								disabled={isUnarchiving}
+								onClick={onUnarchive}
+							>
+								{isUnarchiving ? <Loader2 size={12} className="animate-spin" /> : <ArchiveRestore size={12} />}
+								{t("sources.actions.unarchive")}
+							</button>
+						) : null}
+						<button
+							type="button"
+							className="inline-flex shrink-0 items-center gap-1 rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+							disabled={isDeleting}
+							onClick={onDelete}
+						>
+							{isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+							{t("common.delete")}
+						</button>
+					</div>
 				</div>
 			</div>
 			<div className="min-h-0 flex-1 overflow-y-auto">
@@ -167,6 +192,17 @@ function UserNoteEditor({
 				>
 					{isSaving ? t("common.saving") : t("common.save")}
 				</button>
+				{showArchiveButton && onArchive ? (
+					<button
+						type="button"
+						className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+						disabled={isSaving || isArchiving || isLoading}
+						onClick={() => void onArchive(draft)}
+					>
+						{isArchiving ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+						{t("sources.actions.archive")}
+					</button>
+				) : null}
 			</div>
 		</div>
 	);
@@ -176,14 +212,18 @@ function SourceDetail({
 	source,
 	isSaving,
 	isDeleting,
+	isUnarchiving,
 	onSaveNote,
-	onDeleteNote,
+	onUnarchive,
+	onDelete,
 }: {
 	source: SourceSummary;
 	isSaving: boolean;
 	isDeleting: boolean;
+	isUnarchiving: boolean;
 	onSaveNote: (rawPath: string, content: string) => Promise<boolean>;
-	onDeleteNote: () => void;
+	onUnarchive: () => void;
+	onDelete: () => void;
 }) {
 	const { t } = useTranslation();
 	if (isUserNotePath(source.rawPath)) {
@@ -193,8 +233,11 @@ function SourceDetail({
 				title={source.title}
 				isSaving={isSaving}
 				isDeleting={isDeleting}
+				isUnarchiving={isUnarchiving}
+				showUnarchiveButton
 				onSave={(content) => onSaveNote(source.rawPath, content)}
-				onDelete={onDeleteNote}
+				onUnarchive={onUnarchive}
+				onDelete={onDelete}
 			/>
 		);
 	}
@@ -205,7 +248,29 @@ function SourceDetail({
 	return (
 		<div className="flex h-full flex-col">
 			<div className="border-b border-slate-200 px-4 py-3">
-				<h3 className="truncate text-base font-medium text-slate-950">{source.title}</h3>
+				<div className="flex items-start justify-between gap-2">
+					<h3 className="min-w-0 truncate text-base font-medium text-slate-950">{source.title}</h3>
+					<div className="flex shrink-0 items-center gap-1.5">
+						<button
+							type="button"
+							className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+							disabled={isUnarchiving}
+							onClick={onUnarchive}
+						>
+							{isUnarchiving ? <Loader2 size={12} className="animate-spin" /> : <ArchiveRestore size={12} />}
+							{t("sources.actions.unarchive")}
+						</button>
+						<button
+							type="button"
+							className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+							disabled={isDeleting}
+							onClick={onDelete}
+						>
+							{isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+							{t("common.delete")}
+						</button>
+					</div>
+				</div>
 				<div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
 					<span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">
 						{contentKindIcon(isMarkdown)}
@@ -296,6 +361,7 @@ function OrphanDetail({
 	onDelete,
 	isDeleting,
 	isSaving,
+	isArchiving,
 	onSave,
 }: {
 	file: OrphanRawFile;
@@ -303,6 +369,7 @@ function OrphanDetail({
 	onDelete: () => void;
 	isDeleting: boolean;
 	isSaving: boolean;
+	isArchiving: boolean;
 	onSave: (content: string) => Promise<boolean>;
 }) {
 	const { t } = useTranslation();
@@ -316,7 +383,10 @@ function OrphanDetail({
 				title={noteTitleFromFileName(file.fileName)}
 				isSaving={isSaving}
 				isDeleting={isDeleting}
+				isArchiving={isArchiving || isSaving}
+				showArchiveButton
 				onSave={onSave}
+				onArchive={(content) => onSave(content)}
 				onDelete={onDelete}
 			/>
 		);
@@ -340,10 +410,11 @@ function OrphanDetail({
 				<div className="mt-3 flex flex-wrap gap-2">
 					<button
 						type="button"
-						className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-2.5 py-1 text-xs text-white hover:bg-slate-800"
+						className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-2.5 py-1 text-xs text-white hover:bg-slate-800 disabled:opacity-50"
+						disabled={isArchiving}
 						onClick={onArchive}
 					>
-						<Sparkles size={12} />
+						{isArchiving ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
 						{t("sources.actions.archive")}
 					</button>
 					{canPreview ? (
@@ -397,6 +468,8 @@ export function SourcesPanel() {
 		isCreating: sourcesStore.isCreating,
 		isDeleting: sourcesStore.isDeleting,
 		isSavingOrphan: sourcesStore.isSavingOrphan,
+		isArchiving: sourcesStore.isArchiving,
+		isUnarchiving: sourcesStore.isUnarchiving,
 		searchQuery: sourcesStore.searchQuery,
 		filterDraft: sourcesStore.filterDraft,
 		notice: sourcesStore.notice,
@@ -432,13 +505,12 @@ export function SourcesPanel() {
 		}
 	}
 
-	function requestArchive(file: OrphanRawFile) {
-		chatStore.setPrefillInput(
-			t("sources.archivePrompt", { path: file.rawPath, name: file.fileName }),
-		);
+	function handleArchiveOrphan(file: OrphanRawFile) {
+		if (isMarkdownFile(file.fileName)) return;
+		void sourcesStore.archiveSelectedOrphan();
 	}
 
-	async function handleDeleteNote() {
+	async function handleDelete() {
 		const name =
 			state.selected?.kind === "manifest"
 				? state.selected.source.title
@@ -447,7 +519,14 @@ export function SourcesPanel() {
 					: "";
 		if (!name) return;
 		if (!window.confirm(t("sources.confirmDelete", { name }))) return;
-		await sourcesStore.deleteSelectedNote();
+		await sourcesStore.deleteSelected();
+	}
+
+	async function handleUnarchive() {
+		if (state.selected?.kind !== "manifest") return;
+		const name = state.selected.source.title;
+		if (!window.confirm(t("sources.confirmUnarchive", { name }))) return;
+		await sourcesStore.unarchiveSelectedSource();
 	}
 
 	const selectedId =
@@ -645,19 +724,22 @@ export function SourcesPanel() {
 							source={state.selected.source}
 							isSaving={state.isSavingOrphan}
 							isDeleting={state.isDeleting}
+							isUnarchiving={state.isUnarchiving}
 							onSaveNote={(rawPath, content) => sourcesStore.saveNoteContent(rawPath, content)}
-							onDeleteNote={() => void handleDeleteNote()}
+							onUnarchive={() => void handleUnarchive()}
+							onDelete={() => void handleDelete()}
 						/>
 					) : state.selected?.kind === "orphan" ? (
 						<OrphanDetail
 							file={state.selected.file}
 							isDeleting={state.isDeleting}
 							isSaving={state.isSavingOrphan}
+							isArchiving={state.isArchiving}
 							onArchive={() => {
 								const sel = state.selected;
-								if (sel?.kind === "orphan") requestArchive(sel.file);
+								if (sel?.kind === "orphan") handleArchiveOrphan(sel.file);
 							}}
-							onDelete={() => void handleDeleteNote()}
+							onDelete={() => void handleDelete()}
 							onSave={(content) =>
 								sourcesStore.saveNoteContent(
 									state.selected?.kind === "orphan" ? state.selected.file.rawPath : "",

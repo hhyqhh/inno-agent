@@ -4,11 +4,19 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { readText } from "../../storage/file-store.js";
 import { findManifestById, readManifest } from "./manifest-store.js";
 import { parseFrontmatter } from "./wiki-maintainer.js";
-import type { ManifestEntry } from "./types.js";
+import type { ManifestEntry, NoteAttachmentExtract } from "./types.js";
 
 export interface WikiPageRef {
 	path: string;
 	title: string;
+}
+
+export interface NoteAttachmentSummary {
+	rawPath: string;
+	fileName: string;
+	size: number;
+	updatedAt: string;
+	archived: boolean;
 }
 
 export interface SourceSummaryView {
@@ -22,6 +30,7 @@ export interface SourceSummaryView {
 	wikiPages: WikiPageRef[];
 	origin: string;
 	url?: string;
+	attachments?: NoteAttachmentSummary[];
 	createdAt: string;
 	updatedAt: string;
 }
@@ -58,6 +67,24 @@ function wikiPageRefs(l2DataDir: string, paths: string[]): WikiPageRef[] {
 	return paths.map((path) => ({ path, title: wikiPageTitle(l2DataDir, path) }));
 }
 
+function attachmentSummaries(l2DataDir: string, extracts: NoteAttachmentExtract[] | undefined): NoteAttachmentSummary[] | undefined {
+	if (!extracts || extracts.length === 0) return undefined;
+	return extracts.map((item) => {
+		const fullRawPath = safeL2Path(l2DataDir, item.rawPath);
+		let size = 0;
+		if (fullRawPath && existsSync(fullRawPath) && statSync(fullRawPath).isFile()) {
+			size = statSync(fullRawPath).size;
+		}
+		return {
+			rawPath: item.rawPath,
+			fileName: item.fileName,
+			size,
+			updatedAt: item.updatedAt,
+			archived: true,
+		};
+	});
+}
+
 function entryToView(l2DataDir: string, entry: ManifestEntry): SourceSummaryView {
 	const fullRawPath = safeL2Path(l2DataDir, entry.rawPath);
 	let size = 0;
@@ -75,6 +102,7 @@ function entryToView(l2DataDir: string, entry: ManifestEntry): SourceSummaryView
 		wikiPages: wikiPageRefs(l2DataDir, entry.wikiPages),
 		origin: entry.source.origin,
 		url: entry.source.url,
+		attachments: attachmentSummaries(l2DataDir, entry.attachmentExtracts),
 		createdAt: entry.createdAt,
 		updatedAt: entry.updatedAt,
 	};
@@ -82,6 +110,7 @@ function entryToView(l2DataDir: string, entry: ManifestEntry): SourceSummaryView
 
 export function listAllSources(l2DataDir: string): SourceSummaryView[] {
 	return readManifest(l2DataDir)
+		.filter((entry) => !entry.parentSourceId)
 		.map((entry) => entryToView(l2DataDir, entry))
 		.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }

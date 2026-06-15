@@ -33,6 +33,28 @@ export function findManifestByRawPath(l2DataDir: string, rawPath: string): Manif
 	return readManifest(l2DataDir).find((e) => e.rawPath.replace(/^\/+/, "") === normalized);
 }
 
+export function findManifestByParentSourceId(l2DataDir: string, parentSourceId: string): ManifestEntry[] {
+	return readManifest(l2DataDir).filter((entry) => entry.parentSourceId === parentSourceId);
+}
+
+export function updateManifestEntry(
+	l2DataDir: string,
+	id: string,
+	patch: Partial<ManifestEntry>,
+): ManifestEntry | undefined {
+	const entries = readManifest(l2DataDir);
+	const index = entries.findIndex((entry) => entry.id === id);
+	if (index < 0) return undefined;
+	const updated: ManifestEntry = {
+		...entries[index]!,
+		...patch,
+		updatedAt: new Date().toISOString(),
+	};
+	entries[index] = updated;
+	writeManifest(l2DataDir, entries);
+	return updated;
+}
+
 export function writeManifest(l2DataDir: string, entries: ManifestEntry[]): void {
 	const path = getManifestPath(l2DataDir);
 	ensureDir(dirname(path));
@@ -48,6 +70,17 @@ export function removeManifestByRawPath(l2DataDir: string, rawPath: string): Man
 	writeManifest(
 		l2DataDir,
 		entries.filter((entry) => entry.rawPath.replace(/^\/+/, "") !== normalized),
+	);
+	return removed;
+}
+
+export function removeManifestById(l2DataDir: string, id: string): ManifestEntry | undefined {
+	const entries = readManifest(l2DataDir);
+	const removed = entries.find((entry) => entry.id === id);
+	if (!removed) return undefined;
+	writeManifest(
+		l2DataDir,
+		entries.filter((entry) => entry.id !== id),
 	);
 	return removed;
 }

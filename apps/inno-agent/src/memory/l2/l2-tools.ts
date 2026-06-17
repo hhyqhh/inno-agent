@@ -24,8 +24,15 @@ import { logger } from "../../logger.js";
 
 /**
  * Create L2 Wiki memory tools for the Inno Agent.
+ * When `isEnabled` is provided and returns false, the archive/query tools
+ * short-circuit to a disabled notice without touching the knowledge base.
  */
-export function createL2Tools(l2DataDir: string): ToolDefinition[] {
+export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): ToolDefinition[] {
+	const l2DisabledResult = () => ({
+		content: [{ type: "text" as const, text: "L2 Wiki 知识库已在设置中关闭，当前不归档也不检索知识库内容。" }],
+		details: { disabled: true },
+	});
+
 	// ---- Tool 1: l2_archive ----
 	const archiveTool = defineTool({
 		name: "l2_archive",
@@ -52,6 +59,7 @@ export function createL2Tools(l2DataDir: string): ToolDefinition[] {
 			force: Type.Optional(Type.Boolean({ description: "为 true 时跳过重复检查，强制归档" })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (isEnabled && !isEnabled()) return l2DisabledResult();
 			ensureL2Directories(l2DataDir);
 			const maintenanceContext = readMaintenanceContext(l2DataDir);
 
@@ -225,6 +233,7 @@ export function createL2Tools(l2DataDir: string): ToolDefinition[] {
 			),
 		}),
 		async execute(_toolCallId, params) {
+			if (isEnabled && !isEnabled()) return l2DisabledResult();
 			ensureL2Directories(l2DataDir);
 			const query = params.query ?? "";
 			const result = queryWiki(l2DataDir, query);

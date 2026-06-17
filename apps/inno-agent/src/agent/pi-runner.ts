@@ -28,6 +28,8 @@ let _currentCwd = "";
 let _config: InnoConfig | null = null;
 let _configHolder: ConfigHolder | null = null;
 let _cwdResolver: ((sessionPath: string) => string | null) | null = null;
+/** Provider IDs registered into the active model registry by Inno's config. */
+const _registeredProviderIds = new Set<string>();
 
 export type RuntimeChannelHint = "web" | "feishu" | "wechat" | "qq" | "scheduler" | "cli" | "unknown";
 
@@ -149,6 +151,7 @@ export async function initSession(
 				api: providerConfig.api ?? "openai-completions",
 				models: providerConfig.models.map(modelConfigToProviderModel),
 			});
+			_registeredProviderIds.add(providerId);
 		}
 		services.modelRegistry.refresh();
 		const defaultModel = services.modelRegistry.find(currentConfig.defaultProvider, currentConfig.defaultModel);
@@ -233,6 +236,19 @@ export async function refreshConfiguredProviders(config: InnoConfig): Promise<vo
 	if (!_runtime) throw new Error("Session not initialized. Call initSession() first.");
 	_config = config;
 	if (_configHolder) _configHolder.current = config;
+
+	// Drop providers that were registered before but are no longer in config.
+	// registerProvider replaces a provider's models, so a deleted model inside a
+	// surviving provider is handled by re-registering below — but a fully removed
+	// provider must be explicitly unregistered or its models linger in the
+	// registry (and keep showing up in getAvailableModels / the settings UI).
+	for (const providerId of _registeredProviderIds) {
+		if (!config.providers[providerId]) {
+			_runtime.session.modelRegistry.unregisterProvider(providerId);
+			_registeredProviderIds.delete(providerId);
+		}
+	}
+
 	const providerIds: string[] = [];
 	let modelCount = 0;
 	for (const [providerId, providerConfig] of Object.entries(config.providers)) {
@@ -242,6 +258,7 @@ export async function refreshConfiguredProviders(config: InnoConfig): Promise<vo
 			api: providerConfig.api ?? "openai-completions",
 			models: providerConfig.models.map(modelConfigToProviderModel),
 		});
+		_registeredProviderIds.add(providerId);
 		providerIds.push(providerId);
 		modelCount += providerConfig.models.length;
 	}

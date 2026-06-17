@@ -25,6 +25,13 @@ export async function deleteProviderApi(providerId: string): Promise<InnoSetting
 	});
 }
 
+export async function deleteModelApi(providerId: string, modelId: string): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>(
+		`/api/settings/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,
+		{ method: "DELETE" },
+	);
+}
+
 export async function saveChannelsSettings(payload: ChannelsSettingsPayload): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings/channels", {
 		method: "PUT",
@@ -32,10 +39,16 @@ export async function saveChannelsSettings(payload: ChannelsSettingsPayload): Pr
 	});
 }
 
-export async function saveMemorySettings(l3Enabled: boolean): Promise<InnoSettings> {
+export interface MemorySettingsPatch {
+	l1Enabled?: boolean;
+	l2Enabled?: boolean;
+	l3Enabled?: boolean;
+}
+
+export async function saveMemorySettings(patch: MemorySettingsPatch): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings/memory", {
 		method: "PUT",
-		body: JSON.stringify({ l3Enabled }),
+		body: JSON.stringify(patch),
 	});
 }
 

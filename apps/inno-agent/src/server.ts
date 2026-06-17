@@ -8,7 +8,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, r
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
-import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, type InnoConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
+import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, deleteModel, type InnoConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
 import { ensureDir, readJson, readText, writeJson, writeText } from "./storage/file-store.js";
 import {
 	createNewSession,
@@ -3270,6 +3270,29 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		// Delete a single model from a provider. Must be matched before the
+		// provider-delete route below (which uses startsWith on the same prefix).
+		if (method === "DELETE" && /^\/api\/settings\/providers\/[^/]+\/models\/[^/]+$/.test(url)) {
+			const rest = url.slice("/api/settings/providers/".length);
+			const [providerPart, modelPart] = rest.split("/models/");
+			const providerId = decodeURIComponent(providerPart);
+			const modelId = decodeURIComponent(modelPart);
+			if (!providerId || !modelId) {
+				json(res, 400, { error: "Missing provider or model id" });
+				return;
+			}
+			try {
+				config = saveConfig(paths.configPath, deleteModel(config, providerId, modelId));
+				await refreshConfiguredProviders(config);
+			} catch (err) {
+				logger.error({ err, providerId, modelId }, "failed to delete model");
+				json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+				return;
+			}
+			json(res, 200, buildSafeSettings());
+			return;
+		}
+
 		if (method === "DELETE" && url.startsWith("/api/settings/providers/")) {
 			const providerId = decodeURIComponent(url.slice("/api/settings/providers/".length));
 			if (!providerId) {
@@ -3346,11 +3369,25 @@ const server = createServer(async (req, res) => {
 		// --- Memory Settings (L3 cross-conversation recall toggle) ---
 		if (method === "PUT" && url === "/api/settings/memory") {
 			const body = (await readBody(req)) as Record<string, unknown>;
-			if (typeof body.l3Enabled !== "boolean") {
-				json(res, 400, { error: "Missing l3Enabled (boolean)" });
+			const keys = ["l1Enabled", "l2Enabled", "l3Enabled"] as const;
+			if (keys.every((k) => typeof body[k] !== "boolean")) {
+				json(res, 400, { error: "Provide at least one of l1Enabled / l2Enabled / l3Enabled (boolean)" });
 				return;
 			}
-			config.memory = { l3Enabled: body.l3Enabled };
+			for (const k of keys) {
+				if (body[k] !== undefined && typeof body[k] !== "boolean") {
+					json(res, 400, { error: `${k} must be a boolean` });
+					return;
+				}
+			}
+			// Merge over current values so a partial payload leaves the other
+			// layers untouched. normalizeMemoryConfig backfills defaults.
+			const current = config.memory ?? { l1Enabled: true, l2Enabled: true, l3Enabled: true };
+			config.memory = {
+				l1Enabled: typeof body.l1Enabled === "boolean" ? body.l1Enabled : current.l1Enabled,
+				l2Enabled: typeof body.l2Enabled === "boolean" ? body.l2Enabled : current.l2Enabled,
+				l3Enabled: typeof body.l3Enabled === "boolean" ? body.l3Enabled : current.l3Enabled,
+			};
 			config = saveConfig(paths.configPath, config);
 			syncConfig(config);
 			json(res, 200, buildSafeSettings());

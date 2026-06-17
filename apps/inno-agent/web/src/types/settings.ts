@@ -79,5 +79,5 @@ export interface InnoSettings {
 	};
 	bridge?: { token: string }; // masked
 	github?: { token: string }; // masked
-	memory?: { l3Enabled: boolean };
+	memory?: { l1Enabled: boolean; l2Enabled: boolean; l3Enabled: boolean };
 }

@@ -25,6 +25,19 @@ export interface InnoSubagentsConfig {
 
 export interface InnoMemoryConfig {
 	/**
+	 * When true (default), the L1 learner profile is active: the per-turn
+	 * context pack (profile + recent events) is injected into the system prompt
+	 * and the learner tools record/update the profile. When false, the profile
+	 * is neither read into the prompt nor written by tools.
+	 */
+	l1Enabled: boolean;
+	/**
+	 * When true (default), L2 Wiki memory is active: the `l2_archive` /
+	 * `l2_query` tools can write and read the knowledge base. When false, those
+	 * tools become no-ops that report L2 is disabled.
+	 */
+	l2Enabled: boolean;
+	/**
 	 * When true (default), L3 cross-conversation recall is active: past sessions
 	 * are searched via sqlite and relevant snippets are auto-injected / the
 	 * `l3_recall` tool is exposed. When false, replies use only the current
@@ -118,8 +131,12 @@ export function normalizeProviderConfig(provider: Partial<InnoProviderConfig>): 
 }
 
 export function normalizeMemoryConfig(memory: Partial<InnoMemoryConfig> | undefined): InnoMemoryConfig {
-	// L3 recall defaults to ON; only an explicit `false` disables it.
-	return { l3Enabled: memory?.l3Enabled !== false };
+	// All three memory layers default to ON; only an explicit `false` disables one.
+	return {
+		l1Enabled: memory?.l1Enabled !== false,
+		l2Enabled: memory?.l2Enabled !== false,
+		l3Enabled: memory?.l3Enabled !== false,
+	};
 }
 
 export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
@@ -233,6 +250,32 @@ export function deleteProvider(config: InnoConfig, providerId: string): InnoConf
 	const remaining = Object.keys(config.providers).filter((k) => k !== id);
 	if (remaining.length === 0) throw new Error("Cannot delete the last provider");
 	delete config.providers[id];
+	return normalizeConfig(config);
+}
+
+/**
+ * Remove a single model from a provider. If the model was the provider's last
+ * one, the provider itself is removed. Refuses to delete the very last model
+ * across all providers (the config must always retain at least one model).
+ */
+export function deleteModel(config: InnoConfig, providerId: string, modelId: string): InnoConfig {
+	const id = providerId.trim();
+	const mid = modelId.trim();
+	if (!id) throw new Error("Provider id is required");
+	if (!mid) throw new Error("Model id is required");
+	const provider = config.providers[id];
+	if (!provider) throw new Error(`Provider ${id} not found`);
+	if (!provider.models.some((m) => m.id === mid)) throw new Error(`Model ${id}/${mid} not found`);
+
+	const totalModels = Object.values(config.providers).reduce((sum, p) => sum + p.models.length, 0);
+	if (totalModels <= 1) throw new Error("Cannot delete the last model");
+
+	const remainingModels = provider.models.filter((m) => m.id !== mid);
+	if (remainingModels.length === 0) {
+		delete config.providers[id];
+	} else {
+		config.providers[id] = { ...provider, models: remainingModels };
+	}
 	return normalizeConfig(config);
 }
 

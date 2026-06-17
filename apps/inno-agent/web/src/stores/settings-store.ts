@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, saveChannelsSettings, saveMemorySettings, saveGithubSettings } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveGithubSettings, type MemorySettingsPatch } from "../api/settings.js";
 import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
 interface SettingsStoreEvents {
@@ -89,6 +89,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 		}
 	}
 
+	async deleteModel(providerId: string, modelId: string): Promise<void> {
+		this.isSavingProvider = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await deleteModelApi(providerId, modelId);
+			await this.load();
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to delete model";
+			this.emit("change", undefined);
+		} finally {
+			this.isSavingProvider = false;
+			this.emit("change", undefined);
+		}
+	}
+
 	async saveChannels(payload: ChannelsSettingsPayload): Promise<void> {
 		this.isSavingChannels = true;
 		this.error = null;
@@ -104,15 +120,16 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 		}
 	}
 
-	async saveMemory(l3Enabled: boolean): Promise<void> {
+	async saveMemory(patch: MemorySettingsPatch): Promise<void> {
 		this.isSavingMemory = true;
 		this.error = null;
 		this.emit("change", undefined);
 		try {
-			this.settings = await saveMemorySettings(l3Enabled);
+			this.settings = await saveMemorySettings(patch);
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : "Failed to save memory settings";
 			this.emit("change", undefined);
+			throw err;
 		} finally {
 			this.isSavingMemory = false;
 			this.emit("change", undefined);

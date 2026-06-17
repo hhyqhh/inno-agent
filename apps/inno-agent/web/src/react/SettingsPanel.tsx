@@ -915,7 +915,7 @@ export function SettingsPanel() {
 											title={t("common.delete", "Delete")}
 											onClick={() => {
 												if (window.confirm(t("settings.confirmDelete", { id: `${model.provider}/${model.id}` }) ?? "")) {
-													void settingsStore.deleteProvider(model.provider);
+													void settingsStore.deleteModel(model.provider, model.id);
 												}
 											}}
 										>

@@ -253,6 +253,32 @@ export function deleteProvider(config: InnoConfig, providerId: string): InnoConf
 	return normalizeConfig(config);
 }
 
+/**
+ * Remove a single model from a provider. If the model was the provider's last
+ * one, the provider itself is removed. Refuses to delete the very last model
+ * across all providers (the config must always retain at least one model).
+ */
+export function deleteModel(config: InnoConfig, providerId: string, modelId: string): InnoConfig {
+	const id = providerId.trim();
+	const mid = modelId.trim();
+	if (!id) throw new Error("Provider id is required");
+	if (!mid) throw new Error("Model id is required");
+	const provider = config.providers[id];
+	if (!provider) throw new Error(`Provider ${id} not found`);
+	if (!provider.models.some((m) => m.id === mid)) throw new Error(`Model ${id}/${mid} not found`);
+
+	const totalModels = Object.values(config.providers).reduce((sum, p) => sum + p.models.length, 0);
+	if (totalModels <= 1) throw new Error("Cannot delete the last model");
+
+	const remainingModels = provider.models.filter((m) => m.id !== mid);
+	if (remainingModels.length === 0) {
+		delete config.providers[id];
+	} else {
+		config.providers[id] = { ...provider, models: remainingModels };
+	}
+	return normalizeConfig(config);
+}
+
 export function getConfiguredPort(config: InnoConfig, override?: number): number {
 	if (override) return override;
 	const envPort = process.env.INNO_PORT ? Number.parseInt(process.env.INNO_PORT, 10) : undefined;

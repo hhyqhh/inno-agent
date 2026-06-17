@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, saveChannelsSettings, saveMemorySettings, saveGithubSettings, type MemorySettingsPatch } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveGithubSettings, type MemorySettingsPatch } from "../api/settings.js";
 import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
 interface SettingsStoreEvents {
@@ -82,6 +82,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			await this.load();
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : "Failed to delete provider";
+			this.emit("change", undefined);
+		} finally {
+			this.isSavingProvider = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async deleteModel(providerId: string, modelId: string): Promise<void> {
+		this.isSavingProvider = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await deleteModelApi(providerId, modelId);
+			await this.load();
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to delete model";
 			this.emit("change", undefined);
 		} finally {
 			this.isSavingProvider = false;

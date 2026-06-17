@@ -8,7 +8,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, r
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
-import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, type InnoConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
+import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, deleteModel, type InnoConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
 import { ensureDir, readJson, readText, writeJson, writeText } from "./storage/file-store.js";
 import {
 	createNewSession,
@@ -3265,6 +3265,29 @@ const server = createServer(async (req, res) => {
 			if (payload.makeDefault) {
 				await switchModel(config.defaultProvider, config.defaultModel);
 				config = saveConfig(paths.configPath, setDefaultModel(config, config.defaultProvider, config.defaultModel));
+			}
+			json(res, 200, buildSafeSettings());
+			return;
+		}
+
+		// Delete a single model from a provider. Must be matched before the
+		// provider-delete route below (which uses startsWith on the same prefix).
+		if (method === "DELETE" && /^\/api\/settings\/providers\/[^/]+\/models\/[^/]+$/.test(url)) {
+			const rest = url.slice("/api/settings/providers/".length);
+			const [providerPart, modelPart] = rest.split("/models/");
+			const providerId = decodeURIComponent(providerPart);
+			const modelId = decodeURIComponent(modelPart);
+			if (!providerId || !modelId) {
+				json(res, 400, { error: "Missing provider or model id" });
+				return;
+			}
+			try {
+				config = saveConfig(paths.configPath, deleteModel(config, providerId, modelId));
+				await refreshConfiguredProviders(config);
+			} catch (err) {
+				logger.error({ err, providerId, modelId }, "failed to delete model");
+				json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+				return;
 			}
 			json(res, 200, buildSafeSettings());
 			return;

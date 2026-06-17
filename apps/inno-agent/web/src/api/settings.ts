@@ -25,6 +25,13 @@ export async function deleteProviderApi(providerId: string): Promise<InnoSetting
 	});
 }
 
+export async function deleteModelApi(providerId: string, modelId: string): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>(
+		`/api/settings/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,
+		{ method: "DELETE" },
+	);
+}
+
 export async function saveChannelsSettings(payload: ChannelsSettingsPayload): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings/channels", {
 		method: "PUT",

@@ -32,10 +32,16 @@ export async function saveChannelsSettings(payload: ChannelsSettingsPayload): Pr
 	});
 }
 
-export async function saveMemorySettings(l3Enabled: boolean): Promise<InnoSettings> {
+export interface MemorySettingsPatch {
+	l1Enabled?: boolean;
+	l2Enabled?: boolean;
+	l3Enabled?: boolean;
+}
+
+export async function saveMemorySettings(patch: MemorySettingsPatch): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings/memory", {
 		method: "PUT",
-		body: JSON.stringify({ l3Enabled }),
+		body: JSON.stringify(patch),
 	});
 }
 

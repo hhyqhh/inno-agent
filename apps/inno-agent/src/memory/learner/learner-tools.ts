@@ -61,10 +61,22 @@ const PreferencesSchema = Type.Object({
 // ============================================================================
 
 /**
- * Create the four L1 learner tools.
- * The dataDir and learnerId are captured in closure.
+ * Create the L1 learner tools.
+ * The dataDir and learnerId are captured in closure. When `isEnabled` is
+ * provided and returns false, every tool short-circuits to a disabled notice
+ * so the profile is neither read nor mutated.
  */
-export function createLearnerTools(dataDir: string, learnerId: string): ToolDefinition[] {
+export function createLearnerTools(
+	dataDir: string,
+	learnerId: string,
+	isEnabled?: () => boolean,
+): ToolDefinition[] {
+	const L1_DISABLED_TEXT = "L1 学习者画像已在设置中关闭，当前不读取也不更新学习者画像。";
+	const disabledResult = () => ({
+		content: [{ type: "text" as const, text: L1_DISABLED_TEXT }],
+		details: { disabled: true } as Record<string, unknown>,
+	});
+
 	const getLearnerContextTool = defineTool({
 		name: "get_learner_context",
 		label: "Get Learner Context",
@@ -72,6 +84,7 @@ export function createLearnerTools(dataDir: string, learnerId: string): ToolDefi
 			"读取当前学习者上下文包，包含活跃目标、相关概念掌握度、活跃误区和教学提示。在开始新对话或需要了解学习者状态时调用。",
 		parameters: Type.Object({}),
 		async execute() {
+			if (isEnabled && !isEnabled()) return disabledResult();
 			const profile = loadProfile(dataDir);
 			const pack = buildContextPack(profile);
 			return {
@@ -115,6 +128,7 @@ export function createLearnerTools(dataDir: string, learnerId: string): ToolDefi
 			),
 		}),
 		async execute(_toolCallId, params) {
+			if (isEnabled && !isEnabled()) return disabledResult();
 			const event = createLearningEvent(
 				learnerId,
 				params.event_type,
@@ -157,6 +171,7 @@ export function createLearnerTools(dataDir: string, learnerId: string): ToolDefi
 			profile_summary_append: Type.Optional(Type.String({ description: "One concise sentence to append to profile summary" })),
 		}),
 		async execute(_toolCallId, params) {
+			if (isEnabled && !isEnabled()) return disabledResult();
 			const updated = patchProfile(dataDir, params);
 			return {
 				content: [
@@ -183,6 +198,7 @@ export function createLearnerTools(dataDir: string, learnerId: string): ToolDefi
 			profile_summary: Type.Optional(Type.String({ description: "Updated profile summary text" })),
 		}),
 		async execute(_toolCallId, params) {
+			if (isEnabled && !isEnabled()) return disabledResult();
 			const updated = updateProfile(dataDir, params);
 			return {
 				content: [
@@ -203,6 +219,7 @@ export function createLearnerTools(dataDir: string, learnerId: string): ToolDefi
 			"展示完整的学习者画像，供用户查看、修正或删除。当用户请求查看自己的学习状态时调用。",
 		parameters: Type.Object({}),
 		async execute() {
+			if (isEnabled && !isEnabled()) return disabledResult();
 			const profile = loadProfile(dataDir);
 			const summary = [
 				`学习者 ID: ${profile.learner_id}`,

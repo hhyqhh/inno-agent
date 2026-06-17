@@ -159,8 +159,14 @@ export function createInnoExtension(
 			}
 		});
 
-		// 2. Register L1 learner tools
-		const learnerTools = createLearnerTools(paths.learnerDataDir, "default");
+		// Memory-layer runtime gates. All default ON; only an explicit `false`
+		// in config.memory disables a layer. Read live from configHolder so the
+		// toggles take effect without a restart.
+		const isL1Enabled = () => configHolder.current.memory?.l1Enabled !== false;
+		const isL2Enabled = () => configHolder.current.memory?.l2Enabled !== false;
+
+		// 2. Register L1 learner tools (gated on config.memory.l1Enabled)
+		const learnerTools = createLearnerTools(paths.learnerDataDir, "default", isL1Enabled);
 		for (const tool of learnerTools) {
 			pi.registerTool(tool);
 		}
@@ -186,8 +192,8 @@ export function createInnoExtension(
 			}
 		}
 
-		// 4. Register L2 Wiki memory tools
-		const l2Tools = createL2Tools(paths.l2DataDir);
+		// 4. Register L2 Wiki memory tools (gated on config.memory.l2Enabled)
+		const l2Tools = createL2Tools(paths.l2DataDir, isL2Enabled);
 		for (const tool of l2Tools) {
 			pi.registerTool(tool);
 		}
@@ -224,12 +230,17 @@ export function createInnoExtension(
 
 		// 5. Inject L1 context and custom system prompt before each agent turn
 			pi.on("before_agent_start", async (event, ctx) => {
-				const profile = loadProfile(paths.learnerDataDir);
-				const recentEvents = loadEvents(paths.learnerDataDir).slice(-8);
-				const contextPack = buildContextPack(profile, recentEvents);
-				const contextSection = formatContextPackForPrompt(contextPack);
+				const sections: string[] = [INNO_SYSTEM_PROMPT];
 
-				const sections: string[] = [INNO_SYSTEM_PROMPT, contextSection];
+				// Inject the L1 learner context pack (profile + recent events)
+				// unless the learner has turned L1 off in settings.
+				if (isL1Enabled()) {
+					const profile = loadProfile(paths.learnerDataDir);
+					const recentEvents = loadEvents(paths.learnerDataDir).slice(-8);
+					const contextPack = buildContextPack(profile, recentEvents);
+					const contextSection = formatContextPackForPrompt(contextPack);
+					sections.push(contextSection);
+				}
 
 				// Inject per-workspace context: agent.md + private skills.
 				const workspaceDir = resolveActiveWorkspaceDir(paths, deps);

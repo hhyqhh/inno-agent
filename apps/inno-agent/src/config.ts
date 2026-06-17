@@ -25,6 +25,19 @@ export interface InnoSubagentsConfig {
 
 export interface InnoMemoryConfig {
 	/**
+	 * When true (default), the L1 learner profile is active: the per-turn
+	 * context pack (profile + recent events) is injected into the system prompt
+	 * and the learner tools record/update the profile. When false, the profile
+	 * is neither read into the prompt nor written by tools.
+	 */
+	l1Enabled: boolean;
+	/**
+	 * When true (default), L2 Wiki memory is active: the `l2_archive` /
+	 * `l2_query` tools can write and read the knowledge base. When false, those
+	 * tools become no-ops that report L2 is disabled.
+	 */
+	l2Enabled: boolean;
+	/**
 	 * When true (default), L3 cross-conversation recall is active: past sessions
 	 * are searched via sqlite and relevant snippets are auto-injected / the
 	 * `l3_recall` tool is exposed. When false, replies use only the current
@@ -118,8 +131,12 @@ export function normalizeProviderConfig(provider: Partial<InnoProviderConfig>): 
 }
 
 export function normalizeMemoryConfig(memory: Partial<InnoMemoryConfig> | undefined): InnoMemoryConfig {
-	// L3 recall defaults to ON; only an explicit `false` disables it.
-	return { l3Enabled: memory?.l3Enabled !== false };
+	// All three memory layers default to ON; only an explicit `false` disables one.
+	return {
+		l1Enabled: memory?.l1Enabled !== false,
+		l2Enabled: memory?.l2Enabled !== false,
+		l3Enabled: memory?.l3Enabled !== false,
+	};
 }
 
 export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {

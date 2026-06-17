@@ -48,6 +48,8 @@
 		"enabled": false
 	},
 	"memory": {
+		"l1Enabled": true,
+		"l2Enabled": true,
 		"l3Enabled": true
 	}
 }

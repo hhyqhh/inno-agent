@@ -713,47 +713,95 @@ function GithubSettings({ settings }: { settings: InnoSettings }) {
 	);
 }
 
-/* ---------- Memory Settings (L3 cross-conversation recall toggle) ---------- */
+/* ---------- Memory Settings (L1/L2/L3 layer toggles) ---------- */
+
+type MemoryLayer = "l1Enabled" | "l2Enabled" | "l3Enabled";
+
+function MemoryToggleRow({
+	enabled,
+	saving,
+	title,
+	desc,
+	onToggle,
+}: {
+	enabled: boolean;
+	saving: boolean;
+	title: string;
+	desc: string;
+	onToggle: (next: boolean) => void;
+}) {
+	return (
+		<div className="flex items-start justify-between gap-3">
+			<div className="min-w-0">
+				<h4 className="text-sm font-medium text-slate-950">{title}</h4>
+				<p className="mt-1 text-xs text-slate-500">{desc}</p>
+			</div>
+			<button
+				role="switch"
+				aria-checked={enabled}
+				disabled={saving}
+				onClick={() => onToggle(!enabled)}
+				className={`relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${enabled ? "bg-blue-600" : "bg-slate-300"}`}
+			>
+				<span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? "translate-x-[18px]" : "translate-x-1"}`} />
+			</button>
+		</div>
+	);
+}
 
 function MemorySettings({ settings }: { settings: InnoSettings }) {
 	const { t } = useTranslation();
-	const [enabled, setEnabled] = useState(settings.memory?.l3Enabled !== false);
-	const [saving, setSaving] = useState(false);
+	const initial = {
+		l1Enabled: settings.memory?.l1Enabled !== false,
+		l2Enabled: settings.memory?.l2Enabled !== false,
+		l3Enabled: settings.memory?.l3Enabled !== false,
+	};
+	const [state, setState] = useState(initial);
+	const [savingKey, setSavingKey] = useState<MemoryLayer | null>(null);
 
 	useEffect(() => {
-		setEnabled(settings.memory?.l3Enabled !== false);
-	}, [settings.memory?.l3Enabled]);
+		setState({
+			l1Enabled: settings.memory?.l1Enabled !== false,
+			l2Enabled: settings.memory?.l2Enabled !== false,
+			l3Enabled: settings.memory?.l3Enabled !== false,
+		});
+	}, [settings.memory?.l1Enabled, settings.memory?.l2Enabled, settings.memory?.l3Enabled]);
 
-	async function handleToggle(next: boolean) {
-		setEnabled(next);
-		setSaving(true);
+	async function handleToggle(key: MemoryLayer, next: boolean) {
+		setState((s) => ({ ...s, [key]: next }));
+		setSavingKey(key);
 		try {
-			await settingsStore.saveMemory(next);
+			await settingsStore.saveMemory({ [key]: next });
 		} catch {
-			setEnabled(!next);
+			setState((s) => ({ ...s, [key]: !next }));
 		} finally {
-			setSaving(false);
+			setSavingKey(null);
 		}
 	}
 
+	const layers: { key: MemoryLayer; ns: "l1" | "l2" | "memory" }[] = [
+		{ key: "l1Enabled", ns: "l1" },
+		{ key: "l2Enabled", ns: "l2" },
+		{ key: "l3Enabled", ns: "memory" },
+	];
+
 	return (
 		<div className="rounded-lg border border-slate-200 bg-white p-4">
-			<div className="flex items-start justify-between gap-3">
-				<div className="min-w-0">
-					<h4 className="text-sm font-medium text-slate-950">{t("settings.memory.title")}</h4>
-					<p className="mt-1 text-xs text-slate-500">
-						{enabled ? t("settings.memory.onDesc") : t("settings.memory.offDesc")}
-					</p>
-				</div>
-				<button
-					role="switch"
-					aria-checked={enabled}
-					disabled={saving}
-					onClick={() => void handleToggle(!enabled)}
-					className={`relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${enabled ? "bg-blue-600" : "bg-slate-300"}`}
-				>
-					<span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? "translate-x-[18px]" : "translate-x-1"}`} />
-				</button>
+			<h4 className="mb-3 text-sm font-medium text-slate-950">{t("settings.memorySection")}</h4>
+			<div className="grid gap-4">
+				{layers.map(({ key, ns }) => {
+					const enabled = state[key];
+					return (
+						<MemoryToggleRow
+							key={key}
+							enabled={enabled}
+							saving={savingKey === key}
+							title={t(`settings.${ns}.title`)}
+							desc={enabled ? t(`settings.${ns}.onDesc`) : t(`settings.${ns}.offDesc`)}
+							onToggle={(next) => void handleToggle(key, next)}
+						/>
+					);
+				})}
 			</div>
 		</div>
 	);

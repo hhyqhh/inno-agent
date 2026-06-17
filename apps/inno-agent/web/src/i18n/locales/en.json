@@ -332,6 +332,17 @@
     "use": "Use",
     "providers": "Providers",
     "newProvider": "New provider",
+    "memorySection": "Memory layers",
+    "l1": {
+      "title": "Learner profile (L1)",
+      "onDesc": "On: injects the learner profile each turn and lets tools update it for personalized teaching.",
+      "offDesc": "Off: the learner profile is neither read into the prompt nor updated by tools."
+    },
+    "l2": {
+      "title": "Knowledge base (L2)",
+      "onDesc": "On: lets the agent archive material to and query the Wiki knowledge base.",
+      "offDesc": "Off: archiving to and querying the knowledge base are disabled."
+    },
     "memory": {
       "title": "Cross-conversation memory (L3)",
       "onDesc": "On: searches past conversations via SQLite and auto-recalls relevant context.",

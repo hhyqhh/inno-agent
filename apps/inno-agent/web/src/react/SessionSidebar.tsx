@@ -400,6 +400,16 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 		activeWorkspaceId: workspaceStore.activeWorkspaceId,
 	}));
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
+	const [togglingMode, setTogglingMode] = useState(false);
+
+	// Toggle Simple/Normal mode from the top-left logo (flip animation).
+	const toggleMode = useCallback(() => {
+		if (togglingMode) return;
+		const next = !(settingsStore.settings?.simpleMode?.enabled === true);
+		setTogglingMode(true);
+		void settingsStore.saveSimpleMode(next).finally(() => setTogglingMode(false));
+	}, [togglingMode]);
+
 	const orderedChannels = CHANNEL_FILTER_ORDER.filter((ch) => state.availableChannels.includes(ch as SessionChannel));
 
 	useEffect(() => {
@@ -594,9 +604,39 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			<div className="border-b border-slate-200/70 px-3 py-2.5">
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex items-center gap-2 min-w-0">
-						<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-slate-800 shadow-sm">IA</div>
+						<button
+							type="button"
+							onClick={toggleMode}
+							disabled={togglingMode}
+							title={simpleMode ? "当前:简单模式 · 点击切换到普通模式" : "当前:普通模式 · 点击切换到简单模式"}
+							aria-label={simpleMode ? "切换到普通模式" : "切换到简单模式"}
+							className="shrink-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-wait"
+							style={{ perspective: "500px" }}
+						>
+							<motion.div
+								animate={{ rotateY: simpleMode ? 180 : 0 }}
+								transition={{ type: "spring", stiffness: 320, damping: 22 }}
+								style={{ transformStyle: "preserve-3d", position: "relative" }}
+								className="h-7 w-7"
+							>
+								<span
+									className="absolute inset-0 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-slate-800 shadow-sm"
+									style={{ backfaceVisibility: "hidden" }}
+								>
+									IA
+								</span>
+								<span
+									className="absolute inset-0 flex items-center justify-center rounded-lg border border-blue-400 bg-blue-600 text-[10px] font-semibold text-white shadow-sm"
+									style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+								>
+									IA
+								</span>
+							</motion.div>
+						</button>
 						<div className="min-w-0">
-							<h1 className="inno-sidebar-title font-semibold tracking-tight text-slate-800">Inno Agent</h1>
+							<h1 className="inno-sidebar-title font-semibold tracking-tight text-slate-800">
+								Inno Agent{simpleMode ? <span className="font-normal text-blue-600">(简单模式)</span> : null}
+							</h1>
 						</div>
 					</div>
 					<div className="flex items-center gap-1">

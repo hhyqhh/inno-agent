@@ -484,6 +484,27 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 		return result;
 	}, [wsState.list, state.filteredSessions, state.searchQuery, state.channelFilter, simpleMode]);
 
+	// Simple Mode (P7): a flat, recency-sorted list of web conversations — the
+	// lightweight way back to a previously generated artifact (PPT, lesson plan,
+	// etc.) without exposing workspace groups, channel filters or management UI.
+	const recentSessions = useMemo<SessionMeta[]>(() => {
+		if (!simpleMode) return [];
+		return state.filteredSessions
+			.filter((s) => !s.archived && (!s.origin || s.origin === "web"))
+			.slice()
+			.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+	}, [simpleMode, state.filteredSessions]);
+
+	// Session → bound workspace lookup (shared by the Simple Mode list so each
+	// row can show which workspace its files live in).
+	const sessionToWorkspace = useMemo(() => {
+		const map = new Map<string, WorkspaceMeta>();
+		for (const w of wsState.list) {
+			for (const sid of w.sessionIds ?? []) map.set(sid, w);
+		}
+		return map;
+	}, [wsState.list]);
+
 	const newChat = useCallback(() => {
 		void (async () => {
 			await sessionsStore.clearSelection();
@@ -592,6 +613,112 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 				>
 					<PanelLeftOpen size={16} />
 				</button>
+			</aside>
+		);
+	}
+
+	/* ── Simple Mode sidebar (P7): minimal recent list + explicit mode switch ── */
+
+	if (simpleMode) {
+		return (
+			<aside className="inno-sidebar-scope flex h-full min-h-0 flex-col overflow-hidden border-r border-slate-200/80 bg-[var(--inno-sidebar-bg)]">
+				{/* Header: brand + collapse */}
+				<div className="flex items-center justify-between gap-2 border-b border-slate-200/70 px-3 py-2.5">
+					<div className="flex min-w-0 items-center gap-2">
+						<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-blue-400 bg-blue-600 text-[10px] font-semibold text-white shadow-sm">
+							IA
+						</span>
+						<h1 className="inno-sidebar-title truncate font-semibold tracking-tight text-slate-800">
+							Inno Agent
+						</h1>
+					</div>
+					<button
+						className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-white hover:text-slate-600"
+						title="Collapse"
+						onClick={() => appStore.setSidebarCollapsed(true)}
+					>
+						<PanelLeftClose size={14} />
+					</button>
+				</div>
+
+				{/* Recent conversations — the way back to a generated artifact */}
+				<div className="flex-1 min-h-0 overflow-y-auto px-1.5 py-2 sidebar-scroll">
+					<div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">最近</div>
+					{state.isLoading ? (
+						<div className="flex items-center justify-center py-8">
+							<span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
+						</div>
+					) : recentSessions.length === 0 ? (
+						<div className="inno-sidebar-text px-2 py-8 text-center text-slate-400">暂无对话</div>
+					) : (
+						recentSessions.map((session) => {
+							const ws = sessionToWorkspace.get(session.id);
+							return (
+								<div
+									key={session.id}
+									role="button"
+									tabIndex={0}
+									onClick={() => openSession(session)}
+									onKeyDown={(e) => {
+										if (e.key === "Enter" || e.key === " ") {
+											e.preventDefault();
+											openSession(session);
+										}
+									}}
+									className={`group/srow relative mb-1 block w-full cursor-pointer rounded-lg border px-2.5 py-2 text-left transition-all duration-150 ${
+										state.currentSessionId === session.id
+											? "border-slate-200 bg-slate-100 shadow-sm"
+											: "border-transparent hover:border-slate-200 hover:bg-white"
+									}`}
+								>
+									<div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+										<div className="inno-sidebar-title min-w-0 truncate font-medium text-slate-800">{session.name}</div>
+										<button
+											className="rounded p-0.5 text-slate-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover/srow:opacity-100"
+											title="删除对话"
+											onClick={(e) => { e.stopPropagation(); handleDelete(session); }}
+										>
+											<Trash2 size={12} />
+										</button>
+									</div>
+									{session.preview && session.preview !== session.name ? (
+										<div className="inno-sidebar-meta mt-0.5 truncate text-slate-400">{session.preview}</div>
+									) : null}
+									<div className="mt-1 flex items-center gap-1.5">
+										{ws ? (
+											<span
+												className="inline-flex max-w-[140px] items-center gap-1 rounded bg-slate-100 px-1.5 py-px text-[9px] font-medium leading-none text-slate-500 ring-1 ring-slate-200/70"
+												title={`工作区:${ws.name}`}
+											>
+												<FolderKanban size={9} className="shrink-0" />
+												<span className="truncate">{ws.name}</span>
+											</span>
+										) : null}
+										<span className="inno-sidebar-meta tabular-nums text-slate-400">{formatTime(session.updatedAt)}</span>
+									</div>
+								</div>
+							);
+						})
+					)}
+				</div>
+
+				{/* Footer: new chat + explicit, labeled mode switch (P4 discoverability) */}
+				<div className="space-y-1.5 border-t border-slate-200/70 p-2">
+					<button
+						className="inno-sidebar-text flex w-full items-center justify-center gap-2 rounded-lg bg-slate-800 px-3 py-1.5 font-medium text-white shadow-sm transition-colors hover:bg-slate-700"
+						onClick={newChat}
+					>
+						<Plus size={14} /> 新建对话
+					</button>
+					<button
+						className="inno-sidebar-meta flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 disabled:opacity-50"
+						title="切换到普通模式(完整功能)"
+						disabled={togglingMode}
+						onClick={toggleMode}
+					>
+						简单模式 · 切换到普通模式
+					</button>
+				</div>
 			</aside>
 		);
 	}

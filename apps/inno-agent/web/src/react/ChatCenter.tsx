@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
-import { Paperclip, X, SendHorizonal, Square, RotateCcw, Check, Image, AlertTriangle } from "lucide-react";
+import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, ChevronDown } from "lucide-react";
 import type { ChatMessage } from "../types/chat.js";
 import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
@@ -173,19 +173,157 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 
 type WsMode = "temp" | "new" | "existing";
 
-function ModeChip({ selected, onClick, disabled, children }: { selected: boolean; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
+// Remember the user's last workspace choice for a new chat so the bottom
+// "新建对话" button doesn't always reset to temp (P3). Persisted to localStorage
+// rather than the backend — it's a per-device UI preference, not agent state.
+const LAST_WS_MODE_KEY = "inno.lastWorkspaceMode";
+const LAST_WS_ID_KEY = "inno.lastWorkspaceId";
+
+function readLastWsMode(): WsMode {
+	if (typeof window === "undefined") return "temp";
+	const v = window.localStorage.getItem(LAST_WS_MODE_KEY);
+	return v === "new" || v === "existing" ? v : "temp";
+}
+
+function readLastWsId(): string {
+	if (typeof window === "undefined") return "";
+	return window.localStorage.getItem(LAST_WS_ID_KEY) ?? "";
+}
+
+function rememberWsChoice(mode: WsMode, existingId: string): void {
+	if (typeof window === "undefined") return;
+	// Only "existing" is worth resuming verbatim; temp/new are fresh each time.
+	window.localStorage.setItem(LAST_WS_MODE_KEY, mode === "existing" ? "existing" : "temp");
+	if (mode === "existing" && existingId) {
+		window.localStorage.setItem(LAST_WS_ID_KEY, existingId);
+	}
+}
+
+/**
+ * Collapsed workspace chooser for the welcome screen (P5). Shows a single
+ * compact "工作区:<current> ▾" trigger; the temp / new / existing options only
+ * expand on click, cutting the always-visible chip clutter. The actual session
+ * isn't created here — the user's selection feeds buildSessionInput when they
+ * send their first message (the standalone "create & bind" path was removed so
+ * there's one creation flow, not two).
+ */
+function WorkspaceChooserDropdown({
+	open,
+	onOpenChange,
+	mode,
+	onModeChange,
+	wsName,
+	onWsNameChange,
+	existingId,
+	onExistingIdChange,
+	selectable,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	mode: WsMode;
+	onModeChange: (mode: WsMode) => void;
+	wsName: string;
+	onWsNameChange: (name: string) => void;
+	existingId: string;
+	onExistingIdChange: (id: string) => void;
+	selectable: { id: string; name: string }[];
+}) {
+	const ref = useRef<HTMLDivElement | null>(null);
+
+	// Close on outside click / Escape.
+	useEffect(() => {
+		if (!open) return;
+		const onDown = (e: MouseEvent) => {
+			if (ref.current && !ref.current.contains(e.target as Node)) onOpenChange(false);
+		};
+		const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onOpenChange(false); };
+		document.addEventListener("mousedown", onDown);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("mousedown", onDown);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [open, onOpenChange]);
+
+	// Compact label summarizing the current selection for the collapsed trigger.
+	const summary = (() => {
+		if (mode === "temp") return "临时·用完即弃";
+		if (mode === "new") return wsName.trim() ? `新建·${wsName.trim()}` : "新建工作区";
+		const ws = selectable.find((w) => w.id === existingId);
+		return ws ? ws.name : "选择工作区";
+	})();
+
+	return (
+		<div ref={ref} className="relative">
+			<button
+				type="button"
+				onClick={() => onOpenChange(!open)}
+				className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] leading-tight text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+			>
+				<span className="max-w-[180px] truncate">{summary}</span>
+				<ChevronDown size={12} className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+			</button>
+
+			{open ? (
+				<div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg">
+					<DropdownOption
+						selected={mode === "temp"}
+						title="临时工作区"
+						subtitle="用完即弃,删除对话时一并清理"
+						onClick={() => { onModeChange("temp"); onOpenChange(false); }}
+					/>
+					<DropdownOption
+						selected={mode === "new"}
+						title="新建工作区"
+						subtitle="给这次实践起个名字"
+						onClick={() => onModeChange("new")}
+					/>
+					{mode === "new" ? (
+						<input
+							type="text"
+							autoFocus
+							placeholder="工作区名称,例如:pandas demo"
+							value={wsName}
+							onChange={(e) => onWsNameChange(e.target.value)}
+							className="mx-1 mb-1 mt-0.5 w-[calc(100%-0.5rem)] rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+						/>
+					) : null}
+					{selectable.length > 0 ? (
+						<DropdownOption
+							selected={mode === "existing"}
+							title="使用已有工作区"
+							subtitle={`${selectable.length} 个可选`}
+							onClick={() => onModeChange("existing")}
+						/>
+					) : null}
+					{mode === "existing" ? (
+						<select
+							value={existingId}
+							autoFocus
+							onChange={(e) => onExistingIdChange(e.target.value)}
+							className="mx-1 mb-1 mt-0.5 w-[calc(100%-0.5rem)] rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+						>
+							<option value="">选择一个工作区…</option>
+							{selectable.map((w) => (
+								<option key={w.id} value={w.id}>{w.name}</option>
+							))}
+						</select>
+					) : null}
+				</div>
+			) : null}
+		</div>
+	);
+}
+
+function DropdownOption({ selected, title, subtitle, onClick }: { selected: boolean; title: string; subtitle: string; onClick: () => void }) {
 	return (
 		<button
 			type="button"
 			onClick={onClick}
-			disabled={disabled}
-			className={`rounded-full border px-1.5 py-px text-[10px] leading-tight transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-				selected
-					? "border-blue-300 bg-blue-50 text-blue-700"
-					: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-			}`}
+			className={`flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left transition-colors ${selected ? "bg-blue-50 text-blue-900" : "text-slate-700 hover:bg-slate-50"}`}
 		>
-			{children}
+			<span className="text-[12px] font-medium">{title}</span>
+			<span className="text-[10px] text-slate-400">{subtitle}</span>
 		</button>
 	);
 }
@@ -199,11 +337,16 @@ export function ChatCenter() {
 	const [isUploading, setIsUploading] = useState(false);
 	const [inlineImages, setInlineImages] = useState<(InlineImage & { name: string; previewUrl: string })[]>([]);
 
-	// Inline workspace chooser state (welcome screen only).
-	const [wsMode, setWsMode] = useState<WsMode>("temp");
+	// Inline workspace chooser state (welcome screen only). Seeded from the
+	// user's last choice (P3) so a new chat resumes the workspace they were in
+	// rather than always resetting to temp.
+	const [wsMode, setWsMode] = useState<WsMode>(() => readLastWsMode());
 	const [wsName, setWsName] = useState("");
-	const [wsExistingId, setWsExistingId] = useState("");
+	const [wsExistingId, setWsExistingId] = useState(() => readLastWsId());
 	const [wsError, setWsError] = useState("");
+	// Whether the collapsed workspace chooser popover is open (P5: default
+	// collapsed to a single "工作区:… ▾" control to cut welcome-screen noise).
+	const [wsChooserOpen, setWsChooserOpen] = useState(false);
 
 	// Simple Mode surfaces preset workspaces for one-click start.
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
@@ -233,9 +376,12 @@ export function ChatCenter() {
 		pendingQuestion: chatStore.pendingQuestion,
 	}));
 	const sessions = useStoreSnapshot(sessionsStore, () => ({
-		pendingNewSession: sessionsStore.pendingNewSession,
 		currentSessionId: sessionsStore.currentSessionId,
 		preselectedWorkspaceId: sessionsStore.preselectedWorkspaceId,
+		// Single source of truth for the welcome-vs-session view (see store).
+		// Depends on chatStore too, but ChatCenter subscribes to chatStore via
+		// the `chat` snapshot above, so this re-evaluates on chat changes.
+		isWelcome: sessionsStore.isWelcomeView,
 	}));
 	const workspaces = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
@@ -258,16 +404,27 @@ export function ChatCenter() {
 		[workspaces.list],
 	);
 
-	// Welcome state: brand-new chat without an active session yet.
-	const isWelcome =
-		sessions.pendingNewSession ||
-		(!sessions.currentSessionId && chat.messages.length === 0 && !chat.isLoadingHistory && !chat.isSending);
+	// Welcome state: derived once in the sessions store (single source of truth).
+	const isWelcome = sessions.isWelcome;
 
 	useEffect(() => {
 		if (isWelcome && workspaces.list.length === 0) {
 			void workspacesStore.load();
 		}
 	}, [isWelcome, workspaces.list.length]);
+
+	// A remembered "existing" workspace id may point at a since-deleted
+	// workspace. Once the list loads, fall back to temp if it's gone so the
+	// chooser never sticks on an invalid selection (P3).
+	useEffect(() => {
+		if (wsMode === "existing" && wsExistingId && workspaces.list.length > 0) {
+			const stillExists = selectableWorkspaces.some((w) => w.id === wsExistingId);
+			if (!stillExists) {
+				setWsMode("temp");
+				setWsExistingId("");
+			}
+		}
+	}, [wsMode, wsExistingId, workspaces.list.length, selectableWorkspaces]);
 
 	// A workspace preselected from the sidebar drives the chooser to "existing"
 	// mode bound to that workspace (and previews it in quarter mode).
@@ -319,25 +476,6 @@ export function ChatCenter() {
 		return { workspaceId: wsExistingId };
 	}, [simpleMode, wsMode, wsName, wsExistingId]);
 
-	// Create the new workspace + session up-front (before any message) and reveal
-	// it in the right panel so the user can upload files / skills first.
-	const confirmNewWorkspace = useCallback(() => {
-		const trimmed = wsName.trim();
-		if (!trimmed) { setWsError("请填写工作区名称"); return; }
-		setWsError("");
-		void (async () => {
-			try {
-				await sessionsStore.createSessionWith({ newWorkspace: { name: trimmed, isTemp: false } });
-				appStore.setRightPanelTab("preview");
-				appStore.setWorkspaceWidth(560);
-				appStore.setWorkspaceMode("half");
-				setWsName("");
-			} catch (err) {
-				setWsError(err instanceof Error ? err.message : "创建工作区失败");
-			}
-		})();
-	}, [wsName]);
-
 	// Load bundled presets once when the welcome screen is shown in Simple Mode.
 	useEffect(() => {
 		if (isWelcome && simpleMode && presets.length === 0) {
@@ -383,6 +521,9 @@ export function ChatCenter() {
 				return;
 			}
 			setWsError("");
+			// Remember the workspace choice so the next new chat resumes it (P3).
+			if (!simpleMode) rememberWsChoice(wsMode, wsExistingId);
+			setWsChooserOpen(false);
 			if (inputRef.current) {
 				inputRef.current.value = "";
 				inputRef.current.style.height = "auto";
@@ -407,7 +548,7 @@ export function ChatCenter() {
 		setUploads([]);
 		setInlineImages([]);
 		void chatStore.send(messageContent, imagesToSend);
-	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading]);
+	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId]);
 
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		// Don't fire Send while the user is composing with an IME (e.g. picking
@@ -616,9 +757,18 @@ export function ChatCenter() {
 								</motion.div>
 							</button>
 							<h2 className="text-lg font-medium text-slate-950">Inno Agent</h2>
-							<span className="mt-1 text-[11px] text-slate-400">
-								{simpleMode ? "简单模式 · 点击图标切换" : "普通模式 · 点击图标切换"}
-							</span>
+							{/* Explicit, labeled mode switch (P4): the flip logo above is a nice
+							    secondary affordance, but a worded pill makes the toggle
+							    discoverable instead of hidden behind an icon click. */}
+							<button
+								type="button"
+								onClick={toggleMode}
+								disabled={togglingMode}
+								className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-500 transition-colors hover:border-blue-300 hover:text-blue-700 disabled:cursor-wait disabled:opacity-60"
+							>
+								<span className={`h-1.5 w-1.5 rounded-full ${simpleMode ? "bg-blue-500" : "bg-slate-300"}`} />
+								{simpleMode ? "简单模式 · 切换到普通模式" : "普通模式 · 切换到简单模式"}
+							</button>
 						</div>
 
 						{renderUploadChips()}
@@ -666,44 +816,17 @@ export function ChatCenter() {
 						) : (
 							<div className="mt-3 flex flex-wrap items-center gap-2">
 								<span className="text-xs text-slate-400">工作区</span>
-								<ModeChip selected={wsMode === "temp"} onClick={() => setWsMode("temp")}>临时·用完即弃</ModeChip>
-								<ModeChip selected={wsMode === "new"} onClick={() => setWsMode("new")}>新建工作区</ModeChip>
-								{selectableWorkspaces.length > 0 ? (
-									<ModeChip selected={wsMode === "existing"} onClick={() => setWsMode("existing")}>已有工作区</ModeChip>
-								) : null}
-								{wsMode === "new" ? (
-									<>
-										<input
-											type="text"
-											placeholder="工作区名称,例如:pandas demo"
-											value={wsName}
-											onChange={(e) => setWsName(e.target.value)}
-											onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmNewWorkspace(); } }}
-											className="ml-1 w-[200px] rounded-full border border-slate-200 bg-white px-2 py-px text-[10px] leading-tight outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
-										/>
-										<button
-											type="button"
-											onClick={confirmNewWorkspace}
-											disabled={!wsName.trim()}
-											title="创建并绑定工作区(可先上传文件/技能,再开始对话)"
-											className="flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
-										>
-											<Check size={11} /> 创建并绑定
-										</button>
-									</>
-								) : null}
-								{wsMode === "existing" ? (
-									<select
-										value={wsExistingId}
-										onChange={(e) => setWsExistingId(e.target.value)}
-										className="ml-1 max-w-[220px] rounded-full border border-slate-200 bg-white px-2 py-px text-[10px] leading-tight outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
-									>
-										<option value="">选择一个工作区…</option>
-										{selectableWorkspaces.map((w) => (
-											<option key={w.id} value={w.id}>{w.name}</option>
-										))}
-									</select>
-								) : null}
+								<WorkspaceChooserDropdown
+									open={wsChooserOpen}
+									onOpenChange={setWsChooserOpen}
+									mode={wsMode}
+									onModeChange={setWsMode}
+									wsName={wsName}
+									onWsNameChange={setWsName}
+									existingId={wsExistingId}
+									onExistingIdChange={setWsExistingId}
+									selectable={selectableWorkspaces}
+								/>
 							</div>
 						)}
 

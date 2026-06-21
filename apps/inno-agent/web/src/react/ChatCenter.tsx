@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
-import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, ChevronDown } from "lucide-react";
+import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle } from "lucide-react";
 import type { ChatMessage } from "../types/chat.js";
 import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
@@ -199,131 +199,19 @@ function rememberWsChoice(mode: WsMode, existingId: string): void {
 	}
 }
 
-/**
- * Collapsed workspace chooser for the welcome screen (P5). Shows a single
- * compact "工作区:<current> ▾" trigger; the temp / new / existing options only
- * expand on click, cutting the always-visible chip clutter. The actual session
- * isn't created here — the user's selection feeds buildSessionInput when they
- * send their first message (the standalone "create & bind" path was removed so
- * there's one creation flow, not two).
- */
-function WorkspaceChooserDropdown({
-	open,
-	onOpenChange,
-	mode,
-	onModeChange,
-	wsName,
-	onWsNameChange,
-	existingId,
-	onExistingIdChange,
-	selectable,
-}: {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	mode: WsMode;
-	onModeChange: (mode: WsMode) => void;
-	wsName: string;
-	onWsNameChange: (name: string) => void;
-	existingId: string;
-	onExistingIdChange: (id: string) => void;
-	selectable: { id: string; name: string }[];
-}) {
-	const ref = useRef<HTMLDivElement | null>(null);
-
-	// Close on outside click / Escape.
-	useEffect(() => {
-		if (!open) return;
-		const onDown = (e: MouseEvent) => {
-			if (ref.current && !ref.current.contains(e.target as Node)) onOpenChange(false);
-		};
-		const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onOpenChange(false); };
-		document.addEventListener("mousedown", onDown);
-		document.addEventListener("keydown", onKey);
-		return () => {
-			document.removeEventListener("mousedown", onDown);
-			document.removeEventListener("keydown", onKey);
-		};
-	}, [open, onOpenChange]);
-
-	// Compact label summarizing the current selection for the collapsed trigger.
-	const summary = (() => {
-		if (mode === "temp") return "临时·用完即弃";
-		if (mode === "new") return wsName.trim() ? `新建·${wsName.trim()}` : "新建工作区";
-		const ws = selectable.find((w) => w.id === existingId);
-		return ws ? ws.name : "选择工作区";
-	})();
-
-	return (
-		<div ref={ref} className="relative">
-			<button
-				type="button"
-				onClick={() => onOpenChange(!open)}
-				className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] leading-tight text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
-			>
-				<span className="max-w-[180px] truncate">{summary}</span>
-				<ChevronDown size={12} className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
-			</button>
-
-			{open ? (
-				<div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg">
-					<DropdownOption
-						selected={mode === "temp"}
-						title="临时工作区"
-						subtitle="用完即弃,删除对话时一并清理"
-						onClick={() => { onModeChange("temp"); onOpenChange(false); }}
-					/>
-					<DropdownOption
-						selected={mode === "new"}
-						title="新建工作区"
-						subtitle="给这次实践起个名字"
-						onClick={() => onModeChange("new")}
-					/>
-					{mode === "new" ? (
-						<input
-							type="text"
-							autoFocus
-							placeholder="工作区名称,例如:pandas demo"
-							value={wsName}
-							onChange={(e) => onWsNameChange(e.target.value)}
-							className="mx-1 mb-1 mt-0.5 w-[calc(100%-0.5rem)] rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
-						/>
-					) : null}
-					{selectable.length > 0 ? (
-						<DropdownOption
-							selected={mode === "existing"}
-							title="使用已有工作区"
-							subtitle={`${selectable.length} 个可选`}
-							onClick={() => onModeChange("existing")}
-						/>
-					) : null}
-					{mode === "existing" ? (
-						<select
-							value={existingId}
-							autoFocus
-							onChange={(e) => onExistingIdChange(e.target.value)}
-							className="mx-1 mb-1 mt-0.5 w-[calc(100%-0.5rem)] rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
-						>
-							<option value="">选择一个工作区…</option>
-							{selectable.map((w) => (
-								<option key={w.id} value={w.id}>{w.name}</option>
-							))}
-						</select>
-					) : null}
-				</div>
-			) : null}
-		</div>
-	);
-}
-
-function DropdownOption({ selected, title, subtitle, onClick }: { selected: boolean; title: string; subtitle: string; onClick: () => void }) {
+function ModeChip({ selected, onClick, disabled, children }: { selected: boolean; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
 	return (
 		<button
 			type="button"
 			onClick={onClick}
-			className={`flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left transition-colors ${selected ? "bg-blue-50 text-blue-900" : "text-slate-700 hover:bg-slate-50"}`}
+			disabled={disabled}
+			className={`rounded-full border px-1.5 py-px text-[10px] leading-tight transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+				selected
+					? "border-blue-300 bg-blue-50 text-blue-700"
+					: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+			}`}
 		>
-			<span className="text-[12px] font-medium">{title}</span>
-			<span className="text-[10px] text-slate-400">{subtitle}</span>
+			{children}
 		</button>
 	);
 }
@@ -344,9 +232,6 @@ export function ChatCenter() {
 	const [wsName, setWsName] = useState("");
 	const [wsExistingId, setWsExistingId] = useState(() => readLastWsId());
 	const [wsError, setWsError] = useState("");
-	// Whether the collapsed workspace chooser popover is open (P5: default
-	// collapsed to a single "工作区:… ▾" control to cut welcome-screen noise).
-	const [wsChooserOpen, setWsChooserOpen] = useState(false);
 
 	// Simple Mode surfaces preset workspaces for one-click start.
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
@@ -525,7 +410,6 @@ export function ChatCenter() {
 			setWsError("");
 			// Remember the workspace choice so the next new chat resumes it (P3).
 			if (!simpleMode) rememberWsChoice(wsMode, wsExistingId);
-			setWsChooserOpen(false);
 			if (inputRef.current) {
 				inputRef.current.value = "";
 				inputRef.current.style.height = "auto";
@@ -818,17 +702,32 @@ export function ChatCenter() {
 						) : (
 							<div className="mt-3 flex flex-wrap items-center gap-2">
 								<span className="text-xs text-slate-400">工作区</span>
-								<WorkspaceChooserDropdown
-									open={wsChooserOpen}
-									onOpenChange={setWsChooserOpen}
-									mode={wsMode}
-									onModeChange={setWsMode}
-									wsName={wsName}
-									onWsNameChange={setWsName}
-									existingId={wsExistingId}
-									onExistingIdChange={setWsExistingId}
-									selectable={selectableWorkspaces}
-								/>
+								<ModeChip selected={wsMode === "temp"} onClick={() => setWsMode("temp")}>临时·用完即弃</ModeChip>
+								<ModeChip selected={wsMode === "new"} onClick={() => setWsMode("new")}>新建工作区</ModeChip>
+								{selectableWorkspaces.length > 0 ? (
+									<ModeChip selected={wsMode === "existing"} onClick={() => setWsMode("existing")}>已有工作区</ModeChip>
+								) : null}
+								{wsMode === "new" ? (
+									<input
+										type="text"
+										placeholder="工作区名称,例如:pandas demo"
+										value={wsName}
+										onChange={(e) => setWsName(e.target.value)}
+										className="ml-1 w-[200px] rounded-full border border-slate-200 bg-white px-2 py-px text-[10px] leading-tight outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+									/>
+								) : null}
+								{wsMode === "existing" ? (
+									<select
+										value={wsExistingId}
+										onChange={(e) => setWsExistingId(e.target.value)}
+										className="ml-1 max-w-[220px] rounded-full border border-slate-200 bg-white px-2 py-px text-[10px] leading-tight outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+									>
+										<option value="">选择一个工作区…</option>
+										{selectableWorkspaces.map((w) => (
+											<option key={w.id} value={w.id}>{w.name}</option>
+										))}
+									</select>
+								) : null}
 							</div>
 						)}
 

@@ -629,10 +629,30 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 							type="button"
 							onClick={toggleMode}
 							disabled={togglingMode}
-							title="切换到普通模式(完整功能)"
-							className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-blue-400 bg-blue-600 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-500 disabled:opacity-50"
+							title={simpleMode ? "当前:简单模式 · 点击切换到普通模式" : "当前:普通模式 · 点击切换到简单模式"}
+							aria-label={simpleMode ? "切换到普通模式" : "切换到简单模式"}
+							className="shrink-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-wait"
+							style={{ perspective: "500px" }}
 						>
-							IA
+							<motion.div
+								animate={{ rotateY: simpleMode ? 180 : 0 }}
+								transition={{ type: "spring", stiffness: 320, damping: 22 }}
+								style={{ transformStyle: "preserve-3d", position: "relative" }}
+								className="h-7 w-7"
+							>
+								<span
+									className="absolute inset-0 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-slate-800 shadow-sm"
+									style={{ backfaceVisibility: "hidden" }}
+								>
+									IA
+								</span>
+								<span
+									className="absolute inset-0 flex items-center justify-center rounded-lg border border-blue-400 bg-blue-600 text-[10px] font-semibold text-white shadow-sm"
+									style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+								>
+									IA
+								</span>
+							</motion.div>
 						</button>
 						<h1 className="inno-sidebar-title truncate font-semibold tracking-tight text-slate-800">
 							Inno Agent

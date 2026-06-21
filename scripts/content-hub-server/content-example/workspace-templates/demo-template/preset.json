@@ -1,0 +1,6 @@
+{
+	"id": "demo-template",
+	"name": "示例模板",
+	"description": "一个占位示例预设,演示 bundle 服务如何分发工作区模板。替换成你自己的模板即可。",
+	"icon": "sparkles"
+}

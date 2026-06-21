@@ -160,6 +160,46 @@ Both CLI and server resolve paths through `apps/inno-agent/src/runtime.ts`. Prec
 | `--workspace` / `--workspace-dir` | `INNO_WORKSPACE_DIR`   | invocation CWD            |
 | `--port`                          | `INNO_PORT` (`config`) | `3000`                    |
 
+### Content Hub (skill library + workspace presets)
+
+The global **skill library** and the Simple Mode **workspace presets** (an `agent.md` + `.skills/` bundle, surfaced as one-click cards on the welcome screen) are both fetched from a remote **content hub**. By default this is the public GitHub repo [`Chloris-Blaxk/inno-agent-hub`](https://github.com/Chloris-Blaxk/inno-agent-hub); you can point it at a private GitHub repo or a self-hosted bundle service instead — a config change, no code change.
+
+Configure it in `runtime/config/config.json` (or via the UI: **Settings → Content Hub**):
+
+```jsonc
+// Default: pull from a GitHub repo
+{
+  "contentHub": {
+    "type": "github",
+    "owner": "Chloris-Blaxk",
+    "repo": "inno-agent-hub",
+    "ref": "main",
+    "skillsPath": "skill-library",        // dir holding <skill>/SKILL.md
+    "presetsPath": "workspace-templates",  // dir holding <preset>/preset.json
+    "token": ""                            // optional PAT: private repos / higher rate limit
+  }
+}
+```
+
+```jsonc
+// Or: pull from a self-hosted bundle service (private deployments)
+{
+  "contentHub": {
+    "type": "bundle",
+    "baseUrl": "http://localhost:8787",
+    "token": ""                            // optional Bearer credential
+  }
+}
+```
+
+Presets are downloaded on first use and cached under `<dataDir>/preset-cache/`; the templates bundled with the app serve as an offline fallback. A legacy `github.token` is migrated into `contentHub.token` automatically.
+
+**Self-hosting:** a zero-dependency local bundle service lives in [`scripts/content-hub-server/`](./scripts/content-hub-server/) — back it with your private git repo of skills + templates. See its [README](./scripts/content-hub-server/README.md) for the layout and run commands:
+
+```bash
+CONTENT_DIR=/path/to/content node scripts/content-hub-server/server.mjs
+```
+
 ---
 
 ## Repository Layout
@@ -167,6 +207,7 @@ Both CLI and server resolve paths through `apps/inno-agent/src/runtime.ts`. Prec
 ```text
 apps/inno-agent/          Backend (CLI + HTTP server), TypeScript -> dist/
 apps/inno-agent/web/      Frontend (React 19 + Lit + Tailwind 4 + Vite)
+scripts/content-hub-server/  Self-hosted Content Hub bundle service (skills + presets)
 runtime/                  Local runtime state (config, data, skills) - gitignored
 workspace/                Default agent working directory - gitignored
 ```

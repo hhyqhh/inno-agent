@@ -11,7 +11,7 @@ import { workspaceStore } from "../stores/workspace-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { appStore } from "../stores/app-store.js";
 import type { CreateSessionInput } from "../api/sessions.js";
-import { listPresets } from "../api/presets.js";
+import { listRemotePresets } from "../api/presets.js";
 import type { PresetMeta } from "../types/presets.js";
 import { uploadRawFile, type RawUploadResult } from "../api/uploads.js";
 import { useStoreSnapshot } from "./hooks.js";
@@ -476,10 +476,12 @@ export function ChatCenter() {
 		return { workspaceId: wsExistingId };
 	}, [simpleMode, wsMode, wsName, wsExistingId]);
 
-	// Load bundled presets once when the welcome screen is shown in Simple Mode.
+	// Load presets from the remote content hub once when the welcome screen is
+	// shown in Simple Mode. Falls back to an empty list on failure (offline /
+	// hub unreachable) so the composer still works.
 	useEffect(() => {
 		if (isWelcome && simpleMode && presets.length === 0) {
-			void listPresets().then(setPresets).catch(() => setPresets([]));
+			void listRemotePresets().then(setPresets).catch(() => setPresets([]));
 		}
 	}, [isWelcome, simpleMode, presets.length]);
 

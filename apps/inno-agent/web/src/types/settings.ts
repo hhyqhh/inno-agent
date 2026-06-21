@@ -79,6 +79,16 @@ export interface InnoSettings {
 	};
 	bridge?: { token: string }; // masked
 	github?: { token: string }; // masked
+	contentHub?: {
+		type: "github" | "bundle";
+		owner: string;
+		repo: string;
+		ref: string;
+		skillsPath: string;
+		presetsPath: string;
+		baseUrl: string;
+		token: string; // masked
+	};
 	memory?: { l1Enabled: boolean; l2Enabled: boolean; l3Enabled: boolean };
 	simpleMode?: { enabled: boolean };
 }

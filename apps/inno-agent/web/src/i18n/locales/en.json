@@ -1,436 +1,442 @@
 {
-  "workspace": {
-    "title": "Workspace",
-    "openWorkspace": "Open workspace",
-    "collapse": "Collapse",
-    "half": "Half",
-    "full": "Full",
-    "resize": "Drag to resize",
-    "tabs": {
-      "notebook": "Notebook",
-      "preview": "Preview",
-      "profile": "Profile",
-      "skills": "Skills",
-      "jobs": "Jobs",
-      "settings": "Settings"
-    }
-  },
-  "common": {
-    "save": "Save",
-    "cancel": "Cancel",
-    "edit": "Edit",
-    "delete": "Delete",
-    "refresh": "Refresh",
-    "new": "New",
-    "add": "Add",
-    "loading": "Loading…",
-    "noData": "No data",
-    "search": "Search…",
-    "enabled": "Enabled",
-    "disabled": "Disabled",
-    "enable": "Enable",
-    "disable": "Disable",
-    "yes": "Yes",
-    "no": "No",
-    "ok": "OK",
-    "saving": "Saving…",
-    "saved": "Saved",
-    "remove": "Remove",
-    "open": "Open"
-  },
-  "notebook": {
-    "title": "Notebook",
-    "subtitle": "{{nodes}} nodes · {{edges}} edges",
-    "search": "Search pages or tags…",
-    "filter": {
-      "all": "All",
-      "source-summary": "Sources",
-      "entity": "Entities",
-      "concept": "Concepts",
-      "analysis": "Analysis"
-    },
-    "view": {
-      "graph": "Graph",
-      "page": "Page"
-    },
-    "graph": {
-      "fit": "Fit",
-      "center": "Center",
-      "labels": "Labels",
-      "size": "Node size",
-      "refresh": "Refresh",
-      "relayout": "Re-layout",
-      "show": "Show:",
-      "empty": "No graph data yet."
-    },
-    "editor": {
-      "preview": "Preview",
-      "splitHint": "Live preview on the right",
-      "h1": "Heading 1",
-      "h2": "Heading 2",
-      "h3": "Heading 3",
-      "bold": "Bold",
-      "italic": "Italic",
-      "quote": "Quote",
-      "list": "Bullet list",
-      "numbered": "Numbered list",
-      "link": "Link",
-      "code": "Inline code",
-      "codeBlock": "Code block"
-    },
-    "page": {
-      "empty": "Pick a page on the left, or click a node in the graph.",
-      "selectFromGraph": "Select a node in the graph",
-      "openInNotebook": "Open page",
-      "backToGraph": "Back to graph"
-    },
-    "inspector": {
-      "title": "Node",
-      "empty": "Select a node to inspect. Double-click a non-tag node to open its page.",
-      "type": "Type",
-      "tags": "Tags",
-      "openPage": "Open page"
-    },
-    "types": {
-      "source-summary": "Source",
-      "entity": "Entity",
-      "concept": "Concept",
-      "analysis": "Analysis",
-      "tag": "Tag",
-      "unknown": "Unknown"
-    },
-    "status": {
-      "draft": "draft",
-      "reviewed": "reviewed",
-      "outdated": "outdated"
-    },
-    "confidence": {
-      "low": "low confidence",
-      "medium": "medium confidence",
-      "high": "high confidence"
-    },
-    "contested": "contested",
-    "noPages": "No wiki pages",
-    "selectPage": "Select a page to preview"
-  },
-  "preview": {
-    "workspace": "Workspace",
-    "refresh": "Refresh",
-    "loading": "Loading workspace…",
-    "loadingFile": "Loading file…",
-    "empty": "Workspace is empty.",
-    "noFile": "No file selected",
-    "selectFile": "Select a file from the workspace",
-    "noPreview": "No preview",
-    "binaryFile": "Binary file",
-    "emptyTable": "Empty table",
-    "tableRows": "{{count}} rows",
-    "officeParsing": "Extracting document text...",
-    "officeNote": "Text extracted for preview · formatting may differ",
-    "officeUnavailable": "Preview unavailable",
-    "pageCount": "{{count}} pages",
-    "page": "Page"
-  },
-  "profile": {
-    "title": "Learner Profile",
-    "subtitle": "Built from conversations and learning events; editable.",
-    "refresh": "Refresh",
-    "empty": "No profile data yet.",
-    "version": "version {{version}} · {{updated}}",
-    "sections": {
-      "summary": "Summary",
-      "goals": "Goals",
-      "knowledge": "Knowledge",
-      "misconceptions": "Misconceptions",
-      "preferences": "Preferences"
-    },
-    "summary": {
-      "placeholder": "Agent's high-level summary of the learner…",
-      "activeGoals": "Active goals",
-      "concepts": "Concepts tracked",
-      "dueReviews": "Due for review",
-      "openMisconceptions": "Open misconceptions"
-    },
-    "goals": {
-      "addNew": "+ New goal",
-      "newTitle": "New learning goal",
-      "newGoalDefault": "New goal",
-      "addFailed": "Failed to add: {{message}}",
-      "namePlaceholder": "e.g. Master Rust ownership",
-      "empty": "No goals yet.",
-      "title": "Title",
-      "type": "Type",
-      "priority": "Priority",
-      "status": "Status",
-      "successCriteria": "Success criteria",
-      "successCriteriaPlaceholder": "One per line…",
-      "typeOptions": {
-        "skill": "Skill",
-        "concept": "Concept",
-        "project": "Project",
-        "exam": "Exam",
-        "habit": "Habit"
-      },
-      "statusOptions": {
-        "active": "Active",
-        "paused": "Paused",
-        "completed": "Completed",
-        "archived": "Archived"
-      }
-    },
-    "knowledge": {
-      "empty": "No concepts tracked yet.",
-      "concept": "Concept",
-      "domain": "Domain",
-      "mastery": "Mastery",
-      "due": "Review due",
-      "diagnosis": "Diagnosis",
-      "diagnosisPlaceholder": "Notes about current understanding…",
-      "nextActions": "Next actions",
-      "nextActionsPlaceholder": "One per line…"
-    },
-    "misconceptions": {
-      "empty": "No misconceptions tracked.",
-      "description": "Description",
-      "severity": "Severity",
-      "status": "Status",
-      "repair": "Repair strategy",
-      "statusOptions": {
-        "active": "active",
-        "repairing": "repairing",
-        "resolved": "resolved",
-        "stale": "stale"
-      }
-    },
-    "preferences": {
-      "explanationStyle": "Explanation style",
-      "practiceStyle": "Practice style",
-      "feedbackTone": "Feedback tone",
-      "avoid": "Avoid",
-      "addPlaceholder": "Press Enter to add…"
-    }
-  },
-  "jobs": {
-    "title": "Scheduled Jobs",
-    "subtitle": "Recurring automations and reminders",
-    "newJob": "+ New",
-    "empty": "No scheduled jobs.",
-    "lastRun": "Last run: {{time}}",
-    "nextRun": "Next: {{time}}",
-    "never": "never",
-    "actions": {
-      "run": "Run now",
-      "running": "Running…",
-      "edit": "Edit",
-      "delete": "Delete",
-      "enable": "Enable",
-      "disable": "Disable"
-    },
-    "lastResult": "Last result:",
-    "form": {
-      "newTitle": "New job",
-      "editTitle": "Edit job",
-      "name": "Name",
-      "namePlaceholder": "e.g. Daily review",
-      "taskType": "Task type",
-      "prompt": "Prompt",
-      "promptPlaceholder": "Instruction for the agent…",
-      "schedule": "Schedule",
-      "enabled": "Enabled",
-      "frequency": "Frequency",
-      "time": "Time",
-      "weekdays": "Repeat on",
-      "dayOfMonth": "Day of month",
-      "lastDay": "Last day",
-      "onceDate": "Date",
-      "customCron": "Custom cron",
-      "cronPlaceholder": "min hour dom mon dow",
-      "cronHint": "5 fields: min hour day month weekday",
-      "advanced": "Advanced (Cron)",
-      "preview": "Next: {{time}}"
-    },
-    "frequency": {
-      "daily": "Every day",
-      "weekly": "Every week",
-      "monthly": "Every month",
-      "weekday": "Weekdays",
-      "once": "Once",
-      "custom": "Custom cron"
-    },
-    "weekdays": {
-      "0": "Sun",
-      "1": "Mon",
-      "2": "Tue",
-      "3": "Wed",
-      "4": "Thu",
-      "5": "Fri",
-      "6": "Sat"
-    },
-    "taskTypes": {
-      "daily_review": "Daily review",
-      "weekly_summary": "Weekly summary",
-      "graphify_update": "Graph update",
-      "learner_profile_reflection": "Profile reflection",
-      "spaced_review": "Spaced review",
-      "push_reminder": "Push reminder",
-      "custom_prompt": "Custom prompt"
-    },
-    "errors": {
-      "nameRequired": "Name is required",
-      "cronRequired": "Cron expression is required",
-      "cronInvalid": "Invalid cron expression",
-      "timeRequired": "Pick a time",
-      "weekdayRequired": "Pick at least one weekday",
-      "dateRequired": "Pick a date",
-      "saveFailed": "Failed to save: {{message}}"
-    },
-    "humanCron": {
-      "daily": "Daily at {{time}}",
-      "weekday": "Weekdays at {{time}}",
-      "weekly": "Weekly on {{days}} at {{time}}",
-      "monthly": "Monthly on day {{day}} at {{time}}",
-      "monthlyLast": "Last day of month at {{time}}",
-      "once": "Once on {{date}} {{time}}"
-    }
-  },
-  "skills": {
-    "title": "Skills",
-    "subtitle": "Loaded from the configured skills directory",
-    "reload": "Reload",
-    "upload": "Upload",
-    "uploading": "Uploading…",
-    "package": "Default package:",
-    "packageDesc": "ZIP must contain a SKILL.md file.",
-    "empty": "No skills yet",
-    "emptyDesc": "Upload <skill-name>.zip. It will be unpacked and loaded.",
-    "noDescription": "No description",
-    "loaded": "loaded",
-    "notLoaded": "not loaded",
-    "library": "Skills Library",
-    "libraryTitle": "Skills Library",
-    "librarySubtitle": "Browse and import skills from the inno-agent-hub library",
-    "libraryEmpty": "No skills available in the library",
-    "import": "Import",
-    "importing": "Importing…",
-    "installed": "Installed",
-    "libraryError": "Failed to load skills library"
-  },
-  "settings": {
-    "title": "Settings",
-    "refresh": "Refresh",
-    "loading": "Loading settings…",
-    "stats": {
-      "server": "Server",
-      "healthy": "healthy",
-      "offline": "offline",
-      "defaultModel": "Default model",
-      "wiki": "Wiki",
-      "wikiStat": "{{count}} pages · {{size}}"
-    },
-    "models": "Models",
-    "current": "Current",
-    "use": "Use",
-    "providers": "Providers",
-    "newProvider": "New provider",
-    "memorySection": "Memory layers",
-    "simpleMode": {
-      "title": "Simple Mode",
-      "onDesc": "On: a streamlined, ready-to-use experience. Memory and profile are turned off; the notebook, profile, jobs and skills tabs and the terminal (experiment panel) are hidden and the settings page is simplified; preset workspaces are offered on the welcome screen.",
-      "offDesc": "Off: the full experience with learner profile, memory, notebook, scheduled jobs, skills, and the terminal available.",
-      "memoryLocked": "Memory is turned off while Simple Mode is on. Turn off Simple Mode to change these."
-    },
-    "l1": {
-      "title": "Learner profile (L1)",
-      "onDesc": "On: injects the learner profile each turn and lets tools update it for personalized teaching.",
-      "offDesc": "Off: the learner profile is neither read into the prompt nor updated by tools."
-    },
-    "l2": {
-      "title": "Knowledge base (L2)",
-      "onDesc": "On: lets the agent archive material to and query the Wiki knowledge base.",
-      "offDesc": "Off: archiving to and querying the knowledge base are disabled."
-    },
-    "memory": {
-      "title": "Cross-conversation memory (L3)",
-      "onDesc": "On: searches past conversations via SQLite and auto-recalls relevant context.",
-      "offDesc": "Off: replies use only the current workspace contents and the current conversation context."
-    },
-    "github": {
-      "title": "GitHub token",
-      "desc": "Optional. Used to fetch the skill library from GitHub. Without a token the unauthenticated API is limited to 60 requests/hour per IP; a token raises it to 5000/hour. A token with no scopes is enough for public repos.",
-      "placeholder": "ghp_… or github_pat_…",
-      "saved": "Saved",
-      "clear": "Clear"
-    },
-    "form": {
-      "providerId": "Provider id",
-      "baseUrl": "Base URL",
-      "apiKey": "API key",
-      "apiKeyPreserved": "API key preserved unless replaced",
-      "modelId": "Model id",
-      "modelName": "Model name",
-      "contextWindow": "Context window",
-      "maxTokens": "Max tokens",
-      "reasoning": "reasoning",
-      "makeDefault": "make default",
-      "preserveApiKey": "preserve key"
-    },
-    "errors": {
-      "providerRequired": "Provider id is required",
-      "baseUrlRequired": "Base URL is required",
-      "modelRequired": "Model id is required",
-      "tokensInvalid": "Token values must be positive numbers"
-    },
-    "saved": "Provider saved",
-    "saveProvider": "Save provider",
-    "savingProvider": "Saving…",
-    "deleteProvider": "Delete",
-    "confirmDelete": "Delete provider \"{{id}}\"? This cannot be undone.",
-    "language": "Language",
-    "languageOptions": {
-      "zh-CN": "中文",
-      "en": "English"
-    },
-    "channels": {
-      "title": "Channels",
-      "feishu": {
-        "title": "Feishu (Lark)",
-        "desc": "Native WebSocket connection to Feishu DM",
-        "appId": "App ID",
-        "appSecret": "App Secret",
-        "appSecretHint": "Leave empty to keep existing key"
-      },
-      "qq": {
-        "title": "QQ",
-        "desc": "Connect QQ DM via Bridge Sidecar"
-      },
-      "wechat": {
-        "title": "WeChat",
-        "desc": "Native iLink connection to WeChat DM",
-        "scanLogin": "Scan to Login",
-        "scanning": "Getting QR code…",
-        "waitingScan": "Scan QR code with WeChat",
-        "scanned": "Scanned, waiting for confirmation…",
-        "confirmed": "Login successful",
-        "expired": "QR code expired, please retry",
-        "connected": "Connected",
-        "disconnected": "Disconnected",
-        "relogin": "Re-login",
-        "botId": "Bot ID"
-      },
-      "enabled": "Enabled",
-      "personalOnly": "DM only",
-      "allowedUserIds": "Allowed User IDs",
-      "allowedUserIdsHint": "One ID per line, empty means no restriction",
-      "sidecarBaseUrl": "Sidecar URL",
-      "bridgeToken": "Bridge Token",
-      "bridgeTokenHint": "Auth secret between Sidecar and Inno",
-      "bridgeTokenPlaceholder": "Leave empty to keep existing key",
-      "save": "Save Channels",
-      "saving": "Saving…",
-      "saved": "Channels saved",
-      "mode": "Mode",
-      "modeNative": "Native",
-      "modeBridge": "Bridge"
-    }
-  }
+	"workspace": {
+		"title": "Workspace",
+		"openWorkspace": "Open workspace",
+		"collapse": "Collapse",
+		"half": "Half",
+		"full": "Full",
+		"resize": "Drag to resize",
+		"tabs": {
+			"notebook": "Notebook",
+			"preview": "Preview",
+			"profile": "Profile",
+			"skills": "Skills",
+			"jobs": "Jobs",
+			"settings": "Settings"
+		}
+	},
+	"common": {
+		"save": "Save",
+		"cancel": "Cancel",
+		"edit": "Edit",
+		"delete": "Delete",
+		"refresh": "Refresh",
+		"new": "New",
+		"add": "Add",
+		"loading": "Loading…",
+		"noData": "No data",
+		"search": "Search…",
+		"enabled": "Enabled",
+		"disabled": "Disabled",
+		"enable": "Enable",
+		"disable": "Disable",
+		"yes": "Yes",
+		"no": "No",
+		"ok": "OK",
+		"saving": "Saving…",
+		"saved": "Saved",
+		"remove": "Remove",
+		"open": "Open"
+	},
+	"notebook": {
+		"title": "Notebook",
+		"subtitle": "{{nodes}} nodes · {{edges}} edges",
+		"search": "Search pages or tags…",
+		"filter": {
+			"all": "All",
+			"source-summary": "Sources",
+			"entity": "Entities",
+			"concept": "Concepts",
+			"analysis": "Analysis"
+		},
+		"view": {
+			"graph": "Graph",
+			"page": "Page"
+		},
+		"graph": {
+			"fit": "Fit",
+			"center": "Center",
+			"labels": "Labels",
+			"size": "Node size",
+			"refresh": "Refresh",
+			"relayout": "Re-layout",
+			"show": "Show:",
+			"empty": "No graph data yet."
+		},
+		"editor": {
+			"preview": "Preview",
+			"splitHint": "Live preview on the right",
+			"h1": "Heading 1",
+			"h2": "Heading 2",
+			"h3": "Heading 3",
+			"bold": "Bold",
+			"italic": "Italic",
+			"quote": "Quote",
+			"list": "Bullet list",
+			"numbered": "Numbered list",
+			"link": "Link",
+			"code": "Inline code",
+			"codeBlock": "Code block"
+		},
+		"page": {
+			"empty": "Pick a page on the left, or click a node in the graph.",
+			"selectFromGraph": "Select a node in the graph",
+			"openInNotebook": "Open page",
+			"backToGraph": "Back to graph"
+		},
+		"inspector": {
+			"title": "Node",
+			"empty": "Select a node to inspect. Double-click a non-tag node to open its page.",
+			"type": "Type",
+			"tags": "Tags",
+			"openPage": "Open page"
+		},
+		"types": {
+			"source-summary": "Source",
+			"entity": "Entity",
+			"concept": "Concept",
+			"analysis": "Analysis",
+			"tag": "Tag",
+			"unknown": "Unknown"
+		},
+		"status": {
+			"draft": "draft",
+			"reviewed": "reviewed",
+			"outdated": "outdated"
+		},
+		"confidence": {
+			"low": "low confidence",
+			"medium": "medium confidence",
+			"high": "high confidence"
+		},
+		"contested": "contested",
+		"noPages": "No wiki pages",
+		"selectPage": "Select a page to preview"
+	},
+	"preview": {
+		"workspace": "Workspace",
+		"refresh": "Refresh",
+		"loading": "Loading workspace…",
+		"loadingFile": "Loading file…",
+		"empty": "Workspace is empty.",
+		"noFile": "No file selected",
+		"selectFile": "Select a file from the workspace",
+		"noPreview": "No preview",
+		"binaryFile": "Binary file",
+		"emptyTable": "Empty table",
+		"tableRows": "{{count}} rows",
+		"officeParsing": "Extracting document text...",
+		"officeNote": "Text extracted for preview · formatting may differ",
+		"officeUnavailable": "Preview unavailable",
+		"pageCount": "{{count}} pages",
+		"page": "Page"
+	},
+	"profile": {
+		"title": "Learner Profile",
+		"subtitle": "Built from conversations and learning events; editable.",
+		"refresh": "Refresh",
+		"empty": "No profile data yet.",
+		"version": "version {{version}} · {{updated}}",
+		"sections": {
+			"summary": "Summary",
+			"goals": "Goals",
+			"knowledge": "Knowledge",
+			"misconceptions": "Misconceptions",
+			"preferences": "Preferences"
+		},
+		"summary": {
+			"placeholder": "Agent's high-level summary of the learner…",
+			"activeGoals": "Active goals",
+			"concepts": "Concepts tracked",
+			"dueReviews": "Due for review",
+			"openMisconceptions": "Open misconceptions"
+		},
+		"goals": {
+			"addNew": "+ New goal",
+			"newTitle": "New learning goal",
+			"newGoalDefault": "New goal",
+			"addFailed": "Failed to add: {{message}}",
+			"namePlaceholder": "e.g. Master Rust ownership",
+			"empty": "No goals yet.",
+			"title": "Title",
+			"type": "Type",
+			"priority": "Priority",
+			"status": "Status",
+			"successCriteria": "Success criteria",
+			"successCriteriaPlaceholder": "One per line…",
+			"typeOptions": {
+				"skill": "Skill",
+				"concept": "Concept",
+				"project": "Project",
+				"exam": "Exam",
+				"habit": "Habit"
+			},
+			"statusOptions": {
+				"active": "Active",
+				"paused": "Paused",
+				"completed": "Completed",
+				"archived": "Archived"
+			}
+		},
+		"knowledge": {
+			"empty": "No concepts tracked yet.",
+			"concept": "Concept",
+			"domain": "Domain",
+			"mastery": "Mastery",
+			"due": "Review due",
+			"diagnosis": "Diagnosis",
+			"diagnosisPlaceholder": "Notes about current understanding…",
+			"nextActions": "Next actions",
+			"nextActionsPlaceholder": "One per line…"
+		},
+		"misconceptions": {
+			"empty": "No misconceptions tracked.",
+			"description": "Description",
+			"severity": "Severity",
+			"status": "Status",
+			"repair": "Repair strategy",
+			"statusOptions": {
+				"active": "active",
+				"repairing": "repairing",
+				"resolved": "resolved",
+				"stale": "stale"
+			}
+		},
+		"preferences": {
+			"explanationStyle": "Explanation style",
+			"practiceStyle": "Practice style",
+			"feedbackTone": "Feedback tone",
+			"avoid": "Avoid",
+			"addPlaceholder": "Press Enter to add…"
+		}
+	},
+	"jobs": {
+		"title": "Scheduled Jobs",
+		"subtitle": "Recurring automations and reminders",
+		"newJob": "+ New",
+		"empty": "No scheduled jobs.",
+		"lastRun": "Last run: {{time}}",
+		"nextRun": "Next: {{time}}",
+		"never": "never",
+		"actions": {
+			"run": "Run now",
+			"running": "Running…",
+			"edit": "Edit",
+			"delete": "Delete",
+			"enable": "Enable",
+			"disable": "Disable"
+		},
+		"lastResult": "Last result:",
+		"form": {
+			"newTitle": "New job",
+			"editTitle": "Edit job",
+			"name": "Name",
+			"namePlaceholder": "e.g. Daily review",
+			"taskType": "Task type",
+			"prompt": "Prompt",
+			"promptPlaceholder": "Instruction for the agent…",
+			"schedule": "Schedule",
+			"enabled": "Enabled",
+			"frequency": "Frequency",
+			"time": "Time",
+			"weekdays": "Repeat on",
+			"dayOfMonth": "Day of month",
+			"lastDay": "Last day",
+			"onceDate": "Date",
+			"customCron": "Custom cron",
+			"cronPlaceholder": "min hour dom mon dow",
+			"cronHint": "5 fields: min hour day month weekday",
+			"advanced": "Advanced (Cron)",
+			"preview": "Next: {{time}}"
+		},
+		"frequency": {
+			"daily": "Every day",
+			"weekly": "Every week",
+			"monthly": "Every month",
+			"weekday": "Weekdays",
+			"once": "Once",
+			"custom": "Custom cron"
+		},
+		"weekdays": {
+			"0": "Sun",
+			"1": "Mon",
+			"2": "Tue",
+			"3": "Wed",
+			"4": "Thu",
+			"5": "Fri",
+			"6": "Sat"
+		},
+		"taskTypes": {
+			"daily_review": "Daily review",
+			"weekly_summary": "Weekly summary",
+			"graphify_update": "Graph update",
+			"learner_profile_reflection": "Profile reflection",
+			"spaced_review": "Spaced review",
+			"push_reminder": "Push reminder",
+			"custom_prompt": "Custom prompt"
+		},
+		"errors": {
+			"nameRequired": "Name is required",
+			"cronRequired": "Cron expression is required",
+			"cronInvalid": "Invalid cron expression",
+			"timeRequired": "Pick a time",
+			"weekdayRequired": "Pick at least one weekday",
+			"dateRequired": "Pick a date",
+			"saveFailed": "Failed to save: {{message}}"
+		},
+		"humanCron": {
+			"daily": "Daily at {{time}}",
+			"weekday": "Weekdays at {{time}}",
+			"weekly": "Weekly on {{days}} at {{time}}",
+			"monthly": "Monthly on day {{day}} at {{time}}",
+			"monthlyLast": "Last day of month at {{time}}",
+			"once": "Once on {{date}} {{time}}"
+		}
+	},
+	"skills": {
+		"title": "Skills",
+		"subtitle": "Loaded from the configured skills directory",
+		"reload": "Reload",
+		"upload": "Upload",
+		"uploading": "Uploading…",
+		"package": "Default package:",
+		"packageDesc": "ZIP must contain a SKILL.md file.",
+		"empty": "No skills yet",
+		"emptyDesc": "Upload <skill-name>.zip. It will be unpacked and loaded.",
+		"noDescription": "No description",
+		"loaded": "loaded",
+		"notLoaded": "not loaded",
+		"library": "Skills Library",
+		"libraryTitle": "Skills Library",
+		"librarySubtitle": "Browse and import skills from the inno-agent-hub library",
+		"libraryEmpty": "No skills available in the library",
+		"import": "Import",
+		"importing": "Importing…",
+		"installed": "Installed",
+		"libraryError": "Failed to load skills library"
+	},
+	"settings": {
+		"title": "Settings",
+		"refresh": "Refresh",
+		"loading": "Loading settings…",
+		"stats": {
+			"server": "Server",
+			"healthy": "healthy",
+			"offline": "offline",
+			"defaultModel": "Default model",
+			"wiki": "Wiki",
+			"wikiStat": "{{count}} pages · {{size}}"
+		},
+		"models": "Models",
+		"current": "Current",
+		"use": "Use",
+		"providers": "Providers",
+		"newProvider": "New provider",
+		"memorySection": "Memory layers",
+		"simpleMode": {
+			"title": "Simple Mode",
+			"onDesc": "On: a streamlined, ready-to-use experience. Memory and profile are turned off; the notebook, profile, jobs and skills tabs and the terminal (experiment panel) are hidden and the settings page is simplified; preset workspaces are offered on the welcome screen.",
+			"offDesc": "Off: the full experience with learner profile, memory, notebook, scheduled jobs, skills, and the terminal available.",
+			"memoryLocked": "Memory is turned off while Simple Mode is on. Turn off Simple Mode to change these."
+		},
+		"l1": {
+			"title": "Learner profile (L1)",
+			"onDesc": "On: injects the learner profile each turn and lets tools update it for personalized teaching.",
+			"offDesc": "Off: the learner profile is neither read into the prompt nor updated by tools."
+		},
+		"l2": {
+			"title": "Knowledge base (L2)",
+			"onDesc": "On: lets the agent archive material to and query the Wiki knowledge base.",
+			"offDesc": "Off: archiving to and querying the knowledge base are disabled."
+		},
+		"memory": {
+			"title": "Cross-conversation memory (L3)",
+			"onDesc": "On: searches past conversations via SQLite and auto-recalls relevant context.",
+			"offDesc": "Off: replies use only the current workspace contents and the current conversation context."
+		},
+		"github": {
+			"title": "GitHub token",
+			"desc": "Optional. Used to fetch the skill library from GitHub. Without a token the unauthenticated API is limited to 60 requests/hour per IP; a token raises it to 5000/hour. A token with no scopes is enough for public repos.",
+			"placeholder": "ghp_… or github_pat_…",
+			"saved": "Saved",
+			"clear": "Clear"
+		},
+		"form": {
+			"providerId": "Provider id",
+			"baseUrl": "Base URL",
+			"apiKey": "API key",
+			"apiKeyPreserved": "API key preserved unless replaced",
+			"modelId": "Model id",
+			"modelName": "Model name",
+			"contextWindow": "Context window",
+			"maxTokens": "Max tokens",
+			"reasoning": "reasoning",
+			"makeDefault": "make default",
+			"preserveApiKey": "preserve key"
+		},
+		"errors": {
+			"providerRequired": "Provider id is required",
+			"baseUrlRequired": "Base URL is required",
+			"modelRequired": "Model id is required",
+			"tokensInvalid": "Token values must be positive numbers"
+		},
+		"saved": "Provider saved",
+		"saveProvider": "Save provider",
+		"savingProvider": "Saving…",
+		"deleteProvider": "Delete",
+		"confirmDelete": "Delete provider \"{{id}}\"? This cannot be undone.",
+		"language": "Language",
+		"languageOptions": {
+			"zh-CN": "中文",
+			"en": "English"
+		},
+		"channels": {
+			"title": "Channels",
+			"feishu": {
+				"title": "Feishu (Lark)",
+				"desc": "Native WebSocket connection to Feishu DM",
+				"appId": "App ID",
+				"appSecret": "App Secret",
+				"appSecretHint": "Leave empty to keep existing key"
+			},
+			"qq": {
+				"title": "QQ",
+				"desc": "Connect QQ DM via Bridge Sidecar"
+			},
+			"wechat": {
+				"title": "WeChat",
+				"desc": "Native iLink connection to WeChat DM",
+				"scanLogin": "Scan to Login",
+				"scanning": "Getting QR code…",
+				"waitingScan": "Scan QR code with WeChat",
+				"scanned": "Scanned, waiting for confirmation…",
+				"confirmed": "Login successful",
+				"expired": "QR code expired, please retry",
+				"connected": "Connected",
+				"disconnected": "Disconnected",
+				"relogin": "Re-login",
+				"botId": "Bot ID"
+			},
+			"enabled": "Enabled",
+			"personalOnly": "DM only",
+			"allowedUserIds": "Allowed User IDs",
+			"allowedUserIdsHint": "One ID per line, empty means no restriction",
+			"sidecarBaseUrl": "Sidecar URL",
+			"bridgeToken": "Bridge Token",
+			"bridgeTokenHint": "Auth secret between Sidecar and Inno",
+			"bridgeTokenPlaceholder": "Leave empty to keep existing key",
+			"save": "Save Channels",
+			"saving": "Saving…",
+			"saved": "Channels saved",
+			"mode": "Mode",
+			"modeNative": "Native",
+			"modeBridge": "Bridge"
+		},
+		"contentHub": {
+			"title": "Content Hub (skill library + presets)",
+			"desc": "The skill library and preset workspaces are fetched from here. Defaults to the public repo; switch to a private GitHub repo or a self-hosted service.",
+			"bundle": "Self-hosted service",
+			"tokenPlaceholder": "Access token (private repo / higher limit, optional)"
+		}
+	}
 }

@@ -66,6 +66,24 @@ export async function saveGithubSettings(token: string): Promise<InnoSettings> {
 	});
 }
 
+export interface ContentHubPayload {
+	type: "github" | "bundle";
+	owner?: string;
+	repo?: string;
+	ref?: string;
+	skillsPath?: string;
+	presetsPath?: string;
+	baseUrl?: string;
+	token?: string;
+}
+
+export async function saveContentHubSettings(payload: ContentHubPayload): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>("/api/settings/content-hub", {
+		method: "PUT",
+		body: JSON.stringify(payload),
+	});
+}
+
 export async function wechatQrLogin(): Promise<{ qrId: string; qrUrl: string }> {
 	return apiFetch<{ qrId: string; qrUrl: string }>("/api/channels/wechat/qr-login", {
 		method: "POST",

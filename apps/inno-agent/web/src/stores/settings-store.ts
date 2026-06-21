@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveGithubSettings, type MemorySettingsPatch } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveGithubSettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload } from "../api/settings.js";
 import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
 interface SettingsStoreEvents {
@@ -14,6 +14,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingChannels = false;
 	isSavingMemory = false;
 	isSavingGithub = false;
+	isSavingContentHub = false;
 	isSavingSimpleMode = false;
 	error: string | null = null;
 
@@ -165,6 +166,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			throw err;
 		} finally {
 			this.isSavingGithub = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveContentHub(payload: ContentHubPayload): Promise<void> {
+		this.isSavingContentHub = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveContentHubSettings(payload);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save content hub settings";
+			this.emit("change", undefined);
+			throw err;
+		} finally {
+			this.isSavingContentHub = false;
 			this.emit("change", undefined);
 		}
 	}

@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
-import { Paperclip, X, SendHorizonal, Square, RotateCcw, Check, Image, AlertTriangle } from "lucide-react";
+import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle } from "lucide-react";
 import type { ChatMessage } from "../types/chat.js";
 import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
+import { settingsStore } from "../stores/settings-store.js";
 import { appStore } from "../stores/app-store.js";
 import type { CreateSessionInput } from "../api/sessions.js";
+import { listRemotePresets } from "../api/presets.js";
+import type { PresetMeta } from "../types/presets.js";
 import { uploadRawFile, type RawUploadResult } from "../api/uploads.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { QuestionDialog } from "./QuestionDialog.js";
@@ -170,6 +173,32 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 
 type WsMode = "temp" | "new" | "existing";
 
+// Remember the user's last workspace choice for a new chat so the bottom
+// "新建对话" button doesn't always reset to temp (P3). Persisted to localStorage
+// rather than the backend — it's a per-device UI preference, not agent state.
+const LAST_WS_MODE_KEY = "inno.lastWorkspaceMode";
+const LAST_WS_ID_KEY = "inno.lastWorkspaceId";
+
+function readLastWsMode(): WsMode {
+	if (typeof window === "undefined") return "temp";
+	const v = window.localStorage.getItem(LAST_WS_MODE_KEY);
+	return v === "new" || v === "existing" ? v : "temp";
+}
+
+function readLastWsId(): string {
+	if (typeof window === "undefined") return "";
+	return window.localStorage.getItem(LAST_WS_ID_KEY) ?? "";
+}
+
+function rememberWsChoice(mode: WsMode, existingId: string): void {
+	if (typeof window === "undefined") return;
+	// Only "existing" is worth resuming verbatim; temp/new are fresh each time.
+	window.localStorage.setItem(LAST_WS_MODE_KEY, mode === "existing" ? "existing" : "temp");
+	if (mode === "existing" && existingId) {
+		window.localStorage.setItem(LAST_WS_ID_KEY, existingId);
+	}
+}
+
 function ModeChip({ selected, onClick, disabled, children }: { selected: boolean; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
 	return (
 		<button
@@ -196,11 +225,28 @@ export function ChatCenter() {
 	const [isUploading, setIsUploading] = useState(false);
 	const [inlineImages, setInlineImages] = useState<(InlineImage & { name: string; previewUrl: string })[]>([]);
 
-	// Inline workspace chooser state (welcome screen only).
-	const [wsMode, setWsMode] = useState<WsMode>("temp");
+	// Inline workspace chooser state (welcome screen only). Seeded from the
+	// user's last choice (P3) so a new chat resumes the workspace they were in
+	// rather than always resetting to temp.
+	const [wsMode, setWsMode] = useState<WsMode>(() => readLastWsMode());
 	const [wsName, setWsName] = useState("");
-	const [wsExistingId, setWsExistingId] = useState("");
+	const [wsExistingId, setWsExistingId] = useState(() => readLastWsId());
 	const [wsError, setWsError] = useState("");
+
+	// Simple Mode surfaces preset workspaces for one-click start.
+	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
+	const [presets, setPresets] = useState<PresetMeta[]>([]);
+	const [openingPresetId, setOpeningPresetId] = useState<string | null>(null);
+	const [togglingMode, setTogglingMode] = useState(false);
+
+	// Toggle between Simple and Normal mode from the welcome screen. The IA icon
+	// plays a flip animation keyed on the resulting mode.
+	const toggleMode = useCallback(() => {
+		if (togglingMode) return;
+		const next = !(settingsStore.settings?.simpleMode?.enabled === true);
+		setTogglingMode(true);
+		void settingsStore.saveSimpleMode(next).finally(() => setTogglingMode(false));
+	}, [togglingMode]);
 
 	const chat = useStoreSnapshot(chatStore, () => ({
 		messages: chatStore.messages,
@@ -215,9 +261,12 @@ export function ChatCenter() {
 		pendingQuestion: chatStore.pendingQuestion,
 	}));
 	const sessions = useStoreSnapshot(sessionsStore, () => ({
-		pendingNewSession: sessionsStore.pendingNewSession,
 		currentSessionId: sessionsStore.currentSessionId,
 		preselectedWorkspaceId: sessionsStore.preselectedWorkspaceId,
+		// Single source of truth for the welcome-vs-session view (see store).
+		// Depends on chatStore too, but ChatCenter subscribes to chatStore via
+		// the `chat` snapshot above, so this re-evaluates on chat changes.
+		isWelcome: sessionsStore.isWelcomeView,
 	}));
 	const workspaces = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
@@ -240,16 +289,27 @@ export function ChatCenter() {
 		[workspaces.list],
 	);
 
-	// Welcome state: brand-new chat without an active session yet.
-	const isWelcome =
-		sessions.pendingNewSession ||
-		(!sessions.currentSessionId && chat.messages.length === 0 && !chat.isLoadingHistory && !chat.isSending);
+	// Welcome state: derived once in the sessions store (single source of truth).
+	const isWelcome = sessions.isWelcome;
 
 	useEffect(() => {
 		if (isWelcome && workspaces.list.length === 0) {
 			void workspacesStore.load();
 		}
 	}, [isWelcome, workspaces.list.length]);
+
+	// A remembered "existing" workspace id may point at a since-deleted
+	// workspace. Once the list loads, fall back to temp if it's gone so the
+	// chooser never sticks on an invalid selection (P3).
+	useEffect(() => {
+		if (wsMode === "existing" && wsExistingId && workspaces.list.length > 0) {
+			const stillExists = selectableWorkspaces.some((w) => w.id === wsExistingId);
+			if (!stillExists) {
+				setWsMode("temp");
+				setWsExistingId("");
+			}
+		}
+	}, [wsMode, wsExistingId, workspaces.list.length, selectableWorkspaces]);
 
 	// A workspace preselected from the sidebar drives the chooser to "existing"
 	// mode bound to that workspace (and previews it in quarter mode).
@@ -288,6 +348,9 @@ export function ChatCenter() {
 	}, []);
 
 	const buildSessionInput = useCallback((): CreateSessionInput | { __error: string } => {
+		// Simple Mode: no workspace chooser. Direct chat always goes to a temp
+		// workspace; presets are opened via openPreset into their own workspace.
+		if (simpleMode) return { newWorkspace: { isTemp: true } };
 		if (wsMode === "temp") return { newWorkspace: { isTemp: true } };
 		if (wsMode === "new") {
 			const trimmed = wsName.trim();
@@ -296,26 +359,35 @@ export function ChatCenter() {
 		}
 		if (!wsExistingId) return { __error: "请选择一个工作区" };
 		return { workspaceId: wsExistingId };
-	}, [wsMode, wsName, wsExistingId]);
+	}, [simpleMode, wsMode, wsName, wsExistingId]);
 
-	// Create the new workspace + session up-front (before any message) and reveal
-	// it in the right panel so the user can upload files / skills first.
-	const confirmNewWorkspace = useCallback(() => {
-		const trimmed = wsName.trim();
-		if (!trimmed) { setWsError("请填写工作区名称"); return; }
+	// Load presets from the remote content hub once when the welcome screen is
+	// shown in Simple Mode. Falls back to an empty list on failure (offline /
+	// hub unreachable) so the composer still works.
+	useEffect(() => {
+		if (isWelcome && simpleMode && presets.length === 0) {
+			void listRemotePresets().then(setPresets).catch(() => setPresets([]));
+		}
+	}, [isWelcome, simpleMode, presets.length]);
+
+	// One-click open: instantiate the preset into a fresh workspace + session and
+	// reveal it in the right panel.
+	const openPreset = useCallback((presetId: string) => {
 		setWsError("");
+		setOpeningPresetId(presetId);
 		void (async () => {
 			try {
-				await sessionsStore.createSessionWith({ newWorkspace: { name: trimmed, isTemp: false } });
+				await sessionsStore.createSessionWith({ presetId });
 				appStore.setRightPanelTab("preview");
 				appStore.setWorkspaceWidth(560);
 				appStore.setWorkspaceMode("half");
-				setWsName("");
 			} catch (err) {
-				setWsError(err instanceof Error ? err.message : "创建工作区失败");
+				setWsError(err instanceof Error ? err.message : "打开预设失败");
+			} finally {
+				setOpeningPresetId(null);
 			}
 		})();
-	}, [wsName]);
+	}, []);
 
 	const handleSend = useCallback(() => {
 		const input = inputRef.current?.value.trim() ?? "";
@@ -336,6 +408,8 @@ export function ChatCenter() {
 				return;
 			}
 			setWsError("");
+			// Remember the workspace choice so the next new chat resumes it (P3).
+			if (!simpleMode) rememberWsChoice(wsMode, wsExistingId);
 			if (inputRef.current) {
 				inputRef.current.value = "";
 				inputRef.current.style.height = "auto";
@@ -360,7 +434,7 @@ export function ChatCenter() {
 		setUploads([]);
 		setInlineImages([]);
 		void chatStore.send(messageContent, imagesToSend);
-	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading]);
+	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId]);
 
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		// Don't fire Send while the user is composing with an IME (e.g. picking
@@ -537,15 +611,87 @@ export function ChatCenter() {
 				<div className="inno-chat-grid flex flex-1 min-h-0 justify-center overflow-y-auto px-4">
 					<div className="w-full max-w-2xl pt-[18vh] pb-12">
 						<div className="mb-6 flex flex-col items-center text-center">
-							<div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-base font-semibold text-blue-600 shadow-sm">IA</div>
+							<button
+								type="button"
+								onClick={toggleMode}
+								disabled={togglingMode}
+								title={simpleMode ? "当前:简单模式 · 点击切换到普通模式" : "当前:普通模式 · 点击切换到简单模式"}
+								aria-label={simpleMode ? "切换到普通模式" : "切换到简单模式"}
+								className="mb-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-wait"
+								style={{ perspective: "600px" }}
+							>
+								<motion.div
+									animate={{ rotateY: simpleMode ? 180 : 0 }}
+									transition={{ type: "spring", stiffness: 320, damping: 22 }}
+									style={{ transformStyle: "preserve-3d", position: "relative" }}
+									className="flex h-12 w-12 items-center justify-center"
+								>
+									{/* Front — Normal mode */}
+									<span
+										className="absolute inset-0 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-base font-semibold text-blue-600 shadow-sm transition-colors hover:border-blue-300"
+										style={{ backfaceVisibility: "hidden" }}
+									>
+										IA
+									</span>
+									{/* Back — Simple mode */}
+									<span
+										className="absolute inset-0 flex items-center justify-center rounded-xl border border-blue-400 bg-blue-600 text-base font-semibold text-white shadow-sm"
+										style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+									>
+										IA
+									</span>
+								</motion.div>
+							</button>
 							<h2 className="text-lg font-medium text-slate-950">Inno Agent</h2>
+							{/* Explicit, labeled mode switch (P4): the flip logo above is a nice
+							    secondary affordance, but a worded pill makes the toggle
+							    discoverable instead of hidden behind an icon click. */}
+							<button
+								type="button"
+								onClick={toggleMode}
+								disabled={togglingMode}
+								className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-500 transition-colors hover:border-blue-300 hover:text-blue-700 disabled:cursor-wait disabled:opacity-60"
+							>
+								<span className={`h-1.5 w-1.5 rounded-full ${simpleMode ? "bg-blue-500" : "bg-slate-300"}`} />
+								{simpleMode ? "简单模式 · 切换到普通模式" : "普通模式 · 切换到简单模式"}
+							</button>
 						</div>
 
 						{renderUploadChips()}
 						{renderInlineImagePreviews()}
 						{renderComposer("有什么想学习或实践的?发送消息开始…")}
 
-						{preselectedWs ? (
+						{simpleMode && presets.length > 0 ? (
+							<div className="mt-5">
+								<div className="mb-2 text-xs font-medium text-slate-500">开箱即用 · 选一个开始</div>
+								<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+									{presets.map((preset) => (
+										<button
+											key={preset.id}
+											type="button"
+											disabled={openingPresetId !== null}
+											onClick={() => openPreset(preset.id)}
+											title={preset.description}
+											className="group flex flex-col items-start rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/40 disabled:opacity-50"
+										>
+											<span className="text-sm font-medium text-slate-900 group-hover:text-blue-700">
+												{preset.name}
+											</span>
+											{preset.description ? (
+												<span className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-slate-500">
+													{preset.description}
+												</span>
+											) : null}
+											{openingPresetId === preset.id ? (
+												<span className="mt-1 text-[10px] text-blue-600">正在打开…</span>
+											) : null}
+										</button>
+									))}
+								</div>
+							</div>
+						) : null}
+
+						{simpleMode ? null : preselectedWs ? (
 							<div className="mt-3 flex flex-wrap items-center gap-2">
 								<span className="text-xs text-slate-400">工作区</span>
 								<span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 ring-1 ring-blue-100">
@@ -562,25 +708,13 @@ export function ChatCenter() {
 									<ModeChip selected={wsMode === "existing"} onClick={() => setWsMode("existing")}>已有工作区</ModeChip>
 								) : null}
 								{wsMode === "new" ? (
-									<>
-										<input
-											type="text"
-											placeholder="工作区名称,例如:pandas demo"
-											value={wsName}
-											onChange={(e) => setWsName(e.target.value)}
-											onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmNewWorkspace(); } }}
-											className="ml-1 w-[200px] rounded-full border border-slate-200 bg-white px-2 py-px text-[10px] leading-tight outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
-										/>
-										<button
-											type="button"
-											onClick={confirmNewWorkspace}
-											disabled={!wsName.trim()}
-											title="创建并绑定工作区(可先上传文件/技能,再开始对话)"
-											className="flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
-										>
-											<Check size={11} /> 创建并绑定
-										</button>
-									</>
+									<input
+										type="text"
+										placeholder="工作区名称,例如:pandas demo"
+										value={wsName}
+										onChange={(e) => setWsName(e.target.value)}
+										className="ml-1 w-[200px] rounded-full border border-slate-200 bg-white px-2 py-px text-[10px] leading-tight outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+									/>
 								) : null}
 								{wsMode === "existing" ? (
 									<select

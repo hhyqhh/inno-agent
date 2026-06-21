@@ -69,6 +69,29 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	private _openRequestId = 0;
 	private _messageCache = new Map<string, Awaited<ReturnType<typeof getSession>>["messages"]>();
 
+	/**
+	 * Single source of truth for whether the chat center shows the welcome
+	 * screen (new-chat composer + workspace chooser) vs. an open session.
+	 *
+	 * The previous logic lived inline in ChatCenter and OR-ed together five
+	 * conditions split across two stores, which was fragile at transition
+	 * boundaries. Centralizing it here makes the "welcome | session" view an
+	 * explicit, testable derivation:
+	 *   - `pendingNewSession` → the user explicitly asked for a new chat.
+	 *   - an open `currentSessionId` → a real session view.
+	 *   - otherwise (no session yet) → welcome, unless the chat is mid-flight
+	 *     (loading history / streaming a just-created session) so we don't
+	 *     flash the welcome screen during the create→open transition.
+	 *
+	 * Reads chatStore live at call time; ChatCenter subscribes to both stores,
+	 * so it re-renders (and re-evaluates this) on either store's change.
+	 */
+	get isWelcomeView(): boolean {
+		if (this.pendingNewSession) return true;
+		if (this.currentSessionId) return false;
+		return chatStore.messages.length === 0 && !chatStore.isLoadingHistory && !chatStore.isSending;
+	}
+
 	get filteredSessions(): SessionMeta[] {
 		let list = this.sessions;
 		if (this.channelFilter) {

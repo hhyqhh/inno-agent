@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveGithubSettings, type MemorySettingsPatch } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveGithubSettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload } from "../api/settings.js";
 import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
 interface SettingsStoreEvents {
@@ -14,6 +14,8 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingChannels = false;
 	isSavingMemory = false;
 	isSavingGithub = false;
+	isSavingContentHub = false;
+	isSavingSimpleMode = false;
 	error: string | null = null;
 
 	async load(): Promise<void> {
@@ -136,6 +138,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 		}
 	}
 
+	async saveSimpleMode(enabled: boolean): Promise<void> {
+		this.isSavingSimpleMode = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveSimpleModeSettings(enabled);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save simple mode setting";
+			this.emit("change", undefined);
+			throw err;
+		} finally {
+			this.isSavingSimpleMode = false;
+			this.emit("change", undefined);
+		}
+	}
+
 	async saveGithub(token: string): Promise<void> {
 		this.isSavingGithub = true;
 		this.error = null;
@@ -148,6 +166,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			throw err;
 		} finally {
 			this.isSavingGithub = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveContentHub(payload: ContentHubPayload): Promise<void> {
+		this.isSavingContentHub = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveContentHubSettings(payload);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save content hub settings";
+			this.emit("change", undefined);
+			throw err;
+		} finally {
+			this.isSavingContentHub = false;
 			this.emit("change", undefined);
 		}
 	}

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Trash2, Pencil, X, ChevronDown, ChevronRight, Plus, QrCode as QrCodeIcon, CheckCircle, Wifi, WifiOff, KeyRound } from "lucide-react";
+import { Trash2, Pencil, X, ChevronDown, ChevronRight, Plus, QrCode as QrCodeIcon, CheckCircle, Wifi, WifiOff, Database } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { getWikiStats } from "../api/wiki.js";
 import { settingsStore } from "../stores/settings-store.js";
@@ -632,27 +632,50 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 	);
 }
 
-/* ---------- GitHub Settings (token to raise skill-library API rate limit) ---------- */
+/* ---------- Content Hub (source for skill library + presets) ---------- */
 
-function GithubSettings({ settings }: { settings: InnoSettings }) {
+function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 	const { t } = useTranslation();
-	const hasToken = Boolean(settings.github?.token);
-	const [token, setToken] = useState(settings.github?.token ?? "");
+	const hub = settings.contentHub;
+	const [open, setOpen] = useState(false);
+	const [type, setType] = useState<"github" | "bundle">(hub?.type ?? "github");
+	const [owner, setOwner] = useState(hub?.owner ?? "");
+	const [repo, setRepo] = useState(hub?.repo ?? "");
+	const [ref, setRef] = useState(hub?.ref ?? "");
+	const [skillsPath, setSkillsPath] = useState(hub?.skillsPath ?? "");
+	const [presetsPath, setPresetsPath] = useState(hub?.presetsPath ?? "");
+	const [baseUrl, setBaseUrl] = useState(hub?.baseUrl ?? "");
+	const [token, setToken] = useState(hub?.token ?? "");
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
 
 	useEffect(() => {
-		setToken(settings.github?.token ?? "");
+		setType(hub?.type ?? "github");
+		setOwner(hub?.owner ?? "");
+		setRepo(hub?.repo ?? "");
+		setRef(hub?.ref ?? "");
+		setSkillsPath(hub?.skillsPath ?? "");
+		setPresetsPath(hub?.presetsPath ?? "");
+		setBaseUrl(hub?.baseUrl ?? "");
+		setToken(hub?.token ?? "");
 		setSaved(false);
-	}, [settings.github?.token]);
-
-	const dirty = token !== (settings.github?.token ?? "");
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [hub?.type, hub?.owner, hub?.repo, hub?.ref, hub?.skillsPath, hub?.presetsPath, hub?.baseUrl, hub?.token]);
 
 	async function handleSave() {
 		setSaving(true);
 		setSaved(false);
 		try {
-			await settingsStore.saveGithub(token.trim());
+			await settingsStore.saveContentHub({
+				type,
+				owner: owner.trim(),
+				repo: repo.trim(),
+				ref: ref.trim(),
+				skillsPath: skillsPath.trim(),
+				presetsPath: presetsPath.trim(),
+				baseUrl: baseUrl.trim(),
+				token: token.trim(),
+			});
 			setSaved(true);
 		} catch {
 			// error surfaced via store
@@ -661,54 +684,78 @@ function GithubSettings({ settings }: { settings: InnoSettings }) {
 		}
 	}
 
-	async function handleClear() {
-		setSaving(true);
-		setSaved(false);
-		try {
-			await settingsStore.saveGithub("");
-			setToken("");
-		} catch {
-			// error surfaced via store
-		} finally {
-			setSaving(false);
-		}
-	}
+	const inputCls = "h-8 min-w-0 flex-1 rounded-md border border-slate-200 px-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none";
+	const sourceLabel = type === "github"
+		? `GitHub · ${owner || "?"}/${repo || "?"}`
+		: `${t("settings.contentHub.bundle", "自托管服务")} · ${baseUrl || "?"}`;
 
 	return (
 		<div className="rounded-lg border border-slate-200 bg-white p-4">
-			<div className="flex items-start gap-2">
-				<KeyRound size={16} className="mt-0.5 shrink-0 text-slate-700" />
+			<button className="flex w-full items-start gap-2 text-left" onClick={() => setOpen((v) => !v)}>
+				<Database size={16} className="mt-0.5 shrink-0 text-slate-700" />
 				<div className="min-w-0 flex-1">
-					<h4 className="text-sm font-medium text-slate-950">{t("settings.github.title")}</h4>
-					<p className="mt-1 text-xs leading-relaxed text-slate-500">{t("settings.github.desc")}</p>
-					<div className="mt-3 flex items-center gap-2">
+					<h4 className="text-sm font-medium text-slate-950">{t("settings.contentHub.title", "内容源(技能库 + 预设)")}</h4>
+					<p className="mt-1 text-xs leading-relaxed text-slate-500">
+						{t("settings.contentHub.desc", "技能库和预设工作区从这里拉取。默认公共仓库,可改为私有 GitHub 仓库或自托管服务。")}
+					</p>
+					{!open && <p className="mt-1 truncate text-[11px] text-slate-400">{sourceLabel}</p>}
+				</div>
+				<ChevronDown size={14} className={`mt-1 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+			</button>
+
+			{open ? (
+				<div className="mt-3 grid gap-2.5">
+					{/* Type selector */}
+					<div className="flex items-center gap-1.5">
+						<button
+							onClick={() => setType("github")}
+							className={`flex h-7 items-center rounded-md border px-2.5 text-xs ${type === "github" ? "border-blue-400 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+						>
+							GitHub
+						</button>
+						<button
+							onClick={() => setType("bundle")}
+							className={`flex h-7 items-center rounded-md border px-2.5 text-xs ${type === "bundle" ? "border-blue-400 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+						>
+							{t("settings.contentHub.bundle", "自托管服务")}
+						</button>
+					</div>
+
+					{type === "github" ? (
+						<>
+							<div className="flex items-center gap-2">
+								<input className={inputCls} value={owner} onChange={(e) => { setOwner(e.target.value); setSaved(false); }} placeholder="owner" autoComplete="off" />
+								<input className={inputCls} value={repo} onChange={(e) => { setRepo(e.target.value); setSaved(false); }} placeholder="repo" autoComplete="off" />
+								<input className={inputCls} value={ref} onChange={(e) => { setRef(e.target.value); setSaved(false); }} placeholder="ref (main)" autoComplete="off" />
+							</div>
+							<div className="flex items-center gap-2">
+								<input className={inputCls} value={skillsPath} onChange={(e) => { setSkillsPath(e.target.value); setSaved(false); }} placeholder="skill-library" autoComplete="off" />
+								<input className={inputCls} value={presetsPath} onChange={(e) => { setPresetsPath(e.target.value); setSaved(false); }} placeholder="workspace-templates" autoComplete="off" />
+							</div>
+						</>
+					) : (
+						<input className={inputCls} value={baseUrl} onChange={(e) => { setBaseUrl(e.target.value); setSaved(false); }} placeholder="https://hub.example.com" autoComplete="off" />
+					)}
+
+					<div className="flex items-center gap-2">
 						<input
+							className={inputCls}
 							type="password"
 							value={token}
 							onChange={(e) => { setToken(e.target.value); setSaved(false); }}
-							placeholder={t("settings.github.placeholder")}
+							placeholder={t("settings.contentHub.tokenPlaceholder", "访问令牌(私有仓库 / 提额,可选)") ?? ""}
 							autoComplete="off"
-							className="h-8 min-w-0 flex-1 rounded-md border border-slate-200 px-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
 						/>
 						<button
-							disabled={saving || !dirty || !token.trim()}
+							disabled={saving}
 							onClick={() => void handleSave()}
 							className="flex h-8 shrink-0 items-center rounded-md bg-slate-900 px-3 text-xs text-white hover:bg-slate-800 disabled:opacity-50"
 						>
-							{saving ? t("common.loading") : saved ? t("settings.github.saved") : t("common.save")}
+							{saving ? t("common.loading") : saved ? t("settings.github.saved", "已保存") : t("common.save")}
 						</button>
-						{hasToken && (
-							<button
-								disabled={saving}
-								onClick={() => void handleClear()}
-								className="flex h-8 shrink-0 items-center rounded-md border border-slate-200 px-3 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-							>
-								{t("settings.github.clear")}
-							</button>
-						)}
 					</div>
 				</div>
-			</div>
+			) : null}
 		</div>
 	);
 }
@@ -720,30 +767,34 @@ type MemoryLayer = "l1Enabled" | "l2Enabled" | "l3Enabled";
 function MemoryToggleRow({
 	enabled,
 	saving,
+	locked,
 	title,
 	desc,
 	onToggle,
 }: {
 	enabled: boolean;
 	saving: boolean;
+	locked?: boolean;
 	title: string;
 	desc: string;
 	onToggle: (next: boolean) => void;
 }) {
+	// In Simple Mode the layers are force-locked OFF; show them as off + disabled.
+	const shown = locked ? false : enabled;
 	return (
-		<div className="flex items-start justify-between gap-3">
+		<div className={`flex items-start justify-between gap-3 ${locked ? "opacity-60" : ""}`}>
 			<div className="min-w-0">
 				<h4 className="text-sm font-medium text-slate-950">{title}</h4>
 				<p className="mt-1 text-xs text-slate-500">{desc}</p>
 			</div>
 			<button
 				role="switch"
-				aria-checked={enabled}
-				disabled={saving}
+				aria-checked={shown}
+				disabled={saving || locked}
 				onClick={() => onToggle(!enabled)}
-				className={`relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${enabled ? "bg-blue-600" : "bg-slate-300"}`}
+				className={`relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${shown ? "bg-blue-600" : "bg-slate-300"}`}
 			>
-				<span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? "translate-x-[18px]" : "translate-x-1"}`} />
+				<span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${shown ? "translate-x-[18px]" : "translate-x-1"}`} />
 			</button>
 		</div>
 	);
@@ -751,6 +802,7 @@ function MemoryToggleRow({
 
 function MemorySettings({ settings }: { settings: InnoSettings }) {
 	const { t } = useTranslation();
+	const locked = settings.simpleMode?.enabled === true;
 	const initial = {
 		l1Enabled: settings.memory?.l1Enabled !== false,
 		l2Enabled: settings.memory?.l2Enabled !== false,
@@ -788,6 +840,7 @@ function MemorySettings({ settings }: { settings: InnoSettings }) {
 	return (
 		<div className="rounded-lg border border-slate-200 bg-white p-4">
 			<h4 className="mb-3 text-sm font-medium text-slate-950">{t("settings.memorySection")}</h4>
+			{locked ? <p className="mb-3 text-xs text-amber-600">{t("settings.simpleMode.memoryLocked")}</p> : null}
 			<div className="grid gap-4">
 				{layers.map(({ key, ns }) => {
 					const enabled = state[key];
@@ -796,12 +849,59 @@ function MemorySettings({ settings }: { settings: InnoSettings }) {
 							key={key}
 							enabled={enabled}
 							saving={savingKey === key}
+							locked={locked}
 							title={t(`settings.${ns}.title`)}
 							desc={enabled ? t(`settings.${ns}.onDesc`) : t(`settings.${ns}.offDesc`)}
 							onToggle={(next) => void handleToggle(key, next)}
 						/>
 					);
 				})}
+			</div>
+		</div>
+	);
+}
+
+/* ---------- Simple Mode (streamlined experience) ---------- */
+
+function SimpleModeSettings({ settings }: { settings: InnoSettings }) {
+	const { t } = useTranslation();
+	const [enabled, setEnabled] = useState(settings.simpleMode?.enabled === true);
+	const [saving, setSaving] = useState(false);
+
+	useEffect(() => {
+		setEnabled(settings.simpleMode?.enabled === true);
+	}, [settings.simpleMode?.enabled]);
+
+	async function handleToggle(next: boolean) {
+		setEnabled(next);
+		setSaving(true);
+		try {
+			await settingsStore.saveSimpleMode(next);
+		} catch {
+			setEnabled(!next);
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	return (
+		<div className="rounded-lg border border-slate-200 bg-white p-4">
+			<div className="flex items-start justify-between gap-3">
+				<div className="min-w-0">
+					<h4 className="text-sm font-medium text-slate-950">{t("settings.simpleMode.title")}</h4>
+					<p className="mt-1 text-xs leading-relaxed text-slate-500">
+						{enabled ? t("settings.simpleMode.onDesc") : t("settings.simpleMode.offDesc")}
+					</p>
+				</div>
+				<button
+					role="switch"
+					aria-checked={enabled}
+					disabled={saving}
+					onClick={() => void handleToggle(!enabled)}
+					className={`relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${enabled ? "bg-blue-600" : "bg-slate-300"}`}
+				>
+					<span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? "translate-x-[18px]" : "translate-x-1"}`} />
+				</button>
 			</div>
 		</div>
 	);
@@ -821,6 +921,7 @@ export function SettingsPanel() {
 		isSavingProvider: settingsStore.isSavingProvider,
 		error: settingsStore.error,
 	}));
+	const simpleMode = state.settings?.simpleMode?.enabled === true;
 
 	useEffect(() => {
 		void settingsStore.load();
@@ -938,17 +1039,26 @@ export function SettingsPanel() {
 					</div>
 				</div>
 
-				{/* New Provider (collapsed by default) */}
-				<NewProviderForm />
+				{/* Simple Mode (streamlined experience; force-locks memory off) */}
+				{state.settings && <SimpleModeSettings settings={state.settings} />}
 
-				{/* Memory Settings (L3 cross-conversation recall) */}
-				{state.settings && <MemorySettings settings={state.settings} />}
+				{/* Advanced sections — hidden in Simple Mode for a streamlined panel */}
+				{!simpleMode && (
+					<>
+						{/* New Provider (collapsed by default) */}
+						<NewProviderForm />
 
-				{/* GitHub token (raises skill-library API rate limit) */}
-				{state.settings && <GithubSettings settings={state.settings} />}
+						{/* Memory Settings (L3 cross-conversation recall) */}
+						{state.settings && <MemorySettings settings={state.settings} />}
 
-				{/* Channels Settings */}
-				{state.settings && <ChannelsSettings settings={state.settings} />}
+						{/* Content Hub (source for skill library + presets; subsumes the
+						    legacy GitHub token) */}
+						{state.settings && <ContentHubSettings settings={state.settings} />}
+
+						{/* Channels Settings */}
+						{state.settings && <ChannelsSettings settings={state.settings} />}
+					</>
+				)}
 			</div>
 		</div>
 	);

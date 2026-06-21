@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { appStore, type RightPanelTab, type WorkspaceMode } from "../stores/app-store.js";
+import { settingsStore } from "../stores/settings-store.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { ChatCenter } from "./ChatCenter.js";
 import { SessionSidebar } from "./SessionSidebar.js";
@@ -16,6 +17,12 @@ export function App() {
 		workspaceMode: appStore.workspaceMode,
 		workspaceWidth: appStore.workspaceWidth,
 	}));
+
+	// Load settings once at boot so Simple Mode (tab hiding, preset cards) is
+	// available app-wide before the user ever opens the Settings panel.
+	useEffect(() => {
+		void settingsStore.load();
+	}, []);
 
 	// Track whether user manually toggled the sidebar so we don't fight them
 	const userExpandedSidebar = useRef(false);

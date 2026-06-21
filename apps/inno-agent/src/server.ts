@@ -8,7 +8,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, r
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
-import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, deleteModel, type InnoConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
+import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, deleteModel, normalizeContentHubConfig, type InnoConfig, type InnoContentHubConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
 import { ensureDir, readJson, readText, writeJson, writeText } from "./storage/file-store.js";
 import {
 	createNewSession,
@@ -47,6 +47,8 @@ import { logger } from "./logger.js";
 import { applyRuntimeEnvironment, parseRuntimeArgs, resolveRuntimePaths } from "./runtime.js";
 import { questionBridge, type QuestionBridgeResult } from "./agent/question-bridge.js";
 import { DEFAULT_WORKSPACE_ID, TEMP_WORKSPACE_ID, WorkspaceRegistry } from "./workspace/workspace-registry.js";
+import { listPresets, listRemotePresets, ensurePresetCached, instantiatePreset } from "./presets/preset-store.js";
+import { createContentSource, type RemoteContentSource } from "./content-source/index.js";
 import { RunRecordStore } from "./terminal/run-record-store.js";
 import { TerminalSessionManager } from "./terminal/terminal-session-manager.js";
 import type { ClientTerminalEvent, ServerTerminalEvent } from "./terminal/terminal-types.js";
@@ -330,6 +332,9 @@ function buildSafeSettings() {
 			: undefined,
 		github: config.github
 			? { token: maskSecret(config.github.token) }
+			: undefined,
+		contentHub: config.contentHub
+			? { ...config.contentHub, token: maskSecret(config.contentHub.token) }
 			: undefined,
 	};
 }
@@ -760,18 +765,16 @@ function installSkillMarkdown(fileName: string, data: Buffer, targetRoot: string
 }
 
 // ---------------------------------------------------------------------------
-// Remote skill library (GitHub: Chloris-Blaxk/inno-agent-hub/skill-library)
+// Remote content hub (skill library + preset workspaces)
+//
+// Backed by a RemoteContentSource (GitHub repo by default, or a self-hosted
+// bundle service). The source is created lazily from config.contentHub and
+// recreated whenever the hub config changes, so settings edits take effect
+// without a restart.
 // ---------------------------------------------------------------------------
 
-const SKILL_LIBRARY_OWNER = "Chloris-Blaxk";
-const SKILL_LIBRARY_REPO = "inno-agent-hub";
-const SKILL_LIBRARY_PATH = "skill-library";
-const SKILL_LIBRARY_REF = "main";
-/** Directories under skill-library/ that are not installable skills. */
-const SKILL_LIBRARY_IGNORE_DIRS = new Set(["assets", "__MACOSX"]);
-
 interface SkillLibraryItem {
-	/** Directory name under skill-library/ (used as the skill name). */
+	/** Directory name under the skills path (used as the skill name). */
 	name: string;
 	/** description from SKILL.md frontmatter (may be empty). */
 	description: string;
@@ -779,47 +782,30 @@ interface SkillLibraryItem {
 	installed: boolean;
 }
 
-interface GitTreeEntry {
-	path: string;
-	type: "blob" | "tree";
-	url: string;
+let contentSource: RemoteContentSource | null = null;
+let contentSourceHubKey = "";
+
+/** Stable identity for a hub config, so we recreate the source on change. */
+function hubKey(hub: InnoContentHubConfig): string {
+	return JSON.stringify(hub);
 }
 
-interface GitTreeResponse {
-	tree: GitTreeEntry[];
-	truncated: boolean;
-}
-
-function githubHeaders(): Record<string, string> {
-	const headers: Record<string, string> = {
-		Accept: "application/vnd.github+json",
-		"User-Agent": "inno-agent",
-	};
-	const token = config.github?.token?.trim() || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-	if (token) headers.Authorization = `Bearer ${token}`;
-	return headers;
-}
-
-async function githubGetJson<T>(url: string): Promise<T> {
-	const res = await fetch(url, { headers: githubHeaders() });
-	if (!res.ok) {
-		// Surface rate-limit exhaustion with a clearer hint than a raw 403.
-		if (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") {
-			const reset = Number(res.headers.get("x-ratelimit-reset"));
-			const when = Number.isFinite(reset) ? new Date(reset * 1000).toLocaleTimeString() : "later";
-			throw new Error(
-				`GitHub API rate limit reached (unauthenticated is 60/hour). Try again after ${when}, ` +
-				`or set a GITHUB_TOKEN env var to raise the limit.`,
-			);
-		}
-		throw new Error(`GitHub request failed (${res.status} ${res.statusText}) for ${url}`);
+/** Get (or rebuild) the content source for the current config.contentHub. */
+function getContentSource(): RemoteContentSource {
+	const hub = config.contentHub ?? normalizeContentHubConfig(undefined, config.github?.token);
+	const key = hubKey(hub);
+	if (!contentSource || key !== contentSourceHubKey) {
+		contentSource = createContentSource(hub);
+		contentSourceHubKey = key;
 	}
-	return (await res.json()) as T;
+	return contentSource;
 }
 
-function rawUrlFor(repoPath: string): string {
-	const encoded = repoPath.split("/").map(encodeURIComponent).join("/");
-	return `https://raw.githubusercontent.com/${SKILL_LIBRARY_OWNER}/${SKILL_LIBRARY_REPO}/${SKILL_LIBRARY_REF}/${encoded}`;
+/** Drop the source so the next call rebuilds it (and its cache) from config. */
+function invalidateContentSource(): void {
+	contentSource?.invalidate();
+	contentSource = null;
+	contentSourceHubKey = "";
 }
 
 /**
@@ -853,55 +839,12 @@ function extractFrontmatterDescription(content: string): string {
 }
 
 /**
- * Fetch the full repo file tree in a single Git Trees API call (`recursive=1`).
- *
- * This costs exactly one rate-limited request regardless of how many skills or
- * nested files exist — the previous per-directory `contents` walk burned a
- * call per folder and quickly exhausted the unauthenticated 60/hour budget.
- */
-async function fetchSkillLibraryTree(): Promise<GitTreeEntry[]> {
-	const url =
-		`https://api.github.com/repos/${SKILL_LIBRARY_OWNER}/${SKILL_LIBRARY_REPO}` +
-		`/git/trees/${SKILL_LIBRARY_REF}?recursive=1`;
-	const data = await githubGetJson<GitTreeResponse>(url);
-	const prefix = `${SKILL_LIBRARY_PATH}/`;
-	return data.tree.filter((e) => e.path.startsWith(prefix));
-}
-
-/** Short-lived cache so repeated panel opens don't each spend an API call. */
-let skillLibraryTreeCache: { entries: GitTreeEntry[]; fetchedAt: number } | null = null;
-const SKILL_LIBRARY_CACHE_TTL_MS = 5 * 60 * 1000;
-
-async function getSkillLibraryTree(forceRefresh = false): Promise<GitTreeEntry[]> {
-	const now = Date.now();
-	if (!forceRefresh && skillLibraryTreeCache && now - skillLibraryTreeCache.fetchedAt < SKILL_LIBRARY_CACHE_TTL_MS) {
-		return skillLibraryTreeCache.entries;
-	}
-	const entries = await fetchSkillLibraryTree();
-	skillLibraryTreeCache = { entries, fetchedAt: now };
-	return entries;
-}
-
-/**
- * List installable skills from the remote skill-library.
- *
- * Costs one Git Trees API call (cached) plus, for each skill, a raw.githubusercontent.com
- * fetch of SKILL.md to surface the description. Raw fetches are served from a CDN and do
- * NOT count against the GitHub API rate limit.
+ * List installable skills from the remote skill library via the content source.
+ * Descriptions are best-effort (read from each SKILL.md / item meta).
  */
 async function listSkillLibrary(forceRefresh = false): Promise<SkillLibraryItem[]> {
-	const tree = await getSkillLibraryTree(forceRefresh);
-	const prefix = `${SKILL_LIBRARY_PATH}/`;
-	// A directory is an installable skill if it directly contains SKILL.md.
-	const skillNames = new Set<string>();
-	for (const entry of tree) {
-		if (entry.type !== "blob") continue;
-		const rel = entry.path.slice(prefix.length); // e.g. "edu-solid-geometry/SKILL.md"
-		const parts = rel.split("/");
-		if (parts.length === 2 && parts[1] === "SKILL.md" && !SKILL_LIBRARY_IGNORE_DIRS.has(parts[0])) {
-			skillNames.add(parts[0]);
-		}
-	}
+	const source = getContentSource();
+	const items = await source.listItems("skills", { forceRefresh });
 
 	const localNames = new Set(
 		existsSync(skillsDir)
@@ -909,60 +852,36 @@ async function listSkillLibrary(forceRefresh = false): Promise<SkillLibraryItem[
 			: [],
 	);
 
-	const items = await Promise.all(
-		Array.from(skillNames).map(async (name): Promise<SkillLibraryItem> => {
-			let description = "";
-			try {
-				const res = await fetch(rawUrlFor(`${SKILL_LIBRARY_PATH}/${name}/SKILL.md`), {
-					headers: { "User-Agent": "inno-agent" },
-				});
-				if (res.ok) description = extractFrontmatterDescription(await res.text());
-			} catch (err) {
-				// Description is best-effort; skip on failure.
+	const result = await Promise.all(
+		items.map(async (item): Promise<SkillLibraryItem> => {
+			// Prefer inline meta (bundle service); otherwise read SKILL.md frontmatter.
+			let description = typeof item.meta?.description === "string" ? item.meta.description : "";
+			if (!description) {
+				const md = await source.readItemTextFile("skills", item.name, "SKILL.md");
+				if (md) description = extractFrontmatterDescription(md);
 			}
 			return {
-				name,
+				name: item.name,
 				description,
-				installed: localNames.has(slugifySkillName(name)),
+				installed: localNames.has(slugifySkillName(item.name)),
 			};
 		}),
 	);
-	return items.sort((a, b) => a.name.localeCompare(b.name));
+	return result.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
  * Import a skill from the remote library into the global skills directory.
- *
- * Uses the cached repo tree to enumerate the skill's files, then downloads each
- * blob from raw.githubusercontent.com (CDN, not rate limited). Installs through
- * the same path as a zip upload (validates SKILL.md, normalizes frontmatter).
+ * Downloads the item's files into a temp dir, then installs through the same
+ * path as a zip upload (validates SKILL.md, normalizes frontmatter).
  */
 async function importSkillFromLibrary(skillName: string): Promise<{ name: string; filePath: string }> {
-	// Guard against path traversal: only a single directory segment is allowed.
-	if (!skillName || skillName.includes("/") || skillName.includes("\\") || skillName.includes("..")) {
-		throw new Error("Invalid skill name");
-	}
-	const tree = await getSkillLibraryTree();
-	const dirPrefix = `${SKILL_LIBRARY_PATH}/${skillName}/`;
-	const blobs = tree.filter((e) => e.type === "blob" && e.path.startsWith(dirPrefix));
-	if (blobs.length === 0) {
-		throw new Error(`Skill "${skillName}" not found in the library`);
-	}
-
+	const source = getContentSource();
 	const tempRoot = join(tmpdir(), `inno-libskill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 	const extractDir = join(tempRoot, "extract");
 	ensureDir(extractDir);
 	try {
-		for (const blob of blobs) {
-			const rel = blob.path.slice(dirPrefix.length);
-			if (!rel || rel.includes("..")) continue;
-			const localPath = join(extractDir, rel);
-			const res = await fetch(rawUrlFor(blob.path), { headers: { "User-Agent": "inno-agent" } });
-			if (!res.ok) throw new Error(`Failed to download ${blob.path} (${res.status})`);
-			const buf = Buffer.from(await res.arrayBuffer());
-			ensureDir(dirname(localPath));
-			writeFileSync(localPath, buf);
-		}
+		await source.downloadItem("skills", skillName, extractDir);
 		return installSkillFromExtractedDir(extractDir, slugifySkillName(skillName), skillsDir);
 	} finally {
 		rmSync(tempRoot, { recursive: true, force: true });
@@ -2269,14 +2188,23 @@ const server = createServer(async (req, res) => {
 			const id = await createNewSession();
 
 			// Determine target workspace. The UI chooser always sends an explicit
-			// choice (new/existing); temp is only a safety fallback.
+			// choice (new/existing); temp is only a safety fallback. A presetId
+			// takes precedence: it instantiates a bundled preset into a fresh
+			// workspace (copying its agent.md + .skills) and binds the session to it.
 			let workspaceId: string = TEMP_WORKSPACE_ID;
 			const explicitWorkspaceId = typeof body.workspaceId === "string" ? body.workspaceId.trim() : "";
+			const presetId = typeof body.presetId === "string" ? body.presetId.trim() : "";
 			const newWorkspaceSpec = body.newWorkspace && typeof body.newWorkspace === "object"
 				? body.newWorkspace as { name?: unknown; isTemp?: unknown }
 				: null;
 			try {
-				if (newWorkspaceSpec) {
+				if (presetId) {
+					// Ensure the preset's files are in the local cache (download on
+					// first use), then instantiate it into a fresh workspace.
+					await ensurePresetCached(paths, getContentSource(), presetId);
+					const created = instantiatePreset(paths, workspaceRegistry, presetId);
+					workspaceId = created.id;
+				} else if (newWorkspaceSpec) {
 					const created = workspaceRegistry.createWorkspace({
 						name: typeof newWorkspaceSpec.name === "string" ? newWorkspaceSpec.name : undefined,
 						isTemp: Boolean(newWorkspaceSpec.isTemp),
@@ -2994,6 +2922,32 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		// --- Presets API (ready-to-use workspace templates) ---
+		// Local cache listing (offline fallback / already-downloaded presets).
+		if (method === "GET" && url === "/api/presets") {
+			json(res, 200, listPresets(paths));
+			return;
+		}
+
+		// Live catalog from the remote content hub (Simple Mode preset cards).
+		// Falls back to the bundled/cached presets when the hub is empty or
+		// unreachable, so the shipped templates always appear.
+		if (method === "GET" && url.split("?")[0] === "/api/preset-library") {
+			const forceRefresh = new URL(url, "http://localhost").searchParams.get("refresh") === "1";
+			try {
+				const remote = await listRemotePresets(getContentSource(), forceRefresh);
+				if (remote.length > 0) {
+					json(res, 200, remote);
+				} else {
+					json(res, 200, listPresets(paths));
+				}
+			} catch (err) {
+				logger.warn({ err }, "failed to list preset library; falling back to bundled presets");
+				json(res, 200, listPresets(paths));
+			}
+			return;
+		}
+
 		// --- Workspaces registry API ---
 		if (method === "GET" && url === "/api/workspaces") {
 			const sessionDir = join(dataDir, "sessions");
@@ -3394,6 +3348,21 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		// --- Simple Mode toggle (streamlined experience: force-locks memory off
+		// at runtime and hides notebook/profile tabs; does not touch memory config) ---
+		if (method === "PUT" && url === "/api/settings/simple-mode") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			if (typeof body.enabled !== "boolean") {
+				json(res, 400, { error: "enabled must be a boolean" });
+				return;
+			}
+			config.simpleMode = { enabled: body.enabled };
+			config = saveConfig(paths.configPath, config);
+			syncConfig(config);
+			json(res, 200, buildSafeSettings());
+			return;
+		}
+
 		// --- GitHub settings (token to raise skill-library API rate limit) ---
 		if (method === "PUT" && url === "/api/settings/github") {
 			const body = (await readBody(req)) as Record<string, unknown>;
@@ -3407,8 +3376,35 @@ const server = createServer(async (req, res) => {
 			config.github = token ? { token } : undefined;
 			config = saveConfig(paths.configPath, config);
 			syncConfig(config);
-			// Reset the cached tree so the new auth (and higher limit) takes effect.
-			skillLibraryTreeCache = null;
+			// Rebuild the content source so the new auth (and higher limit) applies.
+			invalidateContentSource();
+			json(res, 200, buildSafeSettings());
+			return;
+		}
+
+		// --- Content Hub settings (source for skill library + presets) ---
+		if (method === "PUT" && url === "/api/settings/content-hub") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const current = config.contentHub ?? normalizeContentHubConfig(undefined, config.github?.token);
+			const str = (key: string, fallback: string): string =>
+				typeof body[key] === "string" ? (body[key] as string).trim() : fallback;
+			// A masked token (e.g. "****abcd") means "keep the existing token".
+			const incomingToken = typeof body.token === "string" ? body.token.trim() : "";
+			const token = incomingToken.startsWith("****") ? current.token : incomingToken;
+			config.contentHub = normalizeContentHubConfig({
+				type: body.type === "bundle" ? "bundle" : "github",
+				owner: str("owner", current.owner),
+				repo: str("repo", current.repo),
+				ref: str("ref", current.ref),
+				skillsPath: str("skillsPath", current.skillsPath),
+				presetsPath: str("presetsPath", current.presetsPath),
+				baseUrl: str("baseUrl", current.baseUrl),
+				token,
+			});
+			config = saveConfig(paths.configPath, config);
+			syncConfig(config);
+			// Rebuild the content source so the new hub takes effect immediately.
+			invalidateContentSource();
 			json(res, 200, buildSafeSettings());
 			return;
 		}

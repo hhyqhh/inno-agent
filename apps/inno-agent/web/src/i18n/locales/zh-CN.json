@@ -1,430 +1,442 @@
 {
-  "workspace": {
-    "title": "工作区",
-    "openWorkspace": "打开工作区",
-    "collapse": "收起",
-    "half": "半屏",
-    "full": "全屏",
-    "resize": "拖动以调整宽度",
-    "tabs": {
-      "notebook": "笔记本",
-      "preview": "预览",
-      "profile": "学习者画像",
-      "skills": "技能",
-      "jobs": "定时任务",
-      "settings": "设置"
-    }
-  },
-  "common": {
-    "save": "保存",
-    "cancel": "取消",
-    "edit": "编辑",
-    "delete": "删除",
-    "refresh": "刷新",
-    "new": "新建",
-    "add": "添加",
-    "loading": "加载中…",
-    "noData": "暂无数据",
-    "search": "搜索…",
-    "enabled": "已启用",
-    "disabled": "已禁用",
-    "enable": "启用",
-    "disable": "禁用",
-    "yes": "是",
-    "no": "否",
-    "ok": "确定",
-    "saving": "保存中…",
-    "saved": "已保存",
-    "remove": "移除",
-    "open": "打开"
-  },
-  "notebook": {
-    "title": "笔记本",
-    "subtitle": "{{nodes}} 个节点 · {{edges}} 条连接",
-    "search": "搜索页面或标签…",
-    "filter": {
-      "all": "全部",
-      "source-summary": "资料",
-      "entity": "实体",
-      "concept": "概念",
-      "analysis": "分析"
-    },
-    "view": {
-      "graph": "图谱",
-      "page": "页面"
-    },
-    "graph": {
-      "fit": "自适应",
-      "center": "居中",
-      "labels": "标签",
-      "size": "节点大小",
-      "refresh": "刷新图谱",
-      "relayout": "重新布局",
-      "show": "显示：",
-      "empty": "暂无图数据，先去聊天里收集一些资料吧。"
-    },
-    "editor": {
-      "preview": "实时预览",
-      "splitHint": "右侧为 Markdown 实时预览",
-      "h1": "一级标题",
-      "h2": "二级标题",
-      "h3": "三级标题",
-      "bold": "粗体",
-      "italic": "斜体",
-      "quote": "引用",
-      "list": "无序列表",
-      "numbered": "有序列表",
-      "link": "链接",
-      "code": "行内代码",
-      "codeBlock": "代码块"
-    },
-    "page": {
-      "empty": "在左侧选择一个页面，或在图中点击一个节点开始阅读。",
-      "selectFromGraph": "在图中选择节点查看",
-      "openInNotebook": "在笔记本中查看",
-      "backToGraph": "返回图谱"
-    },
-    "inspector": {
-      "title": "节点详情",
-      "empty": "选择节点查看详细信息。双击非标签节点可打开页面。",
-      "type": "类型",
-      "tags": "标签",
-      "openPage": "打开页面"
-    },
-    "types": {
-      "source-summary": "资料摘要",
-      "entity": "实体",
-      "concept": "概念",
-      "analysis": "分析",
-      "tag": "标签",
-      "unknown": "未分类"
-    },
-    "status": {
-      "draft": "草稿",
-      "reviewed": "已审阅",
-      "outdated": "已过期"
-    },
-    "confidence": {
-      "low": "置信度低",
-      "medium": "置信度中",
-      "high": "置信度高"
-    },
-    "contested": "存在争议",
-    "noPages": "暂无 wiki 页面",
-    "selectPage": "选择一个页面进行预览"
-  },
-  "preview": {
-    "workspace": "工作区",
-    "refresh": "刷新",
-    "loading": "正在加载工作区…",
-    "loadingFile": "正在加载文件…",
-    "empty": "工作区为空。",
-    "noFile": "未选择文件",
-    "selectFile": "从左侧选择一个文件",
-    "noPreview": "暂无预览",
-    "binaryFile": "二进制文件",
-    "emptyTable": "空表格",
-    "tableRows": "{{count}} 行",
-    "officeParsing": "正在提取文档文本…",
-    "officeNote": "已提取文本用于预览 · 排版可能与原文不同",
-    "officeUnavailable": "无法预览",
-    "pageCount": "{{count}} 页",
-    "page": "第"
-  },
-  "profile": {
-    "title": "学习者画像",
-    "subtitle": "由对话与学习事件自动累积，可手动编辑",
-    "refresh": "刷新",
-    "empty": "暂无画像数据，继续与 Agent 对话吧。",
-    "version": "版本 {{version}} · {{updated}}",
-    "sections": {
-      "summary": "概览",
-      "goals": "学习目标",
-      "knowledge": "知识状态",
-      "misconceptions": "误解记录",
-      "preferences": "学习偏好"
-    },
-    "summary": {
-      "placeholder": "Agent 对学习者的整体认知摘要…",
-      "activeGoals": "活跃目标",
-      "concepts": "已追踪概念",
-      "dueReviews": "待复习概念",
-      "openMisconceptions": "未解决的误解"
-    },
-    "goals": {
-      "addNew": "+ 新增目标",
-      "newTitle": "新建学习目标",
-      "newGoalDefault": "新目标",
-      "addFailed": "新增失败：{{message}}",
-      "namePlaceholder": "例如：掌握 Rust 所有权",
-      "empty": "暂无学习目标。点击上方按钮添加一个。",
-      "title": "标题",
-      "type": "类型",
-      "priority": "优先级",
-      "status": "状态",
-      "successCriteria": "成功标准",
-      "successCriteriaPlaceholder": "每行一条…",
-      "typeOptions": {
-        "skill": "技能",
-        "concept": "概念",
-        "project": "项目",
-        "exam": "考试",
-        "habit": "习惯"
-      },
-      "statusOptions": {
-        "active": "进行中",
-        "paused": "已暂停",
-        "completed": "已完成",
-        "archived": "已归档"
-      }
-    },
-    "knowledge": {
-      "empty": "暂未追踪任何概念。",
-      "concept": "概念",
-      "domain": "领域",
-      "mastery": "掌握度",
-      "due": "复习到期",
-      "diagnosis": "诊断",
-      "diagnosisPlaceholder": "对当前掌握程度的诊断…",
-      "nextActions": "下一步动作",
-      "nextActionsPlaceholder": "每行一条…"
-    },
-    "misconceptions": {
-      "empty": "暂未发现误解，太棒了。",
-      "description": "描述",
-      "severity": "严重度",
-      "status": "状态",
-      "repair": "修复策略",
-      "statusOptions": {
-        "active": "存在",
-        "repairing": "修复中",
-        "resolved": "已解决",
-        "stale": "失效"
-      }
-    },
-    "preferences": {
-      "explanationStyle": "讲解风格",
-      "practiceStyle": "练习方式",
-      "feedbackTone": "反馈语气",
-      "avoid": "应避免",
-      "addPlaceholder": "回车添加…"
-    }
-  },
-  "jobs": {
-    "title": "定时任务",
-    "subtitle": "自动复习、推送提醒等周期任务",
-    "newJob": "+ 新建",
-    "empty": "还没有定时任务。",
-    "lastRun": "上次运行：{{time}}",
-    "nextRun": "下次运行：{{time}}",
-    "never": "从未",
-    "actions": {
-      "run": "立即运行",
-      "running": "运行中…",
-      "edit": "编辑",
-      "delete": "删除",
-      "enable": "启用",
-      "disable": "停用"
-    },
-    "lastResult": "最近运行结果：",
-    "form": {
-      "newTitle": "新建定时任务",
-      "editTitle": "编辑定时任务",
-      "name": "任务名称",
-      "namePlaceholder": "例如：每日复习",
-      "taskType": "任务类型",
-      "prompt": "执行提示词",
-      "promptPlaceholder": "Agent 在该任务触发时执行的指令…",
-      "schedule": "运行时间",
-      "enabled": "启用",
-      "frequency": "频率",
-      "time": "时间",
-      "weekdays": "重复星期",
-      "dayOfMonth": "每月几号",
-      "lastDay": "最后一天",
-      "onceDate": "执行日期",
-      "customCron": "自定义 Cron",
-      "cronPlaceholder": "分 时 日 月 周",
-      "cronHint": "5 段表达式：分 时 日 月 周",
-      "advanced": "高级 (Cron)",
-      "preview": "下次约：{{time}}"
-    },
-    "frequency": {
-      "daily": "每天",
-      "weekly": "每周",
-      "monthly": "每月",
-      "weekday": "工作日",
-      "once": "仅一次",
-      "custom": "自定义 Cron"
-    },
-    "weekdays": {
-      "0": "周日",
-      "1": "周一",
-      "2": "周二",
-      "3": "周三",
-      "4": "周四",
-      "5": "周五",
-      "6": "周六"
-    },
-    "taskTypes": {
-      "daily_review": "每日复盘",
-      "weekly_summary": "每周总结",
-      "graphify_update": "图谱更新",
-      "learner_profile_reflection": "画像反思",
-      "spaced_review": "间隔复习",
-      "push_reminder": "推送提醒",
-      "custom_prompt": "自定义提示"
-    },
-    "errors": {
-      "nameRequired": "请填写任务名称",
-      "cronRequired": "请提供 Cron 表达式",
-      "cronInvalid": "Cron 表达式无效",
-      "timeRequired": "请选择时间",
-      "weekdayRequired": "请至少选择一个星期",
-      "dateRequired": "请选择执行日期",
-      "saveFailed": "保存失败：{{message}}"
-    },
-    "humanCron": {
-      "daily": "每天 {{time}}",
-      "weekday": "工作日 {{time}}",
-      "weekly": "每周{{days}} {{time}}",
-      "monthly": "每月{{day}} {{time}}",
-      "monthlyLast": "每月最后一天 {{time}}",
-      "once": "{{date}} {{time}}"
-    }
-  },
-  "skills": {
-    "title": "技能",
-    "subtitle": "从技能目录中加载",
-    "reload": "重新加载",
-    "upload": "上传",
-    "uploading": "上传中…",
-    "package": "默认包格式：",
-    "packageDesc": "ZIP 包内需包含 SKILL.md 文件。",
-    "empty": "暂无技能",
-    "emptyDesc": "上传 <skill-name>.zip，Inno Agent 会自动解压并加载。",
-    "noDescription": "暂无描述",
-    "loaded": "已加载",
-    "notLoaded": "未加载",
-    "library": "技能库",
-    "libraryTitle": "技能库",
-    "librarySubtitle": "浏览并导入 inno-agent-hub 技能库中的技能",
-    "libraryEmpty": "技能库中暂无可用技能",
-    "import": "导入",
-    "importing": "导入中…",
-    "installed": "已安装",
-    "libraryError": "加载技能库失败"
-  },
-  "settings": {
-    "title": "设置",
-    "refresh": "刷新",
-    "loading": "正在加载设置…",
-    "stats": {
-      "server": "服务器",
-      "healthy": "运行中",
-      "offline": "未连接",
-      "defaultModel": "默认模型",
-      "wiki": "Wiki",
-      "wikiStat": "{{count}} 篇 · {{size}}"
-    },
-    "models": "模型",
-    "current": "当前",
-    "use": "使用",
-    "providers": "服务提供方",
-    "newProvider": "新增提供方",
-    "memorySection": "记忆分层",
-    "l1": {
-      "title": "学习者画像 (L1)",
-      "onDesc": "已开启：每轮注入学习者画像，并允许工具更新画像以实现个性化教学。",
-      "offDesc": "已关闭：不再将学习者画像注入提示，工具也不会更新画像。"
-    },
-    "l2": {
-      "title": "知识库 (L2)",
-      "onDesc": "已开启：允许归档资料到 Wiki 知识库并进行检索。",
-      "offDesc": "已关闭：归档到知识库与检索知识库均已停用。"
-    },
-    "memory": {
-      "title": "跨对话记忆 (L3)",
-      "onDesc": "已开启：可通过 SQLite 检索历史对话内容，自动召回相关上下文。",
-      "offDesc": "已关闭：仅基于当前工作区内容与当前对话上下文进行回复。"
-    },
-    "github": {
-      "title": "GitHub 令牌",
-      "desc": "可选。用于从 GitHub 拉取技能库。未配置令牌时，未认证 API 每 IP 每小时仅 60 次；配置后可提升至每小时 5000 次。公开仓库用无任何权限的令牌即可。",
-      "placeholder": "ghp_… 或 github_pat_…",
-      "saved": "已保存",
-      "clear": "清除"
-    },
-    "form": {
-      "providerId": "提供方 ID",
-      "baseUrl": "Base URL",
-      "apiKey": "API Key",
-      "apiKeyPreserved": "已保留 API Key，留空则不修改",
-      "modelId": "模型 ID",
-      "modelName": "模型名称",
-      "contextWindow": "上下文窗口",
-      "maxTokens": "最大 Tokens",
-      "reasoning": "支持推理",
-      "makeDefault": "设为默认",
-      "preserveApiKey": "保留现有 Key"
-    },
-    "errors": {
-      "providerRequired": "请填写提供方 ID",
-      "baseUrlRequired": "请填写 Base URL",
-      "modelRequired": "请填写模型 ID",
-      "tokensInvalid": "Token 数值必须为正整数"
-    },
-    "saved": "已保存提供方",
-    "saveProvider": "保存提供方",
-    "savingProvider": "保存中…",
-    "deleteProvider": "删除",
-    "confirmDelete": "确定删除提供方 \"{{id}}\"？此操作不可撤销。",
-    "language": "界面语言",
-    "languageOptions": {
-      "zh-CN": "中文",
-      "en": "English"
-    },
-    "channels": {
-      "title": "消息渠道",
-      "feishu": {
-        "title": "飞书",
-        "desc": "通过 WebSocket 原生接入飞书私聊",
-        "appId": "App ID",
-        "appSecret": "App Secret",
-        "appSecretHint": "留空保留现有密钥"
-      },
-      "qq": {
-        "title": "QQ",
-        "desc": "通过 Bridge Sidecar 接入 QQ 私聊"
-      },
-      "wechat": {
-        "title": "微信",
-        "desc": "通过 iLink 原生接入微信私聊",
-        "scanLogin": "扫码登录",
-        "scanning": "获取二维码中…",
-        "waitingScan": "请用微信扫描二维码",
-        "scanned": "已扫码，等待确认…",
-        "confirmed": "登录成功",
-        "expired": "二维码已过期，请重新获取",
-        "connected": "已连接",
-        "disconnected": "未连接",
-        "relogin": "重新登录",
-        "botId": "Bot ID"
-      },
-      "enabled": "启用",
-      "personalOnly": "仅私聊",
-      "allowedUserIds": "允许的用户 ID",
-      "allowedUserIdsHint": "每行一个 ID，留空则不限制",
-      "sidecarBaseUrl": "Sidecar 地址",
-      "bridgeToken": "Bridge Token",
-      "bridgeTokenHint": "Sidecar 和 Inno 之间的认证密钥",
-      "bridgeTokenPlaceholder": "留空保留现有密钥",
-      "save": "保存渠道配置",
-      "saving": "保存中…",
-      "saved": "渠道配置已保存",
-      "mode": "接入模式",
-      "modeNative": "原生",
-      "modeBridge": "Bridge"
-    }
-  }
+	"workspace": {
+		"title": "工作区",
+		"openWorkspace": "打开工作区",
+		"collapse": "收起",
+		"half": "半屏",
+		"full": "全屏",
+		"resize": "拖动以调整宽度",
+		"tabs": {
+			"notebook": "笔记本",
+			"preview": "预览",
+			"profile": "学习者画像",
+			"skills": "技能",
+			"jobs": "定时任务",
+			"settings": "设置"
+		}
+	},
+	"common": {
+		"save": "保存",
+		"cancel": "取消",
+		"edit": "编辑",
+		"delete": "删除",
+		"refresh": "刷新",
+		"new": "新建",
+		"add": "添加",
+		"loading": "加载中…",
+		"noData": "暂无数据",
+		"search": "搜索…",
+		"enabled": "已启用",
+		"disabled": "已禁用",
+		"enable": "启用",
+		"disable": "禁用",
+		"yes": "是",
+		"no": "否",
+		"ok": "确定",
+		"saving": "保存中…",
+		"saved": "已保存",
+		"remove": "移除",
+		"open": "打开"
+	},
+	"notebook": {
+		"title": "笔记本",
+		"subtitle": "{{nodes}} 个节点 · {{edges}} 条连接",
+		"search": "搜索页面或标签…",
+		"filter": {
+			"all": "全部",
+			"source-summary": "资料",
+			"entity": "实体",
+			"concept": "概念",
+			"analysis": "分析"
+		},
+		"view": {
+			"graph": "图谱",
+			"page": "页面"
+		},
+		"graph": {
+			"fit": "自适应",
+			"center": "居中",
+			"labels": "标签",
+			"size": "节点大小",
+			"refresh": "刷新图谱",
+			"relayout": "重新布局",
+			"show": "显示：",
+			"empty": "暂无图数据，先去聊天里收集一些资料吧。"
+		},
+		"editor": {
+			"preview": "实时预览",
+			"splitHint": "右侧为 Markdown 实时预览",
+			"h1": "一级标题",
+			"h2": "二级标题",
+			"h3": "三级标题",
+			"bold": "粗体",
+			"italic": "斜体",
+			"quote": "引用",
+			"list": "无序列表",
+			"numbered": "有序列表",
+			"link": "链接",
+			"code": "行内代码",
+			"codeBlock": "代码块"
+		},
+		"page": {
+			"empty": "在左侧选择一个页面，或在图中点击一个节点开始阅读。",
+			"selectFromGraph": "在图中选择节点查看",
+			"openInNotebook": "在笔记本中查看",
+			"backToGraph": "返回图谱"
+		},
+		"inspector": {
+			"title": "节点详情",
+			"empty": "选择节点查看详细信息。双击非标签节点可打开页面。",
+			"type": "类型",
+			"tags": "标签",
+			"openPage": "打开页面"
+		},
+		"types": {
+			"source-summary": "资料摘要",
+			"entity": "实体",
+			"concept": "概念",
+			"analysis": "分析",
+			"tag": "标签",
+			"unknown": "未分类"
+		},
+		"status": {
+			"draft": "草稿",
+			"reviewed": "已审阅",
+			"outdated": "已过期"
+		},
+		"confidence": {
+			"low": "置信度低",
+			"medium": "置信度中",
+			"high": "置信度高"
+		},
+		"contested": "存在争议",
+		"noPages": "暂无 wiki 页面",
+		"selectPage": "选择一个页面进行预览"
+	},
+	"preview": {
+		"workspace": "工作区",
+		"refresh": "刷新",
+		"loading": "正在加载工作区…",
+		"loadingFile": "正在加载文件…",
+		"empty": "工作区为空。",
+		"noFile": "未选择文件",
+		"selectFile": "从左侧选择一个文件",
+		"noPreview": "暂无预览",
+		"binaryFile": "二进制文件",
+		"emptyTable": "空表格",
+		"tableRows": "{{count}} 行",
+		"officeParsing": "正在提取文档文本…",
+		"officeNote": "已提取文本用于预览 · 排版可能与原文不同",
+		"officeUnavailable": "无法预览",
+		"pageCount": "{{count}} 页",
+		"page": "第"
+	},
+	"profile": {
+		"title": "学习者画像",
+		"subtitle": "由对话与学习事件自动累积，可手动编辑",
+		"refresh": "刷新",
+		"empty": "暂无画像数据，继续与 Agent 对话吧。",
+		"version": "版本 {{version}} · {{updated}}",
+		"sections": {
+			"summary": "概览",
+			"goals": "学习目标",
+			"knowledge": "知识状态",
+			"misconceptions": "误解记录",
+			"preferences": "学习偏好"
+		},
+		"summary": {
+			"placeholder": "Agent 对学习者的整体认知摘要…",
+			"activeGoals": "活跃目标",
+			"concepts": "已追踪概念",
+			"dueReviews": "待复习概念",
+			"openMisconceptions": "未解决的误解"
+		},
+		"goals": {
+			"addNew": "+ 新增目标",
+			"newTitle": "新建学习目标",
+			"newGoalDefault": "新目标",
+			"addFailed": "新增失败：{{message}}",
+			"namePlaceholder": "例如：掌握 Rust 所有权",
+			"empty": "暂无学习目标。点击上方按钮添加一个。",
+			"title": "标题",
+			"type": "类型",
+			"priority": "优先级",
+			"status": "状态",
+			"successCriteria": "成功标准",
+			"successCriteriaPlaceholder": "每行一条…",
+			"typeOptions": {
+				"skill": "技能",
+				"concept": "概念",
+				"project": "项目",
+				"exam": "考试",
+				"habit": "习惯"
+			},
+			"statusOptions": {
+				"active": "进行中",
+				"paused": "已暂停",
+				"completed": "已完成",
+				"archived": "已归档"
+			}
+		},
+		"knowledge": {
+			"empty": "暂未追踪任何概念。",
+			"concept": "概念",
+			"domain": "领域",
+			"mastery": "掌握度",
+			"due": "复习到期",
+			"diagnosis": "诊断",
+			"diagnosisPlaceholder": "对当前掌握程度的诊断…",
+			"nextActions": "下一步动作",
+			"nextActionsPlaceholder": "每行一条…"
+		},
+		"misconceptions": {
+			"empty": "暂未发现误解，太棒了。",
+			"description": "描述",
+			"severity": "严重度",
+			"status": "状态",
+			"repair": "修复策略",
+			"statusOptions": {
+				"active": "存在",
+				"repairing": "修复中",
+				"resolved": "已解决",
+				"stale": "失效"
+			}
+		},
+		"preferences": {
+			"explanationStyle": "讲解风格",
+			"practiceStyle": "练习方式",
+			"feedbackTone": "反馈语气",
+			"avoid": "应避免",
+			"addPlaceholder": "回车添加…"
+		}
+	},
+	"jobs": {
+		"title": "定时任务",
+		"subtitle": "自动复习、推送提醒等周期任务",
+		"newJob": "+ 新建",
+		"empty": "还没有定时任务。",
+		"lastRun": "上次运行：{{time}}",
+		"nextRun": "下次运行：{{time}}",
+		"never": "从未",
+		"actions": {
+			"run": "立即运行",
+			"running": "运行中…",
+			"edit": "编辑",
+			"delete": "删除",
+			"enable": "启用",
+			"disable": "停用"
+		},
+		"lastResult": "最近运行结果：",
+		"form": {
+			"newTitle": "新建定时任务",
+			"editTitle": "编辑定时任务",
+			"name": "任务名称",
+			"namePlaceholder": "例如：每日复习",
+			"taskType": "任务类型",
+			"prompt": "执行提示词",
+			"promptPlaceholder": "Agent 在该任务触发时执行的指令…",
+			"schedule": "运行时间",
+			"enabled": "启用",
+			"frequency": "频率",
+			"time": "时间",
+			"weekdays": "重复星期",
+			"dayOfMonth": "每月几号",
+			"lastDay": "最后一天",
+			"onceDate": "执行日期",
+			"customCron": "自定义 Cron",
+			"cronPlaceholder": "分 时 日 月 周",
+			"cronHint": "5 段表达式：分 时 日 月 周",
+			"advanced": "高级 (Cron)",
+			"preview": "下次约：{{time}}"
+		},
+		"frequency": {
+			"daily": "每天",
+			"weekly": "每周",
+			"monthly": "每月",
+			"weekday": "工作日",
+			"once": "仅一次",
+			"custom": "自定义 Cron"
+		},
+		"weekdays": {
+			"0": "周日",
+			"1": "周一",
+			"2": "周二",
+			"3": "周三",
+			"4": "周四",
+			"5": "周五",
+			"6": "周六"
+		},
+		"taskTypes": {
+			"daily_review": "每日复盘",
+			"weekly_summary": "每周总结",
+			"graphify_update": "图谱更新",
+			"learner_profile_reflection": "画像反思",
+			"spaced_review": "间隔复习",
+			"push_reminder": "推送提醒",
+			"custom_prompt": "自定义提示"
+		},
+		"errors": {
+			"nameRequired": "请填写任务名称",
+			"cronRequired": "请提供 Cron 表达式",
+			"cronInvalid": "Cron 表达式无效",
+			"timeRequired": "请选择时间",
+			"weekdayRequired": "请至少选择一个星期",
+			"dateRequired": "请选择执行日期",
+			"saveFailed": "保存失败：{{message}}"
+		},
+		"humanCron": {
+			"daily": "每天 {{time}}",
+			"weekday": "工作日 {{time}}",
+			"weekly": "每周{{days}} {{time}}",
+			"monthly": "每月{{day}} {{time}}",
+			"monthlyLast": "每月最后一天 {{time}}",
+			"once": "{{date}} {{time}}"
+		}
+	},
+	"skills": {
+		"title": "技能",
+		"subtitle": "从技能目录中加载",
+		"reload": "重新加载",
+		"upload": "上传",
+		"uploading": "上传中…",
+		"package": "默认包格式：",
+		"packageDesc": "ZIP 包内需包含 SKILL.md 文件。",
+		"empty": "暂无技能",
+		"emptyDesc": "上传 <skill-name>.zip，Inno Agent 会自动解压并加载。",
+		"noDescription": "暂无描述",
+		"loaded": "已加载",
+		"notLoaded": "未加载",
+		"library": "技能库",
+		"libraryTitle": "技能库",
+		"librarySubtitle": "浏览并导入 inno-agent-hub 技能库中的技能",
+		"libraryEmpty": "技能库中暂无可用技能",
+		"import": "导入",
+		"importing": "导入中…",
+		"installed": "已安装",
+		"libraryError": "加载技能库失败"
+	},
+	"settings": {
+		"title": "设置",
+		"refresh": "刷新",
+		"loading": "正在加载设置…",
+		"stats": {
+			"server": "服务器",
+			"healthy": "运行中",
+			"offline": "未连接",
+			"defaultModel": "默认模型",
+			"wiki": "Wiki",
+			"wikiStat": "{{count}} 篇 · {{size}}"
+		},
+		"models": "模型",
+		"current": "当前",
+		"use": "使用",
+		"providers": "服务提供方",
+		"newProvider": "新增提供方",
+		"memorySection": "记忆分层",
+		"simpleMode": {
+			"title": "简单模式",
+			"onDesc": "已开启：精简、开箱即用的体验。记忆与画像已关闭，笔记/画像/定时任务/技能标签页与终端(实验面板)已隐藏，设置页已简化；欢迎页提供预设工作区一键开始。",
+			"offDesc": "已关闭：完整体验，学习者画像、记忆、笔记、定时任务、技能与终端均可用。",
+			"memoryLocked": "简单模式下记忆已统一关闭。如需调整,请先关闭简单模式。"
+		},
+		"l1": {
+			"title": "学习者画像 (L1)",
+			"onDesc": "已开启：每轮注入学习者画像，并允许工具更新画像以实现个性化教学。",
+			"offDesc": "已关闭：不再将学习者画像注入提示，工具也不会更新画像。"
+		},
+		"l2": {
+			"title": "知识库 (L2)",
+			"onDesc": "已开启：允许归档资料到 Wiki 知识库并进行检索。",
+			"offDesc": "已关闭：归档到知识库与检索知识库均已停用。"
+		},
+		"memory": {
+			"title": "跨对话记忆 (L3)",
+			"onDesc": "已开启：可通过 SQLite 检索历史对话内容，自动召回相关上下文。",
+			"offDesc": "已关闭：仅基于当前工作区内容与当前对话上下文进行回复。"
+		},
+		"github": {
+			"title": "GitHub 令牌",
+			"desc": "可选。用于从 GitHub 拉取技能库。未配置令牌时，未认证 API 每 IP 每小时仅 60 次；配置后可提升至每小时 5000 次。公开仓库用无任何权限的令牌即可。",
+			"placeholder": "ghp_… 或 github_pat_…",
+			"saved": "已保存",
+			"clear": "清除"
+		},
+		"form": {
+			"providerId": "提供方 ID",
+			"baseUrl": "Base URL",
+			"apiKey": "API Key",
+			"apiKeyPreserved": "已保留 API Key，留空则不修改",
+			"modelId": "模型 ID",
+			"modelName": "模型名称",
+			"contextWindow": "上下文窗口",
+			"maxTokens": "最大 Tokens",
+			"reasoning": "支持推理",
+			"makeDefault": "设为默认",
+			"preserveApiKey": "保留现有 Key"
+		},
+		"errors": {
+			"providerRequired": "请填写提供方 ID",
+			"baseUrlRequired": "请填写 Base URL",
+			"modelRequired": "请填写模型 ID",
+			"tokensInvalid": "Token 数值必须为正整数"
+		},
+		"saved": "已保存提供方",
+		"saveProvider": "保存提供方",
+		"savingProvider": "保存中…",
+		"deleteProvider": "删除",
+		"confirmDelete": "确定删除提供方 \"{{id}}\"？此操作不可撤销。",
+		"language": "界面语言",
+		"languageOptions": {
+			"zh-CN": "中文",
+			"en": "English"
+		},
+		"channels": {
+			"title": "消息渠道",
+			"feishu": {
+				"title": "飞书",
+				"desc": "通过 WebSocket 原生接入飞书私聊",
+				"appId": "App ID",
+				"appSecret": "App Secret",
+				"appSecretHint": "留空保留现有密钥"
+			},
+			"qq": {
+				"title": "QQ",
+				"desc": "通过 Bridge Sidecar 接入 QQ 私聊"
+			},
+			"wechat": {
+				"title": "微信",
+				"desc": "通过 iLink 原生接入微信私聊",
+				"scanLogin": "扫码登录",
+				"scanning": "获取二维码中…",
+				"waitingScan": "请用微信扫描二维码",
+				"scanned": "已扫码，等待确认…",
+				"confirmed": "登录成功",
+				"expired": "二维码已过期，请重新获取",
+				"connected": "已连接",
+				"disconnected": "未连接",
+				"relogin": "重新登录",
+				"botId": "Bot ID"
+			},
+			"enabled": "启用",
+			"personalOnly": "仅私聊",
+			"allowedUserIds": "允许的用户 ID",
+			"allowedUserIdsHint": "每行一个 ID，留空则不限制",
+			"sidecarBaseUrl": "Sidecar 地址",
+			"bridgeToken": "Bridge Token",
+			"bridgeTokenHint": "Sidecar 和 Inno 之间的认证密钥",
+			"bridgeTokenPlaceholder": "留空保留现有密钥",
+			"save": "保存渠道配置",
+			"saving": "保存中…",
+			"saved": "渠道配置已保存",
+			"mode": "接入模式",
+			"modeNative": "原生",
+			"modeBridge": "Bridge"
+		},
+		"contentHub": {
+			"title": "内容源(技能库 + 预设)",
+			"desc": "技能库和预设工作区从这里拉取。默认公共仓库,可改为私有 GitHub 仓库或自托管服务。",
+			"bundle": "自托管服务",
+			"tokenPlaceholder": "访问令牌(私有仓库 / 提额,可选)"
+		}
+	}
 }

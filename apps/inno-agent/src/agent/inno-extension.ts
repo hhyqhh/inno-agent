@@ -162,8 +162,12 @@ export function createInnoExtension(
 		// Memory-layer runtime gates. All default ON; only an explicit `false`
 		// in config.memory disables a layer. Read live from configHolder so the
 		// toggles take effect without a restart.
-		const isL1Enabled = () => configHolder.current.memory?.l1Enabled !== false;
-		const isL2Enabled = () => configHolder.current.memory?.l2Enabled !== false;
+		// Simple Mode is a global override: when enabled it force-locks all three
+		// memory layers OFF, regardless of config.memory, without mutating those
+		// values — so turning Simple Mode off restores the user's preferences.
+		const isSimpleMode = () => configHolder.current.simpleMode?.enabled === true;
+		const isL1Enabled = () => !isSimpleMode() && configHolder.current.memory?.l1Enabled !== false;
+		const isL2Enabled = () => !isSimpleMode() && configHolder.current.memory?.l2Enabled !== false;
 
 		// 2. Register L1 learner tools (gated on config.memory.l1Enabled)
 		const learnerTools = createLearnerTools(paths.learnerDataDir, "default", isL1Enabled);
@@ -203,7 +207,7 @@ export function createInnoExtension(
 		// config.memory.l3Enabled (default on); indexing always runs so the
 		// switch can be flipped back on without a backfill gap.
 		const l3Memory = new L3Memory(paths.l3DataDir, paths.sessionDir);
-		const isL3Enabled = () => configHolder.current.memory?.l3Enabled !== false;
+		const isL3Enabled = () => !isSimpleMode() && configHolder.current.memory?.l3Enabled !== false;
 		const l3Tools = createL3Tools(l3Memory, deps?.getCurrentSessionId, isL3Enabled);
 		for (const tool of l3Tools) {
 			pi.registerTool(tool);

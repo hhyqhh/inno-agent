@@ -52,10 +52,35 @@ export async function saveMemorySettings(patch: MemorySettingsPatch): Promise<In
 	});
 }
 
+export async function saveSimpleModeSettings(enabled: boolean): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>("/api/settings/simple-mode", {
+		method: "PUT",
+		body: JSON.stringify({ enabled }),
+	});
+}
+
 export async function saveGithubSettings(token: string): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings/github", {
 		method: "PUT",
 		body: JSON.stringify({ token }),
+	});
+}
+
+export interface ContentHubPayload {
+	type: "github" | "bundle";
+	owner?: string;
+	repo?: string;
+	ref?: string;
+	skillsPath?: string;
+	presetsPath?: string;
+	baseUrl?: string;
+	token?: string;
+}
+
+export async function saveContentHubSettings(payload: ContentHubPayload): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>("/api/settings/content-hub", {
+		method: "PUT",
+		body: JSON.stringify(payload),
 	});
 }
 

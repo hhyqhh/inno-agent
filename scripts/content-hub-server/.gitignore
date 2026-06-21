@@ -1,0 +1,4 @@
+# Your real content lives here — point CONTENT_DIR at it (default ./content).
+# Ignored so you don't commit private skills/templates. The committed
+# content-example/ is the runnable sample.
+/content/

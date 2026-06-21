@@ -22,6 +22,7 @@ import { workspaceStore } from "../stores/workspace-store.js";
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
+import { settingsStore } from "../stores/settings-store.js";
 import { getSessionWorkspace } from "../api/workspaces.js";
 import { TerminalDrawer } from "./terminal/TerminalDrawer.js";
 import { RunButton } from "./terminal/RunButton.js";
@@ -368,6 +369,7 @@ function CodeEditorPane({ value, onChange, lang }: { value: string; onChange: (v
 
 function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: () => void; sidebarOpen: boolean }) {
 	const { t } = useTranslation();
+	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const state = useStoreSnapshot(workspaceStore, () => ({
 		file: workspaceStore.currentFile,
 		isLoadingFile: workspaceStore.isLoadingFile,
@@ -440,7 +442,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 					</div>
 				</div>
 				<div className="flex items-center gap-2">
-					{state.file ? <RunButton filePath={state.file.path} /> : null}
+					{state.file && !simpleMode ? <RunButton filePath={state.file.path} /> : null}
 					{canEdit && (
 						<button
 							className="flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2.5 text-xs text-slate-600 hover:bg-slate-100 hover:text-slate-950"
@@ -623,6 +625,7 @@ export function WorkspaceBrowser() {
 	const sessState = useStoreSnapshot(sessionsStore, () => ({
 		currentSessionId: sessionsStore.currentSessionId,
 	}));
+	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	// The file tree pane keeps a fixed width; the content preview pane appears
 	// only once the panel is dragged wide enough to fit it beside the tree.
 	const TREE_PANE_WIDTH = 260;
@@ -871,7 +874,7 @@ export function WorkspaceBrowser() {
 					<div className="flex min-h-0 flex-1 flex-col">
 						<FileContentPane onToggleSidebar={() => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} />
 					</div>
-					<TerminalDrawer />
+					{!simpleMode && <TerminalDrawer />}
 				</section>
 			) : null}
 

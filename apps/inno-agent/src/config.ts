@@ -46,6 +46,63 @@ export interface InnoMemoryConfig {
 	l3Enabled: boolean;
 }
 
+/**
+ * Simple Mode. A global, opt-in switch (default OFF) that turns Inno into a
+ * streamlined, ready-to-use experience: it force-locks the L1/L2/L3 memory
+ * layers OFF at runtime (without overwriting the user's memory preferences, so
+ * exiting restores them) and the web UI hides the notebook/profile tabs and
+ * surfaces preset workspaces for one-click start.
+ */
+export interface InnoSimpleModeConfig {
+	enabled: boolean;
+}
+
+/**
+ * Content Hub. The single source for remotely-fetched, ready-to-use content:
+ * the global skill library and the Simple Mode preset workspaces. Both used to
+ * be either hardcoded (skill library → a fixed GitHub repo) or bundled with the
+ * app (presets → `<codeDir>/presets/`). Centralizing them here lets a single
+ * config block point the whole hub at a different source — including a private
+ * self-hosted bundle service — without touching code.
+ *
+ * Two transport types:
+ *   - "github": a public/private GitHub repo. `owner`/`repo`/`ref` locate it;
+ *     `skillsPath`/`presetsPath` are the top-level directories within it.
+ *     `token` raises the API rate limit / unlocks private repos.
+ *   - "bundle": a self-hosted service exposing `GET {baseUrl}/index.json` and
+ *     `GET {baseUrl}/{presets|skills}/{id}.tar.gz`. `token` (if set) is sent as
+ *     a Bearer credential. Avoids GitHub rate limits for private deployments.
+ */
+export interface InnoContentHubConfig {
+	type: "github" | "bundle";
+	/** GitHub repo owner (type: "github"). */
+	owner: string;
+	/** GitHub repo name (type: "github"). */
+	repo: string;
+	/** GitHub branch / tag / sha (type: "github"). */
+	ref: string;
+	/** Top-level directory holding the skill library. */
+	skillsPath: string;
+	/** Top-level directory holding the preset workspaces. */
+	presetsPath: string;
+	/** Base URL of the self-hosted bundle service (type: "bundle"). */
+	baseUrl: string;
+	/** Auth token: GitHub PAT (type "github") or Bearer credential (type "bundle"). */
+	token: string;
+}
+
+/** Built-in defaults — the public hub the app shipped with. */
+export const DEFAULT_CONTENT_HUB: InnoContentHubConfig = {
+	type: "github",
+	owner: "Chloris-Blaxk",
+	repo: "inno-agent-hub",
+	ref: "main",
+	skillsPath: "skill-library",
+	presetsPath: "workspace-templates",
+	baseUrl: "",
+	token: "",
+};
+
 export interface PersonalChannelConfig {
 	enabled: boolean;
 	personalOnly?: boolean;
@@ -85,8 +142,11 @@ export interface InnoConfig {
 		/** Personal access token to raise GitHub API rate limits for the skill library. */
 		token: string;
 	};
+	/** Remote source for the skill library + preset workspaces. */
+	contentHub?: InnoContentHubConfig;
 	subagents?: InnoSubagentsConfig;
 	memory?: InnoMemoryConfig;
+	simpleMode?: InnoSimpleModeConfig;
 }
 
 interface LegacyInnoConfig extends Partial<InnoConfig> {
@@ -139,6 +199,38 @@ export function normalizeMemoryConfig(memory: Partial<InnoMemoryConfig> | undefi
 	};
 }
 
+export function normalizeSimpleModeConfig(simpleMode: Partial<InnoSimpleModeConfig> | undefined): InnoSimpleModeConfig {
+	// Simple Mode defaults OFF; only an explicit `true` enables it.
+	return {
+		enabled: simpleMode?.enabled === true,
+	};
+}
+
+/**
+ * Normalize the Content Hub config, filling missing fields from the built-in
+ * public-hub defaults. `legacyGithubToken` lets us migrate the older
+ * `config.github.token` (which only fed the skill library) into the hub token
+ * so existing users keep their rate-limit credential with zero changes.
+ */
+export function normalizeContentHubConfig(
+	hub: Partial<InnoContentHubConfig> | undefined,
+	legacyGithubToken?: string,
+): InnoContentHubConfig {
+	const type = hub?.type === "bundle" ? "bundle" : "github";
+	const trimmed = (v: string | undefined, fallback: string) => (v?.trim() ? v.trim() : fallback);
+	return {
+		type,
+		owner: trimmed(hub?.owner, DEFAULT_CONTENT_HUB.owner),
+		repo: trimmed(hub?.repo, DEFAULT_CONTENT_HUB.repo),
+		ref: trimmed(hub?.ref, DEFAULT_CONTENT_HUB.ref),
+		skillsPath: trimmed(hub?.skillsPath, DEFAULT_CONTENT_HUB.skillsPath),
+		presetsPath: trimmed(hub?.presetsPath, DEFAULT_CONTENT_HUB.presetsPath),
+		baseUrl: hub?.baseUrl?.trim() ?? "",
+		// Prefer an explicit hub token; otherwise inherit the legacy github token.
+		token: (hub?.token?.trim() || legacyGithubToken?.trim()) ?? "",
+	};
+}
+
 export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 	const providers: Record<string, InnoProviderConfig> = {};
 	for (const [providerId, providerConfig] of Object.entries(config.providers ?? {})) {
@@ -172,8 +264,10 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		channels: config.channels,
 		bridge: config.bridge,
 		github: config.github,
+		contentHub: normalizeContentHubConfig(config.contentHub, config.github?.token),
 		subagents: config.subagents,
 		memory: normalizeMemoryConfig(config.memory),
+		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
 	} as InnoConfig;
 }
 

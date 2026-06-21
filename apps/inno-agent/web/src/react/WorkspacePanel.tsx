@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import { PanelRightOpen, PanelRightClose, Columns2, Maximize2, BookOpen, BriefcaseBusiness, FolderKanban, Settings, Sparkles, UserRound } from "lucide-react";
 import type { RightPanelTab, WorkspaceMode } from "../stores/app-store.js";
+import { settingsStore } from "../stores/settings-store.js";
+import { useStoreSnapshot } from "./hooks.js";
 import { WorkspaceBrowser } from "./WorkspaceBrowser.js";
 import { Notebook } from "./Notebook.js";
 import { JobsPanel } from "./JobsPanel.js";
@@ -50,6 +52,21 @@ function WorkspaceContent({ activeTab }: { activeTab: RightPanelTab }) {
 export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChange, onWidthChange }: WorkspacePanelProps) {
 	const { t } = useTranslation();
 	const [isResizing, setIsResizing] = useState(false);
+
+	// In Simple Mode, hide the advanced tabs: notebook (L2 wiki), profile (L1),
+	// jobs (scheduled tasks) and skills — leaving just preview + settings.
+	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
+	const HIDDEN_IN_SIMPLE: RightPanelTab[] = ["notebook", "profile", "jobs", "skills"];
+	const tabs = simpleMode ? TAB_ORDER.filter((tab) => !HIDDEN_IN_SIMPLE.includes(tab)) : TAB_ORDER;
+
+	// If Simple Mode turns on while a now-hidden tab is active, fall back to preview
+	// so the panel never shows a hidden/blank view.
+	useEffect(() => {
+		if (simpleMode && HIDDEN_IN_SIMPLE.includes(activeTab)) {
+			onTabChange("preview");
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [simpleMode, activeTab, onTabChange]);
 
 	useEffect(() => {
 		if (!isResizing) return;
@@ -103,7 +120,7 @@ export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChan
 
 			<div className="flex h-10 items-center gap-1 border-b border-slate-200 bg-[var(--inno-workspace-chrome)] px-2">
 				<div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
-					{TAB_ORDER.map((tab) => {
+					{tabs.map((tab) => {
 						const label = t(`workspace.tabs.${tab}`);
 						const isActive = activeTab === tab;
 						return (

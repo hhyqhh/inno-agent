@@ -267,6 +267,39 @@ export class WorkspaceRegistry {
 	}
 
 	/**
+	 * Return (creating if needed) a stable workspace dedicated to a bundled
+	 * preset. Unlike a one-off `createWorkspace`, the id is derived from the
+	 * preset id (`preset-<presetId>`) so that repeatedly opening the same preset
+	 * task reuses one workspace — every conversation for that task is archived
+	 * together. `created` is true only on the first call (so the caller knows
+	 * when to seed the preset's files).
+	 */
+	ensurePresetWorkspace(presetId: string, name: string): { ws: WorkspaceMeta; created: boolean } {
+		const id = `preset-${presetId}`;
+		const reg = this.loadRegistry();
+		const now = new Date().toISOString();
+		let ws = reg.workspaces.find((w) => w.id === id);
+		if (ws) {
+			ws.updatedAt = now;
+			this.saveRegistry(reg);
+			ensureDir(join(this.workspaceDir, ws.relPath));
+			return { ws, created: false };
+		}
+		ws = {
+			id,
+			name,
+			relPath: join(".presets", presetId),
+			createdAt: now,
+			updatedAt: now,
+			isTemp: false,
+		};
+		reg.workspaces.push(ws);
+		this.saveRegistry(reg);
+		ensureDir(join(this.workspaceDir, ws.relPath));
+		return { ws, created: true };
+	}
+
+	/**
 	 * One-time migration: bind any session not present in the session→workspace
 	 * map to `targetWorkspaceId`. This preserves the working directory of legacy
 	 * sessions that used to fall back to the shared public workspace.

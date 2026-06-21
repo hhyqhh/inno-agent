@@ -47,6 +47,16 @@
 	"subagents": {
 		"enabled": false
 	},
+	"contentHub": {
+		"type": "github",
+		"owner": "Chloris-Blaxk",
+		"repo": "inno-agent-hub",
+		"ref": "main",
+		"skillsPath": "skill-library",
+		"presetsPath": "workspace-templates",
+		"baseUrl": "",
+		"token": ""
+	},
 	"memory": {
 		"l1Enabled": true,
 		"l2Enabled": true,

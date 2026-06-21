@@ -14,6 +14,7 @@ export interface RuntimePaths {
 	l2DataDir: string;
 	l3DataDir: string;
 	skillsDir: string;
+	presetCacheDir: string;
 	workspaceDir: string;
 	webDistDir: string;
 }
@@ -132,6 +133,7 @@ export function resolveRuntimePaths(options: RuntimeCliOptions = {}): RuntimePat
 		l2DataDir: join(dataDir, "l2"),
 		l3DataDir: join(dataDir, "l3"),
 		skillsDir,
+		presetCacheDir: join(dataDir, "preset-cache"),
 		workspaceDir,
 		webDistDir: join(codeDir, "web", "dist"),
 	};

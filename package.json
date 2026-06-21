@@ -36,12 +36,14 @@
 			"electron/**/*",
 			"apps/inno-agent/dist/**/*",
 			"apps/inno-agent/web/dist/**/*",
+			"apps/inno-agent/presets/**/*",
 			"node_modules/**/*",
 			"!node_modules/.cache/**/*"
 		],
 		"asarUnpack": [
 			"**/node_modules/node-pty/**/*",
-			"**/node_modules/@homebridge/**/*"
+			"**/node_modules/@homebridge/**/*",
+			"apps/inno-agent/presets/**/*"
 		],
 		"mac": {
 			"icon": "build/icon.icns",

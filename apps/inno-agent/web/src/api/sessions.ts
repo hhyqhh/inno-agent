@@ -37,6 +37,8 @@ export interface CreateSessionInput {
 		name?: string;
 		isTemp?: boolean;
 	};
+	/** Instantiate a bundled preset into a fresh workspace and bind to it. Takes precedence over the other fields. */
+	presetId?: string;
 }
 
 export async function listSessions(): Promise<SessionMeta[]> {

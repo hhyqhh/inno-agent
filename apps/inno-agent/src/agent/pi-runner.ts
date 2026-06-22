@@ -16,6 +16,7 @@ import { complete, type AssistantMessage, type ImageContent } from "@earendil-wo
 import { basename, join, resolve } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInnoExtension, type ConfigHolder, type InnoExtensionDeps } from "./inno-extension.js";
+import { createObservabilityExtension, obsLogger } from "./observability-extension.js";
 import type { InnoConfig } from "../config.js";
 import type { RuntimePaths } from "../runtime.js";
 import { ensureDir } from "../storage/file-store.js";
@@ -126,7 +127,8 @@ export async function initSession(
 	const innoExtension = createInnoExtension(configHolder, paths, channelRegistry, options?.extensionDeps);
 
 	// Build extension factories list
-	const extensionFactories: ExtensionFactory[] = [innoExtension];
+	const observabilityExtension = createObservabilityExtension();
+	const extensionFactories: ExtensionFactory[] = [observabilityExtension, innoExtension];
 	if (options?.sandbox) {
 		try {
 			const { createJiti } = await import("jiti/static");
@@ -587,10 +589,28 @@ export async function runPrompt(prompt: string, images?: ImageContent[]): Promis
 				logger.error({ errorMessage: streamError, stopReason: ev.error.stopReason, elapsedMs: Date.now() - promptStartTime }, "LLM API stream error in runPrompt");
 			}
 		} else if (event.type === "auto_retry_start") {
-			logger.warn({ attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs, errorMessage: event.errorMessage, elapsedMs: Date.now() - promptStartTime }, "LLM API call failed, auto-retrying...");
+			obsLogger.warn({
+				event: "auto_retry_start",
+				attempt: event.attempt,
+				maxAttempts: event.maxAttempts,
+				delayMs: event.delayMs,
+				errorMessage: event.errorMessage,
+				elapsedMs: Date.now() - promptStartTime,
+			}, "LLM API call failed, auto-retrying...");
 		} else if (event.type === "auto_retry_end") {
-			if (!event.success) {
-				logger.error({ finalError: event.finalError, elapsedMs: Date.now() - promptStartTime }, "LLM API auto-retry failed");
+			if (event.success) {
+				obsLogger.info({
+					event: "auto_retry_end",
+					success: true,
+					attempt: event.attempt,
+				}, "LLM API auto-retry succeeded");
+			} else {
+				obsLogger.error({
+					event: "auto_retry_end",
+					success: false,
+					finalError: event.finalError,
+					elapsedMs: Date.now() - promptStartTime,
+				}, "LLM API auto-retry failed");
 			}
 		}
 	});
@@ -607,7 +627,7 @@ export async function runPrompt(prompt: string, images?: ImageContent[]): Promis
 	}
 
 	if (!output.trim()) {
-		logger.warn("runPrompt returned empty output — the model may have produced no text or an API error may have been swallowed");
+		obsLogger.warn({ event: "empty_output", fn: "runPrompt" }, "runPrompt returned empty output — the model may have produced no text or an API error may have been swallowed");
 	}
 
 	return output.trim();
@@ -728,10 +748,28 @@ export function runPromptStreaming(
 					logger.error({ errorMessage: streamError, stopReason: ev.error.stopReason, elapsedMs: Date.now() - promptStartTime }, "LLM API stream error in runPromptStreaming");
 				}
 			} else if (event.type === "auto_retry_start") {
-				logger.warn({ attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs, errorMessage: event.errorMessage, elapsedMs: Date.now() - promptStartTime }, "LLM API call failed, auto-retrying...");
+				obsLogger.warn({
+					event: "auto_retry_start",
+					attempt: event.attempt,
+					maxAttempts: event.maxAttempts,
+					delayMs: event.delayMs,
+					errorMessage: event.errorMessage,
+					elapsedMs: Date.now() - promptStartTime,
+				}, "LLM API call failed, auto-retrying...");
 			} else if (event.type === "auto_retry_end") {
-				if (!event.success) {
-					logger.error({ finalError: event.finalError, elapsedMs: Date.now() - promptStartTime }, "LLM API auto-retry failed");
+				if (event.success) {
+					obsLogger.info({
+						event: "auto_retry_end",
+						success: true,
+						attempt: event.attempt,
+					}, "LLM API auto-retry succeeded");
+				} else {
+					obsLogger.error({
+						event: "auto_retry_end",
+						success: false,
+						finalError: event.finalError,
+						elapsedMs: Date.now() - promptStartTime,
+					}, "LLM API auto-retry failed");
 				}
 			}
 		});
@@ -747,7 +785,7 @@ export function runPromptStreaming(
 		}
 
 		if (!output.trim()) {
-			logger.warn("runPromptStreaming returned empty output — the model may have produced no text or an API error may have been swallowed");
+			obsLogger.warn({ event: "empty_output", fn: "runPromptStreaming" }, "runPromptStreaming returned empty output — the model may have produced no text or an API error may have been swallowed");
 		}
 
 		return output.trim();
@@ -779,10 +817,28 @@ export function runPromptStreamingInSession(
 					logger.error({ errorMessage: streamError, stopReason: ev.error.stopReason, sessionPath, elapsedMs: Date.now() - promptStartTime }, "LLM API stream error in runPromptStreamingInSession");
 				}
 			} else if (event.type === "auto_retry_start") {
-				logger.warn({ attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs, errorMessage: event.errorMessage, elapsedMs: Date.now() - promptStartTime }, "LLM API call failed, auto-retrying...");
+				obsLogger.warn({
+					event: "auto_retry_start",
+					attempt: event.attempt,
+					maxAttempts: event.maxAttempts,
+					delayMs: event.delayMs,
+					errorMessage: event.errorMessage,
+					elapsedMs: Date.now() - promptStartTime,
+				}, "LLM API call failed, auto-retrying...");
 			} else if (event.type === "auto_retry_end") {
-				if (!event.success) {
-					logger.error({ finalError: event.finalError, elapsedMs: Date.now() - promptStartTime }, "LLM API auto-retry failed");
+				if (event.success) {
+					obsLogger.info({
+						event: "auto_retry_end",
+						success: true,
+						attempt: event.attempt,
+					}, "LLM API auto-retry succeeded");
+				} else {
+					obsLogger.error({
+						event: "auto_retry_end",
+						success: false,
+						finalError: event.finalError,
+						elapsedMs: Date.now() - promptStartTime,
+					}, "LLM API auto-retry failed");
 				}
 			}
 		});
@@ -798,7 +854,7 @@ export function runPromptStreamingInSession(
 		}
 
 		if (!output.trim()) {
-			logger.warn({ sessionPath }, "runPromptStreamingInSession returned empty output — the model may have produced no text or an API error may have been swallowed");
+			obsLogger.warn({ event: "empty_output", fn: "runPromptStreamingInSession", sessionPath }, "runPromptStreamingInSession returned empty output — the model may have produced no text or an API error may have been swallowed");
 		}
 
 		return output.trim();

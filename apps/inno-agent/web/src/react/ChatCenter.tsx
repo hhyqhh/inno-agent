@@ -14,6 +14,7 @@ import type { CreateSessionInput } from "../api/sessions.js";
 import { listRemotePresets } from "../api/presets.js";
 import type { PresetMeta } from "../types/presets.js";
 import { uploadRawFile, type RawUploadResult } from "../api/uploads.js";
+import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { QuestionDialog } from "./QuestionDialog.js";
 import "@earendil-works/pi-web-ui";
@@ -160,7 +161,7 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 						) : null}
 					</details>
 				) : null}
-				<markdown-artifact content={message.content} />
+				<markdown-artifact content={normalizeMarkdownMath(message.content)} />
 				{message.error ? (
 					<div className={message.content.trim() ? "mt-2" : ""}>
 						<ErrorBlock error={message.error} />
@@ -826,7 +827,7 @@ export function ChatCenter() {
 							transition={{ duration: 0.2, ease: "easeOut" }}
 						>
 							<div className="inno-message max-w-[78%] rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3.5 py-2.5 text-[13px] leading-relaxed text-[var(--inno-text)]">
-								<markdown-artifact content={chat.streamingText} />
+								<markdown-artifact content={normalizeMarkdownMath(chat.streamingText)} />
 							</div>
 						</motion.div>
 					) : null}

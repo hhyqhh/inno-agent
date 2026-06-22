@@ -3,6 +3,7 @@ import { customElement, state, query } from "lit/decorators.js";
 import { chatStore } from "../../stores/chat-store.js";
 import type { ChatMessage } from "../../types/chat.js";
 import { uploadRawFile, type RawUploadResult } from "../../api/uploads.js";
+import { normalizeMarkdownMath } from "../../utils/markdown-math.js";
 
 // Import Pi SDK markdown renderer
 import "@earendil-works/pi-web-ui";
@@ -113,7 +114,7 @@ export class ChatCenter extends LitElement {
 		return html`
 			<div class="flex justify-start">
 				<div class="max-w-[76%] rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-[13px] leading-relaxed text-[var(--inno-text)]">
-					<markdown-artifact .content=${msg.content}></markdown-artifact>
+					<markdown-artifact .content=${normalizeMarkdownMath(msg.content)}></markdown-artifact>
 				</div>
 			</div>
 		`;
@@ -158,7 +159,7 @@ export class ChatCenter extends LitElement {
 				? html`
 						<div class="flex justify-start">
 							<div class="max-w-[76%] rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-[13px] leading-relaxed text-[var(--inno-text)]">
-								<markdown-artifact .content=${this._streamingText}></markdown-artifact>
+								<markdown-artifact .content=${normalizeMarkdownMath(this._streamingText)}></markdown-artifact>
 							</div>
 						</div>
 					`

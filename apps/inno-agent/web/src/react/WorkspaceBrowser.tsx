@@ -28,6 +28,7 @@ import { TerminalDrawer } from "./terminal/TerminalDrawer.js";
 import { RunButton } from "./terminal/RunButton.js";
 import type { WorkspaceFileDetail, WorkspaceFileKind } from "../types/workspace.js";
 import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
+import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { useStoreSnapshot } from "./hooks.js";
 import "@earendil-works/pi-web-ui";
 import "@uiw/react-md-editor/markdown-editor.css";
@@ -279,7 +280,7 @@ function HtmlPreview({ file }: { file: WorkspaceFileDetail }) {
 function Preview({ file, isLoading }: { file: WorkspaceFileDetail; isLoading: boolean }) {
 	const { t } = useTranslation();
 	if (isLoading) return <div className="flex h-full items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("preview.loadingFile")}</div>;
-	if (file.kind === "markdown") return <div className="workspace-scroll h-full overflow-y-auto p-5"><markdown-artifact content={file.content ?? ""} /></div>;
+	if (file.kind === "markdown") return <div className="workspace-scroll h-full overflow-y-auto p-5"><markdown-artifact content={normalizeMarkdownMath(file.content ?? "")} /></div>;
 		if (file.kind === "html") return <HtmlPreview file={file} />;
 	if (file.kind === "pdf") {
 		// Default to fit-width so the PDF fills the preview panel horizontally.

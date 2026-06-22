@@ -23,6 +23,7 @@ import { skillRawUrl } from '../api/skills.js';
 import type { SkillInfo } from "../types/skills.js";
 import type { WorkspaceFileDetail, WorkspaceFileKind } from "../types/workspace.js";
 import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
+import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { useStoreSnapshot } from "./hooks.js";
 import "@earendil-works/pi-web-ui";
 import "@uiw/react-md-editor/markdown-editor.css";
@@ -97,7 +98,7 @@ function SkillHtmlPreview({ file }: { file: WorkspaceFileDetail }) {
 function FilePreview({ file, skillName, isLoading }: { file: WorkspaceFileDetail; skillName: string; isLoading: boolean }) {
 	const { t } = useTranslation();
 	if (isLoading) return <div className="flex h-full items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("preview.loadingFile", "Loading...")}</div>;
-	if (file.kind === "markdown") return <div className="h-full overflow-y-auto p-5"><markdown-artifact content={file.content ?? ""} /></div>;
+	if (file.kind === "markdown") return <div className="h-full overflow-y-auto p-5"><markdown-artifact content={normalizeMarkdownMath(file.content ?? "")} /></div>;
 	if (file.kind === "html") return <SkillHtmlPreview file={file} />;
 	if (file.kind === "pdf") return <iframe className="h-full w-full border-0 bg-[var(--inno-surface)]" src={file.url ?? skillRawUrl(skillName, file.path)} title={file.name} />;
 	if (file.kind === "image") {

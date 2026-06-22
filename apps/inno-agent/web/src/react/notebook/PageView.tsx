@@ -3,6 +3,7 @@ import MDEditor from "@uiw/react-md-editor";
 import { notebookStore } from "../../stores/notebook-store.js";
 import type { WikiPageFrontmatter, WikiPageType } from "../../types/wiki.js";
 import { parseFrontmatter } from "../../utils/frontmatter.js";
+import { normalizeMarkdownMath } from "../../utils/markdown-math.js";
 import { useStoreSnapshot } from "../hooks.js";
 import "@earendil-works/pi-web-ui";
 import "@uiw/react-md-editor/markdown-editor.css";
@@ -110,7 +111,7 @@ export function PageView() {
 		<div className="flex h-full flex-col">
 			{parsed.frontmatter ? <FrontmatterHeader frontmatter={parsed.frontmatter} /> : null}
 			<div className="min-h-0 flex-1 overflow-y-auto p-4">
-				<markdown-artifact content={parsed.body} />
+				<markdown-artifact content={normalizeMarkdownMath(parsed.body)} />
 			</div>
 			<div className="flex gap-2 border-t border-[var(--inno-border)] p-3">
 				<button className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={() => notebookStore.startEditing()}>

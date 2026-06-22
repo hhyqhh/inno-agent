@@ -214,7 +214,7 @@ export function JobsPanel() {
 
 									<div className="mt-2 flex flex-wrap gap-1.5">
 										<button
-											className={`flex items-center gap-1 rounded inno-primary-button px-2 py-1 text-xs text-white ${isRunning ? "cursor-wait opacity-50" : ""}`}
+											className={`flex items-center gap-1 rounded-md inno-primary-button px-2 py-1 text-xs text-white ${isRunning ? "cursor-wait opacity-50" : ""}`}
 											disabled={isRunning}
 											title={t("jobs.actions.run")}
 											onClick={() => void jobsStore.run(job.id)}

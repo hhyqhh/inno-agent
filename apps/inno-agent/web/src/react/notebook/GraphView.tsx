@@ -388,7 +388,7 @@ export function GraphView() {
 						) : null}
 						{displayNode.type !== "tag" ? (
 							<button
-								className="ml-auto shrink-0 rounded inno-primary-button px-2 py-0.5 text-xs text-white"
+								className="ml-auto shrink-0 rounded-md inno-primary-button px-2 py-0.5 text-xs text-white"
 								onClick={() => void notebookStore.selectPage(displayNode.id)}
 							>
 								{t("notebook.inspector.openPage")}

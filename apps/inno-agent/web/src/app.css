@@ -673,8 +673,8 @@ inno-workspace-panel textarea {
 }
 
 :root[data-theme="innospark"] .inno-workspace-card,
-:root[data-theme="innospark"] .inno-workspace-scope .rounded-lg,
-:root[data-theme="innospark"] .inno-workspace-scope .rounded {
+:root[data-theme="innospark"] .inno-workspace-scope .rounded-lg:not(.inno-primary-button):not(.inno-primary-icon-button),
+:root[data-theme="innospark"] .inno-workspace-scope .rounded:not(.inno-primary-button):not(.inno-primary-icon-button) {
 	border-color: rgba(85, 90, 255, 0.12);
 	background-color: rgba(255, 255, 255, 0.86);
 }

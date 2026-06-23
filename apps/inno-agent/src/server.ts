@@ -283,6 +283,18 @@ async function ensureBootstrapped(): Promise<void> {
 		if (feishuChannel) {
 			feishuChannel.onMessage((msg) => dispatcher!.handle(feishuChannel!, msg));
 			feishuChannel.start();
+
+			// Auto-discover default target on first boot if none persisted
+			if (!channelRegistry.getDefaultTarget("feishu")) {
+				feishuChannel.discoverDefaultTarget().then((target) => {
+					if (target) {
+						channelRegistry.setDefaultTarget(target);
+						logger.info({ chatId: target.chatId }, "[feishu] auto-set default target from chat list");
+					}
+				}).catch((err) => {
+					logger.warn({ err }, "[feishu] initial target discovery failed");
+				});
+			}
 		}
 		if (wechatChannel) {
 			wechatChannel.onMessage((msg) => dispatcher!.handle(wechatChannel!, msg));
@@ -304,6 +316,48 @@ async function ensureBootstrapped(): Promise<void> {
 	});
 
 	return bootstrapPromise;
+}
+
+// ---------------------------------------------------------------------------
+// Channel hot-reload
+// ---------------------------------------------------------------------------
+
+/**
+ * Stop the current Feishu channel (if any) and reinitialize it from the
+ * current in-memory config. Called after PUT /api/settings/channels so that
+ * new credentials take effect without a server restart.
+ */
+async function reloadFeishuChannel(): Promise<void> {
+	// Tear down existing instance
+	if (feishuChannel) {
+		try { await feishuChannel.stop(); } catch { /* best effort */ }
+		feishuChannel = null;
+	}
+
+	// If feishu is now configured and enabled, create a new instance
+	if (!config.feishu?.appId || !config.channels?.feishu?.enabled) {
+		logger.info("[feishu] channel disabled or not configured, skipping reload");
+		return;
+	}
+
+	feishuChannel = new FeishuChannel(config.feishu, dataDir, config.channels.feishu);
+	channelRegistry.register(feishuChannel);
+
+	if (dispatcher) {
+		feishuChannel.onMessage((msg) => dispatcher!.handle(feishuChannel!, msg));
+	}
+	feishuChannel.start();
+	logger.info("[feishu] channel hot-reloaded with new credentials");
+
+	// Auto-discover default target if none exists yet (fixes first-time setup
+	// chicken-and-egg: user had to send FROM Feishu before agent could send TO it)
+	if (!channelRegistry.getDefaultTarget("feishu")) {
+		const target = await feishuChannel.discoverDefaultTarget();
+		if (target) {
+			channelRegistry.setDefaultTarget(target);
+			logger.info({ chatId: target.chatId }, "[feishu] auto-set default target from chat list");
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -3375,6 +3429,14 @@ const server = createServer(async (req, res) => {
 				json(res, 400, { error: err instanceof Error ? err.message : String(err) });
 				return;
 			}
+
+			// Hot-reload Feishu channel: stop old instance, create new one if configured.
+			try {
+				await reloadFeishuChannel();
+			} catch (err) {
+				logger.warn({ err }, "feishu channel hot-reload failed");
+			}
+
 			json(res, 200, buildSafeSettings());
 			return;
 		}

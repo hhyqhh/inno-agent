@@ -22,9 +22,6 @@ COPY apps/inno-agent/web/vite.config.ts apps/inno-agent/web/index.html apps/inno
 
 RUN npm run build
 
-# Strip devDependencies (typescript, vite, vitest, electron, etc.)
-RUN npm prune --production
-
 # Stage 2: Production runtime — web UI mode
 FROM node:22-bookworm AS runtime
 WORKDIR /app
@@ -39,10 +36,14 @@ ENV NODE_ENV=production \
     INNO_WORKSPACE_DIR=/srv/inno-workspace \
     INNO_PORT=3000
 
-# Copy production artifacts from build stage
+# Copy the FULL node_modules from build stage (no pruning).
+# npm prune --production is unreliable with workspaces: it can drop
+# packages like @earendil-works/pi-ai that are depended on by workspace
+# packages but nested due to version conflicts with pi-web-ui.
 COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/package.json /app/package-lock.json ./
-COPY --from=build /app/apps/inno-agent/package.json ./apps/inno-agent/
+COPY --from=build /app/apps/inno-agent/node_modules ./apps/inno-agent/node_modules
+
+# Copy compiled artifacts from build stage
 COPY --from=build /app/apps/inno-agent/dist ./apps/inno-agent/dist
 COPY --from=build /app/apps/inno-agent/web/dist ./apps/inno-agent/web/dist
 

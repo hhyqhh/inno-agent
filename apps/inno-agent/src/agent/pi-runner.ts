@@ -12,7 +12,7 @@ import {
 	type ExtensionFactory,
 	type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
-import { complete, type AssistantMessage, type ImageContent } from "@earendil-works/pi-ai";
+import { complete, type AssistantMessage, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import { basename, join, resolve } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInnoExtension, type ConfigHolder, type InnoExtensionDeps } from "./inno-extension.js";
@@ -350,7 +350,7 @@ export function getCurrentSessionId(): string {
 /**
  * Return all configured models known to the active runtime.
  */
-export function getAvailableModels() {
+export function getAvailableModels(): Model<any>[] {
 	if (!_runtime) return [];
 	_runtime.session.modelRegistry.refresh();
 	return _runtime.session.modelRegistry.getAvailable();

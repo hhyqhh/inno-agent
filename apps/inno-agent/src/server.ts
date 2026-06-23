@@ -1626,7 +1626,7 @@ const server = createServer(async (req, res) => {
 
 	try {
 		// --- Health check (no bootstrap needed) ---
-		if (method === "GET" && url === "/health") {
+		if (method === "GET" && (url === "/health" || url === "/api/health")) {
 			json(res, 200, { status: "ok" });
 			return;
 		}

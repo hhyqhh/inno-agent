@@ -956,7 +956,7 @@ export function SettingsPanel() {
 
 	useEffect(() => {
 		void settingsStore.load();
-		void fetch("/health").then((res) => setHealthOk(res.ok)).catch(() => setHealthOk(false));
+		void fetch("/api/health").then((res) => setHealthOk(res.ok)).catch(() => setHealthOk(false));
 		void getWikiStats().then(setWikiStats).catch(() => setWikiStats(null));
 	}, []);
 

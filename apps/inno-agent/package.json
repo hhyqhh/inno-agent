@@ -1,6 +1,6 @@
 {
 	"name": "inno-agent",
-	"version": "0.4.0",
+	"version": "0.4.1",
 	"description": "Personal learning agent built on PI SDK with three-layer memory system",
 	"type": "module",
 	"bin": {

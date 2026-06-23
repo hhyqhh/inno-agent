@@ -815,10 +815,6 @@ export function ChatCenter() {
 						</motion.div>
 					) : null}
 
-					{chat.pendingQuestion ? (
-						<QuestionDialog pending={chat.pendingQuestion} />
-					) : null}
-
 					{chat.streamingText ? (
 						<motion.div
 							className="flex justify-start"
@@ -845,7 +841,7 @@ export function ChatCenter() {
 						</motion.div>
 					) : null}
 
-					{chat.isSending && !chat.streamingText && !chat.streamingError && chat.activeTools.length === 0 ? (
+					{chat.isSending && !chat.pendingQuestion && !chat.streamingText && !chat.streamingError && chat.activeTools.length === 0 ? (
 						<motion.div
 							className="flex justify-start"
 							initial={{ opacity: 0 }}
@@ -860,6 +856,10 @@ export function ChatCenter() {
 								</span>
 							</div>
 						</motion.div>
+					) : null}
+
+					{chat.pendingQuestion ? (
+						<QuestionDialog pending={chat.pendingQuestion} />
 					) : null}
 				</div>
 			</div>

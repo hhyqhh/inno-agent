@@ -18,6 +18,7 @@ export class FeishuChannel implements RealtimeChatChannel {
 	private downloadDir: string;
 	private personalOnly: boolean;
 	private allowedUserIds: Set<string> | null;
+	private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(
 		feishuConfig: FeishuConfig,
@@ -38,7 +39,7 @@ export class FeishuChannel implements RealtimeChatChannel {
 			? new Set(channelConfig.allowedUserIds)
 			: null;
 
-		setInterval(() => {
+		this.cleanupTimer = setInterval(() => {
 			if (this.processedMessages.size > 1000) {
 				this.processedMessages.clear();
 			}
@@ -61,6 +62,52 @@ export class FeishuChannel implements RealtimeChatChannel {
 
 		this.wsClient.start({ eventDispatcher });
 		logger.info("[feishu] WebSocket client started");
+	}
+
+	async stop(): Promise<void> {
+		try {
+			this.wsClient.close();
+		} catch (err) {
+			logger.warn({ err }, "[feishu] error closing WebSocket client");
+		}
+		if (this.cleanupTimer) {
+			clearInterval(this.cleanupTimer);
+			this.cleanupTimer = null;
+		}
+		this.processedMessages.clear();
+		logger.info("[feishu] channel stopped");
+	}
+
+	/**
+	 * Auto-discover the bot's p2p chats and return the first one as a PushTarget.
+	 * This eliminates the chicken-and-egg problem where the user must send a
+	 * message FROM Feishu before the agent can send TO Feishu.
+	 */
+	async discoverDefaultTarget(): Promise<PushTarget | null> {
+		try {
+			const resp = await this.api.client.im.v1.chat.list({
+				params: { page_size: 20 },
+			});
+			if (resp.code !== 0) {
+				logger.warn({ code: resp.code, msg: resp.msg }, "[feishu] chat.list failed");
+				return null;
+			}
+			const items = resp.data?.items;
+			if (!items || items.length === 0) return null;
+
+			// Find a p2p chat (direct message with a user)
+			const p2pChat = items.find((item: Record<string, unknown>) => item.chat_mode === "p2p");
+			if (!p2pChat) return null;
+
+			const chatId = (p2pChat as Record<string, unknown>).chat_id as string | undefined;
+			if (!chatId) return null;
+
+			logger.info({ chatId }, "[feishu] auto-discovered default p2p target");
+			return { channel: "feishu", chatId };
+		} catch (err) {
+			logger.warn({ err }, "[feishu] discoverDefaultTarget failed");
+			return null;
+		}
 	}
 
 	private async parseEvent(data: Record<string, unknown>): Promise<IncomingMessage | null> {

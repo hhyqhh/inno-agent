@@ -1,16 +1,18 @@
 import * as Lark from "@larksuiteoapi/node-sdk";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
-import type { RealtimeChatChannel, MessageHandler } from "../channel.js";
+import type { RealtimeChatChannel, MessageHandler, StreamingReplyChannel, StreamingReplyHandle, ChannelStreamEvent } from "../channel.js";
 import type { IncomingMessage, PushTarget, MessageAttachment } from "../types.js";
 import type { PersonalChannelConfig } from "../../config.js";
 import { FeishuAPI, type FeishuConfig } from "./feishu-api.js";
+import { createStreamingCardSession } from "./streaming-card.js";
 import { logger } from "../../logger.js";
 
 const SUPPORTED_TYPES = new Set(["text", "image", "file", "post"]);
 
-export class FeishuChannel implements RealtimeChatChannel {
+export class FeishuChannel implements RealtimeChatChannel, StreamingReplyChannel {
 	readonly name = "feishu";
+	readonly supportsStreamingReply = true;
 	private api: FeishuAPI;
 	private wsClient: Lark.WSClient;
 	private messageHandler: MessageHandler | null = null;
@@ -281,5 +283,50 @@ export class FeishuChannel implements RealtimeChatChannel {
 
 	async sendFile(target: PushTarget, filePath: string, fileName?: string): Promise<void> {
 		await this.api.sendFile(target.chatId, filePath, fileName);
+	}
+
+	/**
+	 * Begin a streaming reply: sends an initial "thinking..." card and returns
+	 * a handle for progressive updates.
+	 */
+	async beginStreamingReply(message: IncomingMessage): Promise<StreamingReplyHandle> {
+		// Send initial placeholder card
+		const initialState = {
+			answerText: "",
+			thinkingText: "",
+			toolCalls: [],
+			isComplete: false,
+		};
+		const initialCard = this.api.buildStreamingCard(initialState);
+		const cardMessageId = await this.api.replyCard(message.messageId, initialCard);
+
+		const session = createStreamingCardSession(this.api, cardMessageId);
+
+		return {
+			onEvent(event: ChannelStreamEvent): void {
+				switch (event.type) {
+					case "text_delta":
+						if (event.delta) session.appendAnswer(event.delta);
+						break;
+					case "thinking_delta":
+						if (event.delta) session.appendThinking(event.delta);
+						break;
+					case "tool_start":
+						session.toolStart(event.toolName ?? "unknown", event.toolCallId);
+						break;
+					case "tool_end":
+						if (event.toolCallId) {
+							session.toolEnd(event.toolCallId, event.isError, event.summary);
+						}
+						break;
+					case "error":
+						session.setError(event.message ?? "Unknown error");
+						break;
+				}
+			},
+			async finalize(): Promise<void> {
+				await session.finalize();
+			},
+		};
 	}
 }

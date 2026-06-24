@@ -22,6 +22,43 @@ export interface ChatChannel {
 	sendFile?(target: PushTarget, filePath: string, fileName?: string): Promise<void>;
 }
 
+/**
+ * A streaming event forwarded from the agent loop to the channel during streaming reply.
+ */
+export interface ChannelStreamEvent {
+	type: "text_delta" | "thinking_delta" | "tool_start" | "tool_end" | "error" | "done";
+	delta?: string;
+	toolCallId?: string;
+	toolName?: string;
+	isError?: boolean;
+	summary?: string;
+	message?: string;
+}
+
+/**
+ * Channels that support progressive/streaming card updates implement this interface.
+ * The dispatcher uses it to send real-time updates instead of waiting for the full response.
+ */
+export interface StreamingReplyChannel extends ChatChannel {
+	readonly supportsStreamingReply: boolean;
+	/**
+	 * Begin a streaming reply. Sends an initial placeholder card and returns
+	 * a handle that accepts streaming events and a finalize method.
+	 */
+	beginStreamingReply(message: IncomingMessage): Promise<StreamingReplyHandle>;
+}
+
+export interface StreamingReplyHandle {
+	/** Forward a streaming event to update the card. */
+	onEvent(event: ChannelStreamEvent): void;
+	/** Finalize the card after all events are done. Must be called. */
+	finalize(): Promise<void>;
+}
+
+export function isStreamingChannel(ch: ChatChannel): ch is StreamingReplyChannel {
+	return "supportsStreamingReply" in ch && (ch as StreamingReplyChannel).supportsStreamingReply;
+}
+
 export type MessageHandler = (msg: IncomingMessage) => Promise<void> | void;
 
 export interface RealtimeChatChannel extends ChatChannel {

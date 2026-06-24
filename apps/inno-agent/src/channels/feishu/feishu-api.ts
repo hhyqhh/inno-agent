@@ -8,6 +8,24 @@ export interface FeishuConfig {
 	appSecret: string;
 }
 
+// ─── Streaming Card Types ────────────────────────────────────────────────────
+
+export interface StreamingCardState {
+	answerText: string;
+	thinkingText: string;
+	toolCalls: Array<{ name: string; status: "running" | "done" | "error"; summary?: string }>;
+	isComplete: boolean;
+	error?: string;
+}
+
+export type CardHeaderTemplate =
+	| "blue" | "wathet" | "turquoise" | "green" | "yellow"
+	| "orange" | "red" | "carmine" | "violet" | "purple"
+	| "indigo" | "grey";
+
+// Feishu card element limits
+const CARD_CONTENT_MAX_CHARS = 28000; // safe limit for card total content
+
 /** Map a file extension to a Feishu file_type. Unknown types fall back to "stream". */
 function feishuFileType(fileName: string): "opus" | "mp4" | "pdf" | "doc" | "xls" | "ppt" | "stream" {
 	const ext = extname(fileName).toLowerCase().replace(/^\./, "");
@@ -257,5 +275,183 @@ export class FeishuAPI {
 			pieces.push(current.join("\n"));
 		}
 		return pieces.length > 0 ? pieces : [block];
+	}
+
+	// ─── Interactive Card Methods ──────────────────────────────────────────────
+
+	/**
+	 * Send an interactive card as a reply to a message. Returns the sent message_id
+	 * for subsequent updates via patchCard().
+	 */
+	async replyCard(messageId: string, card: object): Promise<string> {
+		const resp = await this.client.im.v1.message.reply({
+			path: { message_id: messageId },
+			data: {
+				content: JSON.stringify(card),
+				msg_type: "interactive",
+			},
+		});
+		if (resp.code !== 0) {
+			throw new Error(`Feishu card reply failed: ${resp.msg} (code: ${resp.code})`);
+		}
+		return (resp.data?.message_id as string) ?? "";
+	}
+
+	/**
+	 * Send an interactive card to a chat. Returns the sent message_id.
+	 */
+	async sendCard(chatId: string, card: object): Promise<string> {
+		const resp = await this.client.im.v1.message.create({
+			params: { receive_id_type: "chat_id" },
+			data: {
+				receive_id: chatId,
+				content: JSON.stringify(card),
+				msg_type: "interactive",
+			},
+		});
+		if (resp.code !== 0) {
+			throw new Error(`Feishu card send failed: ${resp.msg} (code: ${resp.code})`);
+		}
+		return (resp.data?.message_id as string) ?? "";
+	}
+
+	/**
+	 * Update (PATCH) an existing interactive card message.
+	 * Requires `update_multi: true` in the card config.
+	 */
+	async patchCard(messageId: string, card: object): Promise<void> {
+		const resp = await this.client.im.v1.message.patch({
+			path: { message_id: messageId },
+			data: {
+				content: JSON.stringify(card),
+			},
+		});
+		if ((resp as any).code !== 0) {
+			const r = resp as any;
+			logger.warn({ code: r.code, msg: r.msg, messageId }, "Feishu card patch failed");
+		}
+	}
+
+	/**
+	 * Build a streaming-style interactive card from the current state.
+	 */
+	buildStreamingCard(state: StreamingCardState): object {
+		const elements: object[] = [];
+
+		// Thinking section (collapsible, only if there's thinking content)
+		if (state.thinkingText) {
+			const thinkingContent = this.truncateForCard(state.thinkingText, 3000);
+			elements.push({
+				tag: "collapsible_panel",
+				expanded: false,
+				header: {
+					title: {
+						tag: "plain_text",
+						content: "💭 思考过程",
+					},
+				},
+				border: { color: "grey" },
+				elements: [
+					{
+						tag: "markdown",
+						content: thinkingContent,
+					},
+				],
+			});
+		}
+
+		// Tool calls section (only if there are tool calls)
+		if (state.toolCalls.length > 0) {
+			const toolLines = state.toolCalls.map((tc) => {
+				const icon = tc.status === "running" ? "⏳" : tc.status === "error" ? "❌" : "✅";
+				const summary = tc.summary ? ` — ${tc.summary}` : "";
+				return `${icon} \`${tc.name}\`${summary}`;
+			});
+			elements.push({
+				tag: "collapsible_panel",
+				expanded: state.toolCalls.some((tc) => tc.status === "running"),
+				header: {
+					title: {
+						tag: "plain_text",
+						content: `🔧 工具调用 (${state.toolCalls.length})`,
+					},
+				},
+				border: { color: "grey" },
+				elements: [
+					{
+						tag: "markdown",
+						content: toolLines.join("\n"),
+					},
+				],
+			});
+		}
+
+		// Divider between meta sections and answer
+		if (elements.length > 0 && state.answerText) {
+			elements.push({ tag: "hr" });
+		}
+
+		// Answer content (main body)
+		if (state.answerText) {
+			const answerContent = this.truncateForCard(state.answerText, CARD_CONTENT_MAX_CHARS - 2000);
+			elements.push({
+				tag: "markdown",
+				content: answerContent,
+			});
+		} else if (!state.isComplete) {
+			// Placeholder while waiting for answer
+			elements.push({
+				tag: "markdown",
+				content: state.thinkingText ? "等待回复中..." : "思考中...",
+			});
+		}
+
+		// Error display
+		if (state.error) {
+			elements.push({ tag: "hr" });
+			elements.push({
+				tag: "markdown",
+				content: `❗ **错误**: ${state.error}`,
+			});
+		}
+
+		// Footer with status
+		if (state.isComplete) {
+			elements.push({
+				tag: "note",
+				elements: [
+					{
+						tag: "plain_text",
+						content: "✓ 回复完成",
+					},
+				],
+			});
+		}
+
+		// Determine header color based on state
+		let template: CardHeaderTemplate = "blue";
+		if (state.error) {
+			template = "red";
+		} else if (state.isComplete) {
+			template = "green";
+		} else if (state.toolCalls.some((tc) => tc.status === "running")) {
+			template = "turquoise";
+		}
+
+		const headerTitle = state.isComplete ? "Inno Agent" : "Inno Agent ⟳";
+
+		return {
+			config: { update_multi: true, wide_screen_mode: true },
+			header: {
+				template,
+				title: { tag: "plain_text", content: headerTitle },
+			},
+			elements,
+		};
+	}
+
+	private truncateForCard(text: string, maxLen: number): string {
+		if (text.length <= maxLen) return text;
+		return text.slice(0, maxLen) + "\n\n... *(内容过长已截断)*";
 	}
 }

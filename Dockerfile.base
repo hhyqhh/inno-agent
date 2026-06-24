@@ -33,6 +33,9 @@ RUN sed -i 's|http://deb.debian.org/debian|http://mirrors.tuna.tsinghua.edu.cn/d
     ripgrep \
     # 文档解析（Office 格式转换）
     libreoffice \
+    # 中文字体（CJK），避免中文显示为方块/tofu
+    fonts-noto-cjk \
+    fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- Miniforge（Python >= 3.11 科学计算环境）---------------------------------

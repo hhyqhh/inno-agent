@@ -1,5 +1,6 @@
-import type { ChatChannel } from "./channel.js";
+import type { ChatChannel, ChannelStreamEvent } from "./channel.js";
 import type { ChannelRegistry } from "./channel.js";
+import { isStreamingChannel } from "./channel.js";
 import type { IncomingMessage } from "./types.js";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { DedupeStore } from "./dedupe-store.js";
@@ -11,12 +12,22 @@ import { logger } from "../logger.js";
 const NEW_SESSION_COMMANDS = new Set(["/new", "新建对话", "新建会话"]);
 const MAX_TEXT_LENGTH = 20_000;
 
+/** Callback type for streaming prompt execution. */
+export type StreamEventCallback = (event: ChannelStreamEvent) => void;
+
 export interface PersonalChannelDispatcherOptions {
 	channelRegistry: ChannelRegistry;
 	/** Plain runPrompt (runs in the current global session). */
 	runPrompt: (prompt: string, images?: ImageContent[]) => Promise<string>;
 	/** Atomically switch to sessionPath and run prompt in one enqueue slot. */
 	runPromptInSession: (sessionPath: string, prompt: string, images?: ImageContent[]) => Promise<string>;
+	/** Streaming variant: runs prompt and forwards events via callback. */
+	runPromptStreamingInSession?: (
+		sessionPath: string,
+		prompt: string,
+		onEvent: StreamEventCallback,
+		images?: ImageContent[],
+	) => Promise<string>;
 	createNewSession: () => Promise<string>;
 	getCurrentSessionId: () => string;
 	recordSessionChannel: (channel: string, explicitSessionId?: string) => void;
@@ -137,9 +148,34 @@ export class PersonalChannelDispatcher {
 		const startedAt = new Date();
 
 		try {
-			const output = targetSessionPath
-				? await this.opts.runPromptInSession(targetSessionPath, prompt, images.length > 0 ? images : undefined)
-				: await this.opts.runPrompt(prompt, images.length > 0 ? images : undefined);
+			let output: string;
+
+			// Use streaming path if channel supports it and streaming function is available
+			if (
+				isStreamingChannel(channel) &&
+				this.opts.runPromptStreamingInSession &&
+				targetSessionPath
+			) {
+				try {
+					output = await this.handleStreaming(channel, msg, targetSessionPath, prompt, images);
+				} catch (streamErr: any) {
+					// If streaming card creation itself failed (e.g. bot lacks interactive card
+					// permissions), fall back to non-streaming. We detect this by checking if
+					// the error came from beginStreamingReply (before prompt execution started).
+					if (streamErr?._streamingInitFailed) {
+						logger.warn({ err: streamErr }, "[dispatcher] streaming card init failed, falling back to non-streaming");
+						output = await this.opts.runPromptInSession(targetSessionPath, prompt, images.length > 0 ? images : undefined);
+						await this.safeReply(channel, msg, output);
+					} else {
+						throw streamErr;
+					}
+				}
+			} else {
+				output = targetSessionPath
+					? await this.opts.runPromptInSession(targetSessionPath, prompt, images.length > 0 ? images : undefined)
+					: await this.opts.runPrompt(prompt, images.length > 0 ? images : undefined);
+				await this.safeReply(channel, msg, output);
+			}
 
 			const sessionId = this.opts.getCurrentSessionId();
 			this.opts.recordSessionChannel(msg.channel, sessionId);
@@ -155,8 +191,6 @@ export class PersonalChannelDispatcher {
 				finishedAt: finishedAt.toISOString(),
 				durationMs: finishedAt.getTime() - startedAt.getTime(),
 			});
-
-			await this.safeReply(channel, msg, output);
 		} catch (err) {
 			const finishedAt = new Date();
 			this.runLog.append({
@@ -232,6 +266,47 @@ export class PersonalChannelDispatcher {
 			} catch (retryErr) {
 				logger.error({ err: retryErr }, "dispatcher reply retry also failed");
 			}
+		}
+	}
+
+	/**
+	 * Handle a message using the streaming path: creates a streaming card,
+	 * forwards events progressively, and finalizes on completion.
+	 */
+	private async handleStreaming(
+		channel: ChatChannel & { beginStreamingReply: (msg: IncomingMessage) => Promise<import("./channel.js").StreamingReplyHandle> },
+		msg: IncomingMessage,
+		sessionPath: string,
+		prompt: string,
+		images: ImageContent[],
+	): Promise<string> {
+		let handle: import("./channel.js").StreamingReplyHandle;
+		try {
+			handle = await channel.beginStreamingReply(msg);
+		} catch (err: any) {
+			// Tag the error so the caller can detect streaming init failure vs prompt failure
+			err._streamingInitFailed = true;
+			throw err;
+		}
+
+		try {
+			const output = await this.opts.runPromptStreamingInSession!(
+				sessionPath,
+				prompt,
+				(event: ChannelStreamEvent) => {
+					handle.onEvent(event);
+				},
+				images.length > 0 ? images : undefined,
+			);
+			await handle.finalize();
+			return output;
+		} catch (err) {
+			handle.onEvent({
+				type: "error",
+				message: err instanceof Error ? err.message : String(err),
+			});
+			await handle.finalize();
+			throw err;
 		}
 	}
 }

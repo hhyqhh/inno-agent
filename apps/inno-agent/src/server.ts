@@ -29,6 +29,7 @@ import {
 import { completePromptOnce, runPromptSerialized, runPromptStreaming, runPromptStreamingInSession, runPromptInSession, abortCurrentPrompt, persistPendingUserTurn } from "./agent/pi-runner.js";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { ChannelRegistry } from "./channels/channel.js";
+import type { ChannelStreamEvent } from "./channels/channel.js";
 import { FeishuChannel } from "./channels/feishu/feishu-channel.js";
 import { PersonalChannelDispatcher } from "./channels/personal-dispatcher.js";
 import { BridgeChannel } from "./channels/bridge/bridge-channel.js";
@@ -157,6 +158,34 @@ function piEventToSseEvent(event: any): unknown | null {
 	}
 }
 
+/** Convert a raw PI SDK event to a ChannelStreamEvent for channel streaming replies. */
+function piEventToChannelStreamEvent(event: any): ChannelStreamEvent | null {
+	switch (event.type) {
+		case "message_update": {
+			const ev = event.assistantMessageEvent;
+			if (ev.type === "text_delta") return { type: "text_delta", delta: ev.delta };
+			if (ev.type === "thinking_delta") return { type: "thinking_delta", delta: ev.delta };
+			if (ev.type === "error") return { type: "error", message: ev.error?.errorMessage || "LLM API error" };
+			return null;
+		}
+		case "message_end": {
+			const msg = event.message;
+			if (msg && typeof msg === "object" && "stopReason" in msg && msg.stopReason === "error") {
+				return { type: "error", message: msg.errorMessage || "The model request failed." };
+			}
+			return null;
+		}
+		case "tool_execution_start":
+			return { type: "tool_start", toolCallId: event.toolCallId, toolName: event.toolName };
+		case "tool_execution_end": {
+			const summary = typeof event.result === "string" ? event.result.slice(0, 80) : undefined;
+			return { type: "tool_end", toolCallId: event.toolCallId, toolName: event.toolName, isError: event.isError, summary };
+		}
+		default:
+			return null;
+	}
+}
+
 /**
  * One-shot lazy bootstrap. Idempotent — concurrent requests while the first
  * bootstrap is still in-flight all await the same promise.
@@ -264,6 +293,12 @@ async function ensureBootstrapped(): Promise<void> {
 			channelRegistry,
 			runPrompt: runPromptSerialized,
 			runPromptInSession,
+			runPromptStreamingInSession: (sessionPath, prompt, onEvent, images) => {
+				return runPromptStreamingInSession(sessionPath, prompt, (piEvent: any) => {
+					const channelEvent = piEventToChannelStreamEvent(piEvent);
+					if (channelEvent) onEvent(channelEvent);
+				}, images);
+			},
 			createNewSession,
 			getCurrentSessionId,
 			recordSessionChannel: (ch, sid?) => recordCurrentSessionChannel(ch as SessionChannel, sid, { setOriginIfEmpty: true }),

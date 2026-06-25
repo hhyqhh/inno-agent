@@ -6,6 +6,10 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D20.6.0-brightgreen.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178c6.svg)](https://www.typescriptlang.org/)
 
+> 📄 **Technical Report:** [*Inno Agent: An Open-Source Personal Learning Agent with Layered Memory, Educational Post-Training, and Local Deployment*](./docs/inno-agent.pdf) (arXiv, June 2026) — covers the system design, three-layer memory architecture, instructional-design grounding, and preliminary educational post-training results on Qwen3.6 35B.
+>
+> 📦 **Resource Hub:** [Chloris-Blaxk/inno-agent-hub](https://github.com/Chloris-Blaxk/inno-agent-hub) — the companion repository containing the skill library, workspace preset templates, and community-contributed resources for Inno Agent.
+
 <p align="center">
   <img src="./docs/assets/l2-wiki.png" alt="Inno Agent — L2 wiki knowledge base and graph" width="100%" />
 </p>
@@ -16,8 +20,6 @@ It ships in two forms that share the same `runtime/` and `workspace/` state:
 
 - **Terminal CLI** (`inno`) — a pure TUI agent, no HTTP.
 - **Web UI** (React 19 + Lit + Tailwind 4) — backed by a Node HTTP server with SSE streaming, terminal sessions, a workspace browser, the wiki graph, jobs, skills, and settings.
-
-> 📄 The design rationale and a full system walkthrough are described in the accompanying technical report, *"Inno Agent: An Open-Source Personal Learning Agent with Layered Memory."*
 
 ---
 

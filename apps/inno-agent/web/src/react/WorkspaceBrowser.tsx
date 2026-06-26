@@ -391,7 +391,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 		return (
 			<div className="flex h-full flex-col">
 				{/* Editor toolbar */}
-				<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
+				<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2">
 					<div className="min-w-0">
 						<div className="truncate text-sm font-medium">{state.file.name}</div>
 						<div className="truncate text-[10px] text-[var(--inno-text-muted)]">{t("files.editing", "Editing")} · {state.file.path}</div>
@@ -406,7 +406,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 						</button>
 						<button
 							disabled={state.isSaving}
-							className="flex h-7 items-center gap-1 rounded-full border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
+							className="flex h-7 items-center gap-1 rounded-full inno-primary-button px-2.5 text-xs text-white disabled:opacity-50"
 							onClick={() => workspaceStore.cancelEditing()}
 						>
 							{t("common.cancel", "Cancel")}
@@ -428,10 +428,10 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 	// Read-only view
 	return (
 		<div className="flex h-full flex-col">
-			<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
+			<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2">
 				<div className="flex min-w-0 flex-1 items-center gap-2">
 					<button
-						className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+						className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-accent-soft)] hover:text-[var(--inno-accent)] disabled:opacity-40"
 						onClick={onToggleSidebar}
 						title={sidebarOpen ? t("common.collapseSidebar", "Collapse sidebar") : t("common.expandSidebar", "Expand sidebar")}
 					>
@@ -448,7 +448,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 					{state.file && !simpleMode ? <RunButton filePath={state.file.path} /> : null}
 					{canEdit && (
 						<button
-							className="flex h-7 items-center gap-1 rounded-full border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							className="flex h-7 items-center gap-1 rounded-full inno-primary-button px-2.5 text-xs text-white disabled:opacity-50"
 							onClick={() => workspaceStore.startEditing()}
 						>
 							{t("common.edit", "Edit")}
@@ -919,7 +919,7 @@ export function WorkspaceBrowser() {
 		<div ref={rootRef} className={`grid h-full min-h-0 gap-0 bg-transparent p-0 transition-[grid-template-columns] duration-200 ${showContent ? (sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]") : "grid-cols-[minmax(0,1fr)]"}`}>
 			{/* --- Tree pane --- */}
 			<aside
-				className={`relative flex min-h-0 flex-col overflow-hidden transition-opacity duration-200 ${isDragOver ? "border-blue-400 bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+				className={`relative flex min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] transition-opacity duration-200 ${isDragOver ? "border-l border-t border-b border-[var(--inno-border)] bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
 				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
 				onDrop={handleDrop}

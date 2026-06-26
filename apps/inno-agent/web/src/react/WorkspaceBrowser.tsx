@@ -542,7 +542,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 	return (
 		<div
 			ref={dragHandle}
-			style={{ ...style, height: "100%", paddingLeft: 0 }}
+			style={{ ...style, height: "100%", paddingLeft: 8 }}
 			className={`group flex items-center gap-1.5 rounded-md pr-2 text-xs cursor-pointer select-none relative ${
 				selected
 					? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100"
@@ -922,10 +922,10 @@ export function WorkspaceBrowser() {
 	const busy = state.isMutating || state.isLoadingTree;
 
 	return (
-		<div ref={rootRef} className={`grid h-full min-h-0 gap-3 bg-transparent p-3 transition-[grid-template-columns] duration-200 ${showContent ? (sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]") : "grid-cols-[minmax(0,1fr)]"}`}>
+		<div ref={rootRef} className={`grid h-full min-h-0 gap-0 bg-transparent p-0 transition-[grid-template-columns] duration-200 ${showContent ? (sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]") : "grid-cols-[minmax(0,1fr)]"}`}>
 			{/* --- Tree pane --- */}
 			<aside
-				className={`inno-workspace-card relative flex min-h-0 flex-col overflow-hidden rounded-lg transition-opacity duration-200 ${isDragOver ? "border-blue-400 bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+				className={`relative flex min-h-0 flex-col overflow-hidden transition-opacity duration-200 ${isDragOver ? "border-blue-400 bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
 				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
 				onDrop={handleDrop}
@@ -998,7 +998,7 @@ export function WorkspaceBrowser() {
 
 			{/* --- Preview / Edit pane --- */}
 			{showContent ? (
-				<section className="inno-workspace-card flex min-w-0 min-h-0 flex-col overflow-hidden rounded-lg">
+				<section className="flex min-w-0 min-h-0 flex-col overflow-hidden">
 					<div className="flex min-h-0 flex-1 flex-col">
 						<FileContentPane onToggleSidebar={() => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} />
 					</div>

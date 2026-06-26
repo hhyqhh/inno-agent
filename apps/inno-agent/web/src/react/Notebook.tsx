@@ -109,6 +109,7 @@ export function Notebook() {
 								onClick={() => notebookStore.setView("graph")}
 								title={t("notebook.view.graph")}
 							>
+								<Network size={13} />
 								<span className="hidden @[680px]:inline">{t("notebook.view.graph")}</span>
 							</button>
 							<button
@@ -116,6 +117,7 @@ export function Notebook() {
 								onClick={() => notebookStore.setView("page")}
 								title={t("notebook.view.page")}
 							>
+								<FileText size={13} />
 								<span className="hidden @[680px]:inline">{t("notebook.view.page")}</span>
 							</button>
 						</div>

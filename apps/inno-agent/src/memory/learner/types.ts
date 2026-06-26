@@ -38,6 +38,10 @@ export interface KnowledgeState {
 	evidence_ids: string[];
 	diagnosis: string;
 	next_actions: string[];
+	// SM-2 spaced-repetition state (Wozniak & Gorzelanczyk, 1994)
+	sm2_ef?: number;          // easiness factor, default 2.5, min 1.3
+	sm2_interval?: number;    // days until next review
+	sm2_repetitions?: number; // successful review streak
 }
 
 export interface Misconception {

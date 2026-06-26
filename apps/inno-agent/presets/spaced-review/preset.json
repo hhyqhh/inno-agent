@@ -1,0 +1,6 @@
+{
+	"id": "spaced-review",
+	"name": "间隔复习教练",
+	"description": "基于 SM-2 间隔重复算法，扫描 L1 档案中到期的概念，生成自适应测试题并更新掌握度，抵抗遗忘曲线。",
+	"icon": "calendar"
+}

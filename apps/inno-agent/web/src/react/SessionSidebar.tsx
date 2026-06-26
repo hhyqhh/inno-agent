@@ -640,13 +640,13 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 								className="h-7 w-7"
 							>
 								<span
-									className="absolute inset-0 flex items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)] shadow-sm"
+									className="absolute inset-0 flex items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)]"
 									style={{ backfaceVisibility: "hidden" }}
 								>
 									IA
 								</span>
 								<span
-									className="absolute inset-0 flex items-center justify-center rounded-lg border border-blue-400 bg-[var(--inno-accent)] text-[10px] font-semibold text-white shadow-sm"
+									className="absolute inset-0 flex items-center justify-center rounded-lg border border-blue-400 bg-[var(--inno-accent)] text-[10px] font-semibold text-white"
 									style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
 								>
 									IA
@@ -764,13 +764,13 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 								className="h-7 w-7"
 							>
 								<span
-									className="absolute inset-0 flex items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)] shadow-sm"
+									className="absolute inset-0 flex items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)]"
 									style={{ backfaceVisibility: "hidden" }}
 								>
 									IA
 								</span>
 								<span
-									className="absolute inset-0 flex items-center justify-center rounded-lg border border-blue-400 bg-[var(--inno-accent)] text-[10px] font-semibold text-white shadow-sm"
+									className="absolute inset-0 flex items-center justify-center rounded-lg border border-blue-400 bg-[var(--inno-accent)] text-[10px] font-semibold text-white"
 									style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
 								>
 									IA

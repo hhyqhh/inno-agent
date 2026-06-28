@@ -44,6 +44,7 @@ export interface InnoMemoryConfig {
 	 * workspace contents and the current session context.
 	 */
 	l3Enabled: boolean;
+	autoReviewEnabled: boolean;
 }
 
 /**
@@ -199,6 +200,7 @@ export function normalizeMemoryConfig(memory: Partial<InnoMemoryConfig> | undefi
 		l1Enabled: memory?.l1Enabled !== false,
 		l2Enabled: memory?.l2Enabled !== false,
 		l3Enabled: memory?.l3Enabled !== false,
+		autoReviewEnabled: memory?.autoReviewEnabled !== false,
 	};
 }
 

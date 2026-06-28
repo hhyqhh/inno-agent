@@ -43,6 +43,7 @@ export interface MemorySettingsPatch {
 	l1Enabled?: boolean;
 	l2Enabled?: boolean;
 	l3Enabled?: boolean;
+	autoReviewEnabled?: boolean;
 }
 
 export async function saveMemorySettings(patch: MemorySettingsPatch): Promise<InnoSettings> {

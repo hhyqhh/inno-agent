@@ -19,6 +19,7 @@ import { createL2Tools } from "../memory/l2/l2-tools.js";
 import { L3Memory, createL3Tools, formatRecallForPrompt } from "../memory/l3/l3-tools.js";
 import { createPracticeTools } from "./practice-tools.js";
 import { createDocumentTools } from "./document-tools.js";
+import { createAutoReviewSyncer, type AutoReviewSyncer } from "./auto-review.js";
 import { INNO_SYSTEM_PROMPT } from "./system-prompt.js";
 import { syncProvidersForSubagents } from "./provider-sync.js";
 import { questionBridge } from "./question-bridge.js";
@@ -170,6 +171,7 @@ export function createInnoExtension(
 		const isSimpleMode = () => configHolder.current.simpleMode?.enabled === true;
 		const isL1Enabled = () => !isSimpleMode() && configHolder.current.memory?.l1Enabled !== false;
 		const isL2Enabled = () => !isSimpleMode() && configHolder.current.memory?.l2Enabled !== false;
+		const isAutoReviewEnabled = () => !isSimpleMode() && configHolder.current.memory?.autoReviewEnabled !== false;
 
 		// 2. Register L1 learner tools (gated on config.memory.l1Enabled)
 		const learnerTools = createLearnerTools(paths.learnerDataDir, "default", isL1Enabled);
@@ -184,7 +186,14 @@ export function createInnoExtension(
 			pi.registerTool(tool);
 		}
 
-		// 3a. Register channel tools (send workspace files out to chat channels)
+		// 3b. Create auto-review syncer (spaced_review job sync from L1)
+		const autoReviewSyncer = createAutoReviewSyncer({
+			jobsDir: paths.jobsDir,
+			learnerDataDir: paths.learnerDataDir,
+			isEnabled: isAutoReviewEnabled,
+		});
+
+		// 3c. Register channel tools (send workspace files out to chat channels)
 		if (channelRegistry) {
 			const channelTools = createChannelTools({
 				channelRegistry,
@@ -365,6 +374,13 @@ export function createInnoExtension(
 			} catch (err) {
 				// best-effort — indexing must not affect the turn
 				logger.warn({ err }, "L3 turn_end indexing failed (non-fatal)");
+			}
+
+			// Sync auto-review scheduler jobs from L1 review_due_at state.
+			if (autoReviewSyncer) {
+				try { autoReviewSyncer.sync(); } catch (err) {
+					logger.warn({ err }, "Auto-review sync failed (non-fatal)");
+				}
 			}
 		});
 

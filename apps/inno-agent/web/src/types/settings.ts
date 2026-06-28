@@ -89,7 +89,7 @@ export interface InnoSettings {
 		baseUrl: string;
 		token: string; // masked
 	};
-	memory?: { l1Enabled: boolean; l2Enabled: boolean; l3Enabled: boolean };
+	memory?: { l1Enabled: boolean; l2Enabled: boolean; l3Enabled: boolean; autoReviewEnabled: boolean };
 	simpleMode?: { enabled: boolean };
 	ui?: { theme: string };
 }

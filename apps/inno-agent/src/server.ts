@@ -3089,20 +3089,20 @@ const server = createServer(async (req, res) => {
 		}
 
 		// Live catalog from the remote content hub (Simple Mode preset cards).
-		// Falls back to the bundled/cached presets when the hub is empty or
-		// unreachable, so the shipped templates always appear.
+		// Merges remote presets with locally-bundled ones so presets added under
+		// apps/inno-agent/presets/ also appear in Simple Mode without needing to
+		// sync them to the remote hub first.
 		if (method === "GET" && url.split("?")[0] === "/api/preset-library") {
 			const forceRefresh = new URL(url, "http://localhost").searchParams.get("refresh") === "1";
+			const local = listPresets(paths);
 			try {
 				const remote = await listRemotePresets(getContentSource(), forceRefresh);
-				if (remote.length > 0) {
-					json(res, 200, remote);
-				} else {
-					json(res, 200, listPresets(paths));
-				}
+				const remoteIds = new Set(remote.map((p) => p.id));
+				const merged = [...remote, ...local.filter((p) => !remoteIds.has(p.id))];
+				json(res, 200, merged.length > 0 ? merged : local);
 			} catch (err) {
 				logger.warn({ err }, "failed to list preset library; falling back to bundled presets");
-				json(res, 200, listPresets(paths));
+				json(res, 200, local);
 			}
 			return;
 		}

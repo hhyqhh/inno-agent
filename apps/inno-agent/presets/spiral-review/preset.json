@@ -1,0 +1,6 @@
+{
+	"id": "spiral-review",
+	"name": "温故知新",
+	"description": "学新概念时自动关联已学知识，生成对比讲解和递进练习，并安排后续回顾",
+	"icon": "refresh-cw"
+}

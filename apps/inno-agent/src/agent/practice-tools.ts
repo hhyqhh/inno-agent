@@ -107,9 +107,5 @@ export function createPracticeTools(deps: PracticeToolDeps): ToolDefinition[] {
 		},
 	});
 
-	// Ensure dir helper not strictly required since mkdirSync covers it, but kept for clarity.
-	void existsSync;
-	void join;
-
 	return [createPracticeLab];
 }

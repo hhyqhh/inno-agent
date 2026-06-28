@@ -7,9 +7,11 @@ import {
 	type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 import { saveConfig, setDefaultModel, type InnoConfig } from "../config.js";
+import { readJson } from "../storage/file-store.js";
 import { createLearnerTools } from "../memory/learner/learner-tools.js";
 import { loadEvents, loadProfile } from "../memory/learner/profile-store.js";
 import { buildContextPack, formatContextPackForPrompt } from "../memory/learner/context-pack.js";
+import type { LearnerContextPack } from "../memory/learner/types.js";
 import { JobStore } from "../scheduler/job-store.js";
 import { createSchedulerTools } from "../scheduler/scheduler-tools.js";
 import { createChannelTools } from "../channels/channel-tools.js";
@@ -254,14 +256,21 @@ export function createInnoExtension(
 			pi.on("before_agent_start", async (event, ctx) => {
 				const sections: string[] = [INNO_SYSTEM_PROMPT];
 
-				// Inject the L1 learner context pack (profile + recent events)
-				// unless the learner has turned L1 off in settings.
+				// Inject the L1 learner context pack from precomputed cache
+				// (updated every time the profile changes), falling back to
+				// real-time build only when the cache is missing.
 				if (isL1Enabled()) {
-					const profile = loadProfile(paths.learnerDataDir);
-					const recentEvents = loadEvents(paths.learnerDataDir).slice(-8);
-					const contextPack = buildContextPack(profile, recentEvents);
-					const contextSection = formatContextPackForPrompt(contextPack);
-					sections.push(contextSection);
+					const cachePath = join(paths.dataDir, "context-cache.json");
+					const cached = readJson<LearnerContextPack | null>(cachePath, null);
+					if (cached && (cached.active_goal || cached.relevant_concepts?.length > 0)) {
+						sections.push(formatContextPackForPrompt(cached));
+					} else {
+						// Cache miss — build from source as a fallback
+						const profile = loadProfile(paths.learnerDataDir);
+						const recentEvents = loadEvents(paths.learnerDataDir).slice(-8);
+						const contextPack = buildContextPack(profile, recentEvents);
+						sections.push(formatContextPackForPrompt(contextPack));
+					}
 				}
 
 				// Inject per-workspace context: agent.md + private skills.

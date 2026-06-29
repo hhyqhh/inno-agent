@@ -50,14 +50,6 @@ export function createDocumentTools(): ToolDefinition[] {
 				};
 			}
 
-			// Check file existence before attempting parse
-			if (!existsSync(resolvedPath)) {
-				return {
-					content: [{ type: "text" as const, text: `文件不存在: ${typed.filePath}` }],
-					details: { error: "file_not_found", filePath: resolvedPath, pageCount: 0, textLength: 0 },
-				};
-			}
-
 			// Parse document
 			let parsed;
 			try {

@@ -314,7 +314,17 @@
 		"import": "导入",
 		"importing": "导入中…",
 		"installed": "已安装",
-		"libraryError": "加载技能库失败"
+		"libraryError": "加载技能库失败",
+		"searchPlaceholder": "按名称、描述或分类搜索…",
+		"uncategorized": "未分类",
+		"noResults": "无匹配技能"
+	},
+	"presets": {
+		"simpleModeHeader": "开箱即用 · 选一个开始",
+		"searchPlaceholder": "搜索预设…",
+		"uncategorized": "未分类",
+		"noResults": "无匹配预设",
+		"opening": "正在打开…"
 	},
 	"settings": {
 		"title": "设置",

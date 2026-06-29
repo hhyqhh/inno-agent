@@ -2,5 +2,6 @@
 	"id": "scenario-explain",
 	"name": "情景化讲题",
 	"description": "把题目放进贴近生活的情景中讲解:拆解思路、分步引导、生成同类变式与练习。",
-	"icon": "lightbulb"
+	"icon": "lightbulb",
+	"category": "教学"
 }

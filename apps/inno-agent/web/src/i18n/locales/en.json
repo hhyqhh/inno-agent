@@ -314,7 +314,17 @@
 		"import": "Import",
 		"importing": "Importing…",
 		"installed": "Installed",
-		"libraryError": "Failed to load skills library"
+		"libraryError": "Failed to load skills library",
+		"searchPlaceholder": "Search by name, description, or category…",
+		"uncategorized": "Uncategorized",
+		"noResults": "No matching skills"
+	},
+	"presets": {
+		"simpleModeHeader": "Ready to go · pick one to start",
+		"searchPlaceholder": "Search presets…",
+		"uncategorized": "Uncategorized",
+		"noResults": "No matching presets",
+		"opening": "Opening…"
 	},
 	"settings": {
 		"title": "Settings",

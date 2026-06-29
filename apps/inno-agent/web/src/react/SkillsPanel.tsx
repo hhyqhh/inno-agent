@@ -17,13 +17,14 @@ import { cpp } from "@codemirror/lang-cpp";
 import { rust } from "@codemirror/lang-rust";
 import { go } from "@codemirror/lang-go";
 import type { Extension } from "@codemirror/state";
-import { RefreshCw, Upload, Trash2, ChevronLeft, File, FileText, FileType, Folder, FolderOpen, Globe, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Library, Download, Check, FileCode2 } from "lucide-react";
+import { RefreshCw, Upload, Trash2, ChevronLeft, File, FileText, FileType, Folder, FolderOpen, Globe, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Library, Download, Check, FileCode2, Search } from "lucide-react";
 import { skillsStore } from "../stores/skills-store.js";
 import { skillRawUrl } from '../api/skills.js';
 import type { SkillInfo } from "../types/skills.js";
 import type { WorkspaceFileDetail, WorkspaceFileKind } from "../types/workspace.js";
 import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
+import { groupByCategory, matchesQuery } from "../utils/category-grouping.js";
 import { useStoreSnapshot } from "./hooks.js";
 import "@earendil-works/pi-web-ui";
 import "@uiw/react-md-editor/markdown-editor.css";
@@ -381,6 +382,14 @@ function SkillLibraryModal({ onClose }: { onClose: () => void }) {
 		error: skillsStore.libraryError,
 		importing: skillsStore.importing,
 	}));
+	const [query, setQuery] = useState("");
+
+	const uncategorizedLabel = t("skills.uncategorized");
+	const groups = useMemo(
+		() => groupByCategory(state.library.filter((item) => matchesQuery(item, query)), uncategorizedLabel),
+		[state.library, query, uncategorizedLabel],
+	);
+	const totalMatched = useMemo(() => groups.reduce((sum, [, items]) => sum + items.length, 0), [groups]);
 
 	return (
 		<div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
@@ -414,6 +423,27 @@ function SkillLibraryModal({ onClose }: { onClose: () => void }) {
 					</div>
 				</div>
 
+				{/* Search */}
+				<div className="flex items-center gap-2 border-b border-[var(--inno-border)] px-4 py-2">
+					<Search size={14} className="shrink-0 text-[var(--inno-text-subtle)]" />
+					<input
+						type="text"
+						value={query}
+						onChange={(e) => setQuery(e.target.value)}
+						placeholder={t("skills.searchPlaceholder")}
+						className="min-w-0 flex-1 bg-transparent text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:outline-none"
+					/>
+					{query ? (
+						<button
+							className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							onClick={() => setQuery("")}
+							title={t("common.clear", "Clear")}
+						>
+							<X size={12} />
+						</button>
+					) : null}
+				</div>
+
 				{state.error ? <div className="border-b border-[var(--inno-border)] bg-red-50 px-4 py-2 text-xs text-red-700">{state.error}</div> : null}
 
 				{/* Body */}
@@ -427,32 +457,43 @@ function SkillLibraryModal({ onClose }: { onClose: () => void }) {
 						<div className="flex h-full flex-col items-center justify-center py-12 text-center text-sm text-[var(--inno-text-muted)]">
 							{t("skills.libraryEmpty")}
 						</div>
+					) : totalMatched === 0 ? (
+						<div className="flex h-full flex-col items-center justify-center py-12 text-center text-sm text-[var(--inno-text-muted)]">
+							{t("skills.noResults")}
+						</div>
 					) : (
-						state.library.map((item) => {
-							const isImporting = state.importing.has(item.name);
-							return (
-								<div key={item.name} className="flex items-start gap-3 border-b border-[var(--inno-border)] px-4 py-3">
-									<div className="min-w-0 flex-1">
-										<div className="truncate text-sm font-medium text-[var(--inno-text)]">{item.name}</div>
-										{item.description && <div className="mt-0.5 line-clamp-3 text-xs leading-relaxed text-[var(--inno-text-muted)]">{item.description}</div>}
-									</div>
-									{item.installed ? (
-										<span className="flex shrink-0 items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 ring-1 ring-green-100">
-											<Check size={12} /> {t("skills.installed")}
-										</span>
-									) : (
-										<button
-											disabled={isImporting}
-											className="flex h-7 shrink-0 items-center gap-1 rounded-md inno-primary-button px-2.5 text-xs text-white disabled:opacity-50"
-											onClick={() => void skillsStore.importFromLibrary(item.name)}
-										>
-											<Download size={12} />
-											{isImporting ? t("skills.importing") : t("skills.import")}
-										</button>
-									)}
+						groups.map(([category, items]) => (
+							<div key={category}>
+								<div className="sticky top-0 z-10 border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)]/95 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--inno-text-muted)] backdrop-blur">
+									{category} <span className="ml-1 text-[var(--inno-text-subtle)]">· {items.length}</span>
 								</div>
-							);
-						})
+								{items.map((item) => {
+									const isImporting = state.importing.has(item.name);
+									return (
+										<div key={item.name} className="flex items-start gap-3 border-b border-[var(--inno-border)] px-4 py-3">
+											<div className="min-w-0 flex-1">
+												<div className="truncate text-sm font-medium text-[var(--inno-text)]">{item.name}</div>
+												{item.description && <div className="mt-0.5 line-clamp-3 text-xs leading-relaxed text-[var(--inno-text-muted)]">{item.description}</div>}
+											</div>
+											{item.installed ? (
+												<span className="flex shrink-0 items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 ring-1 ring-green-100">
+													<Check size={12} /> {t("skills.installed")}
+												</span>
+											) : (
+												<button
+													disabled={isImporting}
+													className="flex h-7 shrink-0 items-center gap-1 rounded-md inno-primary-button px-2.5 text-xs text-white disabled:opacity-50"
+													onClick={() => void skillsStore.importFromLibrary(item.name)}
+												>
+													<Download size={12} />
+													{isImporting ? t("skills.importing") : t("skills.import")}
+												</button>
+											)}
+										</div>
+									);
+								})}
+							</div>
+						))
 					)}
 				</div>
 			</div>
@@ -473,6 +514,7 @@ export function SkillsPanel() {
 		error: skillsStore.error,
 		libraryOpen: skillsStore.libraryOpen,
 	}));
+	const [query, setQuery] = useState("");
 
 	useEffect(() => {
 		void skillsStore.load();
@@ -486,6 +528,13 @@ export function SkillsPanel() {
 	}
 
 	const activeSkill = state.selectedSkill ? state.skills.find((s) => s.name === state.selectedSkill) : null;
+
+	const uncategorizedLabel = t("skills.uncategorized");
+	const groups = useMemo(
+		() => groupByCategory(state.skills.filter((s) => matchesQuery(s, query)), uncategorizedLabel),
+		[state.skills, query, uncategorizedLabel],
+	);
+	const totalMatched = useMemo(() => groups.reduce((sum, [, items]) => sum + items.length, 0), [groups]);
 
 	// Detail view — file browser
 	if (activeSkill) {
@@ -520,6 +569,30 @@ export function SkillsPanel() {
 						</button>
 					</div>
 				</div>
+
+				{/* Search (visible when there's anything to search through) */}
+				{state.skills.length > 0 ? (
+					<div className="flex items-center gap-2 border-b border-[var(--inno-border)] px-3 py-2">
+						<Search size={13} className="shrink-0 text-[var(--inno-text-subtle)]" />
+						<input
+							type="text"
+							value={query}
+							onChange={(e) => setQuery(e.target.value)}
+							placeholder={t("skills.searchPlaceholder")}
+							className="min-w-0 flex-1 bg-transparent text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:outline-none"
+						/>
+						{query ? (
+							<button
+								className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+								onClick={() => setQuery("")}
+								title={t("common.clear", "Clear")}
+							>
+								<X size={12} />
+							</button>
+						) : null}
+					</div>
+				) : null}
+
 				{state.error ? <div className="border-b border-[var(--inno-border)] bg-red-50 px-3 py-2 text-xs text-red-700">{state.error}</div> : null}
 
 				{/* Skills list */}
@@ -534,9 +607,20 @@ export function SkillsPanel() {
 							<div className="text-base font-medium text-[var(--inno-text)]">{t("skills.empty")}</div>
 							<p className="mt-1 max-w-sm text-xs">{t("skills.emptyDesc")}</p>
 						</div>
+					) : totalMatched === 0 ? (
+						<div className="flex h-full flex-col items-center justify-center py-12 text-center text-sm text-[var(--inno-text-muted)]">
+							{t("skills.noResults")}
+						</div>
 					) : (
-						state.skills.map((skill) => (
-							<SkillRow key={skill.name} skill={skill} onClick={() => void skillsStore.selectSkill(skill.name)} />
+						groups.map(([category, items]) => (
+							<div key={category}>
+								<div className="sticky top-0 z-10 border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)]/95 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--inno-text-muted)] backdrop-blur">
+									{category} <span className="ml-1 text-[var(--inno-text-subtle)]">· {items.length}</span>
+								</div>
+								{items.map((skill) => (
+									<SkillRow key={skill.name} skill={skill} onClick={() => void skillsStore.selectSkill(skill.name)} />
+								))}
+							</div>
 						))
 					)}
 				</div>

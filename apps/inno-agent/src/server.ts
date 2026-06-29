@@ -928,6 +928,8 @@ interface SkillLibraryItem {
 	description: string;
 	/** Whether a skill with this slug already exists locally. */
 	installed: boolean;
+	/** Optional `category` from SKILL.md frontmatter; surfaces grouping in the UI. */
+	category?: string;
 }
 
 let contentSource: RemoteContentSource | null = null;
@@ -957,33 +959,41 @@ function invalidateContentSource(): void {
 }
 
 /**
- * Extract the `description` field from a SKILL.md frontmatter block. Supports
- * both single-line and YAML folded/literal block scalars (`>-`, `|`).
+ * Extract the `description` and `category` fields from a SKILL.md frontmatter
+ * block. Supports both single-line and YAML folded/literal block scalars
+ * (`>-`, `|`). Returns `""` for any missing field.
  */
-function extractFrontmatterDescription(content: string): string {
+function extractFrontmatterFields(content: string): { description: string; category: string } {
 	const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 	const fmMatch = normalized.match(/^---\n([\s\S]*?)\n---/);
-	if (!fmMatch) return "";
+	if (!fmMatch) return { description: "", category: "" };
 	const lines = fmMatch[1].split("\n");
-	for (let i = 0; i < lines.length; i++) {
-		const m = lines[i].match(/^description:\s*(.*)$/);
-		if (!m) continue;
-		const inline = m[1].trim();
-		// Block scalar (>- , |, > , |- ...) → gather indented continuation lines.
-		if (/^[>|][+-]?\s*$/.test(inline)) {
-			const block: string[] = [];
-			for (let j = i + 1; j < lines.length; j++) {
-				if (/^\s+\S/.test(lines[j]) || lines[j].trim() === "") {
-					block.push(lines[j].trim());
-				} else {
-					break;
+	const extractField = (key: string): string => {
+		const re = new RegExp(`^${key}:\\s*(.*)$`);
+		for (let i = 0; i < lines.length; i++) {
+			const m = lines[i].match(re);
+			if (!m) continue;
+			const inline = m[1].trim();
+			// Block scalar (>- , |, > , |- ...) → gather indented continuation lines.
+			if (/^[>|][+-]?\s*$/.test(inline)) {
+				const block: string[] = [];
+				for (let j = i + 1; j < lines.length; j++) {
+					if (/^\s+\S/.test(lines[j]) || lines[j].trim() === "") {
+						block.push(lines[j].trim());
+					} else {
+						break;
+					}
 				}
+				return block.join(" ").replace(/\s+/g, " ").trim();
 			}
-			return block.join(" ").replace(/\s+/g, " ").trim();
+			return inline.replace(/^["']|["']$/g, "").trim();
 		}
-		return inline.replace(/^["']|["']$/g, "").trim();
-	}
-	return "";
+		return "";
+	};
+	return {
+		description: extractField("description"),
+		category: extractField("category"),
+	};
 }
 
 /**
@@ -1004,13 +1014,19 @@ async function listSkillLibrary(forceRefresh = false): Promise<SkillLibraryItem[
 		items.map(async (item): Promise<SkillLibraryItem> => {
 			// Prefer inline meta (bundle service); otherwise read SKILL.md frontmatter.
 			let description = typeof item.meta?.description === "string" ? item.meta.description : "";
-			if (!description) {
+			let category = typeof item.meta?.category === "string" ? item.meta.category.trim() : "";
+			if (!description || !category) {
 				const md = await source.readItemTextFile("skills", item.name, "SKILL.md");
-				if (md) description = extractFrontmatterDescription(md);
+				if (md) {
+					const fields = extractFrontmatterFields(md);
+					if (!description) description = fields.description;
+					if (!category) category = fields.category;
+				}
 			}
 			return {
 				name: item.name,
 				description,
+				category: category || undefined,
 				installed: localNames.has(slugifySkillName(item.name)),
 			};
 		}),
@@ -1123,9 +1139,11 @@ function listProjectSkills(): unknown[] {
 			const content = existsSync(filePath) ? readText(filePath) : "";
 			const stat = existsSync(filePath) ? statSync(filePath) : statSync(join(skillsDir, name));
 			const loadedSkill = loadedByPath.get(resolve(filePath));
+			const fields = extractFrontmatterFields(content);
 			return {
 				name,
-				description: extractFrontmatterDescription(content),
+				description: fields.description,
+				category: fields.category || undefined,
 				enabled: !disabled.has(name),
 				loaded: Boolean(loadedSkill),
 				filePath: relative(paths.workspaceDir, filePath),

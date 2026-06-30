@@ -96,10 +96,10 @@ export function PageView() {
 					/>
 				</div>
 				<div className="flex gap-2 border-t border-[var(--inno-border)] p-3">
-					<button className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={() => void notebookStore.savePage()}>
+					<button className="rounded-full inno-primary-button px-3 py-1.5 text-sm text-white" onClick={() => void notebookStore.savePage()}>
 						{t("common.save")}
 					</button>
-					<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={() => notebookStore.cancelEditing()}>
+					<button className="rounded-full bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={() => notebookStore.cancelEditing()}>
 						{t("common.cancel")}
 					</button>
 				</div>
@@ -114,10 +114,10 @@ export function PageView() {
 				<markdown-artifact content={normalizeMarkdownMath(parsed.body)} />
 			</div>
 			<div className="flex gap-2 border-t border-[var(--inno-border)] p-3">
-				<button className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={() => notebookStore.startEditing()}>
+				<button className="rounded-full inno-primary-button px-3 py-1.5 text-sm text-white" onClick={() => notebookStore.startEditing()}>
 					{t("common.edit")}
 				</button>
-				<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={() => notebookStore.setView("graph")}>
+				<button className="rounded-full bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={() => notebookStore.setView("graph")}>
 					{t("notebook.page.backToGraph")}
 				</button>
 			</div>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Tree, type NodeRendererProps, type TreeApi, type CreateHandler, type RenameHandler, type DeleteHandler, type MoveHandler } from "react-arborist";
+import { Tree, type NodeRendererProps, type TreeApi, type NodeApi, type CreateHandler, type RenameHandler, type DeleteHandler, type MoveHandler } from "react-arborist";
 import MDEditor from "@uiw/react-md-editor";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
@@ -226,8 +226,7 @@ function OfficePreview({ file }: { file: WorkspaceFileDetail }) {
 			<div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-[var(--inno-text-muted)]">
 				<div className="font-medium text-[var(--inno-text)]">{file.name}</div>
 				<div className="text-xs text-red-500">{error}</div>
-				<button className="flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" onClick={downloadOriginal}>
-					<Download size={12} />
+				<button className="flex items-center gap-1 rounded-full border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" onClick={downloadOriginal}>
 					{t("files.download", "Download")}
 				</button>
 			</div>
@@ -240,8 +239,7 @@ function OfficePreview({ file }: { file: WorkspaceFileDetail }) {
 				<div className="text-xs text-[var(--inno-text-muted)]">
 					{t("preview.officeNote", "Text extracted for preview · formatting may differ")} · {t("preview.pageCount", "{{count}} pages", { count: data?.pageCount ?? pages.length })}
 				</div>
-				<button className="flex shrink-0 items-center gap-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" onClick={downloadOriginal}>
-					<Download size={12} />
+				<button className="flex shrink-0 items-center gap-1 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" onClick={downloadOriginal}>
 					{t("files.download", "Download")}
 				</button>
 			</div>
@@ -308,10 +306,9 @@ function Preview({ file, isLoading }: { file: WorkspaceFileDetail; isLoading: bo
 				<div className="text-lg font-medium text-[var(--inno-text)]">{file.name}</div>
 				<div>{t("preview.binaryFile")} · {formatSize(file.size)}</div>
 				<button
-					className="mt-2 flex items-center gap-1.5 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
+					className="mt-2 flex items-center gap-1.5 rounded-full border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
 					onClick={() => workspaceStore.openAsText()}
 				>
-					<FileCode2 size={13} />
 					{t("preview.openAsText", "Open as Text")}
 				</button>
 			</div>
@@ -394,7 +391,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 		return (
 			<div className="flex h-full flex-col">
 				{/* Editor toolbar */}
-				<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
+				<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2">
 					<div className="min-w-0">
 						<div className="truncate text-sm font-medium">{state.file.name}</div>
 						<div className="truncate text-[10px] text-[var(--inno-text-muted)]">{t("files.editing", "Editing")} · {state.file.path}</div>
@@ -402,18 +399,16 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 					<div className="flex items-center gap-1.5">
 						<button
 							disabled={state.isSaving}
-							className="flex h-7 items-center gap-1 rounded-md inno-primary-button px-2.5 text-xs text-white disabled:opacity-50"
+							className="flex h-7 items-center gap-1 rounded-full inno-primary-button px-2.5 text-xs text-white disabled:opacity-50"
 							onClick={() => void workspaceStore.saveFile()}
 						>
-							<Save size={12} />
 							{t("common.save", "Save")}
 						</button>
 						<button
 							disabled={state.isSaving}
-							className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
+							className="flex h-7 items-center gap-1 rounded-full inno-primary-button px-2.5 text-xs text-white disabled:opacity-50"
 							onClick={() => workspaceStore.cancelEditing()}
 						>
-							<X size={12} />
 							{t("common.cancel", "Cancel")}
 						</button>
 					</div>
@@ -433,10 +428,10 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 	// Read-only view
 	return (
 		<div className="flex h-full flex-col">
-			<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
+			<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2">
 				<div className="flex min-w-0 flex-1 items-center gap-2">
 					<button
-						className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+						className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-accent-soft)] hover:text-[var(--inno-accent)] disabled:opacity-40"
 						onClick={onToggleSidebar}
 						title={sidebarOpen ? t("common.collapseSidebar", "Collapse sidebar") : t("common.expandSidebar", "Expand sidebar")}
 					>
@@ -453,10 +448,9 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 					{state.file && !simpleMode ? <RunButton filePath={state.file.path} /> : null}
 					{canEdit && (
 						<button
-							className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							className="flex h-7 items-center gap-1 rounded-full inno-primary-button px-2.5 text-xs text-white disabled:opacity-50"
 							onClick={() => workspaceStore.startEditing()}
 						>
-							<Pencil size={12} />
 							{t("common.edit", "Edit")}
 						</button>
 					)}
@@ -471,17 +465,79 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 	);
 }
 
+/* ---------- Tree line config ---------- */
+
+type LineType = "full" | "half" | "corner" | "none";
+
+interface LineConfig {
+  type: LineType;
+  /** For "corner" type: whether to draw the vertical continuation below the corner. */
+  showContinuation: boolean;
+}
+
+/**
+ * Compute which type of tree-line stroke to render for every indent column.
+ *
+ * Rules:
+ * - Each indent column maps to one entry in the returned array (length = node.level).
+ * - The *last* entry is always a "corner" (L-shaped connector with rounded curve).
+ * - Earlier entries are "full" (trunk line through the whole row height) or
+ *   "none" (no line — used when the ancestor at that depth is the last child
+ *   of *its* parent, so no further siblings follow).
+ * - The corner's `showContinuation` is true only when the current node is *not*
+ *   the last child — i.e. the vertical trunk should continue below this row.
+ */
+function getLineConfigs(node: NodeApi<ArboristNode>): LineConfig[] {
+  const level = node.level;
+  if (level === 0) return [];
+
+  // Determine whether the node at each depth is the last child of its parent.
+  const lastChildAtLevel = new Map<number, boolean>();
+
+  // Current node
+  if (node.parent?.children?.length) {
+    const sibs = node.parent.children;
+    lastChildAtLevel.set(level, node.id === sibs[sibs.length - 1].id);
+  }
+
+  // Walk up the ancestors
+  let cursor: NodeApi<ArboristNode> | null = node.parent;
+  while (cursor) {
+    if (cursor.parent?.children?.length) {
+      const sibs = cursor.parent.children;
+      lastChildAtLevel.set(cursor.level, cursor.id === sibs[sibs.length - 1].id);
+    }
+    cursor = cursor.parent;
+  }
+
+  const configs: LineConfig[] = [];
+  for (let i = 0; i < level; i++) {
+    if (i === level - 1) {
+      // Direct parent → rounded L-corner
+      const isCurrentLast = lastChildAtLevel.get(level) ?? true;
+      configs.push({ type: "corner", showContinuation: !isCurrentLast });
+    } else {
+      // Ancestor trunk — full line unless the next-level ancestor is the last child
+      const isNextLast = lastChildAtLevel.get(i + 1) ?? false;
+      configs.push({ type: isNextLast ? "none" : "full", showContinuation: false });
+    }
+  }
+
+  return configs;
+}
+
 /* ---------- Custom Node Renderer ---------- */
 
 function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 	const selected = node.isSelected;
 	const isDir = !node.isLeaf;
+	const level = node.level;
 
 	return (
 		<div
 			ref={dragHandle}
-			style={style}
-			className={`group flex items-center gap-1.5 rounded-md px-2 py-1 text-xs cursor-pointer select-none ${
+			style={{ ...style, height: "100%", paddingLeft: 8 }}
+			className={`group flex items-center gap-1.5 rounded-md pr-2 text-xs cursor-pointer select-none relative ${
 				selected
 					? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100"
 					: "text-[var(--inno-text-muted)] hover:bg-slate-100/85 hover:text-[var(--inno-text)]"
@@ -502,9 +558,65 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 				e.currentTarget.dispatchEvent(ev);
 			}}
 		>
+			{/* ── VSCode‑style tree lines ── */}
+			{(() => {
+				const configs = getLineConfigs(node);
+				if (configs.length === 0) return null;
+				return (
+					<div className="flex h-full shrink-0 items-center" style={{ width: level * 16 }}>
+						{configs.map((cfg, idx) => (
+							<div key={idx} className="relative h-full shrink-0" style={{ width: 16 }}>
+								{cfg.type === "corner" ? (
+									<>
+										{/* 拐角 L 元素：border-left 提供竖线，border-bottom + 圆角提供曲线和水平线 */}
+										<div
+											className="absolute"
+											style={{
+												left: "50%",
+												top: 0,
+												bottom: "50%",
+												width: "calc(50% + 6px)",
+												borderLeft: "1px solid #CBD5E1",
+												borderBottom: "1px solid #CBD5E1",
+												borderBottomLeftRadius: 3,
+											}}
+										/>
+										{/* 下方竖线（仅非末子）：从 50% 处继续往下 */}
+										{cfg.showContinuation && (
+											<div
+												className="absolute"
+												style={{
+													left: "50%",
+													top: "calc(50% - 3px)",
+													bottom: 0,
+													borderLeft: "1px solid #CBD5E1",
+												}}
+											/>
+										)}
+									</>
+								) : cfg.type === "none" ? null : (
+									<div
+										className="absolute"
+										style={{
+											left: "50%",
+											top: 0,
+											...(cfg.type === "half" ? { height: "50%" } : { bottom: 0 }),
+											borderLeft: "1px solid #CBD5E1",
+										}}
+									/>
+								)}
+							</div>
+						))}
+					</div>
+				);
+			})()}
+
+			{/* 节点图标 */}
 			<span className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--inno-text-subtle)]">
 				{nodeIcon(node.data.name, isDir, node.isOpen)}
 			</span>
+
+			{/* 节点名称和输入框逻辑保持不变 */}
 			{node.isEditing ? (
 				<input
 					autoFocus
@@ -524,7 +636,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 			) : (
 				<>
 					<span className="min-w-0 flex-1 truncate">{node.data.name}</span>
-					{node.isLeaf && <span className="text-[10px] opacity-50">{formatSize(node.data.size)}</span>}
+					{node.isLeaf && <span className="text-[10px] opacity-50 pl-1">{formatSize(node.data.size)}</span>}
 				</>
 			)}
 		</div>
@@ -595,10 +707,10 @@ function DeleteConfirm({ paths, onConfirm, onCancel }: { paths: string[]; onConf
 					{names.length === 1 ? names[0] : `${names.length} items`}
 				</div>
 				<div className="flex justify-end gap-2">
-					<button className="rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]" onClick={onCancel}>
+					<button className="rounded-full border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]" onClick={onCancel}>
 						{t("common.cancel", "Cancel")}
 					</button>
-					<button className="rounded-md bg-red-500 px-3 py-1.5 text-xs text-white hover:bg-red-600" onClick={onConfirm}>
+					<button className="rounded-full bg-red-500 px-3 py-1.5 text-xs text-white hover:bg-red-600" onClick={onConfirm}>
 						{t("common.delete", "Delete")}
 					</button>
 				</div>
@@ -804,10 +916,10 @@ export function WorkspaceBrowser() {
 	const busy = state.isMutating || state.isLoadingTree;
 
 	return (
-		<div ref={rootRef} className={`grid h-full min-h-0 gap-3 bg-transparent p-3 transition-[grid-template-columns] duration-200 ${showContent ? (sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]") : "grid-cols-[minmax(0,1fr)]"}`}>
+		<div ref={rootRef} className={`grid h-full min-h-0 gap-0 bg-transparent p-0 transition-[grid-template-columns] duration-200 ${showContent ? (sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]") : "grid-cols-[minmax(0,1fr)]"}`}>
 			{/* --- Tree pane --- */}
 			<aside
-				className={`inno-workspace-card relative flex min-h-0 flex-col overflow-hidden rounded-lg transition-opacity duration-200 ${isDragOver ? "border-blue-400 bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+				className={`relative flex min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] transition-opacity duration-200 ${isDragOver ? "border-l border-t border-b border-[var(--inno-border)] bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
 				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
 				onDrop={handleDrop}
@@ -819,10 +931,10 @@ export function WorkspaceBrowser() {
 							{activeWorkspaceName || "工作区"}
 						</span>
 					</div>
-					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-violet-100 hover:text-violet-600 disabled:opacity-40" title={t("files.uploadSkill", "上传技能包 (.zip/.md) 到 .skills")} onClick={() => skillUploadRef.current?.click()}>
+					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-violet-100 hover:text-violet-600 disabled:opacity-40" title={t("files.uploadSkill", "上传技能包 (.zip/.md) 到 .skills")} onClick={() => skillUploadRef.current?.click()}>
 						<Sparkles size={13} />
 					</button>
-					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-slate-200 hover:text-[var(--inno-text)] disabled:opacity-40" title={t("preview.refresh", "Refresh")} onClick={() => void workspaceStore.loadTree()}>
+					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-slate-200 hover:text-[var(--inno-text)] disabled:opacity-40" title={t("preview.refresh", "Refresh")} onClick={() => void workspaceStore.loadTree()}>
 						<RefreshCw size={13} />
 					</button>
 					<input ref={skillUploadRef} type="file" multiple accept=".zip,application/zip,.md,text/markdown" className="hidden" onChange={handleSkillUploadChange} />
@@ -880,7 +992,7 @@ export function WorkspaceBrowser() {
 
 			{/* --- Preview / Edit pane --- */}
 			{showContent ? (
-				<section className="inno-workspace-card flex min-w-0 min-h-0 flex-col overflow-hidden rounded-lg">
+				<section className="flex min-w-0 min-h-0 flex-col overflow-hidden">
 					<div className="flex min-h-0 flex-1 flex-col">
 						<FileContentPane onToggleSidebar={() => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} />
 					</div>

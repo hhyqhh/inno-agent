@@ -20,7 +20,7 @@ function OptionRow({
 }) {
 	return (
 		<button
-			className={`flex w-full items-start gap-2.5 rounded-md border px-3 py-2 text-left text-[13px] transition-colors ${
+			className={`flex w-full items-start gap-2.5 rounded-full border px-3 py-2 text-left text-[13px] transition-colors ${
 				selected
 					? "border-blue-400 bg-[var(--inno-accent-soft)] text-[var(--inno-text)]"
 					: "border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text)] hover:border-[var(--inno-border-strong)] hover:bg-[var(--inno-surface-muted)]"
@@ -209,7 +209,7 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 						{questions.map((q, i) => (
 							<button
 								key={q.header}
-								className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+								className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
 									activeTab === i
 										? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
 										: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-slate-200"
@@ -234,7 +234,7 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 
 				<div className="mt-3 flex justify-end">
 					<button
-						className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${ allAnswered ? "inno-primary-button" : "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]" }`}
+						className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${ allAnswered ? "inno-primary-button" : "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]" }`}
 						disabled={!allAnswered}
 						onClick={handleSubmit}
 					>

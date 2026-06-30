@@ -5,6 +5,7 @@ import { Plus, Play, Pencil, ToggleLeft, ToggleRight, Trash2 } from "lucide-reac
 import { jobsStore } from "../stores/jobs-store.js";
 import type { CreateJobInput, ScheduledJob, TaskType } from "../types/jobs.js";
 import { useStoreSnapshot } from "./hooks.js";
+import ToggleSwitch from "./ToggleSwitch.js";
 import { ScheduleEditor } from "./jobs/ScheduleEditor.js";
 import {
 	DEFAULT_SCHEDULE,
@@ -164,15 +165,14 @@ export function JobsPanel() {
 	const previewLabel = humanizeSchedule(form.schedule, humanI18n);
 
 	return (
-		<div className="flex h-full flex-col p-3">
-			<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+		<div className="flex h-full flex-col p-0">
+			<div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--inno-surface)]">
 				<div className="flex items-center justify-between border-b border-[var(--inno-border)] px-3 py-3">
 					<div>
 						<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("jobs.title")}</h3>
 						<p className="text-xs text-[var(--inno-text-muted)]">{t("jobs.subtitle")}</p>
 					</div>
-					<button className="flex items-center gap-1 rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={openNewForm}>
-						<Plus size={14} />
+					<button className="flex items-center gap-1 rounded-full inno-primary-button px-3 py-1.5 text-sm text-white" onClick={openNewForm}>
 						{t("jobs.newJob")}
 					</button>
 				</div>
@@ -214,36 +214,32 @@ export function JobsPanel() {
 
 									<div className="mt-2 flex flex-wrap gap-1.5">
 										<button
-											className={`flex items-center gap-1 rounded-md inno-primary-button px-2 py-1 text-xs text-white ${isRunning ? "cursor-wait opacity-50" : ""}`}
+											className={`flex items-center gap-1 rounded-full inno-primary-button px-2 py-1 text-xs text-white ${isRunning ? "cursor-wait opacity-50" : ""}`}
 											disabled={isRunning}
 											title={t("jobs.actions.run")}
 											onClick={() => void jobsStore.run(job.id)}
 										>
-											<Play size={12} />
 											{isRunning ? t("jobs.actions.running") : t("jobs.actions.run")}
 										</button>
 										<button
-											className="flex items-center gap-1 rounded bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]"
+											className="flex items-center gap-1 rounded-full bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]"
 											title={t("jobs.actions.edit")}
 											onClick={() => openEditForm(job)}
 										>
-											<Pencil size={12} />
 											{t("jobs.actions.edit")}
 										</button>
 										<button
-											className="flex items-center gap-1 rounded bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]"
+											className="flex items-center gap-1 rounded-full bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]"
 											title={job.enabled ? t("jobs.actions.disable") : t("jobs.actions.enable")}
 											onClick={() => void jobsStore.update(job.id, { enabled: !job.enabled })}
 										>
-											{job.enabled ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
 											{job.enabled ? t("jobs.actions.disable") : t("jobs.actions.enable")}
 										</button>
 										<button
-											className="flex items-center gap-1 rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+											className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-red-600 hover:bg-red-50"
 											title={t("jobs.actions.delete")}
 											onClick={() => void jobsStore.remove(job.id)}
 										>
-											<Trash2 size={12} />
 											{t("jobs.actions.delete")}
 										</button>
 									</div>
@@ -327,26 +323,22 @@ export function JobsPanel() {
 								/>
 							</label>
 
-							<label className="flex items-center gap-2 text-sm text-[var(--inno-text)]">
-								<input
-									type="checkbox"
-									checked={form.enabled}
-									onChange={(event) => setForm({ ...form, enabled: event.target.checked })}
-								/>
-								{t("jobs.form.enabled")}
-							</label>
+								<label className="flex items-center gap-2 text-sm text-[var(--inno-text)]">
+									<ToggleSwitch checked={form.enabled} onChange={(v) => setForm({ ...form, enabled: v })} />
+									{t("jobs.form.enabled")}
+								</label>
 						</div>
 						<div className="mt-4 flex justify-end gap-2">
 							{formError ? <div className="mr-auto text-xs text-red-600">{formError}</div> : null}
 							<button
-								className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)] disabled:opacity-50"
+								className="rounded-full bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)] disabled:opacity-50"
 								disabled={isSaving}
 								onClick={() => setShowForm(false)}
 							>
 								{t("common.cancel")}
 							</button>
 							<button
-								className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50"
+								className="rounded-full inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50"
 								disabled={isSaving}
 								onClick={() => void saveForm()}
 							>

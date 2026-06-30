@@ -67,12 +67,10 @@ export function TerminalDrawer() {
 			<div className="flex h-8 items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-workspace-chrome)] px-2 text-xs text-[var(--inno-text-muted)]">
 				<button
 					onClick={toggle}
-					className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
+					className="flex items-center gap-1.5 rounded-full px-1.5 py-0.5 text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
 					title={term.isOpen ? "收起终端" : "展开终端"}
 				>
-					<TerminalIcon size={12} />
 					<span className="font-medium">终端</span>
-					{term.isOpen ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
 				</button>
 				<span
 					className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[term.status]}`}
@@ -86,7 +84,7 @@ export function TerminalDrawer() {
 						<>
 							<button
 								onClick={toggleHistory}
-								className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${showHistory ? "bg-[var(--inno-surface)] text-[var(--inno-text)] ring-1 ring-slate-200" : "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
+								className={`flex h-6 w-6 items-center justify-center rounded-full transition-colors ${showHistory ? "bg-[var(--inno-surface)] text-[var(--inno-text)] ring-1 ring-slate-200" : "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
 								title="历史"
 							>
 								<History size={12} />

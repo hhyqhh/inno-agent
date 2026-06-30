@@ -92,7 +92,7 @@ export function RunsPanel({ sessionId, onClose }: RunsPanelProps) {
 				</button>
 				<button
 					onClick={onClose}
-					className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
+					className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
 					title="关闭"
 				>
 					<X size={12} />
@@ -140,9 +140,8 @@ export function RunsPanel({ sessionId, onClose }: RunsPanelProps) {
 								<button
 									onClick={() => void handleArchive()}
 									disabled={archiveBusy}
-									className="flex h-6 items-center gap-1 rounded-md inno-primary-button px-2 text-[11px] font-medium text-white transition-colors disabled:opacity-50"
+									className="flex h-6 items-center gap-1 rounded-full inno-primary-button px-2 text-[11px] font-medium text-white transition-colors disabled:opacity-50"
 								>
-									<Archive size={11} />
 									{archiveBusy ? "归档中…" : "归档为笔记"}
 								</button>
 								{archiveMsg ? <span className="text-[10px] text-[var(--inno-text-muted)]">{archiveMsg}</span> : null}

@@ -42,22 +42,22 @@ export function Notebook() {
 	}, []);
 
 	return (
-		<div className={`grid h-full min-h-0 gap-3 p-3 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
-			<aside className={`flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
-				<div className="border-b border-[var(--inno-border)] p-2">
+		<div className={`grid h-full min-h-0 gap-0 p-0 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
+			<aside className={`flex h-full min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-surface)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+				<div className="flex items-center border-b border-[var(--inno-border)] px-2 py-2">
 					<input
 						type="text"
-						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+						className="h-7 w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
 						placeholder={t("notebook.search") ?? ""}
 						value={state.searchQuery}
 						onChange={(event) => notebookStore.setSearchQuery(event.target.value)}
 					/>
 				</div>
-				<div className="flex flex-wrap gap-1 border-b border-[var(--inno-border)] px-2 py-2">
+				<div className="flex flex-wrap items-center gap-1 border-b border-[var(--inno-border)] px-2 py-2">
 					{FILTER_TYPES.map((type) => (
 						<button
 							key={type}
-							className={`rounded-full px-2 py-0.5 text-xs transition-colors ${
+							className={`h-7 rounded-full px-2.5 text-xs transition-colors ${
 								state.filterType === type
 									? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100"
 									: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]"
@@ -93,11 +93,11 @@ export function Notebook() {
 				</div>
 			</aside>
 
-			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-surface)]">
 				<div className="@container flex items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2">
 					<div className="flex items-center gap-2">
 						<button
-							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 							onClick={() => setSidebarOpen((v) => !v)}
 							title={sidebarOpen ? t("common.collapseSidebar", "Collapse sidebar") : t("common.expandSidebar", "Expand sidebar")}
 						>
@@ -105,7 +105,7 @@ export function Notebook() {
 						</button>
 						<div className="inline-flex rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-0.5 text-xs">
 							<button
-								className={`inline-flex items-center gap-1 rounded px-3 py-1 ${state.view === "graph" ? "bg-[var(--inno-surface)] shadow text-[var(--inno-text)]" : "text-[var(--inno-text-muted)]"}`}
+								className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${state.view === "graph" ? "bg-[var(--inno-surface)] shadow text-[var(--inno-text)]" : "text-[var(--inno-text-muted)]"}`}
 								onClick={() => notebookStore.setView("graph")}
 								title={t("notebook.view.graph")}
 							>
@@ -113,7 +113,7 @@ export function Notebook() {
 								<span className="hidden @[680px]:inline">{t("notebook.view.graph")}</span>
 							</button>
 							<button
-								className={`inline-flex items-center gap-1 rounded px-3 py-1 ${state.view === "page" ? "bg-[var(--inno-surface)] shadow text-[var(--inno-text)]" : "text-[var(--inno-text-muted)]"}`}
+								className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${state.view === "page" ? "bg-[var(--inno-surface)] shadow text-[var(--inno-text)]" : "text-[var(--inno-text-muted)]"}`}
 								onClick={() => notebookStore.setView("page")}
 								title={t("notebook.view.page")}
 							>

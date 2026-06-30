@@ -26,6 +26,7 @@ import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { groupByCategory, matchesQuery } from "../utils/category-grouping.js";
 import { useStoreSnapshot } from "./hooks.js";
+import ToggleSwitch from "./ToggleSwitch.js";
 import "@earendil-works/pi-web-ui";
 import "@uiw/react-md-editor/markdown-editor.css";
 import "@uiw/react-markdown-preview/markdown.css";
@@ -115,10 +116,9 @@ function FilePreview({ file, skillName, isLoading }: { file: WorkspaceFileDetail
 				<div className="text-lg font-medium text-[var(--inno-text)]">{file.name}</div>
 				<div>{t("preview.binaryFile", "Binary file")} · {formatSize(file.size)}</div>
 				<button
-					className="mt-2 flex items-center gap-1.5 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
+					className="mt-2 flex items-center gap-1.5 rounded-full border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
 					onClick={() => skillsStore.openAsText()}
 				>
-					<FileCode2 size={13} />
 					{t("preview.openAsText", "Open as Text")}
 				</button>
 			</div>
@@ -194,7 +194,7 @@ function SkillFilePane({ skillName, onToggleSidebar, sidebarOpen }: { skillName:
 			<div className="flex h-full flex-col">
 				<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
 					<div className="flex min-w-0 flex-1 items-center gap-2">
-						<button className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onToggleSidebar}>
+						<button className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onToggleSidebar}>
 							{sidebarOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
 						</button>
 						<div className="min-w-0">
@@ -203,11 +203,9 @@ function SkillFilePane({ skillName, onToggleSidebar, sidebarOpen }: { skillName:
 						</div>
 					</div>
 					<div className="flex items-center gap-1.5">
-						<button disabled={state.isSaving} className="flex h-7 items-center gap-1 rounded-md inno-primary-button px-2.5 text-xs text-white disabled:opacity-50" onClick={() => void skillsStore.saveFile()}>
-							<Save size={12} /> {t("common.save", "Save")}
+						<button disabled={state.isSaving} className="flex h-7 items-center gap-1 rounded-full inno-primary-button px-2.5 text-xs text-white disabled:opacity-50" onClick={() => void skillsStore.saveFile()}>
 						</button>
-						<button disabled={state.isSaving} className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50" onClick={() => skillsStore.cancelEditing()}>
-							<X size={12} /> {t("common.cancel", "Cancel")}
+						<button disabled={state.isSaving} className="flex h-7 items-center gap-1 rounded-full border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50" onClick={() => skillsStore.cancelEditing()}>
 						</button>
 					</div>
 				</div>
@@ -230,7 +228,7 @@ function SkillFilePane({ skillName, onToggleSidebar, sidebarOpen }: { skillName:
 		<div className="flex h-full flex-col">
 			<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
 				<div className="flex min-w-0 flex-1 items-center gap-2">
-					<button className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onToggleSidebar}>
+					<button className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onToggleSidebar}>
 						{sidebarOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
 					</button>
 					<div className="min-w-0">
@@ -241,8 +239,7 @@ function SkillFilePane({ skillName, onToggleSidebar, sidebarOpen }: { skillName:
 					</div>
 				</div>
 				{canEdit && (
-					<button className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => skillsStore.startEditing()}>
-						<Pencil size={12} /> {t("common.edit", "Edit")}
+					<button className="flex h-7 items-center gap-1 rounded-full border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => skillsStore.startEditing()}>
 					</button>
 				)}
 			</div>
@@ -288,12 +285,12 @@ function SkillDetail({ skill, onBack }: { skill: SkillInfo; onBack: () => void }
 	}, [state.skillTree]);
 
 	return (
-		<div className={`grid h-full min-h-0 gap-3 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[240px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
+		<div className={`grid h-full min-h-0 gap-0 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[240px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
 			{/* File tree sidebar */}
-			<aside className={`flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+			<aside className={`flex min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-surface)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
 				{/* Skill header */}
 				<div className="flex items-center gap-2 border-b border-[var(--inno-border)] px-2 py-2">
-					<button className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onBack}>
+					<button className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onBack}>
 						<ChevronLeft size={16} />
 					</button>
 					<div className="min-w-0 flex-1">
@@ -308,15 +305,12 @@ function SkillDetail({ skill, onBack }: { skill: SkillInfo; onBack: () => void }
 
 				{/* Toolbar */}
 				<div className="flex items-center gap-1 border-b border-[var(--inno-border)] px-2 py-1.5">
-					<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
-						<input type="checkbox" className="h-3.5 w-3.5" checked={skill.enabled} onChange={(e) => void skillsStore.setEnabled(skill.name, e.target.checked)} />
-						{t("common.enable", "Enable")}
-					</label>
+					<ToggleSwitch checked={skill.enabled} onChange={(v) => void skillsStore.setEnabled(skill.name, v)} />
 					<div className="flex-1" />
-					<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-slate-200 hover:text-[var(--inno-text)]" title={t("preview.refresh", "Refresh")} onClick={() => void skillsStore.refreshTree()}>
+					<button className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-slate-200 hover:text-[var(--inno-text)]" title={t("preview.refresh", "Refresh")} onClick={() => void skillsStore.refreshTree()}>
 						<RefreshCw size={12} />
 					</button>
-					<button className="flex h-6 w-6 items-center justify-center rounded text-red-400 hover:bg-red-50 hover:text-red-600" title={t("common.delete", "Delete")} onClick={() => { void skillsStore.remove(skill.name); onBack(); }}>
+					<button className="flex h-6 w-6 items-center justify-center rounded-full text-red-400 hover:bg-red-50 hover:text-red-600" title={t("common.delete", "Delete")} onClick={() => { void skillsStore.remove(skill.name); onBack(); }}>
 						<Trash2 size={12} />
 					</button>
 				</div>
@@ -347,7 +341,7 @@ function SkillDetail({ skill, onBack }: { skill: SkillInfo; onBack: () => void }
 			</aside>
 
 			{/* File content pane */}
-			<section className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+			<section className="flex min-w-0 min-h-0 flex-col overflow-hidden bg-[var(--inno-surface)]">
 				<SkillFilePane skillName={skill.name} onToggleSidebar={() => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} />
 			</section>
 		</div>
@@ -408,14 +402,14 @@ function SkillLibraryModal({ onClose }: { onClose: () => void }) {
 					</div>
 					<div className="flex shrink-0 items-center gap-1">
 						<button
-							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 							title={t("skills.reload")}
 							onClick={() => void skillsStore.loadLibrary(true)}
 						>
 							<RefreshCw size={14} />
 						</button>
 						<button
-							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 							onClick={onClose}
 						>
 							<X size={16} />
@@ -539,7 +533,7 @@ export function SkillsPanel() {
 	// Detail view — file browser
 	if (activeSkill) {
 		return (
-			<div className="flex h-full flex-col p-3">
+			<div className="flex h-full flex-col p-0">
 				<div className="flex min-h-0 flex-1 flex-col overflow-hidden">
 					<SkillDetail skill={activeSkill} onBack={() => skillsStore.deselectSkill()} />
 				</div>
@@ -549,8 +543,8 @@ export function SkillsPanel() {
 
 	// List view — one skill per row
 	return (
-		<div className="relative flex h-full flex-col p-3">
-			<div className="@container/skillspanel flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+		<div className="relative flex h-full flex-col p-0">
+			<div className="@container/skillspanel flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--inno-surface)]">
 				{/* Toolbar */}
 				<div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b border-[var(--inno-border)] px-3 py-2">
 					<h3 className="min-w-0 truncate text-sm font-medium text-[var(--inno-text)]">{t("skills.title")}</h3>

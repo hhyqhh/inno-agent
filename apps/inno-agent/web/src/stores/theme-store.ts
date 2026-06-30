@@ -1,16 +1,13 @@
 import { EventEmitter } from "./event-emitter.js";
 
-export type ThemeId = "light" | "warm" | "ocean" | "innospark";
+export type ThemeId = "innospark";
 
-export const THEME_IDS: ThemeId[] = ["light", "innospark", "warm", "ocean"];
+export const THEME_IDS: ThemeId[] = ["innospark"];
 const DARK_THEMES: Set<ThemeId> = new Set();
 const STORAGE_KEY = "inno.theme";
 
 /** Preview swatch colors for the theme picker UI. */
 export const THEME_PREVIEW_COLORS: Record<ThemeId, string> = {
-	light: "#f1f1f2",
-	warm: "#faf8f5",
-	ocean: "#f0f4f8",
 	innospark: "#555aff",
 };
 
@@ -25,7 +22,7 @@ function isValidTheme(v: string | null): v is ThemeId {
 function getInitialTheme(): ThemeId {
 	const saved = localStorage.getItem(STORAGE_KEY);
 	if (isValidTheme(saved)) return saved;
-	return "light";
+	return "innospark";
 }
 
 function applyThemeToDOM(id: ThemeId): void {

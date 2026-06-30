@@ -89,7 +89,7 @@ export class SessionSidebar extends LitElement {
 		const active = this._currentSessionId === session.id;
 		return html`
 			<button
-				class="w-full text-left rounded-md px-2.5 py-2.5 mb-1.5 transition-colors border
+				class="w-full text-left rounded-full px-2.5 py-2.5 mb-1.5 transition-colors border
 					${active
 						? "bg-[var(--inno-sidebar-active)] text-[var(--inno-text)] border-black/5"
 						: "border-transparent text-[var(--inno-text)] hover:bg-black/[0.055] hover:text-[var(--inno-text)]"}"
@@ -124,7 +124,7 @@ export class SessionSidebar extends LitElement {
 		const channel = session.channels[0] ?? "unknown";
 		return html`
 			<button
-				class="relative mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-md border text-[11px] font-medium transition-colors
+				class="relative mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-full border text-[11px] font-medium transition-colors
 					${active ? "border-black/5 bg-[var(--inno-sidebar-active)] text-[var(--inno-text)]" : "border-black/10 bg-white/70 text-[var(--inno-text-muted)] hover:bg-black/[0.055] hover:text-[var(--inno-text)]"}"
 				title="${session.name} · ${this._channelLabel(channel)}"
 				@click=${() => {
@@ -143,14 +143,14 @@ export class SessionSidebar extends LitElement {
 			return html`
 				<div class="flex h-full flex-col items-center border-r border-black/10 bg-[var(--inno-sidebar-bg)] py-2">
 					<button
-						class="mb-2 flex h-9 w-9 items-center justify-center rounded-md inno-primary-button text-white text-lg"
+						class="mb-2 flex h-9 w-9 items-center justify-center rounded-full inno-primary-button text-white text-lg"
 						title="New chat"
 						@click=${() => this._newChat()}
 					>
 						+
 					</button>
 					<button
-						class="mb-2 flex h-9 w-9 items-center justify-center rounded-md border border-black/10 bg-white/70 text-sm text-[var(--inno-text-muted)] hover:bg-black/[0.055] hover:text-[var(--inno-text)]"
+						class="mb-2 flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/70 text-sm text-[var(--inno-text-muted)] hover:bg-black/[0.055] hover:text-[var(--inno-text)]"
 						title="Expand sessions"
 						@click=${() => appStore.setSidebarCollapsed(false)}
 					>
@@ -177,7 +177,7 @@ export class SessionSidebar extends LitElement {
 						<p class="text-xs text-[var(--inno-text-muted)] mt-0.5">Personal Learning Workstation</p>
 					</div>
 					<button
-						class="h-8 w-8 shrink-0 rounded-md border border-black/10 bg-white/70 text-sm text-[var(--inno-text-muted)] hover:bg-black/[0.055] hover:text-[var(--inno-text)]"
+						class="h-8 w-8 shrink-0 rounded-full border border-black/10 bg-white/70 text-sm text-[var(--inno-text-muted)] hover:bg-black/[0.055] hover:text-[var(--inno-text)]"
 						title="Collapse sessions"
 						@click=${() => appStore.setSidebarCollapsed(true)}
 					>
@@ -192,7 +192,7 @@ export class SessionSidebar extends LitElement {
 					<h2 class="text-xs font-medium uppercase tracking-wide text-[var(--inno-text-muted)]">Chat Sessions</h2>
 					<div class="flex items-center gap-2">
 						<button
-							class="rounded-md inno-primary-button px-2 py-1 text-xs font-medium text-white"
+							class="rounded-full inno-primary-button px-2 py-1 text-xs font-medium text-white"
 							title="New chat"
 							@click=${() => this._newChat()}
 						>
@@ -219,7 +219,7 @@ export class SessionSidebar extends LitElement {
 			<!-- New chat button -->
 			<div class="p-2 border-t border-black/10">
 				<button
-					class="flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm w-full
+					class="flex items-center justify-center gap-2 px-3 py-2 rounded-full text-sm w-full
 						inno-primary-button text-white transition-colors"
 					@click=${() => this._newChat()}
 				>

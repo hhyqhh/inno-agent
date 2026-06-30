@@ -10,6 +10,7 @@ import type { InnoModelInfo, InnoProviderModel as ProviderModel, InnoSettings, C
 import type { WikiStats } from "../types/wiki.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { setLocale } from "../i18n/index.js";
+import ToggleSwitch from "./ToggleSwitch.js";
 
 const apiOptions = ["openai-completions", "openai-responses", "anthropic-messages"];
 
@@ -121,7 +122,7 @@ function ModelEditForm({ model, settings, onClose }: {
 		<div className="rounded-lg border border-[var(--inno-accent-soft)] bg-blue-50/50 p-3">
 			<div className="mb-2 flex items-center justify-between">
 				<span className="text-xs font-medium text-[var(--inno-text)]">{t("settings.editModel", "Edit Model")}</span>
-				<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={onClose}><X size={14} /></button>
+				<button className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={onClose}><X size={14} /></button>
 			</div>
 			<div className="grid grid-cols-2 gap-2">
 				<div>
@@ -160,16 +161,16 @@ function ModelEditForm({ model, settings, onClose }: {
 				</div>
 			</div>
 			<div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
-				<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
-				<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
-				<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.preserveApiKey} onChange={(e) => setForm({ ...form, preserveApiKey: e.target.checked })} /> {t("settings.form.preserveApiKey")}</label>
+				<label className="flex items-center gap-1.5"><ToggleSwitch checked={form.reasoning} onChange={(v) => setForm({ ...form, reasoning: v })} /> {t("settings.form.reasoning")}</label>
+				<label className="flex items-center gap-1.5"><ToggleSwitch checked={form.makeDefault} onChange={(v) => setForm({ ...form, makeDefault: v })} /> {t("settings.form.makeDefault")}</label>
+				<label className="flex items-center gap-1.5"><ToggleSwitch checked={form.preserveApiKey} onChange={(v) => setForm({ ...form, preserveApiKey: v })} /> {t("settings.form.preserveApiKey")}</label>
 			</div>
 			{formError ? <div className="mt-2 rounded bg-red-50 px-2 py-1 text-xs text-red-700">{formError}</div> : null}
 			<div className="mt-2 flex gap-2">
-				<button className="rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void handleSave()}>
+				<button className="rounded-full inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void handleSave()}>
 					{saving ? t("settings.savingProvider") : t("settings.saveProvider")}
 				</button>
-				<button className="rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" onClick={onClose}>
+				<button className="rounded-full border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" onClick={onClose}>
 					{t("common.cancel", "Cancel")}
 				</button>
 			</div>
@@ -256,19 +257,19 @@ function NewProviderForm() {
 	}
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+		<div className="border-b border-[var(--inno-border)] bg-[var(--inno-surface)]">
 			<button
 				className="flex w-full items-center justify-between px-4 py-3 text-left"
 				onClick={() => { setExpanded((v) => !v); setFormError(null); setSaveMessage(null); }}
 			>
 				<div className="flex items-center gap-2">
-					{expanded ? <ChevronDown size={14} className="text-[var(--inno-text-subtle)]" /> : <ChevronRight size={14} className="text-[var(--inno-text-subtle)]" />}
+					<ChevronRight size={14} className={`text-[var(--inno-text-subtle)] transition-transform ${expanded ? "rotate-90" : ""}`} />
 					<span className="text-sm font-medium text-[var(--inno-text)]">{t("settings.newProvider")}</span>
 				</div>
 				<Plus size={14} className="text-[var(--inno-text-subtle)]" />
 			</button>
 			{expanded && (
-				<div className="border-t border-[var(--inno-border)] px-4 pb-4 pt-3">
+				<div className="px-4 pb-4 pt-1">
 					<div className="grid grid-cols-2 gap-2">
 						<div>
 							<label className="mb-0.5 block text-[10px] text-[var(--inno-text-muted)]">{t("settings.form.providerId")}</label>
@@ -306,12 +307,12 @@ function NewProviderForm() {
 						</div>
 					</div>
 					<div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
-						<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
-						<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
+						<label className="flex items-center gap-1.5"><ToggleSwitch checked={form.reasoning} onChange={(v) => setForm({ ...form, reasoning: v })} /> {t("settings.form.reasoning")}</label>
+						<label className="flex items-center gap-1.5"><ToggleSwitch checked={form.makeDefault} onChange={(v) => setForm({ ...form, makeDefault: v })} /> {t("settings.form.makeDefault")}</label>
 					</div>
 					{formError ? <div className="mt-2 rounded bg-red-50 px-2 py-1 text-xs text-red-700">{formError}</div> : null}
 					{saveMessage ? <div className="mt-2 rounded bg-green-50 px-2 py-1 text-xs text-green-700">{saveMessage}</div> : null}
-					<button className="mt-3 rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void handleSave()}>
+					<button className="mt-3 rounded-full inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void handleSave()}>
 						{saving ? t("settings.savingProvider") : t("settings.saveProvider")}
 					</button>
 				</div>
@@ -464,16 +465,15 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 
 	const inputCls = "w-full rounded-md border border-[var(--inno-border)] px-2.5 py-1.5 text-xs";
 	const labelCls = "mb-0.5 block text-[10px] text-[var(--inno-text-muted)]";
-	const checkCls = "flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]";
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+		<div className="border-b border-[var(--inno-border)] bg-[var(--inno-surface)]">
 			<button
 				className="flex w-full items-center justify-between px-4 py-3 text-left"
 				onClick={() => { setExpanded((v) => !v); setFormError(null); setSaveMsg(null); }}
 			>
 				<div className="flex items-center gap-2">
-					{expanded ? <ChevronDown size={14} className="text-[var(--inno-text-subtle)]" /> : <ChevronRight size={14} className="text-[var(--inno-text-subtle)]" />}
+					<ChevronRight size={14} className={`text-[var(--inno-text-subtle)] transition-transform ${expanded ? "rotate-90" : ""}`} />
 					<span className="text-sm font-medium text-[var(--inno-text)]">{t("settings.channels.title")}</span>
 				</div>
 				<div className="flex items-center gap-2 text-xs text-[var(--inno-text-subtle)]">
@@ -483,7 +483,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 				</div>
 			</button>
 			{expanded && (
-				<div className="border-t border-[var(--inno-border)] px-4 pb-4 pt-3 grid gap-4">
+				<div className="px-4 pb-4 pt-1 grid gap-4">
 					{/* Feishu */}
 					<div className="rounded-lg border border-[var(--inno-border)] p-3">
 						<div className="mb-2 flex items-center justify-between">
@@ -491,8 +491,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.channels.feishu.title")}</div>
 								<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.channels.feishu.desc")}</div>
 							</div>
-							<label className={checkCls}>
-								<input type="checkbox" className="h-3.5 w-3.5" checked={feishuEnabled} onChange={(e) => setFeishuEnabled(e.target.checked)} />
+								<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
+								<ToggleSwitch checked={feishuEnabled} onChange={setFeishuEnabled} />
 								{t("settings.channels.enabled")}
 							</label>
 						</div>
@@ -507,8 +507,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 									<input className={inputCls} type="password" placeholder={t("settings.channels.feishu.appSecretHint") ?? ""} value={feishuAppSecret} onChange={(e) => setFeishuAppSecret(e.target.value)} />
 								</div>
 								<div className="col-span-2 flex items-center gap-3">
-									<label className={checkCls}>
-										<input type="checkbox" className="h-3.5 w-3.5" checked={feishuPersonalOnly} onChange={(e) => setFeishuPersonalOnly(e.target.checked)} />
+										<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
+										<ToggleSwitch checked={feishuPersonalOnly} onChange={setFeishuPersonalOnly} />
 										{t("settings.channels.personalOnly")}
 									</label>
 								</div>
@@ -527,8 +527,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.channels.qq.title")}</div>
 								<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.channels.qq.desc")}</div>
 							</div>
-							<label className={checkCls}>
-								<input type="checkbox" className="h-3.5 w-3.5" checked={qqEnabled} onChange={(e) => setQqEnabled(e.target.checked)} />
+								<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
+								<ToggleSwitch checked={qqEnabled} onChange={setQqEnabled} />
 								{t("settings.channels.enabled")}
 							</label>
 						</div>
@@ -539,8 +539,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 									<input className={inputCls} value={qqSidecarUrl} onChange={(e) => setQqSidecarUrl(e.target.value)} />
 								</div>
 								<div className="col-span-2 flex items-center gap-3">
-									<label className={checkCls}>
-										<input type="checkbox" className="h-3.5 w-3.5" checked={qqPersonalOnly} onChange={(e) => setQqPersonalOnly(e.target.checked)} />
+										<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
+										<ToggleSwitch checked={qqPersonalOnly} onChange={setQqPersonalOnly} />
 										{t("settings.channels.personalOnly")}
 									</label>
 								</div>
@@ -559,8 +559,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.channels.wechat.title")}</div>
 								<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.channels.wechat.desc")}</div>
 							</div>
-							<label className={checkCls}>
-								<input type="checkbox" className="h-3.5 w-3.5" checked={wechatEnabled} onChange={(e) => setWechatEnabled(e.target.checked)} />
+								<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
+								<ToggleSwitch checked={wechatEnabled} onChange={setWechatEnabled} />
 								{t("settings.channels.enabled")}
 							</label>
 						</div>
@@ -607,10 +607,9 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 									)}
 									{(!qrStatus || qrStatus === "confirmed" || qrStatus === "expired") && (
 										<button
-											className="flex items-center gap-1.5 rounded-md inno-primary-button px-3 py-1.5 text-xs text-white"
+											className="flex items-center gap-1.5 rounded-full inno-primary-button px-3 py-1.5 text-xs text-white"
 											onClick={() => void startQrLogin()}
 										>
-											<QrCodeIcon size={13} />
 											{wxConnected ? t("settings.channels.wechat.relogin") : t("settings.channels.wechat.scanLogin")}
 										</button>
 									)}
@@ -619,8 +618,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 									)}
 								</div>
 								<div className="flex items-center gap-3">
-									<label className={checkCls}>
-										<input type="checkbox" className="h-3.5 w-3.5" checked={wechatPersonalOnly} onChange={(e) => setWechatPersonalOnly(e.target.checked)} />
+										<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
+										<ToggleSwitch checked={wechatPersonalOnly} onChange={setWechatPersonalOnly} />
 										{t("settings.channels.personalOnly")}
 									</label>
 								</div>
@@ -651,7 +650,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 					{formError && <div className="rounded bg-red-50 px-2 py-1 text-xs text-red-700">{formError}</div>}
 					{saveMsg && <div className="rounded bg-green-50 px-2 py-1 text-xs text-green-700">{saveMsg}</div>}
 					<button
-						className="rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50 justify-self-start"
+						className="rounded-full inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50 justify-self-start"
 						disabled={saving}
 						onClick={() => void handleSave()}
 					>
@@ -721,9 +720,8 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 		: `${t("settings.contentHub.bundle", "自托管服务")} · ${baseUrl || "?"}`;
 
 	return (
-		<div className="min-w-0 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+		<div className="min-w-0 border-b border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
 			<button className="inno-settings-card-toggle flex w-full min-w-0 items-start gap-2 text-left" onClick={() => setOpen((v) => !v)}>
-				<Database size={16} className="mt-0.5 shrink-0 text-[var(--inno-text)]" />
 				<div className="min-w-0 flex-1">
 					<h4 className="break-words text-sm font-medium text-[var(--inno-text)]">{t("settings.contentHub.title", "内容源(技能库 + 预设)")}</h4>
 					<p className="mt-1 max-w-full break-words text-xs leading-relaxed text-[var(--inno-text-muted)]">
@@ -731,7 +729,6 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 					</p>
 					{!open && <p className="mt-1 break-all text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">{sourceLabel}</p>}
 				</div>
-				<ChevronDown size={14} className={`mt-1 shrink-0 text-[var(--inno-text-subtle)] transition-transform ${open ? "rotate-180" : ""}`} />
 			</button>
 
 			{open ? (
@@ -780,7 +777,7 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 						<button
 							disabled={saving}
 							onClick={() => void handleSave()}
-							className="flex h-8 shrink-0 items-center rounded-md inno-primary-button px-3 text-xs text-white disabled:opacity-50"
+							className="flex h-8 shrink-0 items-center rounded-full inno-primary-button px-3 text-xs text-white disabled:opacity-50"
 						>
 							{saving ? t("common.loading") : saved ? t("settings.github.saved", "已保存") : t("common.save")}
 						</button>
@@ -869,7 +866,7 @@ function MemorySettings({ settings }: { settings: InnoSettings }) {
 	];
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+		<div className="border-b border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
 			<h4 className="mb-3 text-sm font-medium text-[var(--inno-text)]">{t("settings.memorySection")}</h4>
 			{locked ? <p className="mb-3 text-xs text-amber-600">{t("settings.simpleMode.memoryLocked")}</p> : null}
 			<div className="grid gap-4">
@@ -916,7 +913,7 @@ function SimpleModeSettings({ settings }: { settings: InnoSettings }) {
 	}
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+		<div className="border-b border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
 			<div className="flex items-start justify-between gap-3">
 				<div className="min-w-0">
 					<h4 className="text-sm font-medium text-[var(--inno-text)]">{t("settings.simpleMode.title")}</h4>
@@ -963,10 +960,10 @@ export function SettingsPanel() {
 	const models = state.settings?.availableModels ?? state.settings?.configuredModels ?? [];
 
 	return (
-		<div className="h-full overflow-y-auto p-3">
-			<div className="grid gap-3">
+		<div className="h-full overflow-y-auto p-0">
+			<div className="grid gap-0">
 				{/* Status cards */}
-				<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+				<div className="border-b border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
 					<div className="mb-3 flex items-center justify-between">
 						<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("settings.title")}</h3>
 						<div className="flex items-center gap-2">
@@ -982,7 +979,7 @@ export function SettingsPanel() {
 									<option value="en">{t("settings.languageOptions.en")}</option>
 								</select>
 							</label>
-							<button className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void settingsStore.load()}>
+							<button className="rounded-full inno-primary-button px-3 py-1.5 text-sm" onClick={() => void settingsStore.load()}>
 								{t("settings.refresh")}
 							</button>
 						</div>
@@ -1010,7 +1007,7 @@ export function SettingsPanel() {
 				</div>
 
 				{/* Models */}
-				<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+				<div className="border-b border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
 					<h4 className="mb-3 text-sm font-medium text-[var(--inno-text)]">{t("settings.models")}</h4>
 					<div className="grid gap-2">
 						{models.map((model) => {
@@ -1037,14 +1034,14 @@ export function SettingsPanel() {
 									</div>
 									<div className="flex items-center gap-1.5">
 										<button
-											className="flex h-7 w-7 items-center justify-center rounded text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] group-hover:opacity-100"
+											className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] group-hover:opacity-100"
 											title={t("common.edit", "Edit")}
 											onClick={() => setEditingModel(key)}
 										>
 											<Pencil size={13} />
 										</button>
 										<button
-											className="flex h-7 w-7 items-center justify-center rounded text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+											className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
 											title={t("common.delete", "Delete")}
 											onClick={() => {
 												if (window.confirm(t("settings.confirmDelete", { id: `${model.provider}/${model.id}` }) ?? "")) {
@@ -1056,7 +1053,7 @@ export function SettingsPanel() {
 										</button>
 										{!current && (
 											<button
-												className="rounded-md border border-[var(--inno-border)] px-2.5 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+												className="rounded-full border border-[var(--inno-border)] px-2.5 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 												disabled={state.isSavingModel}
 												onClick={() => void settingsStore.switchModel(model.provider, model.id)}
 											>

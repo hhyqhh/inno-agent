@@ -240,7 +240,7 @@ export class ChatCenter extends LitElement {
 						@change=${this._handleFiles}
 					/>
 					<button
-						class="h-10 w-10 shrink-0 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
+						class="h-10 w-10 shrink-0 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
 						title="Upload files to L2 raw"
 						?disabled=${this._isSending || this._isUploading}
 						@click=${() => this._fileInputEl?.click()}
@@ -258,7 +258,7 @@ export class ChatCenter extends LitElement {
 						?disabled=${this._isSending || this._isUploading}
 					></textarea>
 					<button
-						class="h-10 rounded-lg px-3 text-sm font-medium transition-colors
+						class="h-10 rounded-full px-3 text-sm font-medium transition-colors
 							${this._isSending || this._isUploading
 								? "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] cursor-not-allowed"
 								: "bg-primary text-primary-foreground hover:bg-primary/90"}"

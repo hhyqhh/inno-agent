@@ -663,10 +663,10 @@ export function ChatCenter() {
 		<div className="inno-composer flex items-end gap-2 rounded-lg p-2">
 			<input ref={fileInputRef} id="file-input" type="file" className="hidden" multiple onChange={handleFiles} />
 			<input ref={imageInputRef} id="image-input" type="file" className="hidden" multiple accept="image/*" onChange={handleImageFiles} />
-			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title="Upload files to L2 raw" disabled={chat.isSending || isUploading} onClick={() => fileInputRef.current?.click()}>
+			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50" title="Upload files to L2 raw" disabled={chat.isSending || isUploading} onClick={() => fileInputRef.current?.click()}>
 				{isUploading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Paperclip size={18} />}
 			</button>
-			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title="Attach image" disabled={chat.isSending} onClick={() => imageInputRef.current?.click()}>
+			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50" title="Attach image" disabled={chat.isSending} onClick={() => imageInputRef.current?.click()}>
 				<Image size={18} />
 			</button>
 			<textarea
@@ -682,7 +682,7 @@ export function ChatCenter() {
 			/>
 			{chat.isSending ? (
 				<button
-					className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-red-600 text-white transition-colors hover:bg-red-700"
+					className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-600 text-white transition-colors hover:bg-red-700"
 					title="Stop generation"
 					onClick={handleStop}
 				>
@@ -692,7 +692,7 @@ export function ChatCenter() {
 				<>
 					{chat.lastUserPrompt ? (
 						<button
-							className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50"
+							className="inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50"
 							title="Retry last message"
 							disabled={isUploading}
 							onClick={handleRetry}
@@ -701,7 +701,7 @@ export function ChatCenter() {
 						</button>
 					) : null}
 					<button
-						className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors ${isUploading ? "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]" : "inno-primary-button"}`}
+						className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${isUploading ? "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]" : "inno-primary-button"}`}
 						title="Send"
 						disabled={isUploading}
 						onClick={handleSend}

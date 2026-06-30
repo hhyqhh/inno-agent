@@ -38,7 +38,7 @@ export function NodeInspector() {
 				</div>
 			) : null}
 			<button
-				className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50"
+				className="rounded-full inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50"
 				disabled={node.type === "tag"}
 				onClick={() => void notebookStore.selectPage(node.id)}
 			>

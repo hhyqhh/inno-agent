@@ -331,15 +331,15 @@ export function GraphView() {
 	return (
 		<div className="relative flex h-full min-h-0 flex-col">
 			<div className="@container flex items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-xs text-[var(--inno-text-muted)]">
-				<button className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={fit} title={t("notebook.graph.fit")}>
+				<button className="inline-flex items-center gap-1 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={fit} title={t("notebook.graph.fit")}>
 					<Scan size={13} />
 					<span className="hidden @[680px]:inline">{t("notebook.graph.fit")}</span>
 				</button>
-				<button className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={reLayout} title={t("notebook.graph.relayout")}>
+				<button className="inline-flex items-center gap-1 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={reLayout} title={t("notebook.graph.relayout")}>
 					<Shuffle size={13} />
 					<span className="hidden @[680px]:inline">{t("notebook.graph.relayout")}</span>
 				</button>
-				<button className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void notebookStore.loadGraph()} title={t("notebook.graph.refresh")}>
+				<button className="inline-flex items-center gap-1 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void notebookStore.loadGraph()} title={t("notebook.graph.refresh")}>
 					<RefreshCw size={13} />
 					<span className="hidden @[680px]:inline">{t("notebook.graph.refresh")}</span>
 				</button>
@@ -388,7 +388,7 @@ export function GraphView() {
 						) : null}
 						{displayNode.type !== "tag" ? (
 							<button
-								className="ml-auto shrink-0 rounded-md inno-primary-button px-2 py-0.5 text-xs text-white"
+								className="ml-auto shrink-0 rounded-full inno-primary-button px-2 py-0.5 text-xs text-white"
 								onClick={() => void notebookStore.selectPage(displayNode.id)}
 							>
 								{t("notebook.inspector.openPage")}

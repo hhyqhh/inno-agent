@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
-import { PanelRightOpen, PanelRightClose, Columns2, Maximize2, BookOpen, BriefcaseBusiness, FolderKanban, Settings, Sparkles, UserRound } from "lucide-react";
+import {
+	PanelRightOpen,
+	PanelRightClose,
+	Columns2,
+	Maximize2,
+	FolderKanban,
+	BookOpen,
+	UserRound,
+	BriefcaseBusiness,
+	Sparkles,
+	Settings,
+} from "lucide-react";
 import type { RightPanelTab, WorkspaceMode } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { useStoreSnapshot } from "./hooks.js";
@@ -23,13 +34,13 @@ interface WorkspacePanelProps {
 
 const TAB_ORDER: RightPanelTab[] = ["preview", "notebook", "profile", "jobs", "skills", "settings"];
 
-const TAB_ICONS: Record<RightPanelTab, React.ReactNode> = {
-	notebook: <BookOpen size={13} />,
-	preview: <FolderKanban size={13} />,
-	profile: <UserRound size={13} />,
-	jobs: <BriefcaseBusiness size={13} />,
-	skills: <Sparkles size={13} />,
-	settings: <Settings size={13} />,
+const TAB_ICONS: Record<RightPanelTab, React.ElementType> = {
+	preview: FolderKanban,
+	notebook: BookOpen,
+	profile: UserRound,
+	jobs: BriefcaseBusiness,
+	skills: Sparkles,
+	settings: Settings,
 };
 
 function WorkspaceContent({ activeTab }: { activeTab: RightPanelTab }) {
@@ -95,7 +106,7 @@ export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChan
 		return (
 			<aside className="relative h-full w-0 overflow-visible">
 				<button
-					className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--inno-text-subtle)] transition-colors hover:bg-white/90 hover:text-[var(--inno-text)] hover:shadow-sm"
+					className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-white/90 hover:text-[var(--inno-text)] hover:shadow-sm"
 					title={t("workspace.openWorkspace") ?? ""}
 					onClick={() => onModeChange("half")}
 				>
@@ -105,7 +116,7 @@ export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChan
 		);
 	}
 
-	const compact = mode !== "full" && width < 500;
+	const compact = mode !== "full" && width < 380;
 
 	return (
 		<aside className="workspace-panel inno-workspace-scope relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-[var(--inno-border)] bg-[var(--inno-workspace-bg)]">
@@ -123,30 +134,30 @@ export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChan
 					{tabs.map((tab) => {
 						const label = t(`workspace.tabs.${tab}`);
 						const isActive = activeTab === tab;
+						const Icon = TAB_ICONS[tab];
 						return (
 							<button
 								key={tab}
-								className={`inno-workspace-tab flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md transition-colors ${compact ? "w-7 justify-center px-0" : "px-2"} ${isActive ? "bg-[var(--inno-surface)] font-medium text-[var(--inno-accent)] shadow-sm ring-1 ring-slate-200" : "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
-								title={compact ? label : undefined}
-								aria-label={compact ? label : undefined}
+								className={`inno-workspace-tab flex h-7 shrink-0 items-center gap-1 whitespace-nowrap transition-colors px-2 ${isActive ? "text-[var(--inno-text)]" : "text-[var(--inno-text-muted)]"}`}
+								style={{ fontWeight: isActive ? 600 : 400, borderBottom: isActive ? "2px solid #1f2328" : "2px solid transparent" }}
 								onClick={() => onTabChange(tab)}
+								title={compact ? label : undefined}
 							>
-								{TAB_ICONS[tab]}
-								{compact ? null : label}
+								{compact ? <Icon size={13} /> : label}
 							</button>
 						);
 					})}
 				</div>
 				<div className="ml-1 flex shrink-0 items-center gap-1 border-l border-[var(--inno-border)] pl-1">
 					<button
-						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
+						className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
 						title={mode === "full" ? (t("workspace.half") ?? "") : (t("workspace.full") ?? "")}
 						onClick={() => onModeChange(mode === "full" ? "half" : "full")}
 					>
 						{mode === "full" ? <Columns2 size={14} /> : <Maximize2 size={14} />}
 					</button>
 					<button
-						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
+						className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
 						title={t("workspace.collapse") ?? ""}
 						onClick={() => onModeChange("collapsed")}
 					>

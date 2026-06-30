@@ -3,31 +3,32 @@
 @import "./themes.css";
 
 :root {
-	--inno-background: #f6f8fa;
+	--inno-background: #f7f7fa;
 	--inno-surface: #ffffff;
-	--inno-surface-muted: #eef2f6;
-	--inno-surface-raised: #fbfcfd;
-	--inno-sidebar-bg: #f0f3f6;
-	--inno-sidebar-active: #e6ebf0;
+	--inno-surface-muted: #f1f1ff;
+	--inno-surface-raised: #fbfbff;
+	--inno-sidebar-bg: #f3f3f7;
+	--inno-sidebar-active: #ffffff;
 	--inno-chat-bg: #ffffff;
-	--inno-workspace-bg: #f6f8fa;
-	--inno-workspace-chrome: #eef2f6;
-	--inno-border: #d1d9e0;
-	--inno-border-strong: #bdc6cf;
-	--inno-text: #1f2328;
-	--inno-text-muted: #59636e;
-	--inno-text-subtle: #8c959f;
-	--inno-accent: #34363a;
-	--inno-accent-soft: #eaeef2;
-	--inno-tech: #111827;
-	--inno-success: #16a34a;
-	--inno-warning: #d97706;
+	--inno-workspace-bg: #fbfbff;
+	--inno-workspace-chrome: #f5f5fb;
+	--inno-border: #e5e4f4;
+	--inno-border-strong: #d2d0ec;
+	--inno-text: #191922;
+	--inno-text-muted: #545469;
+	--inno-text-subtle: #9d9da9;
+	--inno-accent: #555aff;
+	--inno-accent-soft: #edeeff;
+	--inno-accent-muted: #dde0ff;
+	--inno-tech: #7c5cff;
+	--inno-success: #22a06b;
+	--inno-warning: #d99a08;
 	--inno-danger: #dc2626;
 	--inno-workspace-width: 520px;
-	--inno-shadow-soft: 0 1px 2px rgba(31, 35, 40, 0.04), 0 10px 28px rgba(31, 35, 40, 0.04);
-	--inno-ring: 0 0 0 3px rgba(52, 54, 58, 0.14);
-	--inno-selection-bg: rgba(52, 54, 58, 0.12);
-	--inno-grid-color: rgba(31, 35, 40, 0.025);
+	--inno-shadow-soft: 0 1px 2px rgba(85, 90, 255, 0.08), 0 14px 34px rgba(85, 90, 255, 0.12);
+	--inno-ring: 0 0 0 3px rgba(85, 90, 255, 0.18);
+	--inno-selection-bg: rgba(85, 90, 255, 0.16);
+	--inno-grid-color: rgba(85, 90, 255, 0.028);
 	color: var(--inno-text);
 	background: var(--inno-background);
 	font-synthesis-weight: none;
@@ -275,6 +276,7 @@ inno-workspace-panel textarea {
 	align-items: center;
 	justify-content: center;
 	border: 1px solid #cbd5e1;
+	border-radius: 999px;
 	background: #ffffff;
 	color: #64748b;
 	transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
@@ -293,18 +295,19 @@ inno-workspace-panel textarea {
 
 .inno-primary-button,
 .inno-primary-icon-button {
-	border-color: transparent;
-	background: var(--inno-accent);
-	color: #ffffff;
-	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+	border-color: var(--inno-accent);
+	border-radius: 999px;
+	background: var(--inno-accent-muted);
+	color: var(--inno-accent);
+	box-shadow: none;
 	transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 
 .inno-primary-button:hover:not(:disabled),
 .inno-primary-icon-button:hover:not(:disabled) {
-	background: var(--inno-tech);
+	background: var(--inno-accent);
 	color: #ffffff;
-	box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+	box-shadow: 0 1px 4px rgba(15, 23, 42, 0.1);
 }
 
 .inno-primary-button:active:not(:disabled),
@@ -483,6 +486,7 @@ inno-workspace-panel textarea {
 .inno-panel-button {
 	font-size: 12px;
 	line-height: 1.2;
+	border-radius: 999px;
 }
 
 .inno-panel-input {

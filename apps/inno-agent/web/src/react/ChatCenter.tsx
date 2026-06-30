@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
-import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search } from "lucide-react";
 import type { ChatMessage } from "../types/chat.js";
 import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
@@ -15,6 +16,7 @@ import { listRemotePresets } from "../api/presets.js";
 import type { PresetMeta } from "../types/presets.js";
 import { uploadRawFile, type RawUploadResult } from "../api/uploads.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
+import { groupByCategory, matchesQuery } from "../utils/category-grouping.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { QuestionDialog } from "./QuestionDialog.js";
 import "@earendil-works/pi-web-ui";
@@ -217,7 +219,112 @@ function ModeChip({ selected, onClick, disabled, children }: { selected: boolean
 	);
 }
 
+/**
+ * Simple Mode preset grid: searchable, grouped by `category`, vertically
+ * bounded so a long preset list doesn't push the composer off-screen.
+ * The search input only appears when there are enough presets to make it
+ * useful (≥ 4); the scroll container caps height at ~50vh.
+ */
+function PresetPicker({
+	presets,
+	openingPresetId,
+	onOpen,
+	query,
+	onQueryChange,
+	t,
+}: {
+	presets: PresetMeta[];
+	openingPresetId: string | null;
+	onOpen: (id: string) => void;
+	query: string;
+	onQueryChange: (v: string) => void;
+	t: (key: string) => string;
+}) {
+	const uncategorizedLabel = t("presets.uncategorized");
+	const groups = useMemo(
+		() => groupByCategory(presets.filter((p) => matchesQuery(p, query)), uncategorizedLabel),
+		[presets, query, uncategorizedLabel],
+	);
+	const totalMatched = useMemo(() => groups.reduce((sum, [, items]) => sum + items.length, 0), [groups]);
+	const showSearch = presets.length >= 4;
+
+	return (
+		<div className="mt-5">
+			<div className="mb-2 flex items-center gap-2">
+				<div className="text-xs font-medium text-[var(--inno-text-muted)]">{t("presets.simpleModeHeader")}</div>
+				<span className="text-[10px] text-[var(--inno-text-subtle)]">· {presets.length}</span>
+			</div>
+
+			{showSearch ? (
+				<div className="mb-2 flex items-center gap-2 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5">
+					<Search size={13} className="shrink-0 text-[var(--inno-text-subtle)]" />
+					<input
+						type="text"
+						value={query}
+						onChange={(e) => onQueryChange(e.target.value)}
+						placeholder={t("presets.searchPlaceholder")}
+						className="min-w-0 flex-1 bg-transparent text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:outline-none"
+					/>
+					{query ? (
+						<button
+							type="button"
+							className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							onClick={() => onQueryChange("")}
+						>
+							<X size={12} />
+						</button>
+					) : null}
+				</div>
+			) : null}
+
+			<div className="max-h-[50vh] overflow-y-auto rounded-md">
+				{totalMatched === 0 ? (
+					<div className="py-6 text-center text-xs text-[var(--inno-text-muted)]">{t("presets.noResults")}</div>
+				) : (
+					groups.map(([category, items]) => (
+						<div key={category} className="mb-3 last:mb-0">
+							{/* Only show the group header when at least one categorized group exists
+							    AND there is more than one group — keeps the single-bucket flat layout
+							    when nothing has been categorized yet. */}
+							{groups.length > 1 ? (
+								<div className="mb-1.5 px-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--inno-text-subtle)]">
+									{category} <span className="ml-1 text-[var(--inno-text-subtle)]">· {items.length}</span>
+								</div>
+							) : null}
+							<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+								{items.map((preset) => (
+									<button
+										key={preset.id}
+										type="button"
+										disabled={openingPresetId !== null}
+										onClick={() => onOpen(preset.id)}
+										title={preset.description}
+										className="group flex flex-col items-start rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2.5 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/40 disabled:opacity-50"
+									>
+										<span className="text-sm font-medium text-[var(--inno-text)] group-hover:text-[var(--inno-accent)]">
+											{preset.name}
+										</span>
+										{preset.description ? (
+											<span className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-[var(--inno-text-muted)]">
+												{preset.description}
+											</span>
+										) : null}
+										{openingPresetId === preset.id ? (
+											<span className="mt-1 text-[10px] text-[var(--inno-accent)]">{t("presets.opening")}</span>
+										) : null}
+									</button>
+								))}
+							</div>
+						</div>
+					))
+				)}
+			</div>
+		</div>
+	);
+}
+
 export function ChatCenter() {
+	const { t } = useTranslation();
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -239,6 +346,7 @@ export function ChatCenter() {
 	const [presets, setPresets] = useState<PresetMeta[]>([]);
 	const [openingPresetId, setOpeningPresetId] = useState<string | null>(null);
 	const [togglingMode, setTogglingMode] = useState(false);
+	const [presetQuery, setPresetQuery] = useState("");
 
 	// Toggle between Simple and Normal mode from the welcome screen. The IA icon
 	// plays a flip animation keyed on the resulting mode.
@@ -663,33 +771,14 @@ export function ChatCenter() {
 						{renderComposer("有什么想学习或实践的?发送消息开始…")}
 
 						{simpleMode && presets.length > 0 ? (
-							<div className="mt-5">
-								<div className="mb-2 text-xs font-medium text-[var(--inno-text-muted)]">开箱即用 · 选一个开始</div>
-								<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-									{presets.map((preset) => (
-										<button
-											key={preset.id}
-											type="button"
-											disabled={openingPresetId !== null}
-											onClick={() => openPreset(preset.id)}
-											title={preset.description}
-											className="group flex flex-col items-start rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2.5 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/40 disabled:opacity-50"
-										>
-											<span className="text-sm font-medium text-[var(--inno-text)] group-hover:text-[var(--inno-accent)]">
-												{preset.name}
-											</span>
-											{preset.description ? (
-												<span className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-[var(--inno-text-muted)]">
-													{preset.description}
-												</span>
-											) : null}
-											{openingPresetId === preset.id ? (
-												<span className="mt-1 text-[10px] text-[var(--inno-accent)]">正在打开…</span>
-											) : null}
-										</button>
-									))}
-								</div>
-							</div>
+							<PresetPicker
+								presets={presets}
+								openingPresetId={openingPresetId}
+								onOpen={openPreset}
+								query={presetQuery}
+								onQueryChange={setPresetQuery}
+								t={t}
+							/>
 						) : null}
 
 						{simpleMode ? null : preselectedWs ? (

@@ -3,4 +3,5 @@ export interface PresetMeta {
 	name: string;
 	description: string;
 	icon?: string;
+	category?: string;
 }

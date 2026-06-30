@@ -29,6 +29,7 @@ export interface PresetMeta {
 	name: string;
 	description: string;
 	icon?: string;
+	category?: string;
 }
 
 /** Only simple, single-segment ids — blocks path traversal. */
@@ -71,6 +72,7 @@ function parsePresetMeta(rawText: string, id: string): PresetMeta | null {
 			name,
 			description: (raw.description ?? "").trim(),
 			icon: raw.icon?.trim() || undefined,
+			category: raw.category?.trim() || undefined,
 		};
 	} catch (err) {
 		logger.warn({ err, id }, "failed to parse preset.json; skipping");
@@ -123,6 +125,7 @@ export async function listRemotePresets(source: RemoteContentSource, forceRefres
 					name: m.name.trim(),
 					description: typeof m.description === "string" ? m.description.trim() : "",
 					icon: typeof m.icon === "string" && m.icon.trim() ? m.icon.trim() : undefined,
+					category: typeof m.category === "string" && m.category.trim() ? m.category.trim() : undefined,
 				};
 			}
 			// GitHub: read the preset.json file.

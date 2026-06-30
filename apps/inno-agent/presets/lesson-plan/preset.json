@@ -2,5 +2,6 @@
 	"id": "lesson-plan",
 	"name": "教案生成",
 	"description": "根据课题、学段与课时,生成结构化教案:教学目标、重难点、教学流程与作业设计。",
-	"icon": "book-open"
+	"icon": "book-open",
+	"category": "教学"
 }

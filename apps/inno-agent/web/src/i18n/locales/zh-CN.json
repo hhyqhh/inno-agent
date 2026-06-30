@@ -455,6 +455,16 @@
 			"desc": "技能库和预设工作区从这里拉取。默认公共仓库,可改为私有 GitHub 仓库或自托管服务。",
 			"bundle": "自托管服务",
 			"tokenPlaceholder": "访问令牌(私有仓库 / 提额,可选)"
+		},
+		"feishu": {
+			"qrRegister": "扫码绑定",
+			"qrTitle": "飞书扫码注册",
+			"qrSubtitle": "打开手机飞书，扫描二维码以创建机器人应用。",
+			"qrExpired": "二维码已过期",
+			"qrDenied": "用户拒绝授权",
+			"qrConfirmed": "绑定成功",
+			"qrWaiting": "等待扫描…",
+			"qrRegenerate": "重新生成"
 		}
 	}
 }

@@ -31,6 +31,7 @@ import type { ImageContent } from "@earendil-works/pi-ai";
 import { ChannelRegistry } from "./channels/channel.js";
 import type { ChannelStreamEvent } from "./channels/channel.js";
 import { FeishuChannel } from "./channels/feishu/feishu-channel.js";
+import { feishuRegistrationBegin, feishuRegistrationPoll } from "./channels/feishu/feishu-registration.js";
 import { PersonalChannelDispatcher } from "./channels/personal-dispatcher.js";
 import { BridgeChannel } from "./channels/bridge/bridge-channel.js";
 import { handleBridgeMessage } from "./channels/bridge/bridge-server.js";
@@ -1856,6 +1857,51 @@ const server = createServer(async (req, res) => {
 				json(res, 200, health);
 			} else {
 				json(res, 200, { channel: channel.name, mode: "native", healthy: true, checkedAt: new Date().toISOString() });
+			}
+			return;
+		}
+
+		// Feishu QR device-flow registration
+		if (method === "POST" && url === "/api/channels/feishu/qr-register") {
+			try {
+				const result = await feishuRegistrationBegin();
+				json(res, 200, {
+					deviceCode: result.deviceCode,
+					qrUrl: result.verificationUri,
+					expiresIn: result.expiresIn,
+					interval: result.interval,
+				});
+			} catch (err) {
+				logger.error({ err }, "[feishu] QR registration begin failed");
+				json(res, 502, { error: err instanceof Error ? err.message : "Failed to start Feishu registration" });
+			}
+			return;
+		}
+
+		if (method === "GET" && url.startsWith("/api/channels/feishu/qr-status")) {
+			const deviceCode = new URL(url, "http://localhost").searchParams.get("deviceCode");
+			if (!deviceCode) {
+				json(res, 400, { error: "Missing deviceCode" });
+				return;
+			}
+			try {
+				const result = await feishuRegistrationPoll(deviceCode);
+				if (result.status === "confirmed" && result.appId && result.appSecret) {
+					// Save credentials to config and start channel
+					config.feishu = { appId: result.appId, appSecret: result.appSecret };
+					if (!config.channels) config.channels = {};
+					config.channels.feishu = {
+						enabled: true,
+						personalOnly: true,
+						allowedUserIds: result.openId ? [result.openId] : [],
+					};
+					config = saveConfig(paths.configPath, config);
+					await reloadFeishuChannel();
+				}
+				json(res, 200, { status: result.status });
+			} catch (err) {
+				logger.error({ err }, "[feishu] QR registration poll failed");
+				json(res, 502, { error: err instanceof Error ? err.message : "Failed to poll Feishu registration" });
 			}
 			return;
 		}

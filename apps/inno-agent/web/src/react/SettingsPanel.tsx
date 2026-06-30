@@ -5,7 +5,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { getWikiStats } from "../api/wiki.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { themeStore, THEME_IDS, THEME_PREVIEW_COLORS, type ThemeId } from "../stores/theme-store.js";
-import { wechatQrLogin, wechatQrStatus, wechatStatus } from "../api/settings.js";
+import { feishuQrRegister, feishuQrStatus, wechatQrLogin, wechatQrStatus, wechatStatus } from "../api/settings.js";
 import type { InnoModelInfo, InnoProviderModel as ProviderModel, InnoSettings, ChannelsSettingsPayload, PersonalBridgeChannelConfig } from "../types/settings.js";
 import type { WikiStats } from "../types/wiki.js";
 import { useStoreSnapshot } from "./hooks.js";
@@ -338,6 +338,54 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 		(settings.channels?.feishu?.allowedUserIds ?? []).join("\n"),
 	);
 
+	// Feishu QR registration state
+	const [feishuQrUrl, setFeishuQrUrl] = useState<string | null>(null);
+	const [feishuQrDeviceCode, setFeishuQrDeviceCode] = useState<string | null>(null);
+	const [feishuQrState, setFeishuQrState] = useState<string | null>(null); // waitingScan | confirmed | expired | denied
+	const [feishuQrError, setFeishuQrError] = useState<string | null>(null);
+	const feishuQrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+	useEffect(() => {
+		return () => { if (feishuQrPollRef.current) clearInterval(feishuQrPollRef.current); };
+	}, []);
+
+	const startFeishuQrRegister = useCallback(async () => {
+		setFeishuQrState("scanning");
+		setFeishuQrUrl(null);
+		setFeishuQrError(null);
+		if (feishuQrPollRef.current) clearInterval(feishuQrPollRef.current);
+		try {
+			const { deviceCode, qrUrl, interval } = await feishuQrRegister();
+			setFeishuQrDeviceCode(deviceCode);
+			setFeishuQrUrl(qrUrl);
+			setFeishuQrState("waitingScan");
+			// Poll status
+			feishuQrPollRef.current = setInterval(async () => {
+				try {
+					const res = await feishuQrStatus(deviceCode);
+					if (res.status === "confirmed") {
+						setFeishuQrState("confirmed");
+						setFeishuEnabled(true);
+						if (feishuQrPollRef.current) clearInterval(feishuQrPollRef.current);
+						// Refresh settings to get new appId
+						settingsStore.load();
+					} else if (res.status === "expired") {
+						setFeishuQrState("expired");
+						if (feishuQrPollRef.current) clearInterval(feishuQrPollRef.current);
+					} else if (res.status === "denied") {
+						setFeishuQrState("denied");
+						if (feishuQrPollRef.current) clearInterval(feishuQrPollRef.current);
+					}
+				} catch {
+					// ignore poll errors
+				}
+			}, (interval || 5) * 1000);
+		} catch (err) {
+			setFeishuQrState(null);
+			setFeishuQrError(err instanceof Error ? err.message : "QR registration failed");
+		}
+	}, []);
+
 	// QQ
 	const qqConfig = settings.channels?.qq as PersonalBridgeChannelConfig | undefined;
 	const [qqEnabled, setQqEnabled] = useState(qqConfig?.enabled ?? false);
@@ -496,6 +544,47 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								{t("settings.channels.enabled")}
 							</label>
 						</div>
+
+						{/* Feishu QR Registration */}
+						<div className="mb-3">
+							{feishuQrState === "waitingScan" && feishuQrUrl ? (
+								<div className="flex flex-col items-center gap-2 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-bg-alt)] p-4">
+									<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.feishu.qrTitle")}</div>
+									<QRCodeSVG value={feishuQrUrl} size={192} />
+									<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.feishu.qrSubtitle")}</div>
+									<div className="text-[10px] text-[var(--inno-accent)]">{t("settings.feishu.qrWaiting")}</div>
+								</div>
+							) : feishuQrState === "confirmed" ? (
+								<div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 p-3">
+									<CheckCircle className="h-4 w-4 text-green-600" />
+									<span className="text-xs text-green-700">{t("settings.feishu.qrConfirmed")}</span>
+								</div>
+							) : feishuQrState === "expired" ? (
+								<div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+									<span className="text-xs text-amber-700">{t("settings.feishu.qrExpired")}</span>
+									<button className="ml-auto rounded bg-[var(--inno-accent)] px-2 py-0.5 text-[10px] text-white" onClick={startFeishuQrRegister}>{t("settings.feishu.qrRegenerate")}</button>
+								</div>
+							) : feishuQrState === "denied" ? (
+								<div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+									<span className="text-xs text-red-700">{t("settings.feishu.qrDenied")}</span>
+									<button className="ml-auto rounded bg-[var(--inno-accent)] px-2 py-0.5 text-[10px] text-white" onClick={startFeishuQrRegister}>{t("settings.feishu.qrRegenerate")}</button>
+								</div>
+							) : feishuQrState === "scanning" ? (
+								<div className="text-center text-[10px] text-[var(--inno-text-subtle)] py-2">{t("settings.feishu.qrWaiting")}</div>
+							) : (
+								<button
+									className="w-full rounded border border-[var(--inno-border)] bg-[var(--inno-bg-alt)] px-3 py-2 text-xs text-[var(--inno-text)] hover:bg-[var(--inno-bg-hover)] flex items-center justify-center gap-2"
+									onClick={startFeishuQrRegister}
+								>
+									<QrCodeIcon className="h-3.5 w-3.5" />
+									{t("settings.feishu.qrRegister")}
+								</button>
+							)}
+							{feishuQrError && (
+								<div className="mt-1 rounded bg-red-50 px-2 py-1 text-[10px] text-red-600">{feishuQrError}</div>
+							)}
+						</div>
+
 						{feishuEnabled && (
 							<div className="grid grid-cols-2 gap-2">
 								<div>

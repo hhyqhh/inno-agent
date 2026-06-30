@@ -91,6 +91,16 @@ export async function saveThemeSettings(theme: string): Promise<InnoSettings> {
 	});
 }
 
+export async function feishuQrRegister(): Promise<{ deviceCode: string; qrUrl: string; expiresIn: number; interval: number }> {
+	return apiFetch<{ deviceCode: string; qrUrl: string; expiresIn: number; interval: number }>("/api/channels/feishu/qr-register", {
+		method: "POST",
+	});
+}
+
+export async function feishuQrStatus(deviceCode: string): Promise<{ status: string }> {
+	return apiFetch<{ status: string }>(`/api/channels/feishu/qr-status?deviceCode=${encodeURIComponent(deviceCode)}`);
+}
+
 export async function wechatQrLogin(): Promise<{ qrId: string; qrUrl: string }> {
 	return apiFetch<{ qrId: string; qrUrl: string }>("/api/channels/wechat/qr-login", {
 		method: "POST",

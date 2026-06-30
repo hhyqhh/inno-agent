@@ -455,6 +455,16 @@
 			"desc": "The skill library and preset workspaces are fetched from here. Defaults to the public repo; switch to a private GitHub repo or a self-hosted service.",
 			"bundle": "Self-hosted service",
 			"tokenPlaceholder": "Access token (private repo / higher limit, optional)"
+		},
+		"feishu": {
+			"qrRegister": "Scan to Bind",
+			"qrTitle": "Feishu QR Registration",
+			"qrSubtitle": "Open Feishu on your phone, scan the QR code to create a bot application.",
+			"qrExpired": "QR code expired",
+			"qrDenied": "Authorization denied",
+			"qrConfirmed": "Binding successful",
+			"qrWaiting": "Waiting for scan...",
+			"qrRegenerate": "Regenerate"
 		}
 	}
 }

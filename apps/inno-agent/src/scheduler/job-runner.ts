@@ -34,7 +34,6 @@ export async function executeJob(
 
 	const inferredChannel = inferChannel(job, channelRegistry);
 	if (!job.channel && inferredChannel) {
-		job.channel = inferredChannel;
 		jobStore.update(job.id, { channel: inferredChannel });
 	}
 

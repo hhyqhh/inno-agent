@@ -793,7 +793,7 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 
 /* ---------- Memory Settings (L1/L2/L3 layer toggles) ---------- */
 
-type MemoryLayer = "l1Enabled" | "l2Enabled" | "l3Enabled";
+type MemoryLayer = "l1Enabled" | "l2Enabled" | "l3Enabled" | "autoReviewEnabled";
 
 function MemoryToggleRow({
 	enabled,
@@ -848,7 +848,7 @@ function MemorySettings({ settings }: { settings: InnoSettings }) {
 			l2Enabled: settings.memory?.l2Enabled !== false,
 			l3Enabled: settings.memory?.l3Enabled !== false,
 		});
-	}, [settings.memory?.l1Enabled, settings.memory?.l2Enabled, settings.memory?.l3Enabled]);
+	}, [settings.memory?.l1Enabled, settings.memory?.l2Enabled, settings.memory?.l3Enabled, settings.memory?.autoReviewEnabled]);
 
 	async function handleToggle(key: MemoryLayer, next: boolean) {
 		setState((s) => ({ ...s, [key]: next }));
@@ -862,10 +862,11 @@ function MemorySettings({ settings }: { settings: InnoSettings }) {
 		}
 	}
 
-	const layers: { key: MemoryLayer; ns: "l1" | "l2" | "memory" }[] = [
+	const layers: { key: MemoryLayer; ns: "l1" | "l2" | "memory" | "autoReview" }[] = [
 		{ key: "l1Enabled", ns: "l1" },
 		{ key: "l2Enabled", ns: "l2" },
 		{ key: "l3Enabled", ns: "memory" },
+			{ key: "autoReviewEnabled", ns: "autoReview" },
 	];
 
 	return (

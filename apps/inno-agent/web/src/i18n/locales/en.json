@@ -455,6 +455,11 @@
 			"desc": "The skill library and preset workspaces are fetched from here. Defaults to the public repo; switch to a private GitHub repo or a self-hosted service.",
 			"bundle": "Self-hosted service",
 			"tokenPlaceholder": "Access token (private repo / higher limit, optional)"
+		},
+		"autoReview": {
+			"title": "Auto Spaced Review",
+			"onDesc": "On: creates spaced_review scheduler jobs from L1 review_due_at state.",
+			"offDesc": "Off: review_due_at is still computed and shown in the profile, but no review jobs are created automatically."
 		}
 	}
 }

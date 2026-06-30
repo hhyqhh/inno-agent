@@ -7,9 +7,11 @@ import {
 	type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 import { saveConfig, setDefaultModel, type InnoConfig } from "../config.js";
+import { readJson } from "../storage/file-store.js";
 import { createLearnerTools } from "../memory/learner/learner-tools.js";
 import { loadEvents, loadProfile } from "../memory/learner/profile-store.js";
 import { buildContextPack, formatContextPackForPrompt } from "../memory/learner/context-pack.js";
+import type { LearnerContextPack } from "../memory/learner/types.js";
 import { JobStore } from "../scheduler/job-store.js";
 import { createSchedulerTools } from "../scheduler/scheduler-tools.js";
 import { createChannelTools } from "../channels/channel-tools.js";
@@ -17,6 +19,7 @@ import { createL2Tools } from "../memory/l2/l2-tools.js";
 import { L3Memory, createL3Tools, formatRecallForPrompt } from "../memory/l3/l3-tools.js";
 import { createPracticeTools } from "./practice-tools.js";
 import { createDocumentTools } from "./document-tools.js";
+import { createAutoReviewSyncer, type AutoReviewSyncer } from "./auto-review.js";
 import { INNO_SYSTEM_PROMPT } from "./system-prompt.js";
 import { syncProvidersForSubagents } from "./provider-sync.js";
 import { questionBridge } from "./question-bridge.js";
@@ -168,6 +171,7 @@ export function createInnoExtension(
 		const isSimpleMode = () => configHolder.current.simpleMode?.enabled === true;
 		const isL1Enabled = () => !isSimpleMode() && configHolder.current.memory?.l1Enabled !== false;
 		const isL2Enabled = () => !isSimpleMode() && configHolder.current.memory?.l2Enabled !== false;
+		const isAutoReviewEnabled = () => !isSimpleMode() && configHolder.current.memory?.autoReviewEnabled !== false;
 
 		// 2. Register L1 learner tools (gated on config.memory.l1Enabled)
 		const learnerTools = createLearnerTools(paths.learnerDataDir, "default", isL1Enabled);
@@ -182,7 +186,14 @@ export function createInnoExtension(
 			pi.registerTool(tool);
 		}
 
-		// 3a. Register channel tools (send workspace files out to chat channels)
+		// 3b. Create auto-review syncer (spaced_review job sync from L1)
+		const autoReviewSyncer = createAutoReviewSyncer({
+			jobsDir: paths.jobsDir,
+			learnerDataDir: paths.learnerDataDir,
+			isEnabled: isAutoReviewEnabled,
+		});
+
+		// 3c. Register channel tools (send workspace files out to chat channels)
 		if (channelRegistry) {
 			const channelTools = createChannelTools({
 				channelRegistry,
@@ -254,14 +265,21 @@ export function createInnoExtension(
 			pi.on("before_agent_start", async (event, ctx) => {
 				const sections: string[] = [INNO_SYSTEM_PROMPT];
 
-				// Inject the L1 learner context pack (profile + recent events)
-				// unless the learner has turned L1 off in settings.
+				// Inject the L1 learner context pack from precomputed cache
+				// (updated every time the profile changes), falling back to
+				// real-time build only when the cache is missing.
 				if (isL1Enabled()) {
-					const profile = loadProfile(paths.learnerDataDir);
-					const recentEvents = loadEvents(paths.learnerDataDir).slice(-8);
-					const contextPack = buildContextPack(profile, recentEvents);
-					const contextSection = formatContextPackForPrompt(contextPack);
-					sections.push(contextSection);
+					const cachePath = join(paths.dataDir, "context-cache.json");
+					const cached = readJson<LearnerContextPack | null>(cachePath, null);
+					if (cached && (cached.active_goal || cached.relevant_concepts?.length > 0)) {
+						sections.push(formatContextPackForPrompt(cached));
+					} else {
+						// Cache miss — build from source as a fallback
+						const profile = loadProfile(paths.learnerDataDir);
+						const recentEvents = loadEvents(paths.learnerDataDir).slice(-8);
+						const contextPack = buildContextPack(profile, recentEvents);
+						sections.push(formatContextPackForPrompt(contextPack));
+					}
 				}
 
 				// Inject per-workspace context: agent.md + private skills.
@@ -356,6 +374,13 @@ export function createInnoExtension(
 			} catch (err) {
 				// best-effort — indexing must not affect the turn
 				logger.warn({ err }, "L3 turn_end indexing failed (non-fatal)");
+			}
+
+			// Sync auto-review scheduler jobs from L1 review_due_at state.
+			if (autoReviewSyncer) {
+				try { autoReviewSyncer.sync(); } catch (err) {
+					logger.warn({ err }, "Auto-review sync failed (non-fatal)");
+				}
 			}
 		});
 

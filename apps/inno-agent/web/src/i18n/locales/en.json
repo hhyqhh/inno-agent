@@ -36,7 +36,11 @@
 		"saving": "Saving…",
 		"saved": "Saved",
 		"remove": "Remove",
-		"open": "Open"
+		"open": "Open",
+		"pasteCollapsed": "«Pasted {{count}} lines»",
+		"pasteCollapsedUndo": "Undo paste",
+		"questionPending": "Please answer the question above before continuing",
+		"questionPendingJump": "View question"
 	},
 	"notebook": {
 		"title": "Notebook",
@@ -83,6 +87,10 @@
 			"selectFromGraph": "Select a node in the graph",
 			"openInNotebook": "Open page",
 			"backToGraph": "Back to graph"
+		},
+		"delete": {
+			"button": "Delete",
+			"confirm": "Delete \"{{title}}\"? This page will be permanently removed."
 		},
 		"inspector": {
 			"title": "Node",

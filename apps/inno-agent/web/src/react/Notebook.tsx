@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Network, FileText, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Network, FileText, PanelLeftClose, PanelLeftOpen, Trash2 } from "lucide-react";
 import { notebookStore } from "../stores/notebook-store.js";
 import type { WikiPageType } from "../types/wiki.js";
 import { useStoreSnapshot } from "./hooks.js";
@@ -35,7 +35,18 @@ export function Notebook() {
 		currentPagePath: notebookStore.currentPage?.path ?? null,
 		selectedNodeId: notebookStore.selectedNodeId,
 		isLoadingPages: notebookStore.isLoadingPages,
+		isDeletingPage: notebookStore.isDeletingPage,
 	}));
+
+	async function handleDelete(path: string, title: string) {
+		const ok = window.confirm(t("notebook.delete.confirm", { title }));
+		if (!ok) return;
+		try {
+			await notebookStore.deletePage(path);
+		} catch {
+			// store logs the error; nothing else to do
+		}
+	}
 
 	useEffect(() => {
 		void notebookStore.loadAll();
@@ -74,20 +85,36 @@ export function Notebook() {
 					) : null}
 					{state.pages.map((page) => {
 						const selected = state.currentPagePath === page.path || state.selectedNodeId === page.path;
+						const title = page.frontmatter?.title || page.path;
 						return (
-							<button
+							<div
 								key={page.path}
-								className={`w-full border-b border-[var(--inno-border)] px-3 py-2 text-left text-sm transition-colors ${selected ? "bg-[var(--inno-accent-soft)]" : "hover:bg-[var(--inno-surface-muted)]"}`}
-								onClick={() => void notebookStore.selectPage(page.path)}
+								className={`group relative border-b border-[var(--inno-border)] transition-colors ${selected ? "bg-[var(--inno-accent-soft)]" : "hover:bg-[var(--inno-surface-muted)]"}`}
 							>
-								<div className="truncate font-medium text-[var(--inno-text)]">{page.frontmatter?.title || page.path}</div>
-								<div className="mt-1 flex items-center gap-1.5">
-									<span className={`rounded px-1.5 text-xs ${typeColor(page.frontmatter?.type)}`}>
-										{page.frontmatter?.type ? t(`notebook.types.${page.frontmatter.type}`) : t("notebook.types.unknown")}
-									</span>
-									<span className="truncate text-xs text-[var(--inno-text-muted)]">{page.frontmatter?.updated || ""}</span>
-								</div>
-							</button>
+								<button
+									className="w-full px-3 py-2 pr-9 text-left text-sm"
+									onClick={() => void notebookStore.selectPage(page.path)}
+								>
+									<div className="truncate font-medium text-[var(--inno-text)]">{title}</div>
+									<div className="mt-1 flex items-center gap-1.5">
+										<span className={`rounded px-1.5 text-xs ${typeColor(page.frontmatter?.type)}`}>
+											{page.frontmatter?.type ? t(`notebook.types.${page.frontmatter.type}`) : t("notebook.types.unknown")}
+										</span>
+										<span className="truncate text-xs text-[var(--inno-text-muted)]">{page.frontmatter?.updated || ""}</span>
+									</div>
+								</button>
+								<button
+									className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-muted)] hover:bg-red-50 hover:text-red-600 disabled:opacity-50 ${state.isDeletingPage ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+									title={t("notebook.delete.button")}
+									disabled={state.isDeletingPage}
+									onClick={(e) => {
+										e.stopPropagation();
+										void handleDelete(page.path, title);
+									}}
+								>
+									<Trash2 size={13} />
+								</button>
+							</div>
 						);
 					})}
 				</div>

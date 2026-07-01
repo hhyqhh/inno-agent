@@ -3,6 +3,7 @@ import {
 	listWikiPages,
 	getWikiPage,
 	updateWikiPage,
+	deleteWikiPage,
 	getWikiGraph,
 } from "../api/wiki.js";
 import type {
@@ -27,6 +28,7 @@ class NotebookStoreImpl extends EventEmitter<NotebookStoreEvents> {
 	isLoadingGraph = false;
 	isLoadingPage = false;
 	isEditing = false;
+	isDeletingPage = false;
 	editBuffer = "";
 	filterType: WikiPageType | "all" = "all";
 	searchQuery = "";
@@ -161,6 +163,26 @@ class NotebookStoreImpl extends EventEmitter<NotebookStoreEvents> {
 			console.error("Failed to save wiki page:", err);
 		} finally {
 			this.isLoadingPage = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async deletePage(path: string): Promise<void> {
+		this.isDeletingPage = true;
+		this.emit("change", undefined);
+		try {
+			await deleteWikiPage(path);
+			if (this.currentPage?.path === path) {
+				this.currentPage = null;
+				this.isEditing = false;
+			}
+			this.selectedNodeId = null;
+			await Promise.all([this.loadPages(), this.loadGraph()]);
+		} catch (err) {
+			console.error("Failed to delete wiki page:", err);
+			throw err;
+		} finally {
+			this.isDeletingPage = false;
 			this.emit("change", undefined);
 		}
 	}

@@ -36,7 +36,11 @@
 		"saving": "保存中…",
 		"saved": "已保存",
 		"remove": "移除",
-		"open": "打开"
+		"open": "打开",
+		"pasteCollapsed": "«已粘贴 {{count}} 行»",
+		"pasteCollapsedUndo": "撤销粘贴",
+		"questionPending": "请完成上方问卷后再继续对话",
+		"questionPendingJump": "查看问卷"
 	},
 	"notebook": {
 		"title": "笔记本",
@@ -83,6 +87,10 @@
 			"selectFromGraph": "在图中选择节点查看",
 			"openInNotebook": "在笔记本中查看",
 			"backToGraph": "返回图谱"
+		},
+		"delete": {
+			"button": "删除",
+			"confirm": "确定删除「{{title}}」吗？该页面将被永久移除。"
 		},
 		"inspector": {
 			"title": "节点详情",

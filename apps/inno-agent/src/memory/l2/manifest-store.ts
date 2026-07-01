@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { appendJsonl, readJsonl } from "../../storage/file-store.js";
+import { appendJsonl, readJsonl, writeText } from "../../storage/file-store.js";
 import type { ManifestEntry } from "./types.js";
 
 const MANIFEST_FILE = "manifest.jsonl";
@@ -14,6 +14,28 @@ export function appendManifest(l2DataDir: string, entry: ManifestEntry): void {
 
 export function readManifest(l2DataDir: string): ManifestEntry[] {
 	return readJsonl<ManifestEntry>(getManifestPath(l2DataDir));
+}
+
+/**
+ * Remove a wiki page path from every manifest entry's `wikiPages` list.
+ * Rewrites the JSONL file in place. Keeps entries even if their `wikiPages`
+ * becomes empty (the source record is still valid).
+ * Returns true if any entry was modified.
+ */
+export function removeWikiPathFromManifest(l2DataDir: string, wikiPath: string): boolean {
+	const entries = readManifest(l2DataDir);
+	let changed = false;
+	for (const entry of entries) {
+		if (entry.wikiPages.includes(wikiPath)) {
+			entry.wikiPages = entry.wikiPages.filter((p) => p !== wikiPath);
+			changed = true;
+		}
+	}
+	if (changed) {
+		const lines = entries.map((e) => JSON.stringify(e)).join("\n") + "\n";
+		writeText(getManifestPath(l2DataDir), lines);
+	}
+	return changed;
 }
 
 export function findManifestById(l2DataDir: string, id: string): ManifestEntry | undefined {

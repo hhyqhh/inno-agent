@@ -84,6 +84,10 @@
 			"openInNotebook": "Open page",
 			"backToGraph": "Back to graph"
 		},
+		"delete": {
+			"button": "Delete",
+			"confirm": "Delete \"{{title}}\"? This page will be permanently removed."
+		},
 		"inspector": {
 			"title": "Node",
 			"empty": "Select a node to inspect. Double-click a non-tag node to open its page.",

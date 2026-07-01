@@ -84,6 +84,10 @@
 			"openInNotebook": "在笔记本中查看",
 			"backToGraph": "返回图谱"
 		},
+		"delete": {
+			"button": "删除",
+			"confirm": "确定删除「{{title}}」吗？该页面将被永久移除。"
+		},
 		"inspector": {
 			"title": "节点详情",
 			"empty": "选择节点查看详细信息。双击非标签节点可打开页面。",

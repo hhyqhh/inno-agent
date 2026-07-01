@@ -42,7 +42,7 @@ import { executeJob } from "./scheduler/job-runner.js";
 import { CronScheduler } from "./scheduler/cron-scheduler.js";
 import { validateCron } from "./scheduler/cron-utils.js";
 import { parseFrontmatter, serializeFrontmatter } from "./memory/l2/wiki-maintainer.js";
-import { readManifest } from "./memory/l2/manifest-store.js";
+import { readManifest, removeWikiPathFromManifest } from "./memory/l2/manifest-store.js";
 import { loadProfile, saveProfile } from "./memory/learner/profile-store.js";
 import type { LearnerProfile, LearningGoal, KnowledgeState, Misconception, LearnerPreferences } from "./memory/learner/types.js";
 import { randomUUID } from "node:crypto";
@@ -2583,6 +2583,33 @@ const server = createServer(async (req, res) => {
 			}
 			writeText(fullPath, content);
 			json(res, 200, { path, saved: true });
+			return;
+		}
+
+		if (method === "DELETE" && url.startsWith("/api/wiki/page?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const path = params.get("path");
+			if (!path) {
+				json(res, 400, { error: "Missing path parameter" });
+				return;
+			}
+			const fullPath = safeJoin(l2DataDir, path);
+			if (!fullPath) {
+				json(res, 400, { error: "Invalid wiki path" });
+				return;
+			}
+			if (!existsSync(fullPath)) {
+				json(res, 404, { error: "Wiki page not found" });
+				return;
+			}
+			try {
+				rmSync(fullPath);
+				removeWikiPathFromManifest(l2DataDir, path);
+				json(res, 200, { path, deleted: true });
+			} catch (err) {
+				logger.warn({ err }, "failed to delete wiki page");
+				json(res, 500, { error: "Failed to delete wiki page" });
+			}
 			return;
 		}
 

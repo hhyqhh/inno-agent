@@ -16,6 +16,12 @@ export async function updateWikiPage(path: string, content: string): Promise<voi
 	});
 }
 
+export async function deleteWikiPage(path: string): Promise<void> {
+	await apiFetch(`/api/wiki/page?path=${encodeURIComponent(path)}`, {
+		method: "DELETE",
+	});
+}
+
 export async function getWikiGraph(): Promise<WikiGraphData> {
 	return apiFetch<WikiGraphData>("/api/wiki/graph");
 }

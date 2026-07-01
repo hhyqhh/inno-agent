@@ -22,6 +22,12 @@ import { useStoreSnapshot } from "./hooks.js";
 import { QuestionDialog } from "./QuestionDialog.js";
 import "@earendil-works/pi-web-ui";
 
+// Thresholds for collapsing a large paste into a placeholder chip. A paste
+// crossing EITHER threshold is collapsed. Tuned so normal multi-line typing
+// (a few paragraphs) stays inline, but dumping a whole file collapses.
+const PASTE_COLLAPSE_LINES = 20;
+const PASTE_COLLAPSE_CHARS = 2000;
+
 const CHANNEL_BADGE_CLASS: Record<string, string> = {
 	cli: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]",
 	web: "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]",
@@ -333,6 +339,12 @@ export function ChatCenter() {
 	const [uploads, setUploads] = useState<{ fileName: string; path: string }[]>([]);
 	const [isUploading, setIsUploading] = useState(false);
 	const [inlineImages, setInlineImages] = useState<(InlineImage & { name: string; previewUrl: string })[]>([]);
+	// When the user pastes a large block of text (many lines / chars), we
+	// insert a short placeholder token (e.g. «已粘贴 N 行») into the textarea
+	// at the caret position and hold the real text here. The user can keep
+	// typing before/after the token. On send, the token is replaced by the
+	// real text.
+	const [pasteBlock, setPasteBlock] = useState<{ text: string; lineCount: number } | null>(null);
 
 	// Inline workspace chooser state (welcome screen only). Seeded from the
 	// user's last choice (P3) so a new chat resumes the workspace they were in
@@ -458,8 +470,14 @@ export function ChatCenter() {
 	const handleInput = useCallback(() => {
 		const el = inputRef.current;
 		if (!el) return;
+		const maxHeight = 200;
 		el.style.height = "auto";
-		el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+		const h = Math.min(el.scrollHeight, maxHeight);
+		el.style.height = `${h}px`;
+		// Only show a vertical scrollbar once content overflows the max height;
+		// never show a horizontal scrollbar (long lines wrap).
+		el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
+		el.style.overflowX = "hidden";
 	}, []);
 
 	const buildSessionInput = useCallback((): CreateSessionInput | { __error: string } => {
@@ -505,7 +523,16 @@ export function ChatCenter() {
 	}, []);
 
 	const handleSend = useCallback(() => {
-		const input = inputRef.current?.value.trim() ?? "";
+		const rawValue = inputRef.current?.value ?? "";
+		// Replace any paste-placeholder tokens (e.g. «已粘贴 N 行» / «Pasted N lines»)
+		// with the real pasted text before sending.
+		const expandPaste = (s: string) => {
+			if (!pasteBlock) return s;
+			// Token format from common.pasteCollapsed: «已粘贴 N 行» (zh) or
+			// «Pasted N lines» (en). Replace every occurrence with the real text.
+			return s.replace(/«[^»]*»/g, pasteBlock.text);
+		};
+		const input = expandPaste(rawValue).trim();
 		if ((!input && uploads.length === 0 && inlineImages.length === 0) || chat.isSending || isUploading) return;
 
 		const uploadNote = uploads.length > 0
@@ -516,6 +543,15 @@ export function ChatCenter() {
 			? inlineImages.map(({ data, mimeType }) => ({ data, mimeType }))
 			: undefined;
 
+		const resetComposer = () => {
+			if (inputRef.current) {
+				inputRef.current.value = "";
+				inputRef.current.style.height = "auto";
+				inputRef.current.style.overflowY = "hidden";
+			}
+			setPasteBlock(null);
+		};
+
 		if (isWelcome) {
 			const wsInput = buildSessionInput();
 			if ("__error" in wsInput) {
@@ -525,10 +561,7 @@ export function ChatCenter() {
 			setWsError("");
 			// Remember the workspace choice so the next new chat resumes it (P3).
 			if (!simpleMode) rememberWsChoice(wsMode, wsExistingId);
-			if (inputRef.current) {
-				inputRef.current.value = "";
-				inputRef.current.style.height = "auto";
-			}
+			resetComposer();
 			setUploads([]);
 			setInlineImages([]);
 			void (async () => {
@@ -542,14 +575,11 @@ export function ChatCenter() {
 			return;
 		}
 
-		if (inputRef.current) {
-			inputRef.current.value = "";
-			inputRef.current.style.height = "auto";
-		}
+		resetComposer();
 		setUploads([]);
 		setInlineImages([]);
 		void chatStore.send(messageContent, imagesToSend);
-	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId]);
+	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, pasteBlock]);
 
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		// Don't fire Send while the user is composing with an IME (e.g. picking
@@ -587,12 +617,46 @@ export function ChatCenter() {
 	}, []);
 
 	const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+		// Image paste: keep existing behavior.
 		const imageItems = Array.from(e.clipboardData.items).filter((item) => item.type.startsWith("image/"));
-		if (imageItems.length === 0) return;
-		e.preventDefault();
-		const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
-		addImageFiles(files);
-	}, [addImageFiles]);
+		if (imageItems.length > 0) {
+			e.preventDefault();
+			const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
+			addImageFiles(files);
+			return;
+		}
+		// Large text paste: insert a placeholder token at the caret and hold
+		// the real text in `pasteBlock`. The user can keep typing before/after
+		// the token. On send the token is replaced with the real text.
+		const text = e.clipboardData.getData("text/plain");
+		if (text) {
+			const lineCount = text.split(/\r\n|\r|\n/).length;
+			const charCount = text.length;
+			if (lineCount > PASTE_COLLAPSE_LINES || charCount > PASTE_COLLAPSE_CHARS) {
+				e.preventDefault();
+				const token = t("common.pasteCollapsed", { count: lineCount });
+				const el = inputRef.current;
+				if (el) {
+					const start = el.selectionStart;
+					const end = el.selectionEnd;
+					const before = el.value.slice(0, start);
+					const after = el.value.slice(end);
+					el.value = `${before}${token}${after}`;
+					// Place caret right after the inserted token.
+					const caret = start + token.length;
+					el.setSelectionRange(caret, caret);
+					el.dispatchEvent(new Event("input", { bubbles: true }));
+				}
+				// Merge into any existing paste block (rare: second large paste
+				// before sending the first). Keep total text + recompute lines.
+				setPasteBlock((prev) => {
+					if (!prev) return { text, lineCount };
+					const merged = `${prev.text}\n${text}`;
+					return { text: merged, lineCount: merged.split(/\r\n|\r|\n/).length };
+				});
+			}
+		}
+	}, [addImageFiles, t]);
 
 	const handleImageFiles = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
 		const files = Array.from(event.target.files ?? []).filter((f) => f.type.startsWith("image/"));
@@ -676,6 +740,24 @@ export function ChatCenter() {
 		) : null
 	);
 
+	const renderQuestionHint = () => (
+		chat.pendingQuestion ? (
+			<div className="mb-2 flex items-center gap-2 rounded-md border border-[var(--inno-border)] bg-[var(--inno-accent-soft)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)]">
+				<AlertTriangle size={14} className="shrink-0 text-[var(--inno-warning)]" />
+				<span>{t("common.questionPending")}</span>
+				<button
+					className="ml-auto shrink-0 rounded px-2 py-0.5 font-medium text-[var(--inno-warning)] hover:bg-[var(--inno-surface-muted)]"
+					onClick={() => {
+						const el = scrollRef.current;
+						if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+					}}
+				>
+					{t("common.questionPendingJump")}
+				</button>
+			</div>
+		) : null
+	);
+
 	const renderComposer = (placeholder: string) => (
 		<div className="inno-composer flex items-end gap-2 rounded-lg p-2">
 			<input ref={fileInputRef} id="file-input" type="file" className="hidden" multiple onChange={handleFiles} />
@@ -689,7 +771,7 @@ export function ChatCenter() {
 			<textarea
 				ref={inputRef}
 				id="chat-input"
-				className="min-h-[36px] max-h-[140px] flex-1 resize-none overflow-hidden rounded-md border-0 bg-transparent px-2 py-2 text-sm leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
+				className="min-h-[36px] max-h-[200px] flex-1 resize-none overflow-hidden rounded-md border-0 bg-transparent px-2 py-2 text-sm leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
 				placeholder={placeholder}
 				rows={1}
 				onKeyDown={handleKeyDown}
@@ -785,6 +867,7 @@ export function ChatCenter() {
 
 						{renderUploadChips()}
 						{renderInlineImagePreviews()}
+						{renderQuestionHint()}
 						{renderComposer("有什么想学习或实践的?发送消息开始…")}
 
 						{simpleMode && presets.length > 0 ? (
@@ -974,6 +1057,7 @@ export function ChatCenter() {
 				<div className="mx-auto max-w-3xl">
 					{renderUploadChips()}
 					{renderInlineImagePreviews()}
+					{renderQuestionHint()}
 					{renderComposer("Type a message...")}
 				</div>
 			</div>

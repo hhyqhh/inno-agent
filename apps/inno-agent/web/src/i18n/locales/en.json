@@ -36,7 +36,11 @@
 		"saving": "Saving…",
 		"saved": "Saved",
 		"remove": "Remove",
-		"open": "Open"
+		"open": "Open",
+		"pasteCollapsed": "«Pasted {{count}} lines»",
+		"pasteCollapsedUndo": "Undo paste",
+		"questionPending": "Please answer the question above before continuing",
+		"questionPendingJump": "View question"
 	},
 	"notebook": {
 		"title": "Notebook",

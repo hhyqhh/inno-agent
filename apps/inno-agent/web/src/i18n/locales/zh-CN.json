@@ -138,7 +138,16 @@
 		"officeNote": "已提取文本用于预览 · 排版可能与原文不同",
 		"officeUnavailable": "无法预览",
 		"pageCount": "{{count}} 页",
-		"page": "第"
+		"page": "第",
+		"pptxLoading": "正在渲染幻灯片…",
+		"pptxCount": "共 {{count}} 页",
+		"pptxSlide": "第 {{n}} 页",
+		"pptxFailed": "演示文稿渲染失败",
+		"docxLoading": "正在渲染文档…",
+		"docxFailed": "文档渲染失败",
+		"xlsxLoading": "正在渲染表格…",
+		"xlsxFailed": "表格渲染失败",
+		"xlsxLargeSheetWarning": "表格较大 — 仅显示前 {{n}} 行"
 	},
 	"profile": {
 		"title": "学习者画像",

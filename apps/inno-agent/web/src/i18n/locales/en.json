@@ -138,7 +138,16 @@
 		"officeNote": "Text extracted for preview · formatting may differ",
 		"officeUnavailable": "Preview unavailable",
 		"pageCount": "{{count}} pages",
-		"page": "Page"
+		"page": "Page",
+		"pptxLoading": "Rendering slides...",
+		"pptxCount": "{{count}} slides",
+		"pptxSlide": "Slide {{n}}",
+		"pptxFailed": "Failed to render presentation",
+		"docxLoading": "Rendering document...",
+		"docxFailed": "Failed to render document",
+		"xlsxLoading": "Rendering spreadsheet...",
+		"xlsxFailed": "Failed to render spreadsheet",
+		"xlsxLargeSheetWarning": "Large sheet — showing first {{n}} rows"
 	},
 	"profile": {
 		"title": "Learner Profile",

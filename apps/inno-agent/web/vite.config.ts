@@ -151,6 +151,8 @@ export default defineConfig({
 					"markdown-editor": ["@uiw/react-md-editor"],
 					cytoscape: ["cytoscape", "cytoscape-cola", "cytoscape-cose-bilkent"],
 					katex: ["katex"],
+					"docx-preview": ["docx-preview"],
+					xlsx: ["xlsx"],
 				},
 			},
 		},

@@ -1,5 +1,5 @@
 import { apiFetch } from "./client.js";
-import type { WorkspaceFileDetail, WorkspaceTree, WorkspaceTreeNode } from "../types/workspace.js";
+import type { PptxPreviewResult, WorkspaceFileDetail, WorkspaceTree, WorkspaceTreeNode } from "../types/workspace.js";
 
 function qs(workspaceId?: string): string {
 	return workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
@@ -85,6 +85,13 @@ export function workspaceFolderZipUrl(path: string, workspaceId?: string): strin
 	if (workspaceId) params.set("workspaceId", workspaceId);
 	const qs = params.toString();
 	return `/api/workspace/download-folder${qs ? `?${qs}` : ""}`;
+}
+
+/** Fetch a pptx rendered to per-slide SVG. */
+export async function getPptxPreview(path: string, workspaceId?: string): Promise<PptxPreviewResult> {
+	const params = new URLSearchParams({ path });
+	if (workspaceId) params.set("workspaceId", workspaceId);
+	return apiFetch<PptxPreviewResult>(`/api/workspace/pptx-preview?${params.toString()}`);
 }
 
 // ---- HTML resource inlining for srcdoc previews ----

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Tree, type NodeRendererProps, type TreeApi, type CreateHandler, type RenameHandler, type DeleteHandler, type MoveHandler } from "react-arborist";
 import MDEditor from "@uiw/react-md-editor";
@@ -17,7 +17,7 @@ import { cpp } from "@codemirror/lang-cpp";
 import { rust } from "@codemirror/lang-rust";
 import { go } from "@codemirror/lang-go";
 import type { Extension } from "@codemirror/state";
-import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, FileCode2 } from "lucide-react";
+import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, FileCode2, Presentation, FileSpreadsheet } from "lucide-react";
 import { workspaceStore } from "../stores/workspace-store.js";
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
@@ -26,13 +26,19 @@ import { settingsStore } from "../stores/settings-store.js";
 import { getSessionWorkspace } from "../api/workspaces.js";
 import { TerminalDrawer } from "./terminal/TerminalDrawer.js";
 import { RunButton } from "./terminal/RunButton.js";
-import type { WorkspaceFileDetail, WorkspaceFileKind } from "../types/workspace.js";
+import type { WorkspaceFileDetail, WorkspaceFileKind, WorkspaceOfficeFormat } from "../types/workspace.js";
 import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { useStoreSnapshot } from "./hooks.js";
 import "@earendil-works/pi-web-ui";
 import "@uiw/react-md-editor/markdown-editor.css";
 import "@uiw/react-markdown-preview/markdown.css";
+
+// Heavy office renderers are lazy-loaded so docx-preview / xlsx stay off the
+// critical path and only download when an office file is actually opened.
+const PptxPreview = lazy(() => import("./office/PptxPreview.js"));
+const DocxPreview = lazy(() => import("./office/DocxPreview.js"));
+const XlsxPreview = lazy(() => import("./office/XlsxPreview.js"));
 
 /* ---------- helpers ---------- */
 
@@ -48,7 +54,19 @@ function nodeIcon(name: string, isDir: boolean, isOpen: boolean) {
 	if (lower.endsWith(".md")) return <FileText size={14} />;
 	if (lower.endsWith(".pdf")) return <FileType size={14} />;
 	if (lower.endsWith(".html") || lower.endsWith(".htm")) return <Globe size={14} />;
+	if (lower.endsWith(".pptx")) return <Presentation size={14} />;
+	if (lower.endsWith(".xlsx")) return <FileSpreadsheet size={14} />;
+	if (lower.endsWith(".docx")) return <FileText size={14} />;
 	return <File size={14} />;
+}
+
+/** Derive the office format from a filename when the backend didn't supply it. */
+function officeFormatFromName(name: string): WorkspaceOfficeFormat | undefined {
+	const lower = name.toLowerCase();
+	if (lower.endsWith(".pptx")) return "pptx";
+	if (lower.endsWith(".docx")) return "docx";
+	if (lower.endsWith(".xlsx")) return "xlsx";
+	return undefined;
 }
 
 /** Whether a file kind supports text editing */
@@ -300,6 +318,15 @@ function Preview({ file, isLoading }: { file: WorkspaceFileDetail; isLoading: bo
 		);
 	}
 	if (file.kind === "office") {
+		const fmt = file.format ?? officeFormatFromName(file.name);
+		const fallback = (
+			<div className="flex h-full items-center justify-center text-sm text-[var(--inno-text-muted)]">
+				{t("preview.loadingFile")}
+			</div>
+		);
+		if (fmt === "pptx") return <Suspense fallback={fallback}><PptxPreview file={file} /></Suspense>;
+		if (fmt === "docx") return <Suspense fallback={fallback}><DocxPreview file={file} /></Suspense>;
+		if (fmt === "xlsx") return <Suspense fallback={fallback}><XlsxPreview file={file} /></Suspense>;
 		return <OfficePreview file={file} />;
 	}
 	if (file.kind === "binary") {

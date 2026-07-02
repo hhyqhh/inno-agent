@@ -270,6 +270,31 @@ inno-workspace-panel textarea {
 	background-clip: padding-box;
 }
 
+/* Office previews: make injected SVG / docx pages fit the preview width. */
+/* pptx: the converter emits <svg width="960" height="540">; override so it
+   scales to the slide card instead of overflowing at its intrinsic size. */
+.pptx-slide svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+/* docx: docx-preview lays out fixed-width A4 pages. Let the wrapper shrink to
+   the panel and scale each page down proportionally on narrow previews. */
+.docx-host .docx-wrapper {
+	width: 100%;
+	max-width: 100%;
+	padding: 0;
+	background: transparent;
+}
+
+.docx-host .docx-wrapper > section.docx {
+	width: 100% !important;
+	max-width: 100%;
+	margin: 0 auto 1rem;
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
 .inno-icon-button {
 	display: inline-flex;
 	align-items: center;

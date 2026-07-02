@@ -3,7 +3,8 @@
 import "source-map-support/register.js";
 
 import { createServer, type IncomingMessage as HttpReq, type ServerResponse } from "node:http";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
@@ -1322,6 +1323,114 @@ const TEXT_NOEXT_NAMES = new Set(["makefile", "dockerfile", "gemfile", "rakefile
 
 /** Office document extensions previewable via LiteParse text extraction. */
 const OFFICE_PREVIEW_EXTENSIONS = new Set([".docx", ".xlsx", ".pptx"]);
+
+/** Map an office extension to a preview format the frontend dispatches on. */
+function officeFormat(filePath: string): "docx" | "xlsx" | "pptx" | undefined {
+	const ext = extname(filePath).toLowerCase();
+	if (ext === ".docx") return "docx";
+	if (ext === ".xlsx") return "xlsx";
+	if (ext === ".pptx") return "pptx";
+	return undefined;
+}
+
+// --- PPTX → SVG conversion (pure-Python converter, no LibreOffice) ---
+const PPTX_TIMEOUT_MS = 60_000;
+const MAX_PPTX_SLIDES = 200;
+const MAX_PPTX_BYTES = 50 * 1024 * 1024;
+const execFileAsync = promisify(execFile);
+let cachedPythonExe: string | null | undefined;
+
+/** Absolute path to the vendored pptx_to_svg CLI (dev = repo, prod = bundled). */
+function pptxScriptPath(): string {
+	// In a packaged Electron app, codeDir points inside app.asar but the script
+	// is unpacked (asarUnpack) to app.asar.unpacked — Python can't read asar.
+	const base = paths.codeDir.replace(/app\.asar([\\/])/, "app.asar.unpacked$1");
+	return join(base, "scripts", "pptx_to_svg.py");
+}
+
+/** Resolve a usable Python executable, caching the result. */
+function resolvePythonExecutable(): string | null {
+	if (cachedPythonExe !== undefined) return cachedPythonExe;
+	const candidates: string[] = [];
+	const override = process.env.INNO_PYTHON?.trim();
+	if (override) candidates.push(override);
+	// On Windows the launcher is usually `python`; elsewhere prefer `python3`.
+	if (process.platform === "win32") candidates.push("python", "python3");
+	else candidates.push("python3", "python");
+	for (const candidate of candidates) {
+		try {
+			const probe = spawnSync(candidate, ["--version"], { stdio: "ignore", windowsHide: true });
+			if (!probe.error && probe.status === 0) {
+				cachedPythonExe = candidate;
+				return candidate;
+			}
+		} catch {
+			// try next candidate
+		}
+	}
+	cachedPythonExe = null;
+	return null;
+}
+
+interface PptxSvgSlide {
+	index: number;
+	svg: string;
+}
+
+interface PptxConvertResult {
+	slides: PptxSvgSlide[];
+	canvasPx?: [number, number];
+}
+
+/**
+ * Convert a .pptx to per-slide SVG strings via the vendored Python converter.
+ * Runs asynchronously (never blocks the HTTP loop) and always cleans up its
+ * temp directory. Throws on failure so the caller can return a 422 fallback.
+ */
+async function convertPptxToSvg(filePath: string): Promise<PptxConvertResult> {
+	const python = resolvePythonExecutable();
+	if (!python) {
+		throw new Error("Python is not available; set INNO_PYTHON or install python3");
+	}
+	const script = pptxScriptPath();
+	if (!existsSync(script)) {
+		throw new Error(`pptx converter not found at ${script}`);
+	}
+	const outDir = join(tmpdir(), `inno-pptx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+	ensureDir(outDir);
+	try {
+		const { stdout } = await execFileAsync(
+			python,
+			[script, filePath, "--embed-images", "--inheritance-mode", "flat", "-o", outDir],
+			{ timeout: PPTX_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
+		);
+		const svgDir = join(outDir, "svg");
+		if (!existsSync(svgDir)) {
+			throw new Error("converter produced no output");
+		}
+		const files = readdirSync(svgDir)
+			.filter((f) => /^slide_\d+\.svg$/i.test(f))
+			.sort((a, b) => {
+				const na = Number(a.match(/\d+/)?.[0] ?? 0);
+				const nb = Number(b.match(/\d+/)?.[0] ?? 0);
+				return na - nb;
+			});
+		const slides: PptxSvgSlide[] = [];
+		for (const file of files.slice(0, MAX_PPTX_SLIDES)) {
+			const index = Number(file.match(/\d+/)?.[0] ?? slides.length + 1);
+			slides.push({ index, svg: readFileSync(join(svgDir, file), "utf-8") });
+		}
+		if (slides.length === 0) {
+			throw new Error("converter produced no slides");
+		}
+		let canvasPx: [number, number] | undefined;
+		const match = /Canvas:\s*([\d.]+)\s*x\s*([\d.]+)\s*px/i.exec(stdout);
+		if (match) canvasPx = [Number(match[1]), Number(match[2])];
+		return { slides, canvasPx };
+	} finally {
+		rmSync(outDir, { recursive: true, force: true });
+	}
+}
 
 /** Whether a file looks like a dotfile config (almost always text). */
 function isDotfileText(filePath: string): boolean {
@@ -2862,18 +2971,23 @@ const server = createServer(async (req, res) => {
 			if (!forceText && (kind === "binary" || kind === "pdf" || kind === "image" || kind === "office")) {
 				const relPath = workspaceRelativePath(root, filePath);
 				const rawUrl = `/api/workspace/raw?workspaceId=${encodeURIComponent(wsId)}&path=${encodeURIComponent(relPath)}`;
+				const format = kind === "office" ? officeFormat(filePath) : undefined;
+				// pptx is rendered as SVG via the Python converter; docx/xlsx are
+				// rendered client-side from the raw bytes, so they need no previewUrl.
+				let previewUrl: string | undefined;
+				if (format === "pptx") {
+					previewUrl = `/api/workspace/pptx-preview?workspaceId=${encodeURIComponent(wsId)}&path=${encodeURIComponent(relPath)}`;
+				}
 				json(res, 200, {
 					path: relPath,
 					name: basename(filePath),
 					kind,
+					format,
 					mimeType: contentType,
 					size: stat.size,
 					updatedAt: stat.mtime.toISOString(),
 					url: rawUrl,
-					// Office docs carry a separate URL that returns extracted text JSON.
-					previewUrl: kind === "office"
-						? `/api/workspace/office-preview?workspaceId=${encodeURIComponent(wsId)}&path=${encodeURIComponent(relPath)}`
-						: undefined,
+					previewUrl,
 				});
 				return;
 			}
@@ -2978,6 +3092,38 @@ const server = createServer(async (req, res) => {
 			} catch (err) {
 				logger.warn({ err }, "failed to parse office document");
 				json(res, 422, { error: err instanceof Error ? err.message : "Failed to parse document" });
+			}
+			return;
+		}
+
+		// Render a .pptx as per-slide SVG via the vendored Python converter.
+		if (method === "GET" && url.startsWith("/api/workspace/pptx-preview?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const requestedPath = params.get("path") ?? "";
+			const wsId = workspaceIdFromQuery(url);
+			const filePath = safeWorkspacePath(wsId, requestedPath);
+			if (!filePath || !existsSync(filePath) || !statSync(filePath).isFile()) {
+				json(res, 404, { error: "Workspace file not found" });
+				return;
+			}
+			if (statSync(filePath).size > MAX_PPTX_BYTES) {
+				json(res, 413, { error: "Presentation is too large to preview" });
+				return;
+			}
+			try {
+				const result = await convertPptxToSvg(filePath);
+				json(res, 200, {
+					name: basename(filePath),
+					slideCount: result.slides.length,
+					slides: result.slides,
+					canvasPx: result.canvasPx,
+				});
+			} catch (err) {
+				logger.warn({ err }, "failed to convert pptx to svg");
+				json(res, 422, {
+					error: err instanceof Error ? err.message : "Failed to render presentation",
+					code: "PPTX_CONVERT_FAILED",
+				});
 			}
 			return;
 		}

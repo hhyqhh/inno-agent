@@ -15,5 +15,6 @@ docker-compose.yml
 electron/loading.html
 electron/main.js
 build
-scripts
+# Root-only: keep apps/inno-agent/scripts (vendored pptx→svg Python converter)
+/scripts
 docs

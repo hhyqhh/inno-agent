@@ -37,13 +37,15 @@
 			"apps/inno-agent/dist/**/*",
 			"apps/inno-agent/web/dist/**/*",
 			"apps/inno-agent/presets/**/*",
+			"apps/inno-agent/scripts/**/*",
 			"node_modules/**/*",
 			"!node_modules/.cache/**/*"
 		],
 		"asarUnpack": [
 			"**/node_modules/node-pty/**/*",
 			"**/node_modules/@homebridge/**/*",
-			"apps/inno-agent/presets/**/*"
+			"apps/inno-agent/presets/**/*",
+			"apps/inno-agent/scripts/**/*"
 		],
 		"mac": {
 			"icon": "build/icon.icns",
@@ -110,6 +112,6 @@
 		"gaxios": {
 			"rimraf": "6.1.2"
 		},
-		"xlsx": "0.18.5"
+		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
 	}
 }

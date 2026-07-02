@@ -15,17 +15,36 @@ export interface WorkspaceTree extends WorkspaceTreeNode {
 
 export type WorkspaceFileKind = "markdown" | "html" | "pdf" | "image" | "office" | "text" | "binary";
 
+/** Specific office format, used to pick the right client-side renderer. */
+export type WorkspaceOfficeFormat = "docx" | "xlsx" | "pptx";
+
 export interface WorkspaceFileDetail {
 	path: string;
 	name: string;
 	kind: WorkspaceFileKind;
+	/** For office docs: which format, so the frontend picks the right renderer. */
+	format?: WorkspaceOfficeFormat;
 	mimeType: string;
 	size: number;
 	updatedAt: string;
 	content?: string;
 	url?: string;
-	/** For office docs: URL returning extracted-text JSON. */
+	/** For pptx: URL returning per-slide SVG JSON. */
 	previewUrl?: string;
+}
+
+/** One slide of a pptx rendered to SVG. */
+export interface PptxSlide {
+	index: number;
+	svg: string;
+}
+
+/** Response shape of GET /api/workspace/pptx-preview. */
+export interface PptxPreviewResult {
+	name: string;
+	slideCount: number;
+	slides: PptxSlide[];
+	canvasPx?: [number, number];
 }
 
 /** Node shape expected by react-arborist */

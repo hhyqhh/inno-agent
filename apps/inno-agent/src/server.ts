@@ -43,6 +43,21 @@ import { CronScheduler } from "./scheduler/cron-scheduler.js";
 import { validateCron } from "./scheduler/cron-utils.js";
 import { parseFrontmatter, serializeFrontmatter } from "./memory/l2/wiki-maintainer.js";
 import { readManifest, removeWikiPathFromManifest } from "./memory/l2/manifest-store.js";
+import { listL2Sources, readRawTextPreview } from "./memory/l2/sources-service.js";
+import {
+	archiveL2NotebookItem,
+	createL2Note,
+	listL2Notes,
+	readNoteContent,
+	saveL2NoteContent,
+	uploadL2NoteFile,
+} from "./memory/l2/notes-service.js";
+import {
+	deleteNoteAttachment,
+	listNoteAttachments,
+	uploadNoteAttachment,
+} from "./memory/l2/note-attachments-service.js";
+import { listNoteTemplates } from "./memory/l2/note-templates.js";
 import { loadProfile, saveProfile } from "./memory/learner/profile-store.js";
 import type { LearnerProfile, LearningGoal, KnowledgeState, Misconception, LearnerPreferences } from "./memory/learner/types.js";
 import { randomUUID } from "node:crypto";
@@ -601,6 +616,15 @@ function safeJoin(baseDir: string, userPath: string): string | null {
 	const rel = relative(resolvedBase, resolvedPath);
 	if (rel.startsWith("..") || resolve(rel) === rel) return null;
 	return resolvedPath;
+}
+
+function safeL2RawPath(l2Root: string, userPath: string): string | null {
+	const fullPath = safeJoin(l2Root, userPath);
+	if (!fullPath) return null;
+	const rawRoot = join(l2Root, "raw");
+	const rel = relative(rawRoot, fullPath);
+	if (rel.startsWith("..") || rel === "") return null;
+	return fullPath;
 }
 
 function safeWorkspacePath(workspaceId: string | null | undefined, userPath: string): string | null {
@@ -3398,7 +3422,346 @@ const server = createServer(async (req, res) => {
 		}
 
 
-		// --- L2 Raw Upload API ---
+		// --- L2 Notebook API ---
+		if (method === "GET" && url === "/api/l2/sources") {
+			try {
+				json(res, 200, listL2Sources(l2DataDir));
+			} catch (err) {
+				logger.warn({ err }, "failed to list L2 sources");
+				json(res, 500, { error: "Failed to list sources" });
+			}
+			return;
+		}
+
+		if (method === "GET" && url.startsWith("/api/l2/raw/content?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const rawPath = params.get("path");
+			if (!rawPath) {
+				json(res, 400, { error: "Missing path parameter" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath) {
+				json(res, 400, { error: "Invalid raw path" });
+				return;
+			}
+			if (!existsSync(fullPath)) {
+				json(res, 404, { error: "Raw file not found" });
+				return;
+			}
+			try {
+				json(res, 200, { path: rawPath, content: readRawTextPreview(l2DataDir, rawPath) });
+			} catch (err) {
+				logger.warn({ err, rawPath }, "failed to read raw content");
+				json(res, 500, { error: "Failed to read raw content" });
+			}
+			return;
+		}
+
+		if (method === "GET" && url.startsWith("/api/l2/raw/file?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const rawPath = params.get("path");
+			if (!rawPath) {
+				json(res, 400, { error: "Missing path parameter" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath) {
+				json(res, 400, { error: "Invalid raw path" });
+				return;
+			}
+			if (!existsSync(fullPath)) {
+				json(res, 404, { error: "Raw file not found" });
+				return;
+			}
+			const data = readFileSync(fullPath);
+			const name = basename(fullPath);
+			const ext = extname(name).toLowerCase();
+			const mime =
+				ext === ".pdf"
+					? "application/pdf"
+					: ext === ".png"
+						? "image/png"
+						: ext === ".jpg" || ext === ".jpeg"
+							? "image/jpeg"
+							: "application/octet-stream";
+			res.writeHead(200, {
+				"Content-Type": mime,
+				"Content-Disposition": `inline; filename="${encodeURIComponent(name)}"`,
+				"Content-Length": data.length,
+			});
+			res.end(data);
+			return;
+		}
+
+		if (method === "GET" && url.startsWith("/api/l2/notes/content?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const rawPath = params.get("path");
+			if (!rawPath) {
+				json(res, 400, { error: "Missing path parameter" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath || !rawPath.replace(/\\/g, "/").startsWith("raw/notes/")) {
+				json(res, 400, { error: "Invalid note path" });
+				return;
+			}
+			if (!existsSync(fullPath)) {
+				json(res, 404, { error: "Note not found" });
+				return;
+			}
+			try {
+				json(res, 200, readNoteContent(l2DataDir, rawPath));
+			} catch (err) {
+				logger.warn({ err, rawPath }, "failed to read note content");
+				const message = err instanceof Error ? err.message : "Failed to read note";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "GET" && url === "/api/l2/notes/templates") {
+			try {
+				json(res, 200, { templates: listNoteTemplates(paths.codeDir) });
+			} catch (err) {
+				logger.warn({ err }, "failed to list note templates");
+				json(res, 500, { error: "Failed to list templates" });
+			}
+			return;
+		}
+
+		if (method === "GET" && (url === "/api/l2/notes" || url.startsWith("/api/l2/notes?"))) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const status = params.get("status") ?? undefined;
+			const notebookType = params.get("notebookType") ?? undefined;
+			const validNotebookTypes = new Set(["conversation", "file", "note"]);
+			try {
+				json(res, 200, listL2Notes(l2DataDir, {
+					status,
+					notebookType:
+						notebookType && validNotebookTypes.has(notebookType)
+							? (notebookType as "conversation" | "file" | "note")
+							: undefined,
+				}));
+			} catch (err) {
+				logger.warn({ err }, "failed to list L2 notes");
+				json(res, 500, { error: "Failed to list notes" });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/notes/upload") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const fileName = typeof body.fileName === "string" ? body.fileName : "";
+			const mimeType = typeof body.mimeType === "string" ? body.mimeType : "application/octet-stream";
+			const dataBase64 = typeof body.dataBase64 === "string" ? body.dataBase64 : "";
+			if (!fileName || !dataBase64) {
+				json(res, 400, { error: "Missing fileName or dataBase64" });
+				return;
+			}
+			try {
+				json(res, 201, uploadL2NoteFile(l2DataDir, { fileName, mimeType, dataBase64 }));
+			} catch (err) {
+				logger.warn({ err }, "failed to upload note file");
+				const message = err instanceof Error ? err.message : "Upload failed";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/notes") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const title = typeof body.title === "string" ? body.title.trim() : undefined;
+			const templateId = typeof body.templateId === "string" ? body.templateId.trim() : undefined;
+			const content = typeof body.content === "string" ? body.content : undefined;
+			const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === "string") : undefined;
+			try {
+				const result = createL2Note(l2DataDir, paths.codeDir, { title, templateId, tags, content });
+				json(res, 201, result);
+			} catch (err) {
+				logger.warn({ err }, "failed to create note");
+				const message = err instanceof Error ? err.message : "Create note failed";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "PUT" && url === "/api/l2/notes/content") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
+			const title = typeof body.title === "string" ? body.title.trim() : "";
+			const content = typeof body.content === "string" ? body.content : "";
+			const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === "string") : undefined;
+			const recordDate = typeof body.recordDate === "string" ? body.recordDate.trim() : undefined;
+			if (!rawPath || !title || !content) {
+				json(res, 400, { error: "Missing rawPath, title, or content" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath || !rawPath.replace(/\\/g, "/").startsWith("raw/notes/")) {
+				json(res, 400, { error: "Invalid note path" });
+				return;
+			}
+			if (!existsSync(fullPath)) {
+				json(res, 404, { error: "Note not found" });
+				return;
+			}
+			try {
+				const result = saveL2NoteContent(l2DataDir, rawPath, { title, tags, recordDate, content });
+				json(res, 200, result);
+			} catch (err) {
+				logger.warn({ err, rawPath }, "failed to save note");
+				const message = err instanceof Error ? err.message : "Save note failed";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "GET" && url.startsWith("/api/l2/notes/attachments?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const rawPath = params.get("path");
+			if (!rawPath) {
+				json(res, 400, { error: "Missing path parameter" });
+				return;
+			}
+			const normalizedPath = rawPath.replace(/\\/g, "/");
+			if (!normalizedPath.startsWith("raw/notes/")) {
+				json(res, 400, { error: "Invalid note path" });
+				return;
+			}
+			try {
+				json(res, 200, { attachments: listNoteAttachments(l2DataDir, normalizedPath) });
+			} catch (err) {
+				logger.warn({ err, rawPath }, "failed to list note attachments");
+				const message = err instanceof Error ? err.message : "Failed to list attachments";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/notes/attachments") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const noteRawPath = typeof body.noteRawPath === "string" ? body.noteRawPath.trim() : "";
+			const fileName = typeof body.fileName === "string" ? body.fileName.trim() : "";
+			const mimeType = typeof body.mimeType === "string" ? body.mimeType : "application/octet-stream";
+			const dataBase64 = typeof body.dataBase64 === "string" ? body.dataBase64 : "";
+			if (!noteRawPath || !fileName || !dataBase64) {
+				json(res, 400, { error: "Missing noteRawPath, fileName, or dataBase64" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, noteRawPath);
+			if (!fullPath || !noteRawPath.replace(/\\/g, "/").startsWith("raw/notes/")) {
+				json(res, 400, { error: "Invalid note path" });
+				return;
+			}
+			if (!existsSync(fullPath)) {
+				json(res, 404, { error: "Note not found" });
+				return;
+			}
+			try {
+				const attachment = uploadNoteAttachment(l2DataDir, noteRawPath, { fileName, mimeType, dataBase64 });
+				json(res, 201, {
+					attachmentId: attachment.id,
+					filePath: attachment.filePath,
+					status: attachment.status,
+					attachment,
+				});
+			} catch (err) {
+				logger.warn({ err, noteRawPath }, "failed to upload note attachment");
+				const message = err instanceof Error ? err.message : "Upload attachment failed";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "DELETE" && url.startsWith("/api/l2/notes/attachments/")) {
+			const attachmentId = decodeURIComponent(url.slice("/api/l2/notes/attachments/".length)).trim();
+			if (!attachmentId) {
+				json(res, 400, { error: "Missing attachment id" });
+				return;
+			}
+			try {
+				const removed = deleteNoteAttachment(l2DataDir, attachmentId);
+				json(res, 200, { attachmentId: removed.id });
+			} catch (err) {
+				logger.warn({ err, attachmentId }, "failed to delete note attachment");
+				const message = err instanceof Error ? err.message : "Delete attachment failed";
+				const status = message.includes("not found") ? 404 : 500;
+				json(res, status, { error: message });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/notes/archive") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
+			const title = typeof body.title === "string" ? body.title.trim() : undefined;
+			const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === "string") : undefined;
+			if (!rawPath) {
+				json(res, 400, { error: "Missing rawPath" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath) {
+				json(res, 400, { error: "Invalid raw path" });
+				return;
+			}
+			if (!existsSync(fullPath)) {
+				json(res, 404, { error: "Raw file not found" });
+				return;
+			}
+			try {
+				const session = getSession();
+				const result = await archiveL2NotebookItem(l2DataDir, rawPath, {
+					title,
+					tags,
+					model: session.model,
+					modelRegistry: session.modelRegistry,
+				});
+				json(res, 201, result);
+			} catch (err) {
+				logger.warn({ err, rawPath }, "failed to archive note");
+				const message = err instanceof Error ? err.message : "Archive note failed";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/sources/archive") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
+			const title = typeof body.title === "string" ? body.title.trim() : undefined;
+			const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === "string") : undefined;
+			if (!rawPath) {
+				json(res, 400, { error: "Missing rawPath" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath) {
+				json(res, 400, { error: "Invalid raw path" });
+				return;
+			}
+			if (!existsSync(fullPath)) {
+				json(res, 404, { error: "Raw file not found" });
+				return;
+			}
+			try {
+				const session = getSession();
+				const result = await archiveL2NotebookItem(l2DataDir, rawPath, {
+					title,
+					tags,
+					model: session.model,
+					modelRegistry: session.modelRegistry,
+				});
+				json(res, 201, result);
+			} catch (err) {
+				logger.warn({ err, rawPath }, "failed to archive raw file");
+				const message = err instanceof Error ? err.message : "Archive failed";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
 		if (method === "POST" && url === "/api/l2/raw/upload") {
 			const body = (await readBody(req)) as Record<string, unknown>;
 			const fileName = typeof body.fileName === "string" ? body.fileName : "";

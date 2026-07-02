@@ -6,7 +6,7 @@ import type { RightPanelTab, WorkspaceMode } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { WorkspaceBrowser } from "./WorkspaceBrowser.js";
-import { Notebook } from "./Notebook.js";
+import { KnowledgePanel } from "./KnowledgePanel.js";
 import { JobsPanel } from "./JobsPanel.js";
 import { LearnerProfilePanel } from "./LearnerProfilePanel.js";
 import { SkillsPanel } from "./SkillsPanel.js";
@@ -35,7 +35,7 @@ const TAB_ICONS: Record<RightPanelTab, React.ReactNode> = {
 function WorkspaceContent({ activeTab }: { activeTab: RightPanelTab }) {
 	switch (activeTab) {
 		case "notebook":
-			return <Notebook />;
+			return <KnowledgePanel />;
 		case "preview":
 			return <WorkspaceBrowser />;
 		case "profile":

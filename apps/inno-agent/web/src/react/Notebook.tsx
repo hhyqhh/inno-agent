@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Network, FileText, PanelLeftClose, PanelLeftOpen, Trash2 } from "lucide-react";
+import { Network, ScrollText, PanelLeftClose, PanelLeftOpen, Trash2 } from "lucide-react";
 import { notebookStore } from "../stores/notebook-store.js";
 import type { WikiPageType } from "../types/wiki.js";
 import { useStoreSnapshot } from "./hooks.js";
@@ -24,7 +24,13 @@ function typeColor(type?: WikiPageType): string {
 	}
 }
 
-export function Notebook() {
+export function Notebook({
+	onOpenNoteId,
+	onOpenNote,
+}: {
+	onOpenNoteId?: (noteId: string) => void;
+	onOpenNote?: (rawPath: string) => void;
+}) {
 	const { t } = useTranslation();
 	const [sidebarOpen, setSidebarOpen] = useState(true);
 	const state = useStoreSnapshot(notebookStore, () => ({
@@ -144,7 +150,7 @@ export function Notebook() {
 								onClick={() => notebookStore.setView("page")}
 								title={t("notebook.view.page")}
 							>
-								<FileText size={13} />
+								<ScrollText size={13} />
 								<span className="hidden @[680px]:inline">{t("notebook.view.page")}</span>
 							</button>
 						</div>
@@ -152,7 +158,7 @@ export function Notebook() {
 					<div className="text-xs text-[var(--inno-text-muted)]">{state.currentPagePath ?? ""}</div>
 				</div>
 				<div className="min-h-0 flex-1 overflow-auto">
-					{state.view === "graph" ? <GraphView /> : <PageView />}
+					{state.view === "graph" ? <GraphView /> : <PageView onOpenNoteId={onOpenNoteId} onOpenNote={onOpenNote} />}
 				</div>
 			</section>
 		</div>

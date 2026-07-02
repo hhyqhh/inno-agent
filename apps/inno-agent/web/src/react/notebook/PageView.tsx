@@ -24,7 +24,15 @@ function typeColor(type?: WikiPageType): string {
 	}
 }
 
-function FrontmatterHeader({ frontmatter }: { frontmatter: WikiPageFrontmatter }) {
+function FrontmatterHeader({
+	frontmatter,
+	onOpenNoteId,
+	onOpenNote,
+}: {
+	frontmatter: WikiPageFrontmatter;
+	onOpenNoteId?: (noteId: string) => void;
+	onOpenNote?: (rawPath: string) => void;
+}) {
 	const { t } = useTranslation();
 	const statusColors: Record<string, string> = {
 		draft: "bg-yellow-50 text-yellow-700 ring-1 ring-yellow-100",
@@ -56,11 +64,47 @@ function FrontmatterHeader({ frontmatter }: { frontmatter: WikiPageFrontmatter }
 					))}
 				</div>
 			) : null}
+			{(() => {
+				const notePath = frontmatter.sources.find((path) => path.startsWith("raw/notes/"));
+				if (onOpenNote && notePath) {
+					return (
+						<div className="mt-2">
+							<button
+								type="button"
+								className="text-xs text-[var(--inno-accent)] hover:underline"
+								onClick={() => onOpenNote(notePath)}
+							>
+								{t("notes.actions.viewNote")}
+							</button>
+						</div>
+					);
+				}
+				if (onOpenNoteId && frontmatter.source_ids.length > 0) {
+					return (
+						<div className="mt-2">
+							<button
+								type="button"
+								className="text-xs text-[var(--inno-accent)] hover:underline"
+								onClick={() => onOpenNoteId(frontmatter.source_ids[0])}
+							>
+								{t("notes.actions.viewNote")}
+							</button>
+						</div>
+					);
+				}
+				return null;
+			})()}
 		</div>
 	);
 }
 
-export function PageView() {
+export function PageView({
+	onOpenNoteId,
+	onOpenNote,
+}: {
+	onOpenNoteId?: (noteId: string) => void;
+	onOpenNote?: (rawPath: string) => void;
+}) {
 	const { t } = useTranslation();
 	const state = useStoreSnapshot(notebookStore, () => ({
 		currentPage: notebookStore.currentPage,
@@ -84,7 +128,9 @@ export function PageView() {
 	if (state.isEditing) {
 		return (
 			<div className="flex h-full flex-col" data-color-mode="light">
-				{parsed.frontmatter ? <FrontmatterHeader frontmatter={parsed.frontmatter} /> : null}
+				{parsed.frontmatter ? (
+					<FrontmatterHeader frontmatter={parsed.frontmatter} onOpenNoteId={onOpenNoteId} onOpenNote={onOpenNote} />
+				) : null}
 				<div className="min-h-0 flex-1 overflow-hidden">
 					<MDEditor
 						value={state.editBuffer}
@@ -109,7 +155,9 @@ export function PageView() {
 
 	return (
 		<div className="flex h-full flex-col">
-			{parsed.frontmatter ? <FrontmatterHeader frontmatter={parsed.frontmatter} /> : null}
+			{parsed.frontmatter ? (
+				<FrontmatterHeader frontmatter={parsed.frontmatter} onOpenNoteId={onOpenNoteId} onOpenNote={onOpenNote} />
+			) : null}
 			<div className="min-h-0 flex-1 overflow-y-auto p-4">
 				<markdown-artifact content={normalizeMarkdownMath(parsed.body)} />
 			</div>

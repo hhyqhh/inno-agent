@@ -50,3 +50,27 @@ export function findManifestByTitle(l2DataDir: string, title: string): ManifestE
 export function findManifestByHash(l2DataDir: string, contentHash: string): ManifestEntry | undefined {
 	return readManifest(l2DataDir).find((e) => e.contentHash === contentHash);
 }
+
+export function findManifestByRawPath(l2DataDir: string, rawPath: string): ManifestEntry | undefined {
+	const normalized = rawPath.replace(/\\/g, "/");
+	return readManifest(l2DataDir).find((e) => e.rawPath.replace(/\\/g, "/") === normalized);
+}
+
+export function updateManifestEntry(
+	l2DataDir: string,
+	id: string,
+	updater: (entry: ManifestEntry) => ManifestEntry,
+): boolean {
+	const entries = readManifest(l2DataDir);
+	let changed = false;
+	const next = entries.map((entry) => {
+		if (entry.id !== id) return entry;
+		changed = true;
+		return updater(entry);
+	});
+	if (changed) {
+		const lines = next.map((e) => JSON.stringify(e)).join("\n") + "\n";
+		writeText(getManifestPath(l2DataDir), lines);
+	}
+	return changed;
+}

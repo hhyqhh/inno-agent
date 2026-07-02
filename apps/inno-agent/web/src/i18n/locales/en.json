@@ -121,6 +121,89 @@
 		"noPages": "No wiki pages",
 		"selectPage": "Select a page to preview"
 	},
+	"knowledge": {
+		"views": {
+			"notebook": "Materials",
+			"wiki": "Knowledge"
+		}
+	},
+	"notes": {
+		"search": "Search notes…",
+		"empty": "No notes yet. Upload files, create a draft, or pick a template.",
+		"selectHint": "Select an item on the left to edit or archive",
+		"titlePlaceholder": "Note title",
+		"tagsPlaceholder": "Tags, comma-separated",
+		"properties": {
+			"heading": "Properties",
+			"title": "title",
+			"tags": "tags",
+			"addTag": "Add tag",
+			"recordDate": "Record date",
+			"recordDateKey": "recordDate",
+			"chooseDate": "Choose record date",
+			"previousMonth": "Previous month",
+			"nextMonth": "Next month",
+			"today": "Today"
+		},
+		"attachments": {
+			"heading": "Attachments",
+			"upload": "Upload file",
+			"uploading": "Uploading",
+			"empty": "No attachments yet. Upload images, PDFs, and other files.",
+			"download": "Download",
+			"delete": "Delete",
+			"confirmDelete": "Delete?",
+			"confirm": "Confirm",
+			"cancel": "Cancel"
+		},
+		"download": "Download",
+		"previewBinaryHint": "Binary file — download or archive to view the Wiki summary.",
+		"itemType": {
+			"markdown": "Note",
+			"orphan": "Upload",
+			"archived": "Archived"
+		},
+		"tabs": {
+			"drafts": "Drafts ({{count}})",
+			"archived": "Archived ({{count}})"
+		},
+		"status": {
+			"draft": "Draft",
+			"indexed": "Archived",
+			"outdated": "Outdated",
+			"error": "Error",
+			"uploaded": "Uploaded",
+			"pending": "Pending",
+			"extracted": "Extracted"
+		},
+		"actions": {
+			"createDraft": "New draft",
+			"templates": "Create from template",
+			"upload": "Upload file",
+			"save": "Save",
+			"archive": "Archive to Wiki",
+			"rearchive": "Re-archive",
+			"openWiki": "Open Wiki summary",
+			"viewNote": "View original note"
+		},
+		"flash": {
+			"created": "Draft created — it won't enter the knowledge graph yet",
+			"createdFromTemplate": "Draft created from template",
+			"saved": "Saved",
+			"archived": "Archived",
+			"uploaded": "Upload succeeded",
+			"loadFailed": "Failed to load notes",
+			"loadContentFailed": "Failed to load note content",
+			"createFailed": "Failed to create note",
+			"saveFailed": "Save failed",
+			"archiveFailed": "Archive failed",
+			"uploadFailed": "Upload failed",
+			"attachmentUploaded": "Attachment uploaded",
+			"attachmentUploadFailed": "Failed to upload attachment",
+			"attachmentDeleted": "Attachment deleted",
+			"attachmentDeleteFailed": "Failed to delete attachment"
+		}
+	},
 	"preview": {
 		"workspace": "Workspace",
 		"refresh": "Refresh",

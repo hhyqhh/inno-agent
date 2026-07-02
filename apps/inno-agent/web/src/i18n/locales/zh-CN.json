@@ -121,6 +121,89 @@
 		"noPages": "暂无 wiki 页面",
 		"selectPage": "选择一个页面进行预览"
 	},
+	"knowledge": {
+		"views": {
+			"notebook": "资料",
+			"wiki": "知识"
+		}
+	},
+	"notes": {
+		"search": "搜索笔记…",
+		"empty": "暂无笔记。上传文件、新建草稿或从模板开始。",
+		"selectHint": "选择左侧条目进行编辑或归档",
+		"titlePlaceholder": "笔记标题",
+		"tagsPlaceholder": "标签，用逗号分隔",
+		"properties": {
+			"heading": "笔记属性",
+			"title": "title",
+			"tags": "tags",
+			"addTag": "添加标签",
+			"recordDate": "记录日期",
+			"recordDateKey": "recordDate",
+			"chooseDate": "选择记录日期",
+			"previousMonth": "上个月",
+			"nextMonth": "下个月",
+			"today": "今天"
+		},
+		"attachments": {
+			"heading": "附件",
+			"upload": "上传文件",
+			"uploading": "上传中",
+			"empty": "暂无附件，可上传图片、PDF 等文件。",
+			"download": "下载",
+			"delete": "删除",
+			"confirmDelete": "删除？",
+			"confirm": "确定",
+			"cancel": "取消"
+		},
+		"download": "下载",
+		"previewBinaryHint": "该文件为二进制格式，请下载或归档后查看 Wiki 摘要。",
+		"itemType": {
+			"markdown": "笔记",
+			"orphan": "上传文件",
+			"archived": "已归档"
+		},
+		"tabs": {
+			"drafts": "草稿 ({{count}})",
+			"archived": "已归档 ({{count}})"
+		},
+		"status": {
+			"draft": "草稿",
+			"indexed": "已归档",
+			"outdated": "待更新",
+			"error": "失败",
+			"uploaded": "待归档",
+			"pending": "待处理",
+			"extracted": "已提取"
+		},
+		"actions": {
+			"createDraft": "新建草稿",
+			"templates": "从模板创建",
+			"upload": "上传文件",
+			"save": "保存",
+			"archive": "归档到 Wiki",
+			"rearchive": "重新归档",
+			"openWiki": "查看 Wiki 摘要",
+			"viewNote": "查看原始笔记"
+		},
+		"flash": {
+			"created": "草稿已创建，不会进入知识图谱",
+			"createdFromTemplate": "已根据模板创建草稿",
+			"saved": "保存成功",
+			"archived": "归档成功",
+			"uploaded": "上传成功",
+			"loadFailed": "加载笔记失败",
+			"loadContentFailed": "加载笔记内容失败",
+			"createFailed": "创建笔记失败",
+			"saveFailed": "保存失败",
+			"archiveFailed": "归档失败",
+			"uploadFailed": "上传失败",
+			"attachmentUploaded": "附件上传成功",
+			"attachmentUploadFailed": "附件上传失败",
+			"attachmentDeleted": "附件已删除",
+			"attachmentDeleteFailed": "附件删除失败"
+		}
+	},
 	"preview": {
 		"workspace": "工作区",
 		"refresh": "刷新",

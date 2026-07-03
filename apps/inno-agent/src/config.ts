@@ -150,6 +150,17 @@ export interface InnoConfig {
 	ui?: {
 		theme: string;
 	};
+	/**
+	 * Optional OCR API config (Baidu PaddleOCR-VL). When the configured model
+	 * cannot recognize images, the agent calls the `ocr_image` tool which uses
+	 * these credentials to submit an async OCR job and poll for the markdown
+	 * result. Unconfigured → the tool returns a "not configured" hint.
+	 */
+	ocrApi?: {
+		token: string;
+		model?: string;
+		baseUrl?: string;
+	};
 }
 
 interface LegacyInnoConfig extends Partial<InnoConfig> {
@@ -272,6 +283,7 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		memory: normalizeMemoryConfig(config.memory),
 		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
 		ui: config.ui,
+		ocrApi: config.ocrApi,
 	} as InnoConfig;
 }
 

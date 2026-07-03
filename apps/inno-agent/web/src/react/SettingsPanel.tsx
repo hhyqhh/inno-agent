@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Trash2, Pencil, X, ChevronDown, ChevronRight, Plus, QrCode as QrCodeIcon, CheckCircle, Wifi, WifiOff, Database } from "lucide-react";
+import { Trash2, Pencil, X, ChevronDown, ChevronRight, Plus, QrCode as QrCodeIcon, CheckCircle, Wifi, WifiOff, Database, KeyRound } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { getWikiStats } from "../api/wiki.js";
 import { settingsStore } from "../stores/settings-store.js";
@@ -880,6 +880,138 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 	);
 }
 
+/* ---------- OCR API Settings (Baidu PaddleOCR-VL token) ---------- */
+
+function OcrSettings({ settings }: { settings: InnoSettings }) {
+	const { t } = useTranslation();
+	const ocr = settings.ocrApi;
+	const [open, setOpen] = useState(false);
+	const [token, setToken] = useState("");
+	const [model, setModel] = useState("");
+	const [baseUrl, setBaseUrl] = useState("");
+	const [saving, setSaving] = useState(false);
+	const [saved, setSaved] = useState(false);
+
+	const maskedToken = ocr?.token ?? "";
+	const hasExistingToken = Boolean(maskedToken);
+	const [tokenDirty, setTokenDirty] = useState(false);
+
+	useEffect(() => {
+		setModel(ocr?.model ?? "");
+		setBaseUrl(ocr?.baseUrl ?? "");
+		setToken("");
+		setTokenDirty(false);
+		setSaved(false);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [maskedToken, ocr?.model, ocr?.baseUrl]);
+
+	const dirty = tokenDirty || model !== (ocr?.model ?? "") || baseUrl !== (ocr?.baseUrl ?? "");
+
+	async function handleSave() {
+		setSaving(true);
+		setSaved(false);
+		try {
+			const tokenToSend = tokenDirty ? token.trim() : maskedToken;
+			await settingsStore.saveOcr({
+				token: tokenToSend,
+				model: model.trim() || undefined,
+				baseUrl: baseUrl.trim() || undefined,
+			});
+			setSaved(true);
+			setToken("");
+			setTokenDirty(false);
+		} catch {
+			// error surfaced via store
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	async function handleClear() {
+		setSaving(true);
+		setSaved(false);
+		try {
+			await settingsStore.saveOcr({ token: "" });
+			setSaved(true);
+			setToken("");
+			setTokenDirty(false);
+		} catch {
+			// error surfaced via store
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	const inputCls = "h-8 min-w-0 w-full rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:border-blue-400 focus:outline-none";
+
+	return (
+		<div className="min-w-0 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+			<button className="inno-settings-card-toggle flex w-full min-w-0 items-start gap-2 text-left" onClick={() => setOpen((v) => !v)}>
+				<KeyRound size={16} className="mt-0.5 shrink-0 text-[var(--inno-text)]" />
+				<div className="min-w-0 flex-1">
+					<h4 className="break-words text-sm font-medium text-[var(--inno-text)]">{t("settings.ocr.title", "OCR API (图片文字识别)")}</h4>
+					<p className="mt-1 max-w-full break-words text-xs leading-relaxed text-[var(--inno-text-muted)]">
+						{t("settings.ocr.desc", "当接入的模型不支持图片识别时，调用百度 vl-ocr API 提取图片文字。需在百度 AI Studio 获取 token。")}
+					</p>
+					{!open && (
+						<p className="mt-1 break-all text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">
+							{hasExistingToken ? `token: ${maskedToken}` : t("settings.ocr.tokenPlaceholder", "未配置")}
+						</p>
+					)}
+				</div>
+				<ChevronDown size={14} className={`mt-1 shrink-0 text-[var(--inno-text-subtle)] transition-transform ${open ? "rotate-180" : ""}`} />
+			</button>
+
+			{open ? (
+				<div className="mt-3 grid gap-2.5">
+					<div className="grid min-w-0 gap-2">
+						<input
+							className={inputCls}
+							type="password"
+							value={token}
+							onChange={(e) => { setToken(e.target.value); setTokenDirty(true); setSaved(false); }}
+							placeholder={hasExistingToken ? maskedToken : (t("settings.ocr.tokenPlaceholder", "bearer token") ?? "")}
+							autoComplete="off"
+						/>
+						<input
+							className={inputCls}
+							value={model}
+							onChange={(e) => { setModel(e.target.value); setSaved(false); }}
+							placeholder={t("settings.ocr.modelPlaceholder", "PaddleOCR-VL-1.6") ?? ""}
+							autoComplete="off"
+						/>
+						<input
+							className={inputCls}
+							value={baseUrl}
+							onChange={(e) => { setBaseUrl(e.target.value); setSaved(false); }}
+							placeholder={t("settings.ocr.baseUrlPlaceholder", "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs") ?? ""}
+							autoComplete="off"
+						/>
+					</div>
+					<div className="flex min-w-0 flex-wrap items-center gap-2">
+						<button
+							disabled={saving || !dirty}
+							onClick={() => void handleSave()}
+							className="flex h-8 shrink-0 items-center rounded-md inno-primary-button px-3 text-xs text-white disabled:opacity-50"
+						>
+							{saving ? t("common.loading") : saved ? t("settings.ocr.saved", "已保存") : t("common.save")}
+						</button>
+						{hasExistingToken && (
+							<button
+								disabled={saving}
+								onClick={() => void handleClear()}
+								className="flex h-8 shrink-0 items-center rounded-md border border-[var(--inno-border)] px-3 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							>
+								{t("settings.ocr.clear", "清除")}
+							</button>
+						)}
+					</div>
+				</div>
+			) : null}
+		</div>
+	);
+}
+
 /* ---------- Memory Settings (L1/L2/L3 layer toggles) ---------- */
 
 type MemoryLayer = "l1Enabled" | "l2Enabled" | "l3Enabled";
@@ -1175,6 +1307,9 @@ export function SettingsPanel() {
 						{/* Content Hub (source for skill library + presets; subsumes the
 						    legacy GitHub token) */}
 						{state.settings && <ContentHubSettings settings={state.settings} />}
+
+						{/* OCR API (Baidu PaddleOCR-VL token for image text extraction) */}
+						{state.settings && <OcrSettings settings={state.settings} />}
 
 						{/* Channels Settings */}
 						{state.settings && <ChannelsSettings settings={state.settings} />}

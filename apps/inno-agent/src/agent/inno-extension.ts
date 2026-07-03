@@ -17,6 +17,7 @@ import { createL2Tools } from "../memory/l2/l2-tools.js";
 import { L3Memory, createL3Tools, formatRecallForPrompt } from "../memory/l3/l3-tools.js";
 import { createPracticeTools } from "./practice-tools.js";
 import { createDocumentTools } from "./document-tools.js";
+import { createOcrTools } from "./ocr-tools.js";
 import { INNO_SYSTEM_PROMPT } from "./system-prompt.js";
 import { syncProvidersForSubagents } from "./provider-sync.js";
 import { questionBridge } from "./question-bridge.js";
@@ -218,6 +219,14 @@ export function createInnoExtension(
 		// 4b. Register document parsing tools
 		const documentTools = createDocumentTools();
 		for (const tool of documentTools) {
+			pi.registerTool(tool);
+		}
+
+		// 4c. Register OCR tool (Baidu PaddleOCR-VL). Used when the configured
+		// chat model cannot natively recognize images. Reads credentials live
+		// from configHolder so settings changes take effect without restart.
+		const ocrTools = createOcrTools(configHolder);
+		for (const tool of ocrTools) {
 			pi.registerTool(tool);
 		}
 

@@ -431,6 +431,65 @@ function maskSecret(value: string | undefined): string {
 	return value ? `****${value.slice(-4)}` : "";
 }
 
+/**
+ * Persist inline chat images (base64 data URLs from the web UI) to a
+ * workspace-local `.chat-images/` directory so file-path-based tools
+ * (`ocr_image`, `parse_document`) can read them. Returns workspace-relative
+ * paths. When the chat model cannot natively recognize images, the agent is
+ * steered (via the system prompt) to call `ocr_image` with these paths.
+ */
+function persistInlineImages(images: Array<{ data: string; mimeType: string }>): string[] {
+	if (images.length === 0) return [];
+	const workspaceDir = process.env.INNO_WORKSPACE_DIR || process.cwd();
+	const chatImagesDir = join(workspaceDir, ".chat-images");
+	try {
+		if (!existsSync(chatImagesDir)) mkdirSync(chatImagesDir, { recursive: true });
+	} catch (err) {
+		logger.warn({ err }, "failed to create .chat-images dir");
+		return [];
+	}
+	const timestamp = Date.now();
+	const paths: string[] = [];
+	images.forEach((img, idx) => {
+		const ext = mimeTypeToExtension(img.mimeType);
+		const filename = `${timestamp}-${idx}${ext}`;
+		const filePath = join(chatImagesDir, filename);
+		try {
+			writeFileSync(filePath, Buffer.from(img.data, "base64"));
+			paths.push(`.chat-images/${filename}`);
+		} catch (err) {
+			logger.warn({ err, filename }, "failed to persist inline image");
+		}
+	});
+	return paths;
+}
+
+function mimeTypeToExtension(mimeType: string): string {
+	switch (mimeType) {
+		case "image/png": return ".png";
+		case "image/jpeg": return ".jpg";
+		case "image/gif": return ".gif";
+		case "image/webp": return ".webp";
+		case "image/tiff": return ".tiff";
+		case "image/bmp": return ".bmp";
+		default: return ".png";
+	}
+}
+
+/**
+ * Prepend a path-hint block to the user prompt when inline images were
+ * persisted, so the agent knows which files to pass to `ocr_image` /
+ * `parse_document` when the model can't natively see images.
+ */
+function prependImagePathsHint(prompt: string, imagePaths: string[]): string {
+	if (imagePaths.length === 0) return prompt;
+	const list = imagePaths.map((p) => `- ${p}`).join("\n");
+	return (
+		`[用户本轮上传了 ${imagePaths.length} 张图片，已保存到工作区：\n${list}\n` +
+		`如果需要识别图片中的文字（当前模型可能不支持图片识别），请调用 ocr_image 工具并传入上述路径。]\n\n${prompt}`
+	);
+}
+
 function providerModelToRuntimeModel(model: InnoModelConfig, provider: string, baseUrl: string) {
 	return {
 		id: model.id,
@@ -482,6 +541,13 @@ function buildSafeSettings() {
 			: undefined,
 		github: config.github
 			? { token: maskSecret(config.github.token) }
+			: undefined,
+		ocrApi: config.ocrApi
+			? {
+				token: maskSecret(config.ocrApi.token),
+				model: config.ocrApi.model,
+				baseUrl: config.ocrApi.baseUrl,
+			}
 			: undefined,
 		contentHub: config.contentHub
 			? { ...config.contentHub, token: maskSecret(config.contentHub.token) }
@@ -3786,6 +3852,33 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		// --- OCR API settings (Baidu PaddleOCR-VL token / model / baseUrl) ---
+		if (method === "PUT" && url === "/api/settings/ocr") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			if (typeof body.token !== "string") {
+				json(res, 400, { error: "Missing token (string)" });
+				return;
+			}
+			const incoming = body.token.trim();
+			// A masked value (e.g. "****abcd") means "keep the existing token".
+			const token = incoming.startsWith("****") ? (config.ocrApi?.token ?? "") : incoming;
+			const model = typeof body.model === "string" ? body.model.trim() : config.ocrApi?.model;
+			const baseUrl = typeof body.baseUrl === "string" ? body.baseUrl.trim() : config.ocrApi?.baseUrl;
+			if (!token) {
+				config.ocrApi = undefined;
+			} else {
+				config.ocrApi = {
+					token,
+					model: model || undefined,
+					baseUrl: baseUrl || undefined,
+				};
+			}
+			config = saveConfig(paths.configPath, config);
+			syncConfig(config);
+			json(res, 200, buildSafeSettings());
+			return;
+		}
+
 		// --- Content Hub settings (source for skill library + presets) ---
 		if (method === "PUT" && url === "/api/settings/content-hub") {
 			const body = (await readBody(req)) as Record<string, unknown>;
@@ -3841,6 +3934,10 @@ const server = createServer(async (req, res) => {
 				.filter((img): img is { data: string; mimeType: string } =>
 					img && typeof img.data === "string" && typeof img.mimeType === "string")
 				.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
+			// Persist inline images to the workspace so file-path tools (ocr_image,
+			// parse_document) can read them when the chat model can't see images.
+			const imagePaths = persistInlineImages(images);
+			const promptWithHint = prependImagePathsHint(prompt, imagePaths);
 			// Use atomic switch+prompt when a specific session is requested.
 			const requestedSessionId = typeof body.sessionId === "string" ? body.sessionId : null;
 			let output: string;
@@ -3848,12 +3945,12 @@ const server = createServer(async (req, res) => {
 				if (requestedSessionId) {
 					const sessionPath = sessionFileFromId(join(dataDir, "sessions"), requestedSessionId);
 					if (sessionPath && existsSync(sessionPath)) {
-						output = await runPromptInSession(sessionPath, prompt, images.length ? images : undefined);
+						output = await runPromptInSession(sessionPath, promptWithHint, images.length ? images : undefined);
 					} else {
-						output = await runPromptSerialized(prompt, images.length ? images : undefined);
+						output = await runPromptSerialized(promptWithHint, images.length ? images : undefined);
 					}
 				} else {
-					output = await runPromptSerialized(prompt, images.length ? images : undefined);
+					output = await runPromptSerialized(promptWithHint, images.length ? images : undefined);
 				}
 			} catch (err) {
 				logger.error({ err, sessionId: requestedSessionId }, "Non-streaming chat LLM call failed");
@@ -3940,6 +4037,10 @@ const server = createServer(async (req, res) => {
 				.filter((img): img is { data: string; mimeType: string } =>
 					img && typeof img.data === "string" && typeof img.mimeType === "string")
 				.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
+			// Persist inline images to the workspace so file-path tools (ocr_image,
+			// parse_document) can read them when the chat model can't see images.
+			const imagePaths = persistInlineImages(images);
+			const promptWithHint = prependImagePathsHint(prompt, imagePaths);
 			const imageArgs = images.length ? images : undefined;
 
 			// Resolve target session path for atomic switch+stream.
@@ -4060,8 +4161,8 @@ const server = createServer(async (req, res) => {
 				// Use atomic switch+stream when a specific session is requested,
 				// preventing race conditions with channel session switches.
 				const fullText = targetSessionPath
-					? await runPromptStreamingInSession(targetSessionPath, prompt, onEvent, imageArgs)
-					: await runPromptStreaming(prompt, onEvent, imageArgs);
+					? await runPromptStreamingInSession(targetSessionPath, promptWithHint, onEvent, imageArgs)
+					: await runPromptStreaming(promptWithHint, onEvent, imageArgs);
 				const doneEvent = { type: "done", fullText };
 				broadcaster.publish(doneEvent);
 				if (!aborted) sseWrite(doneEvent);

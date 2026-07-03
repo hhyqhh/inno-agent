@@ -1,6 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
@@ -51,13 +51,17 @@ export default defineConfig({
 			buildStart() {
 				// pi-web-ui's built CSS references url(fonts/KaTeX_...) relative to its dist/.
 				// The actual fonts live in node_modules/katex/dist/fonts/.
-				// Create a symlink so Vite can resolve them.
+				// Link the font directory so Vite can resolve it; copy as a fallback
+				// when the host filesystem refuses symlink creation.
+				const source = resolve(monoRoot, "node_modules/katex/dist/fonts");
 				const target = resolve(monoRoot, "node_modules/@earendil-works/pi-web-ui/dist/fonts");
 				if (!existsSync(target)) {
-					symlinkSync(
-						resolve(monoRoot, "node_modules/katex/dist/fonts"),
-						target,
-					);
+					try {
+						symlinkSync(source, target, process.platform === "win32" ? "junction" : "dir");
+					} catch (err) {
+						if ((err as NodeJS.ErrnoException).code !== "EPERM") throw err;
+						cpSync(source, target, { recursive: true });
+					}
 				}
 			},
 		},

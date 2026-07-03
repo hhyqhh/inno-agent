@@ -30,7 +30,7 @@ import {
 	scanOrphans,
 	type ArchiveRawResult,
 } from "./sources-service.js";
-import type { ManifestEntry, ManifestStatus, RawSourceType } from "./types.js";
+import type { ManifestEntry, ManifestStatus, RawSourceType, SelectedScope } from "./types.js";
 import {
 	appendLog,
 	createSourcePage,
@@ -117,6 +117,19 @@ function uploadExtension(fileName: string, mimeType: string): string {
 	if (mimeType.startsWith("image/")) return `.${mimeType.slice("image/".length).replace("jpeg", "jpg")}`;
 	if (mimeType.startsWith("text/")) return ".txt";
 	return ".bin";
+}
+
+function uniqueUploadName(dir: string, fileName: string, mimeType: string): string {
+	const safeName = sanitizeUploadName(fileName);
+	const ext = uploadExtension(safeName, mimeType);
+	const base = basename(safeName, ext).slice(0, 120) || "upload";
+	let candidate = `${base}${ext}`;
+	let index = 1;
+	while (existsSync(join(dir, candidate))) {
+		index += 1;
+		candidate = `${base} (${index})${ext}`;
+	}
+	return candidate;
 }
 
 function readNoteFile(l2DataDir: string, rawPath: string): { absPath: string; frontmatter: NoteFrontmatter; body: string } {
@@ -252,11 +265,7 @@ export function uploadL2NoteFile(
 	ensureL2Directories(l2DataDir);
 	const dir = join(l2DataDir, "raw", "uploads");
 	mkdirSync(dir, { recursive: true });
-	const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-	const safeName = sanitizeUploadName(options.fileName);
-	const ext = uploadExtension(safeName, options.mimeType);
-	const base = basename(safeName, ext).slice(0, 80) || "upload";
-	const outputName = `${timestamp}-${base}${ext}`;
+	const outputName = uniqueUploadName(dir, options.fileName, options.mimeType);
 	const outputPath = join(dir, outputName);
 	const data = Buffer.from(options.dataBase64, "base64");
 	writeFileSync(outputPath, data);
@@ -277,6 +286,7 @@ export async function archiveL2NotebookItem(
 	options: {
 		title?: string;
 		tags?: string[];
+		selectedScope?: SelectedScope;
 		model?: Model<any>;
 		modelRegistry?: ModelRegistry;
 	},

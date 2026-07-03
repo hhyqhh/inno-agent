@@ -7,7 +7,7 @@ import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { readText } from "../../storage/file-store.js";
 import { parseDocument, DocumentParseError } from "./document-parser.js";
 import { convertToExtracted } from "./source-converter.js";
-import { appendManifest, readManifest } from "./manifest-store.js";
+import { appendManifest, findManifestByRawPath, readManifest, updateManifestEntry } from "./manifest-store.js";
 import {
 	appendLog,
 	createSourcePage,
@@ -17,7 +17,7 @@ import {
 } from "./wiki-maintainer.js";
 import { summarizeContent } from "./summarizer.js";
 import { maintainLinkedWikiPages } from "./wiki-linker.js";
-import type { ManifestEntry, ManifestStatus, RawSourceType } from "./types.js";
+import type { ManifestEntry, ManifestStatus, RawSourceType, SelectedScope } from "./types.js";
 import { logger } from "../../logger.js";
 
 export interface SourceSummaryDto {
@@ -34,6 +34,7 @@ export interface SourceSummaryDto {
 	origin: ManifestEntry["source"]["origin"];
 	originUrl?: string;
 	sessionId?: string;
+	selectedScope?: SelectedScope;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -61,6 +62,15 @@ export interface ArchiveRawResult {
 	wikiPagePath: string;
 	wikiPages: string[];
 	status: "indexed";
+}
+
+export interface ExtractRawFileResult {
+	sourceId: string;
+	rawPath: string;
+	extractedPath: string;
+	pageCount?: number;
+	textLength: number;
+	status: "extracted";
 }
 
 const RAW_SCAN_DIRS = ["raw/uploads", "raw/conversations"] as const;
@@ -95,13 +105,14 @@ function entryToSummary(entry: ManifestEntry): SourceSummaryDto {
 		sourceType: entry.sourceType,
 		rawPath,
 		extractedPath: entry.extractedPath,
-		primaryWikiPath: primaryWikiPath(entry.wikiPages),
+		primaryWikiPath: entry.primary_wiki_path ?? primaryWikiPath(entry.wikiPages),
 		wikiPages: entry.wikiPages,
 		tags: entry.tags,
 		status: entry.status,
 		origin: entry.source.origin,
 		originUrl: entry.source.url,
 		sessionId: entry.source.sessionId,
+		selectedScope: entry.selected_scope,
 		createdAt: entry.createdAt,
 		updatedAt: entry.updatedAt,
 	};
@@ -148,16 +159,20 @@ export function listL2Sources(l2DataDir: string): SourcesListResponse {
 	};
 }
 
-async function extractRawContent(l2DataDir: string, rawPath: string, sourceType: RawSourceType): Promise<string> {
+async function extractRawContent(
+	l2DataDir: string,
+	rawPath: string,
+	sourceType: RawSourceType,
+): Promise<{ content: string; pageCount?: number }> {
 	const absPath = join(l2DataDir, rawPath);
 	if (!existsSync(absPath)) {
 		throw new Error(`Raw file not found: ${rawPath}`);
 	}
 	if (sourceType === "pdf" || sourceType === "word" || sourceType === "image") {
 		const parsed = await parseDocument(absPath);
-		return parsed.text;
+		return { content: parsed.text, pageCount: parsed.pageCount };
 	}
-	return readText(absPath);
+	return { content: readText(absPath) };
 }
 
 function defaultTitleFromPath(rawPath: string): string {
@@ -166,98 +181,229 @@ function defaultTitleFromPath(rawPath: string): string {
 	return name.slice(0, name.length - ext.length) || name;
 }
 
+function createUploadedEntry(
+	rawPath: string,
+	sourceType: RawSourceType,
+	title: string,
+	tags: string[] = [],
+	selectedScope?: SelectedScope,
+): ManifestEntry {
+	const now = new Date().toISOString();
+	const normalizedPath = rawPath.replace(/\\/g, "/");
+	return {
+		id: `l2src_${randomUUID().slice(0, 8)}`,
+		title,
+		sourceType,
+		rawPath: normalizedPath,
+		wikiPages: [],
+		tags,
+		contentHash: createHash("sha256").update(normalizedPath).digest("hex").slice(0, 16),
+		status: "uploaded",
+		notebook_type: inferNotebookType(normalizedPath),
+		selected_scope: selectedScope,
+		primary_wiki_path: undefined,
+		error_message: null,
+		source: {
+			origin: normalizedPath.startsWith("raw/conversations/") ? "conversation" : "user_upload",
+		},
+		createdAt: now,
+		updatedAt: now,
+	};
+}
+
+function updateEntryStatus(
+	l2DataDir: string,
+	id: string,
+	status: ManifestStatus,
+	patch: Partial<ManifestEntry> = {},
+): void {
+	updateManifestEntry(l2DataDir, id, (entry) => ({
+		...entry,
+		...patch,
+		status,
+		updatedAt: new Date().toISOString(),
+	}));
+}
+
+export async function extractL2RawFile(
+	l2DataDir: string,
+	rawPath: string,
+	options: {
+		title?: string;
+		tags?: string[];
+		selectedScope?: SelectedScope;
+	} = {},
+): Promise<ExtractRawFileResult> {
+	ensureL2Directories(l2DataDir);
+	const normalizedPath = rawPath.replace(/\\/g, "/");
+	const sourceType = inferSourceType(normalizedPath);
+	const title = options.title?.trim() || defaultTitleFromPath(normalizedPath);
+	let entry = findManifestByRawPath(l2DataDir, normalizedPath);
+	if (entry?.status === "indexed") {
+		throw new Error("该文件已归档。");
+	}
+	if (!entry) {
+		entry = createUploadedEntry(normalizedPath, sourceType, title, options.tags ?? [], options.selectedScope);
+		appendManifest(l2DataDir, entry);
+	} else {
+		updateEntryStatus(l2DataDir, entry.id, "uploaded", {
+			title,
+			tags: options.tags ?? entry.tags,
+			selected_scope: options.selectedScope ?? entry.selected_scope,
+			error_message: null,
+		});
+		entry = findManifestByRawPath(l2DataDir, normalizedPath) ?? entry;
+	}
+
+	try {
+		updateEntryStatus(l2DataDir, entry.id, "extracting", { error_message: null });
+		const parsed = await extractRawContent(l2DataDir, normalizedPath, sourceType);
+		if (!parsed.content.trim()) {
+			throw new DocumentParseError("无法从文件中提取有效文本", "EMPTY_RESULT");
+		}
+		const contentHash = createHash("sha256").update(parsed.content).digest("hex").slice(0, 16);
+		const extractedPath = convertToExtracted(l2DataDir, title, parsed.content, sourceType);
+		updateEntryStatus(l2DataDir, entry.id, "extracted", {
+			title,
+			sourceType,
+			extractedPath,
+			contentHash,
+			tags: options.tags ?? entry.tags,
+			notebook_type: inferNotebookType(normalizedPath),
+			selected_scope: options.selectedScope ?? entry.selected_scope,
+			error_message: null,
+		});
+		return {
+			sourceId: entry.id,
+			rawPath: normalizedPath,
+			extractedPath,
+			pageCount: parsed.pageCount,
+			textLength: parsed.content.length,
+			status: "extracted",
+		};
+	} catch (err) {
+		updateEntryStatus(l2DataDir, entry.id, "error", {
+			error_message: err instanceof Error ? err.message : String(err),
+		});
+		throw err;
+	}
+}
+
 export async function archiveRawFile(
 	l2DataDir: string,
 	rawPath: string,
 	options: {
 		title?: string;
 		tags?: string[];
+		selectedScope?: SelectedScope;
 		model?: Model<any>;
 		modelRegistry?: ModelRegistry;
 	},
 ): Promise<ArchiveRawResult> {
 	ensureL2Directories(l2DataDir);
 	const normalizedPath = rawPath.replace(/\\/g, "/");
-	const indexed = new Set(readManifest(l2DataDir).map((e) => e.rawPath.replace(/\\/g, "/")));
-	if (indexed.has(normalizedPath)) {
-		throw new Error("该文件已归档");
+	let entry = findManifestByRawPath(l2DataDir, normalizedPath);
+	if (entry?.status === "indexed") {
+		throw new Error("该文件已归档。");
 	}
 
 	const sourceType = inferSourceType(normalizedPath);
 	const title = options.title?.trim() || defaultTitleFromPath(normalizedPath);
-	const content = await extractRawContent(l2DataDir, normalizedPath, sourceType);
-	if (!content.trim()) {
-		throw new DocumentParseError("无法从文件中提取有效文本", "EMPTY_RESULT");
-	}
-
-	const contentHash = createHash("sha256").update(content).digest("hex").slice(0, 16);
-	const id = `l2src_${randomUUID().slice(0, 8)}`;
 	const tags = options.tags ?? [];
-	const extractedPath = convertToExtracted(l2DataDir, title, content, sourceType);
-	const maintenanceContext = readMaintenanceContext(l2DataDir);
+	try {
+		if (!entry || !entry.extractedPath || entry.status === "uploaded" || entry.status === "error") {
+			await extractL2RawFile(l2DataDir, normalizedPath, {
+				title,
+				tags,
+				selectedScope: options.selectedScope,
+			});
+			entry = findManifestByRawPath(l2DataDir, normalizedPath);
+		} else if (entry.status === "outdated") {
+			updateEntryStatus(l2DataDir, entry.id, "extracted", {
+				title,
+				tags: tags.length > 0 ? tags : entry.tags,
+				selected_scope: options.selectedScope ?? entry.selected_scope,
+				error_message: null,
+			});
+			entry = findManifestByRawPath(l2DataDir, normalizedPath);
+		}
+		if (!entry?.extractedPath) {
+			throw new Error("Extracted content is missing.");
+		}
+		const extractedPath = entry.extractedPath;
 
-	const entry: ManifestEntry = {
-		id,
-		title,
-		sourceType,
-		rawPath: normalizedPath,
-		extractedPath,
-		wikiPages: [],
-		tags,
-		contentHash,
-		status: "extracted",
-		source: {
-			origin: normalizedPath.startsWith("raw/conversations/") ? "conversation" : "user_upload",
-		},
-		createdAt: new Date().toISOString(),
-		updatedAt: new Date().toISOString(),
-	};
+		updateEntryStatus(l2DataDir, entry.id, "indexing", {
+			title,
+			sourceType,
+			tags: tags.length > 0 ? tags : entry.tags,
+			selected_scope: options.selectedScope ?? entry.selected_scope,
+			error_message: null,
+		});
+		entry = findManifestByRawPath(l2DataDir, normalizedPath) ?? entry;
+		const maintenanceContext = readMaintenanceContext(l2DataDir);
+		const extractedContent = readText(join(l2DataDir, extractedPath));
+		let summaryBody = `## 摘要\n\n${extractedContent}`;
+		if (options.model && options.modelRegistry) {
+			const summary = await summarizeContent(options.model, options.modelRegistry, title, extractedContent);
+			if (summary) summaryBody = summary;
+		}
 
-	const extractedContent = readText(join(l2DataDir, extractedPath));
-	let summaryBody = `## 摘要\n\n${extractedContent}`;
-	if (options.model && options.modelRegistry) {
-		const summary = await summarizeContent(options.model, options.modelRegistry, title, extractedContent);
-		if (summary) summaryBody = summary;
+		const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, extractedPath);
+		const linkMaintenance = await maintainLinkedWikiPages(
+			l2DataDir,
+			entry,
+			wikiPagePath,
+			summaryBody,
+			options.model,
+			options.modelRegistry,
+		);
+		const indexedEntry: ManifestEntry = {
+			...entry,
+			title,
+			sourceType,
+			tags: tags.length > 0 ? tags : entry.tags,
+			wikiPages: [wikiPagePath, ...linkMaintenance.pages],
+			status: "indexed",
+			primary_wiki_path: wikiPagePath,
+			archived_at: new Date().toISOString(),
+			error_message: null,
+			updatedAt: new Date().toISOString(),
+		};
+
+		updateManifestEntry(l2DataDir, indexedEntry.id, () => indexedEntry);
+		rebuildIndex(l2DataDir, readManifest(l2DataDir));
+		appendLog(
+			l2DataDir,
+			"ingest",
+			title,
+			[
+				`- ID: ${indexedEntry.id}`,
+				`- 类型: ${sourceType}`,
+				`- 原始文件: ${normalizedPath}`,
+				`- Source 页面: ${wikiPagePath}`,
+				`- UI archive from Sources panel`,
+				`- 维护前上下文: schema ${maintenanceContext.schema.length} chars`,
+			].join("\n"),
+		);
+
+		return {
+			noteId: indexedEntry.id,
+			sourceId: indexedEntry.id,
+			title,
+			rawPath: normalizedPath,
+			wikiPagePath,
+			wikiPages: indexedEntry.wikiPages,
+			status: "indexed",
+		};
+	} catch (err) {
+		const failedEntry = findManifestByRawPath(l2DataDir, normalizedPath);
+		if (failedEntry) {
+			updateEntryStatus(l2DataDir, failedEntry.id, "error", {
+				error_message: err instanceof Error ? err.message : String(err),
+			});
+		}
+		throw err;
 	}
-
-	const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, extractedPath);
-	const linkMaintenance = await maintainLinkedWikiPages(
-		l2DataDir,
-		entry,
-		wikiPagePath,
-		summaryBody,
-		options.model,
-		options.modelRegistry,
-	);
-	entry.wikiPages = [wikiPagePath, ...linkMaintenance.pages];
-	entry.status = "indexed";
-	entry.updatedAt = new Date().toISOString();
-
-	appendManifest(l2DataDir, entry);
-	rebuildIndex(l2DataDir, readManifest(l2DataDir));
-	appendLog(
-		l2DataDir,
-		"ingest",
-		title,
-		[
-			`- ID: ${id}`,
-			`- 类型: ${sourceType}`,
-			`- 原始文件: ${normalizedPath}`,
-			`- Source 页面: ${wikiPagePath}`,
-			`- UI archive from Sources panel`,
-			`- 维护前上下文: schema ${maintenanceContext.schema.length} chars`,
-		].join("\n"),
-	);
-
-	return {
-		noteId: id,
-		sourceId: id,
-		title,
-		rawPath: normalizedPath,
-		wikiPagePath,
-		wikiPages: entry.wikiPages,
-		status: "indexed",
-	};
 }
 
 export function readRawTextPreview(l2DataDir: string, rawPath: string, maxChars = 12000): string {

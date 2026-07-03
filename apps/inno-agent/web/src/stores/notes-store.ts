@@ -65,9 +65,12 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 
 	get filteredNotes(): NoteSummary[] {
 		const q = this.searchQuery.trim().toLowerCase();
+		const isUnarchivedFile = (note: NoteSummary) =>
+			note.notebookType === "file" &&
+			(note.status === "uploaded" || note.status === "extracting" || note.status === "extracted" || note.status === "error");
 		const byBox = this.notes.filter((note) =>
 			this.listBox === "drafts"
-				? note.kind === "orphan" || (note.kind === "markdown" && note.status === "draft")
+				? note.kind === "orphan" || isUnarchivedFile(note) || (note.kind === "markdown" && note.status === "draft")
 				: note.kind === "archived" ||
 					(note.kind === "markdown" &&
 						(note.status === "indexed" || note.status === "outdated" || note.status === "error")),
@@ -82,15 +85,18 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	}
 
 	get draftCount(): number {
+		const isUnarchivedFile = (note: NoteSummary) =>
+			note.notebookType === "file" &&
+			(note.status === "uploaded" || note.status === "extracting" || note.status === "extracted" || note.status === "error");
 		return this.notes.filter(
-			(note) => note.kind === "orphan" || (note.kind === "markdown" && note.status === "draft"),
+			(note) => note.kind === "orphan" || isUnarchivedFile(note) || (note.kind === "markdown" && note.status === "draft"),
 		).length;
 	}
 
 	get archivedCount(): number {
 		return this.notes.filter(
 			(note) =>
-				note.kind === "archived" ||
+				(note.kind === "archived" && note.status !== "uploaded" && note.status !== "extracting" && note.status !== "extracted" && note.status !== "error") ||
 				(note.kind === "markdown" &&
 					(note.status === "indexed" || note.status === "outdated" || note.status === "error")),
 		).length;

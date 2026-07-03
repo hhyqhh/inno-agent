@@ -15,7 +15,13 @@ export type WikiPageStatus = "draft" | "reviewed" | "outdated";
 export type ConfidenceLevel = "low" | "medium" | "high";
 
 /** Processing status for manifest entries. */
-export type ManifestStatus = "pending" | "extracted" | "indexed" | "outdated" | "error";
+export type ManifestStatus = "pending" | "uploaded" | "extracting" | "extracted" | "indexing" | "indexed" | "outdated" | "error";
+
+export interface SelectedScope {
+	pages?: number[];
+	chapters?: string[];
+	range?: string;
+}
 
 /**
  * Manifest entry — one per ingested source.
@@ -31,6 +37,12 @@ export interface ManifestEntry {
 	tags: string[];
 	contentHash: string;
 	status: ManifestStatus;
+	notebook_type?: "conversation" | "file" | "note";
+	primary_wiki_path?: string;
+	selected_scope?: SelectedScope;
+	error_message?: string | null;
+	archived_at?: string | null;
+	message_ids?: string[];
 	source: {
 		origin: "user_upload" | "conversation" | "web" | "research" | "agent_inferred";
 		url?: string;

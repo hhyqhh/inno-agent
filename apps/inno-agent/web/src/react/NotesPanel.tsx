@@ -11,6 +11,7 @@ import {
 	ExternalLink,
 	FileText,
 	FileUp,
+	LoaderCircle,
 	Plus,
 	RefreshCw,
 	Save,
@@ -32,6 +33,10 @@ function formatSize(bytes?: number): string {
 	if (bytes < 1024) return `${bytes} B`;
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function rawFileName(rawPath: string): string {
+	return rawPath.split(/[\\/]/).pop() || rawPath;
 }
 
 export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
@@ -110,11 +115,15 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 	const isRawEditableMarkdown = Boolean(selected && selected.kind !== "markdown" && selected.contentType === "markdown");
 	const showRearchive =
 		(selected?.kind === "markdown" || selected?.kind === "archived") && selected.status === "outdated";
+	const isUnarchivedFile =
+		selected?.notebookType === "file" &&
+		(selected.status === "uploaded" || selected.status === "extracted" || selected.status === "error");
 	const showOpenWiki = Boolean(selected?.wikiPagePath && onOpenWiki);
 	const showDownload = selected && !isMarkdown;
 	const canArchiveNow =
 		selected &&
 		(selected.kind === "orphan" ||
+			isUnarchivedFile ||
 			(selected.kind === "archived" && selected.status === "outdated") ||
 			(selected.kind === "markdown" && (selected.status === "draft" || selected.status === "outdated")));
 	const canUnarchive =
@@ -131,7 +140,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		const hasActions =
 			canSave ||
 			showDownload ||
-			(canArchiveNow && (selected.status === "draft" || selected.kind === "orphan")) ||
+			(canArchiveNow && (selected.status === "draft" || selected.kind === "orphan" || isUnarchivedFile)) ||
 			showRearchive ||
 			canUnarchive ||
 			canDelete ||
@@ -161,15 +170,15 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						{t("notes.download")}
 					</a>
 				) : null}
-				{(selected.status === "draft" || selected.kind === "orphan") && canArchiveNow ? (
+				{(selected.status === "draft" || selected.kind === "orphan" || isUnarchivedFile) && canArchiveNow ? (
 					<button
 						type="button"
 						className="inline-flex items-center gap-1 rounded-md bg-[var(--inno-accent)] px-3 py-1.5 text-sm text-white hover:opacity-90 disabled:opacity-50"
 						disabled={state.isArchiving}
 						onClick={() => void handleArchive()}
 					>
-						<Archive size={14} />
-						{t("notes.actions.archive")}
+						{state.isArchiving ? <LoaderCircle size={14} className="animate-spin" /> : <Archive size={14} />}
+						{state.isArchiving ? t("notes.actions.archiving", "归档中...") : t("notes.actions.archive")}
 					</button>
 				) : null}
 				{showRearchive ? (
@@ -179,8 +188,8 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						disabled={state.isArchiving}
 						onClick={() => void handleArchive()}
 					>
-						<Archive size={14} />
-						{t("notes.actions.rearchive")}
+						{state.isArchiving ? <LoaderCircle size={14} className="animate-spin" /> : <Archive size={14} />}
+						{state.isArchiving ? t("notes.actions.archiving", "归档中...") : t("notes.actions.rearchive")}
 					</button>
 				) : null}
 				{showOpenWiki ? (
@@ -326,7 +335,9 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					) : null}
 					{state.notes.map((note: NoteSummary) => {
 						const isSelected = state.selected?.rawPath === note.rawPath;
-						const statusLabel = t(`notes.status.${note.status}`, note.status);
+						const statusLabel = isSelected && state.isArchiving
+							? t("notes.status.archiving", "归档中")
+							: t(`notes.status.${note.status}`, note.status);
 						return (
 							<button
 								key={note.rawPath}
@@ -360,6 +371,12 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 				{state.error ? (
 					<p className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
 						{t(`notes.flash.${state.error}`)}
+					</p>
+				) : null}
+				{state.isArchiving ? (
+					<p className="flex items-center gap-2 border-b border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+						<LoaderCircle size={13} className="animate-spin" />
+						{t("notes.flash.archiving", "正在归档到 Wiki...")}
 					</p>
 				) : null}
 
@@ -411,7 +428,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 								<p className="truncate text-xs text-[var(--inno-text-muted)]">{selected.rawPath}</p>
 							</div>
 						</div>
-						<div className={`min-h-0 flex-1 ${selected.contentType === "markdown" ? "overflow-hidden" : "overflow-auto p-4"}`}>
+						<div className={`min-h-0 flex-1 ${selected.contentType === "markdown" || selected.contentType === "pdf" || selected.contentType === "image" ? "overflow-hidden" : "overflow-auto p-4"}`}>
 							{state.isLoadingPreview ? (
 								<p className="p-4 text-sm text-[var(--inno-text-muted)]">{t("common.loading")}</p>
 							) : selected.contentType === "markdown" ? (
@@ -420,6 +437,20 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 									value={normalizeMarkdownMath(state.previewContent)}
 									onChange={(value) => notesStore.updatePreviewContent(value)}
 								/>
+							) : selected.contentType === "pdf" ? (
+								<iframe
+									className="h-full w-full border-0 bg-[var(--inno-surface)]"
+									src={`${l2RawFileUrl(selected.rawPath)}#view=FitH&zoom=page-width`}
+									title={rawFileName(selected.rawPath)}
+								/>
+							) : selected.contentType === "image" ? (
+								<div className="flex h-full items-center justify-center overflow-auto bg-[var(--inno-surface-muted)] p-4">
+									<img
+										className="max-h-full max-w-full object-contain"
+										src={l2RawFileUrl(selected.rawPath)}
+										alt={rawFileName(selected.rawPath)}
+									/>
+								</div>
 							) : state.previewContent ? (
 								<pre className="whitespace-pre-wrap text-sm">{state.previewContent}</pre>
 							) : (

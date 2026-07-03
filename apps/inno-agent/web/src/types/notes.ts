@@ -1,5 +1,5 @@
 export type NoteStatus = "draft" | "indexed" | "outdated" | "error";
-export type ManifestStatus = "pending" | "extracted" | "indexed" | "outdated" | "error";
+export type ManifestStatus = "pending" | "uploaded" | "extracting" | "extracted" | "indexing" | "indexed" | "outdated" | "error";
 export type RawSourceType = "text" | "markdown" | "conversation" | "pdf" | "word" | "image";
 export type NotebookType = "conversation" | "file" | "note";
 export type NotebookItemKind = "markdown" | "orphan" | "archived";

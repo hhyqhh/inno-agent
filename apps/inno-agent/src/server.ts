@@ -44,7 +44,7 @@ import { validateCron } from "./scheduler/cron-utils.js";
 import { parseFrontmatter, serializeFrontmatter } from "./memory/l2/wiki-maintainer.js";
 import { readManifest, removeWikiPathFromManifest } from "./memory/l2/manifest-store.js";
 import { archiveConversation } from "./memory/l2/conversation-archive-service.js";
-import { listL2Sources, readRawTextPreview } from "./memory/l2/sources-service.js";
+import { extractL2RawFile, listL2Sources, readRawTextPreview } from "./memory/l2/sources-service.js";
 import {
 	archiveL2NotebookItem,
 	createL2Note,
@@ -731,6 +731,19 @@ function uploadExtension(fileName: string, mimeType: string): string {
 	if (mimeType.startsWith("image/")) return `.${mimeType.slice("image/".length).replace("jpeg", "jpg")}`;
 	if (mimeType.startsWith("text/")) return ".txt";
 	return ".bin";
+}
+
+function uniqueUploadName(dir: string, fileName: string, mimeType: string): string {
+	const safeName = sanitizeUploadName(fileName);
+	const ext = uploadExtension(safeName, mimeType);
+	const base = basename(safeName, ext).slice(0, 120) || "upload";
+	let candidate = `${base}${ext}`;
+	let index = 1;
+	while (existsSync(join(dir, candidate))) {
+		index += 1;
+		candidate = `${base} (${index})${ext}`;
+	}
+	return candidate;
 }
 
 function slugifySkillName(value: string): string {
@@ -3537,6 +3550,54 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		if (method === "POST" && url === "/api/l2/raw/extract") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const rawPath = (
+				typeof body.RawPath === "string" ? body.RawPath :
+					typeof body.rawPath === "string" ? body.rawPath : ""
+			).trim();
+			const title = (
+				typeof body.Title === "string" ? body.Title :
+					typeof body.title === "string" ? body.title : undefined
+			);
+			const rawTags = Array.isArray(body.Tags) ? body.Tags : Array.isArray(body.tags) ? body.tags : undefined;
+			const tags = rawTags?.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0);
+			const selectedScope = (
+				body.SelectedScope && typeof body.SelectedScope === "object" ? body.SelectedScope :
+					body.selectedScope && typeof body.selectedScope === "object" ? body.selectedScope : undefined
+			) as { pages?: number[]; chapters?: string[]; range?: string } | undefined;
+			if (!rawPath) {
+				json(res, 400, { error: "Missing rawPath" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath) {
+				json(res, 400, { error: "Invalid raw path" });
+				return;
+			}
+			if (!existsSync(fullPath)) {
+				json(res, 404, { error: "Raw file not found" });
+				return;
+			}
+			try {
+				const result = await extractL2RawFile(l2DataDir, rawPath, { title, tags, selectedScope });
+				json(res, 200, {
+					...result,
+					SourceID: result.sourceId,
+					RawPath: result.rawPath,
+					ExtractedPath: result.extractedPath,
+					PageCount: result.pageCount,
+					TextLength: result.textLength,
+					Status: result.status,
+				});
+			} catch (err) {
+				logger.warn({ err, rawPath }, "failed to extract raw file");
+				const message = err instanceof Error ? err.message : "Extract failed";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
 		if (method === "GET" && url.startsWith("/api/l2/notes/content?")) {
 			const params = new URL(url, "http://localhost").searchParams;
 			const rawPath = params.get("path");
@@ -3875,9 +3936,20 @@ const server = createServer(async (req, res) => {
 
 		if (method === "POST" && url === "/api/l2/sources/archive") {
 			const body = (await readBody(req)) as Record<string, unknown>;
-			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
-			const title = typeof body.title === "string" ? body.title.trim() : undefined;
-			const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === "string") : undefined;
+			const rawPath = (
+				typeof body.RawPath === "string" ? body.RawPath :
+					typeof body.rawPath === "string" ? body.rawPath : ""
+			).trim();
+			const title = (
+				typeof body.Title === "string" ? body.Title :
+					typeof body.title === "string" ? body.title : undefined
+			)?.trim();
+			const rawTags = Array.isArray(body.Tags) ? body.Tags : Array.isArray(body.tags) ? body.tags : undefined;
+			const tags = rawTags?.filter((t): t is string => typeof t === "string" && t.trim().length > 0);
+			const selectedScope = (
+				body.SelectedScope && typeof body.SelectedScope === "object" ? body.SelectedScope :
+					body.selectedScope && typeof body.selectedScope === "object" ? body.selectedScope : undefined
+			) as { pages?: number[]; chapters?: string[]; range?: string } | undefined;
 			if (!rawPath) {
 				json(res, 400, { error: "Missing rawPath" });
 				return;
@@ -3896,10 +3968,19 @@ const server = createServer(async (req, res) => {
 				const result = await archiveL2NotebookItem(l2DataDir, rawPath, {
 					title,
 					tags,
+					selectedScope,
 					model: session.model,
 					modelRegistry: session.modelRegistry,
 				});
-				json(res, 201, result);
+				json(res, 201, {
+					...result,
+					SourceID: result.sourceId,
+					Title: result.title,
+					RawPath: result.rawPath,
+					WikiPagePath: result.wikiPagePath,
+					WikiPages: result.wikiPages,
+					Status: result.status,
+				});
 			} catch (err) {
 				logger.warn({ err, rawPath }, "failed to archive raw file");
 				const message = err instanceof Error ? err.message : "Archive failed";
@@ -3910,9 +3991,18 @@ const server = createServer(async (req, res) => {
 
 		if (method === "POST" && url === "/api/l2/raw/upload") {
 			const body = (await readBody(req)) as Record<string, unknown>;
-			const fileName = typeof body.fileName === "string" ? body.fileName : "";
-			const mimeType = typeof body.mimeType === "string" ? body.mimeType : "application/octet-stream";
-			const dataBase64 = typeof body.dataBase64 === "string" ? body.dataBase64 : "";
+			const fileName = (
+				typeof body.FileName === "string" ? body.FileName :
+					typeof body.fileName === "string" ? body.fileName : ""
+			);
+			const mimeType = (
+				typeof body.MimeType === "string" ? body.MimeType :
+					typeof body.mimeType === "string" ? body.mimeType : "application/octet-stream"
+			);
+			const dataBase64 = (
+				typeof body.DataBase64 === "string" ? body.DataBase64 :
+					typeof body.dataBase64 === "string" ? body.dataBase64 : ""
+			);
 			if (!fileName || !dataBase64) {
 				json(res, 400, { error: "Missing fileName or dataBase64" });
 				return;
@@ -3920,11 +4010,7 @@ const server = createServer(async (req, res) => {
 
 			const dir = join(l2DataDir, "raw", "uploads");
 			ensureDir(dir);
-			const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-			const safeName = sanitizeUploadName(fileName);
-			const ext = uploadExtension(safeName, mimeType);
-			const base = basename(safeName, ext).slice(0, 80) || "upload";
-			const outputName = `${timestamp}-${base}${ext}`;
+			const outputName = uniqueUploadName(dir, fileName, mimeType);
 			const outputPath = join(dir, outputName);
 			const data = Buffer.from(dataBase64, "base64");
 			writeFileSync(outputPath, data);
@@ -3934,6 +4020,10 @@ const server = createServer(async (req, res) => {
 				mimeType,
 				size: data.length,
 				rawPath,
+				FileName: fileName,
+				MimeType: mimeType,
+				Size: data.length,
+				RawPath: rawPath,
 			});
 			return;
 		}

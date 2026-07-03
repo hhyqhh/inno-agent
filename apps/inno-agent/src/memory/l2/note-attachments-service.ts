@@ -59,6 +59,19 @@ function attachmentExtension(fileName: string, mimeType: string): string {
 	return ".bin";
 }
 
+function uniqueAttachmentName(dir: string, fileName: string, mimeType: string): string {
+	const safeName = sanitizeAttachmentName(fileName);
+	const ext = attachmentExtension(safeName, mimeType);
+	const base = basename(safeName, ext).slice(0, 120) || "attachment";
+	let candidate = `${base}${ext}`;
+	let index = 1;
+	while (existsSync(join(dir, candidate))) {
+		index += 1;
+		candidate = `${base} (${index})${ext}`;
+	}
+	return candidate;
+}
+
 export function listNoteAttachments(l2DataDir: string, noteRawPath: string): NoteAttachmentRecord[] {
 	const normalizedPath = normalizeNoteRawPath(noteRawPath);
 	return readAttachmentIndex(l2DataDir)
@@ -81,12 +94,9 @@ export function uploadNoteAttachment(
 		throw new Error("Invalid note file");
 	}
 	const attachmentId = `att_${randomUUID().slice(0, 8)}`;
-	const safeName = sanitizeAttachmentName(options.fileName);
-	const ext = attachmentExtension(safeName, options.mimeType);
-	const base = basename(safeName, ext).slice(0, 80) || "attachment";
-	const storedName = `${attachmentId}-${base}${ext}`;
 	const attachmentDir = join(l2DataDir, "raw", "notes", "attachments", frontmatter.note_id);
 	mkdirSync(attachmentDir, { recursive: true });
+	const storedName = uniqueAttachmentName(attachmentDir, options.fileName, options.mimeType);
 	const absPath = join(attachmentDir, storedName);
 	const data = Buffer.from(options.dataBase64, "base64");
 	writeFileSync(absPath, data);

@@ -65,8 +65,10 @@ export interface ArchiveRawResult {
 
 const RAW_SCAN_DIRS = ["raw/uploads", "raw/conversations"] as const;
 
-function inferSourceType(fileName: string): RawSourceType {
-	const ext = extname(fileName).toLowerCase();
+function inferSourceType(fileNameOrPath: string): RawSourceType {
+	const normalized = fileNameOrPath.replace(/\\/g, "/");
+	if (normalized.startsWith("raw/conversations/")) return "conversation";
+	const ext = extname(fileNameOrPath).toLowerCase();
 	if (ext === ".pdf") return "pdf";
 	if (ext === ".doc" || ext === ".docx") return "word";
 	if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff"].includes(ext)) return "image";
@@ -121,7 +123,7 @@ export function scanOrphans(l2DataDir: string, indexedRawPaths: Set<string>): Or
 				orphans.push({
 					rawPath: relPath,
 					fileName: name,
-					sourceType: inferSourceType(name),
+					sourceType: inferSourceType(relPath),
 					size: stat.size,
 					modifiedAt: stat.mtime.toISOString(),
 					isMarkdown: ext === ".md" || ext === ".txt",
@@ -181,7 +183,7 @@ export async function archiveRawFile(
 		throw new Error("该文件已归档");
 	}
 
-	const sourceType = inferSourceType(basename(normalizedPath));
+	const sourceType = inferSourceType(normalizedPath);
 	const title = options.title?.trim() || defaultTitleFromPath(normalizedPath);
 	const content = await extractRawContent(l2DataDir, normalizedPath, sourceType);
 	if (!content.trim()) {

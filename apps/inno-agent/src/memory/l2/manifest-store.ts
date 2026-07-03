@@ -56,6 +56,19 @@ export function findManifestByRawPath(l2DataDir: string, rawPath: string): Manif
 	return readManifest(l2DataDir).find((e) => e.rawPath.replace(/\\/g, "/") === normalized);
 }
 
+/**
+ * Remove a manifest entry by id, rewriting the JSONL file in place.
+ * Returns true if an entry was removed.
+ */
+export function removeManifestEntry(l2DataDir: string, id: string): boolean {
+	const entries = readManifest(l2DataDir);
+	const next = entries.filter((e) => e.id !== id);
+	if (next.length === entries.length) return false;
+	const lines = next.length > 0 ? next.map((e) => JSON.stringify(e)).join("\n") + "\n" : "";
+	writeText(getManifestPath(l2DataDir), lines);
+	return true;
+}
+
 export function updateManifestEntry(
 	l2DataDir: string,
 	id: string,

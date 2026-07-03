@@ -10,6 +10,7 @@ import { ensureDir, readText, writeText } from "../../storage/file-store.js";
 import type { ManifestEntry, WikiPageType } from "./types.js";
 import { parseFrontmatter, serializeFrontmatter } from "./wiki-maintainer.js";
 import { logger } from "../../logger.js";
+import { normalizeMarkdownForMilkdown } from "./markdown-normalizer.js";
 
 type LinkablePageType = Extract<WikiPageType, "entity" | "concept">;
 
@@ -233,7 +234,7 @@ function buildNewPage(item: LinkedItem, entry: ManifestEntry, sourcePagePath: st
 		status: "draft",
 		confidence: "medium",
 	});
-	return `${frontmatter}
+	return normalizeMarkdownForMilkdown(`${frontmatter}
 # ${item.title}
 
 ## 定义
@@ -243,7 +244,7 @@ ${item.description}
 ## 相关资料
 
 - [[${entry.title}]] — \`${sourcePagePath}\`
-`;
+`);
 }
 
 function referenceBullet(entry: ManifestEntry, sourcePagePath: string): string {

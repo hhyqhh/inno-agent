@@ -1,5 +1,5 @@
 export type NoteStatus = "draft" | "indexed" | "outdated" | "error";
-export type ManifestStatus = "pending" | "extracted" | "indexed" | "error";
+export type ManifestStatus = "pending" | "extracted" | "indexed" | "outdated" | "error";
 export type RawSourceType = "text" | "markdown" | "conversation" | "pdf" | "word" | "image";
 export type NotebookType = "conversation" | "file" | "note";
 export type NotebookItemKind = "markdown" | "orphan" | "archived";
@@ -76,6 +76,11 @@ export interface SaveNoteResult {
 	status: NoteStatus;
 }
 
+export interface SaveRawMarkdownResult {
+	rawPath: string;
+	status: ManifestStatus | "uploaded";
+}
+
 export interface UploadNoteFileResult {
 	fileName: string;
 	mimeType: string;
@@ -93,6 +98,18 @@ export interface ArchiveNoteResult {
 	wikiPagePath: string;
 	wikiPages: string[];
 	status: "indexed";
+}
+
+export interface DeleteNoteItemResult {
+	rawPath: string;
+	title: string;
+}
+
+export interface UnarchiveNoteResult {
+	rawPath: string;
+	title: string;
+	removedWikiPages: string[];
+	status: "draft" | "uploaded";
 }
 
 export type NoteListBox = "drafts" | "archived";

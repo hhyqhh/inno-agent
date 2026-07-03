@@ -4,10 +4,13 @@ import {
 	archiveNote,
 	createNote,
 	deleteNoteAttachment,
+	deleteNoteItem,
 	fetchNoteContent,
 	fetchRawContent,
 	listNotes,
 	saveNoteContent,
+	saveRawMarkdownContent,
+	unarchiveNote,
 	uploadNoteAttachment,
 	uploadNoteFile,
 } from "../api/notes.js";
@@ -30,6 +33,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	savedTags: string[] = [];
 	savedRecordDate = "";
 	previewContent = "";
+	savedPreviewContent = "";
 	listBox: NoteListBox = "drafts";
 	searchQuery = "";
 	isLoading = false;
@@ -38,6 +42,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	isCreating = false;
 	isSaving = false;
 	isArchiving = false;
+	isDeleting = false;
 	isUploading = false;
 	isUploadingAttachment = false;
 	deletingAttachmentId: string | null = null;
@@ -45,7 +50,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	notice: string | null = null;
 
 	get isDirty(): boolean {
-		if (!this.selected || this.selected.kind !== "markdown") return false;
+		if (!this.selected) return false;
+		if (this.selected.kind !== "markdown" && this.selected.contentType === "markdown") {
+			return this.previewContent !== this.savedPreviewContent;
+		}
+		if (this.selected.kind !== "markdown") return false;
 		return (
 			this.editorContent !== this.savedContent ||
 			this.editorTitle !== this.savedTitle ||
@@ -112,6 +121,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		this.emit("change", undefined);
 	}
 
+	updatePreviewContent(content: string) {
+		this.previewContent = content;
+		this.emit("change", undefined);
+	}
+
 	updateEditorTags(tags: string[]) {
 		this.editorTags = tags;
 		this.emit("change", undefined);
@@ -130,9 +144,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		this.isLoadingPreview = true;
 		this.emit("change", undefined);
 		try {
-			this.previewContent = await fetchRawContent(rawPath);
+			this.previewContent = await fetchRawContent(rawPath, { full: contentType === "markdown" });
+			this.savedPreviewContent = this.previewContent;
 		} catch {
 			this.previewContent = "";
+			this.savedPreviewContent = "";
 		} finally {
 			this.isLoadingPreview = false;
 			this.emit("change", undefined);
@@ -162,6 +178,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	async selectNote(note: NoteSummary): Promise<void> {
 		this.selected = note;
 		this.previewContent = "";
+		this.savedPreviewContent = "";
 		this.attachments = [];
 		this.clearMessages();
 		this.emit("change", undefined);
@@ -276,11 +293,23 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	}
 
 	async saveSelected(): Promise<boolean> {
-		if (!this.selected || this.selected.kind !== "markdown" || !this.isDirty) return true;
+		if (!this.selected || !this.isDirty) return true;
 		this.isSaving = true;
 		this.clearMessages();
 		this.emit("change", undefined);
 		try {
+			if (this.selected.kind !== "markdown" && this.selected.contentType === "markdown") {
+				const result = await saveRawMarkdownContent({
+					rawPath: this.selected.rawPath,
+					content: this.previewContent,
+				});
+				this.savedPreviewContent = this.previewContent;
+				this.notice = "saved";
+				await this.loadAll();
+				this.selected = this.notes.find((note) => note.rawPath === result.rawPath) ?? this.selected;
+				return true;
+			}
+
 			const result = await saveNoteContent({
 				rawPath: this.selected.rawPath,
 				title: this.editorTitle.trim() || this.selected.title,
@@ -332,6 +361,57 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		} catch {
 			this.error = "archiveFailed";
 			return null;
+		} finally {
+			this.isArchiving = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async deleteSelected(): Promise<boolean> {
+		if (!this.selected) return false;
+		this.isDeleting = true;
+		this.clearMessages();
+		this.emit("change", undefined);
+		try {
+			await deleteNoteItem(this.selected.rawPath);
+			this.selected = null;
+			this.editorContent = "";
+			this.editorTitle = "";
+			this.editorTags = [];
+			this.attachments = [];
+			this.previewContent = "";
+			this.notice = "deleted";
+			await this.loadAll();
+			return true;
+		} catch {
+			this.error = "deleteFailed";
+			return false;
+		} finally {
+			this.isDeleting = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async unarchiveSelected(): Promise<boolean> {
+		if (!this.selected) return false;
+		this.isArchiving = true;
+		this.clearMessages();
+		this.emit("change", undefined);
+		try {
+			const result = await unarchiveNote(this.selected.rawPath);
+			this.notice = "unarchived";
+			this.listBox = "drafts";
+			await this.loadAll();
+			const updated = this.notes.find((note) => note.rawPath === result.rawPath);
+			if (updated) {
+				await this.selectNote(updated);
+			} else {
+				this.selected = null;
+			}
+			return true;
+		} catch {
+			this.error = "unarchiveFailed";
+			return false;
 		} finally {
 			this.isArchiving = false;
 			this.emit("change", undefined);

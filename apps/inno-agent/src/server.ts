@@ -43,13 +43,17 @@ import { CronScheduler } from "./scheduler/cron-scheduler.js";
 import { validateCron } from "./scheduler/cron-utils.js";
 import { parseFrontmatter, serializeFrontmatter } from "./memory/l2/wiki-maintainer.js";
 import { readManifest, removeWikiPathFromManifest } from "./memory/l2/manifest-store.js";
+import { archiveConversation } from "./memory/l2/conversation-archive-service.js";
 import { listL2Sources, readRawTextPreview } from "./memory/l2/sources-service.js";
 import {
 	archiveL2NotebookItem,
 	createL2Note,
+	deleteL2NotebookItem,
 	listL2Notes,
 	readNoteContent,
 	saveL2NoteContent,
+	saveL2RawMarkdownContent,
+	unarchiveL2NotebookItem,
 	uploadL2NoteFile,
 } from "./memory/l2/notes-service.js";
 import {
@@ -1392,6 +1396,7 @@ function manifestSourceIdByWikiPath(): Map<string, string> {
 }
 
 interface SessionMessageSummary {
+	id?: string;
 	role: "user" | "assistant";
 	content: string;
 	timestamp: number;
@@ -1501,13 +1506,19 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 			const message = entry.message as Record<string, unknown>;
 			const role = message.role;
 			const ts = timestamp ? Date.parse(timestamp) : Date.now();
+			const messageId =
+				typeof message.id === "string"
+					? message.id
+					: typeof entry.id === "string"
+						? entry.id
+						: undefined;
 
 			if (role === "user") {
 				finalizeAssistant();
 				const content = textFromContent(message.content);
 				if (!content) continue;
 				const images = imagesFromContent(message.content);
-				const msg: SessionMessageSummary = { role: "user", content, timestamp: ts, channel: entryChannel };
+				const msg: SessionMessageSummary = { id: messageId, role: "user", content, timestamp: ts, channel: entryChannel };
 				if (images.length > 0) msg.images = images;
 				messages.push(msg);
 				continue;
@@ -1515,6 +1526,7 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 
 			if (role === "assistant") {
 				const pending = ensureAssistant(ts);
+				if (messageId && !pending.id) pending.id = messageId;
 				if (entryChannel && !pending.channel) pending.channel = entryChannel;
 				const content = message.content;
 				if (Array.isArray(content)) {
@@ -3436,6 +3448,7 @@ const server = createServer(async (req, res) => {
 		if (method === "GET" && url.startsWith("/api/l2/raw/content?")) {
 			const params = new URL(url, "http://localhost").searchParams;
 			const rawPath = params.get("path");
+			const full = params.get("full") === "1";
 			if (!rawPath) {
 				json(res, 400, { error: "Missing path parameter" });
 				return;
@@ -3450,10 +3463,40 @@ const server = createServer(async (req, res) => {
 				return;
 			}
 			try {
-				json(res, 200, { path: rawPath, content: readRawTextPreview(l2DataDir, rawPath) });
+				json(res, 200, {
+					path: rawPath,
+					content: readRawTextPreview(l2DataDir, rawPath, full ? Number.MAX_SAFE_INTEGER : undefined),
+				});
 			} catch (err) {
 				logger.warn({ err, rawPath }, "failed to read raw content");
 				json(res, 500, { error: "Failed to read raw content" });
+			}
+			return;
+		}
+
+		if (method === "PUT" && url === "/api/l2/raw/content") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
+			const content = typeof body.content === "string" ? body.content : "";
+			if (!rawPath) {
+				json(res, 400, { error: "Missing rawPath" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath) {
+				json(res, 400, { error: "Invalid raw path" });
+				return;
+			}
+			if (!existsSync(fullPath)) {
+				json(res, 404, { error: "Raw file not found" });
+				return;
+			}
+			try {
+				json(res, 200, saveL2RawMarkdownContent(l2DataDir, rawPath, content));
+			} catch (err) {
+				logger.warn({ err, rawPath }, "failed to save raw markdown content");
+				const message = err instanceof Error ? err.message : "Save raw markdown failed";
+				json(res, 500, { error: message });
 			}
 			return;
 		}
@@ -3564,6 +3607,63 @@ const server = createServer(async (req, res) => {
 			} catch (err) {
 				logger.warn({ err }, "failed to upload note file");
 				const message = err instanceof Error ? err.message : "Upload failed";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/conversations/archive") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const sessionId = (
+				typeof body.SessionID === "string" ? body.SessionID :
+					typeof body.sessionId === "string" ? body.sessionId : ""
+			).trim();
+			const title = (
+				typeof body.Title === "string" ? body.Title :
+					typeof body.title === "string" ? body.title : ""
+			).trim();
+			const rawMessageIds = Array.isArray(body.MessageIDs)
+				? body.MessageIDs
+				: Array.isArray(body.messageIds)
+					? body.messageIds
+					: undefined;
+			const messageIds = rawMessageIds?.filter((id): id is string => typeof id === "string" && id.trim().length > 0);
+			const rawTags = Array.isArray(body.Tags) ? body.Tags : Array.isArray(body.tags) ? body.tags : undefined;
+			const tags = rawTags?.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0);
+			if (!sessionId) {
+				json(res, 400, { error: "Missing sessionId" });
+				return;
+			}
+			const sessionPath = sessionFileFromId(join(dataDir, "sessions"), sessionId);
+			if (!sessionPath || !existsSync(sessionPath)) {
+				json(res, 404, { error: "Session not found" });
+				return;
+			}
+			const parsed = parseSessionFile(sessionPath);
+			if (!parsed) {
+				json(res, 422, { error: "Unable to parse session" });
+				return;
+			}
+			try {
+				const runtimeSession = getSession();
+				const result = await archiveConversation(l2DataDir, {
+					sessionId,
+					title: title || parsed.summary.name,
+					tags,
+					messageIds,
+					messages: parsed.messages.map((message) => ({
+						id: message.id,
+						role: message.role,
+						content: message.content,
+						timestamp: message.timestamp,
+					})),
+					model: runtimeSession.model,
+					modelRegistry: runtimeSession.modelRegistry,
+				});
+				json(res, 201, result);
+			} catch (err) {
+				logger.warn({ err, sessionId }, "failed to archive conversation");
+				const message = err instanceof Error ? err.message : "Archive conversation failed";
 				json(res, 500, { error: message });
 			}
 			return;
@@ -3722,6 +3822,52 @@ const server = createServer(async (req, res) => {
 			} catch (err) {
 				logger.warn({ err, rawPath }, "failed to archive note");
 				const message = err instanceof Error ? err.message : "Archive note failed";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "DELETE" && url.startsWith("/api/l2/notes?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const rawPath = params.get("path");
+			if (!rawPath) {
+				json(res, 400, { error: "Missing path" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath) {
+				json(res, 400, { error: "Invalid raw path" });
+				return;
+			}
+			try {
+				const result = deleteL2NotebookItem(l2DataDir, rawPath);
+				json(res, 200, result);
+			} catch (err) {
+				logger.warn({ err, rawPath }, "failed to delete notebook item");
+				const message = err instanceof Error ? err.message : "Delete failed";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/notes/unarchive") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
+			if (!rawPath) {
+				json(res, 400, { error: "Missing rawPath" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath) {
+				json(res, 400, { error: "Invalid raw path" });
+				return;
+			}
+			try {
+				const result = unarchiveL2NotebookItem(l2DataDir, rawPath);
+				json(res, 200, result);
+			} catch (err) {
+				logger.warn({ err, rawPath }, "failed to unarchive note");
+				const message = err instanceof Error ? err.message : "Unarchive failed";
 				json(res, 500, { error: message });
 			}
 			return;

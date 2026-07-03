@@ -1,13 +1,10 @@
 import { useTranslation } from "react-i18next";
-import MDEditor from "@uiw/react-md-editor";
 import { notebookStore } from "../../stores/notebook-store.js";
 import type { WikiPageFrontmatter, WikiPageType } from "../../types/wiki.js";
 import { parseFrontmatter } from "../../utils/frontmatter.js";
 import { normalizeMarkdownMath } from "../../utils/markdown-math.js";
 import { useStoreSnapshot } from "../hooks.js";
-import "@earendil-works/pi-web-ui";
-import "@uiw/react-md-editor/markdown-editor.css";
-import "@uiw/react-markdown-preview/markdown.css";
+import { MilkdownEditor } from "./MilkdownEditor.js";
 
 function typeColor(type?: WikiPageType): string {
 	switch (type) {
@@ -132,13 +129,10 @@ export function PageView({
 					<FrontmatterHeader frontmatter={parsed.frontmatter} onOpenNoteId={onOpenNoteId} onOpenNote={onOpenNote} />
 				) : null}
 				<div className="min-h-0 flex-1 overflow-hidden">
-					<MDEditor
+					<MilkdownEditor
+						editorKey={state.currentPage.path}
 						value={state.editBuffer}
-						onChange={(value) => notebookStore.updateEditBuffer(value ?? "")}
-						height="100%"
-						preview="live"
-						visibleDragbar={false}
-						style={{ height: "100%" }}
+						onChange={(value) => notebookStore.updateEditBuffer(value)}
 					/>
 				</div>
 				<div className="flex gap-2 border-t border-[var(--inno-border)] p-3">
@@ -158,8 +152,13 @@ export function PageView({
 			{parsed.frontmatter ? (
 				<FrontmatterHeader frontmatter={parsed.frontmatter} onOpenNoteId={onOpenNoteId} onOpenNote={onOpenNote} />
 			) : null}
-			<div className="min-h-0 flex-1 overflow-y-auto p-4">
-				<markdown-artifact content={normalizeMarkdownMath(parsed.body)} />
+			<div className="min-h-0 flex-1 overflow-hidden">
+				<MilkdownEditor
+					editorKey={`${state.currentPage.path}:readonly`}
+					value={normalizeMarkdownMath(parsed.body)}
+					onChange={() => undefined}
+					readOnly
+				/>
 			</div>
 			<div className="flex gap-2 border-t border-[var(--inno-border)] p-3">
 				<button className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={() => notebookStore.startEditing()}>

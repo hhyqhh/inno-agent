@@ -38,7 +38,7 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 		name: "l2_archive",
 		label: "归档到 L2 Wiki",
 		description:
-			"将学习资料归档到 L2 Wiki 知识库。用户说「归档」「保存到知识库」「帮我记下来」或上传资料要求学习/总结时调用。" +
+			"将学习资料归档到 L2 Wiki 知识库。只有用户明确说「归档」「保存到知识库」「帮我记下来」「加入知识库」等表达长期保存意图时才调用；不要因内容有价值或用户仅要求学习/总结就主动调用。" +
 			"支持文本(text)、Markdown(markdown)、对话片段(conversation)、PDF(pdf)、Word 文档(word)、图片(image)。" +
 			"文本类内容传 content 参数；文件类内容传 filePath 参数。",
 		parameters: Type.Object({

@@ -128,6 +128,34 @@ export function deleteNoteAttachment(l2DataDir: string, attachmentId: string): N
 	return removed;
 }
 
+/**
+ * Remove all attachment records and files belonging to a note.
+ * Returns the number of attachments removed.
+ */
+export function deleteAttachmentsForNote(l2DataDir: string, noteRawPath: string): number {
+	const normalizedPath = normalizeNoteRawPath(noteRawPath);
+	const records = readAttachmentIndex(l2DataDir);
+	const kept: NoteAttachmentRecord[] = [];
+	const removed: NoteAttachmentRecord[] = [];
+	for (const record of records) {
+		if (normalizeNoteRawPath(record.noteRawPath) === normalizedPath) removed.push(record);
+		else kept.push(record);
+	}
+	if (removed.length === 0) return 0;
+	writeAttachmentIndex(l2DataDir, kept);
+	for (const record of removed) {
+		const absPath = join(l2DataDir, record.filePath);
+		if (existsSync(absPath)) {
+			try {
+				unlinkSync(absPath);
+			} catch {
+				// best-effort cleanup; the index record is already gone
+			}
+		}
+	}
+	return removed.length;
+}
+
 export function findNoteAttachment(l2DataDir: string, attachmentId: string): NoteAttachmentRecord | undefined {
 	return readAttachmentIndex(l2DataDir).find((record) => record.id === attachmentId);
 }

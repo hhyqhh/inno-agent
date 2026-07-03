@@ -15,7 +15,7 @@ export type WikiPageStatus = "draft" | "reviewed" | "outdated";
 export type ConfidenceLevel = "low" | "medium" | "high";
 
 /** Processing status for manifest entries. */
-export type ManifestStatus = "pending" | "extracted" | "indexed" | "error";
+export type ManifestStatus = "pending" | "extracted" | "indexed" | "outdated" | "error";
 
 /**
  * Manifest entry — one per ingested source.

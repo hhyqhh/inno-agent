@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Tree, type NodeRendererProps } from "react-arborist";
-import MDEditor from "@uiw/react-md-editor";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
@@ -26,9 +25,7 @@ import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { groupByCategory, matchesQuery } from "../utils/category-grouping.js";
 import { useStoreSnapshot } from "./hooks.js";
-import "@earendil-works/pi-web-ui";
-import "@uiw/react-md-editor/markdown-editor.css";
-import "@uiw/react-markdown-preview/markdown.css";
+import { MilkdownEditor } from "./notebook/MilkdownEditor.js";
 
 /* ---------- helpers (same as WorkspaceBrowser) ---------- */
 
@@ -99,7 +96,18 @@ function SkillHtmlPreview({ file }: { file: WorkspaceFileDetail }) {
 function FilePreview({ file, skillName, isLoading }: { file: WorkspaceFileDetail; skillName: string; isLoading: boolean }) {
 	const { t } = useTranslation();
 	if (isLoading) return <div className="flex h-full items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("preview.loadingFile", "Loading...")}</div>;
-	if (file.kind === "markdown") return <div className="h-full overflow-y-auto p-5"><markdown-artifact content={normalizeMarkdownMath(file.content ?? "")} /></div>;
+	if (file.kind === "markdown") {
+		return (
+			<div className="h-full overflow-hidden">
+				<MilkdownEditor
+					editorKey={`${skillName}:${file.path}:preview`}
+					value={normalizeMarkdownMath(file.content ?? "")}
+					onChange={() => undefined}
+					readOnly
+				/>
+			</div>
+		);
+	}
 	if (file.kind === "html") return <SkillHtmlPreview file={file} />;
 	if (file.kind === "pdf") return <iframe className="h-full w-full border-0 bg-[var(--inno-surface)]" src={file.url ?? skillRawUrl(skillName, file.path)} title={file.name} />;
 	if (file.kind === "image") {
@@ -213,8 +221,12 @@ function SkillFilePane({ skillName, onToggleSidebar, sidebarOpen }: { skillName:
 				</div>
 				<div className="min-h-0 flex-1">
 					{isMd ? (
-						<div className="h-full overflow-hidden" data-color-mode="light">
-							<MDEditor value={state.editBuffer} onChange={(v) => skillsStore.updateEditBuffer(v ?? "")} height="100%" preview="live" visibleDragbar={false} style={{ height: "100%" }} />
+						<div className="h-full overflow-hidden">
+							<MilkdownEditor
+								editorKey={`${skillName}:${state.file.path}:edit`}
+								value={state.editBuffer}
+								onChange={(value) => skillsStore.updateEditBuffer(value)}
+							/>
 						</div>
 					) : (
 						<div className="h-full overflow-hidden">

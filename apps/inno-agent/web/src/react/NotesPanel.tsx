@@ -5,6 +5,7 @@ import { NoteAttachments } from "./notebook/NoteAttachments.js";
 import { NoteProperties } from "./notebook/NoteProperties.js";
 import {
 	Archive,
+	ArchiveRestore,
 	ChevronDown,
 	Download,
 	ExternalLink,
@@ -13,11 +14,13 @@ import {
 	Plus,
 	RefreshCw,
 	Save,
+	Trash2,
 } from "lucide-react";
 import { getVisibleNoteTemplates } from "../lib/build-note-from-template.js";
 import { l2RawFileUrl } from "../api/notes.js";
 import { notesStore } from "../stores/notes-store.js";
 import type { NoteSummary } from "../types/notes.js";
+import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { useStoreSnapshot } from "./hooks.js";
 
 interface NotesPanelProps {
@@ -57,6 +60,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		isCreating: notesStore.isCreating,
 		isSaving: notesStore.isSaving,
 		isArchiving: notesStore.isArchiving,
+		isDeleting: notesStore.isDeleting,
 		isUploading: notesStore.isUploading,
 		searchQuery: notesStore.searchQuery,
 		notice: notesStore.notice,
@@ -85,26 +89,67 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		if (wikiPath && onOpenWiki) onOpenWiki(wikiPath);
 	}, [onOpenWiki]);
 
+	const handleDelete = useCallback(async () => {
+		const selected = notesStore.selected;
+		if (!selected) return;
+		const confirmed = typeof window === "undefined" ? true : window.confirm(t("notes.deleteConfirm", { title: selected.title }));
+		if (!confirmed) return;
+		await notesStore.deleteSelected();
+	}, [t]);
+
+	const handleUnarchive = useCallback(async () => {
+		const selected = notesStore.selected;
+		if (!selected) return;
+		const confirmed = typeof window === "undefined" ? true : window.confirm(t("notes.unarchiveConfirm", { title: selected.title }));
+		if (!confirmed) return;
+		await notesStore.unarchiveSelected();
+	}, [t]);
+
 	const selected = state.selected;
 	const isMarkdown = selected?.kind === "markdown";
-	const showRearchive = selected?.kind === "markdown" && selected.status === "outdated";
+	const isRawEditableMarkdown = Boolean(selected && selected.kind !== "markdown" && selected.contentType === "markdown");
+	const showRearchive =
+		(selected?.kind === "markdown" || selected?.kind === "archived") && selected.status === "outdated";
 	const showOpenWiki = Boolean(selected?.wikiPagePath && onOpenWiki);
 	const showDownload = selected && !isMarkdown;
 	const canArchiveNow =
 		selected &&
 		(selected.kind === "orphan" ||
+			(selected.kind === "archived" && selected.status === "outdated") ||
 			(selected.kind === "markdown" && (selected.status === "draft" || selected.status === "outdated")));
+	const canUnarchive =
+		selected &&
+		(selected.kind === "archived" ||
+			(selected.kind === "markdown" && (selected.status === "indexed" || selected.status === "outdated")));
+	const canDelete =
+		selected &&
+		(selected.kind === "orphan" || (selected.kind === "markdown" && selected.status === "draft"));
+	const canSave = Boolean(selected && (isMarkdown || isRawEditableMarkdown));
 
 	function renderBottomActions() {
 		if (!selected) return null;
 		const hasActions =
+			canSave ||
 			showDownload ||
 			(canArchiveNow && (selected.status === "draft" || selected.kind === "orphan")) ||
 			showRearchive ||
+			canUnarchive ||
+			canDelete ||
 			showOpenWiki;
 		if (!hasActions) return null;
 		return (
 			<div className="flex flex-wrap gap-2 border-t border-[var(--inno-border)] p-3">
+				{canSave ? (
+					<button
+						type="button"
+						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
+						disabled={!state.isDirty || state.isSaving}
+						onClick={() => void notesStore.saveSelected()}
+					>
+						<Save size={14} />
+						{t("notes.actions.save")}
+					</button>
+				) : null}
 				{showDownload ? (
 					<a
 						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm hover:bg-[var(--inno-surface-muted)]"
@@ -146,6 +191,28 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					>
 						<ExternalLink size={14} />
 						{t("notes.actions.openWiki")}
+					</button>
+				) : null}
+				{canUnarchive ? (
+					<button
+						type="button"
+						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
+						disabled={state.isArchiving}
+						onClick={() => void handleUnarchive()}
+					>
+						<ArchiveRestore size={14} />
+						{t("notes.actions.unarchive")}
+					</button>
+				) : null}
+				{canDelete ? (
+					<button
+						type="button"
+						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+						disabled={state.isDeleting}
+						onClick={() => void handleDelete()}
+					>
+						<Trash2 size={14} />
+						{t("notes.actions.delete")}
 					</button>
 				) : null}
 			</div>
@@ -259,6 +326,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					) : null}
 					{state.notes.map((note: NoteSummary) => {
 						const isSelected = state.selected?.rawPath === note.rawPath;
+						const statusLabel = t(`notes.status.${note.status}`, note.status);
 						return (
 							<button
 								key={note.rawPath}
@@ -271,8 +339,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 									<span className="truncate">{note.title}</span>
 								</div>
 								<div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--inno-text-muted)]">
-									<span>{t(`notes.itemType.${note.kind}`, note.kind)}</span>
-									<span>{t(`notes.status.${note.status}`, note.status)}</span>
+									<span>{statusLabel}</span>
 									{note.size ? <span>{formatSize(note.size)}</span> : null}
 									{note.tags.slice(0, 2).map((tag) => (
 										<span key={tag}>#{tag}</span>
@@ -302,17 +369,6 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					</div>
 				) : isMarkdown ? (
 					<div className="flex min-h-0 flex-1 flex-col">
-						<div className="flex items-center justify-end border-b border-[var(--inno-border)] px-4 py-2">
-							<button
-								type="button"
-								className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-2 py-1 text-xs hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
-								disabled={!state.isDirty || state.isSaving}
-								onClick={() => void notesStore.saveSelected()}
-							>
-								<Save size={13} />
-								{t("notes.actions.save")}
-							</button>
-						</div>
 						<div className="inno-milkdown-editor-shell min-h-0 flex-1 overflow-hidden">
 							{state.isLoadingContent ? (
 								<p className="p-4 text-sm text-[var(--inno-text-muted)]">{t("common.loading")}</p>
@@ -350,16 +406,24 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 				) : (
 					<div className="flex min-h-0 flex-1 flex-col">
 						<div className="border-b border-[var(--inno-border)] px-4 py-3">
-							<h3 className="font-medium">{selected.title}</h3>
-							<p className="text-xs text-[var(--inno-text-muted)]">{selected.rawPath}</p>
+							<div className="min-w-0">
+								<h3 className="truncate font-medium">{selected.title}</h3>
+								<p className="truncate text-xs text-[var(--inno-text-muted)]">{selected.rawPath}</p>
+							</div>
 						</div>
-						<div className="min-h-0 flex-1 overflow-auto p-4">
+						<div className={`min-h-0 flex-1 ${selected.contentType === "markdown" ? "overflow-hidden" : "overflow-auto p-4"}`}>
 							{state.isLoadingPreview ? (
-								<p className="text-sm text-[var(--inno-text-muted)]">{t("common.loading")}</p>
+								<p className="p-4 text-sm text-[var(--inno-text-muted)]">{t("common.loading")}</p>
+							) : selected.contentType === "markdown" ? (
+								<MilkdownEditor
+									editorKey={`${selected.rawPath}:raw`}
+									value={normalizeMarkdownMath(state.previewContent)}
+									onChange={(value) => notesStore.updatePreviewContent(value)}
+								/>
 							) : state.previewContent ? (
 								<pre className="whitespace-pre-wrap text-sm">{state.previewContent}</pre>
 							) : (
-								<p className="text-sm text-[var(--inno-text-muted)]">{t("notes.previewBinaryHint")}</p>
+								<p className="p-4 text-sm text-[var(--inno-text-muted)]">{t("notes.previewBinaryHint")}</p>
 							)}
 						</div>
 						{renderBottomActions()}

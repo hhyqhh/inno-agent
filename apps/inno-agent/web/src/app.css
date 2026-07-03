@@ -740,6 +740,8 @@ inno-workspace-panel textarea {
 .inno-milkdown-editor {
 	flex: 1;
 	min-height: 0;
+	height: 100%;
+	overflow: hidden;
 }
 
 .inno-milkdown-editor-root {
@@ -747,15 +749,22 @@ inno-workspace-panel textarea {
 	z-index: 2;
 	flex: 1;
 	min-height: 0;
-	overflow: auto;
+	height: 100%;
+	overflow-x: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain;
 }
 
-.inno-milkdown-editor-shell .milkdown,
-.inno-milkdown-editor-shell .ProseMirror {
+.inno-milkdown-editor-root .milkdown,
+.inno-milkdown-editor-root .ProseMirror {
 	position: relative;
 }
 
-.inno-milkdown-editor-shell .inno-milkdown-editor-root .milkdown .ProseMirror {
+.inno-milkdown-editor-root .milkdown {
+	min-height: 100%;
+}
+
+.inno-milkdown-editor-root .milkdown .ProseMirror {
 	max-width: 760px;
 	margin: 0 auto;
 	min-height: 100%;

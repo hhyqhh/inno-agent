@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Tree, type NodeRendererProps, type TreeApi, type CreateHandler, type RenameHandler, type DeleteHandler, type MoveHandler } from "react-arborist";
-import MDEditor from "@uiw/react-md-editor";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
@@ -26,13 +25,11 @@ import { settingsStore } from "../stores/settings-store.js";
 import { getSessionWorkspace } from "../api/workspaces.js";
 import { TerminalDrawer } from "./terminal/TerminalDrawer.js";
 import { RunButton } from "./terminal/RunButton.js";
+import { MilkdownEditor } from "./notebook/MilkdownEditor.js";
 import type { WorkspaceFileDetail, WorkspaceFileKind } from "../types/workspace.js";
 import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { useStoreSnapshot } from "./hooks.js";
-import "@earendil-works/pi-web-ui";
-import "@uiw/react-md-editor/markdown-editor.css";
-import "@uiw/react-markdown-preview/markdown.css";
 
 /* ---------- helpers ---------- */
 
@@ -280,7 +277,18 @@ function HtmlPreview({ file }: { file: WorkspaceFileDetail }) {
 function Preview({ file, isLoading }: { file: WorkspaceFileDetail; isLoading: boolean }) {
 	const { t } = useTranslation();
 	if (isLoading) return <div className="flex h-full items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("preview.loadingFile")}</div>;
-	if (file.kind === "markdown") return <div className="workspace-scroll h-full overflow-y-auto p-5"><markdown-artifact content={normalizeMarkdownMath(file.content ?? "")} /></div>;
+	if (file.kind === "markdown") {
+		return (
+			<div className="h-full overflow-hidden">
+				<MilkdownEditor
+					editorKey={`${file.path}:preview`}
+					value={normalizeMarkdownMath(file.content ?? "")}
+					onChange={() => undefined}
+					readOnly
+				/>
+			</div>
+		);
+	}
 		if (file.kind === "html") return <HtmlPreview file={file} />;
 	if (file.kind === "pdf") {
 		// Default to fit-width so the PDF fills the preview panel horizontally.
@@ -342,14 +350,10 @@ function Preview({ file, isLoading }: { file: WorkspaceFileDetail; isLoading: bo
 
 function MarkdownEditorPane({ value, onChange }: { value: string; onChange: (v: string) => void }) {
 	return (
-		<div className="h-full overflow-hidden" data-color-mode="light">
-			<MDEditor
+		<div className="h-full overflow-hidden">
+			<MilkdownEditor
 				value={value}
-				onChange={(v) => onChange(v ?? "")}
-				height="100%"
-				preview="live"
-				visibleDragbar={false}
-				style={{ height: "100%" }}
+				onChange={onChange}
 			/>
 		</div>
 	);

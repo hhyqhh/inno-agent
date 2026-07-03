@@ -2,10 +2,13 @@ import { apiFetch } from "./client.js";
 import type {
 	ArchiveNoteResult,
 	CreateNoteResult,
+	DeleteNoteItemResult,
 	NoteAttachment,
 	NoteContent,
 	NotesListResponse,
 	SaveNoteResult,
+	SaveRawMarkdownResult,
+	UnarchiveNoteResult,
 	UploadNoteAttachmentResult,
 	UploadNoteFileResult,
 } from "../types/notes.js";
@@ -30,11 +33,23 @@ export async function fetchNoteContent(rawPath: string): Promise<NoteContent> {
 	return apiFetch<NoteContent>(`/api/l2/notes/content?path=${encodeURIComponent(rawPath)}`);
 }
 
-export async function fetchRawContent(rawPath: string): Promise<string> {
+export async function fetchRawContent(rawPath: string, options: { full?: boolean } = {}): Promise<string> {
+	const params = new URLSearchParams({ path: rawPath });
+	if (options.full) params.set("full", "1");
 	const data = await apiFetch<{ path: string; content: string }>(
-		`/api/l2/raw/content?path=${encodeURIComponent(rawPath)}`,
+		`/api/l2/raw/content?${params.toString()}`,
 	);
 	return data.content;
+}
+
+export async function saveRawMarkdownContent(options: {
+	rawPath: string;
+	content: string;
+}): Promise<SaveRawMarkdownResult> {
+	return apiFetch<SaveRawMarkdownResult>("/api/l2/raw/content", {
+		method: "PUT",
+		body: JSON.stringify(options),
+	});
 }
 
 export async function createNote(options: {
@@ -70,6 +85,19 @@ export async function archiveNote(
 	return apiFetch<ArchiveNoteResult>("/api/l2/notes/archive", {
 		method: "POST",
 		body: JSON.stringify({ rawPath, ...options }),
+	});
+}
+
+export async function deleteNoteItem(rawPath: string): Promise<DeleteNoteItemResult> {
+	return apiFetch<DeleteNoteItemResult>(`/api/l2/notes?path=${encodeURIComponent(rawPath)}`, {
+		method: "DELETE",
+	});
+}
+
+export async function unarchiveNote(rawPath: string): Promise<UnarchiveNoteResult> {
+	return apiFetch<UnarchiveNoteResult>("/api/l2/notes/unarchive", {
+		method: "POST",
+		body: JSON.stringify({ rawPath }),
 	});
 }
 

@@ -26,6 +26,7 @@ import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { groupByCategory, matchesQuery } from "../utils/category-grouping.js";
 import { useStoreSnapshot } from "./hooks.js";
+import { checkboxCls } from "./ui/checkbox.js";
 import "@earendil-works/pi-web-ui";
 import "@uiw/react-md-editor/markdown-editor.css";
 import "@uiw/react-markdown-preview/markdown.css";
@@ -309,7 +310,7 @@ function SkillDetail({ skill, onBack }: { skill: SkillInfo; onBack: () => void }
 				{/* Toolbar */}
 				<div className="flex items-center gap-1 border-b border-[var(--inno-border)] px-2 py-1.5">
 					<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
-						<input type="checkbox" className="h-3.5 w-3.5" checked={skill.enabled} onChange={(e) => void skillsStore.setEnabled(skill.name, e.target.checked)} />
+						<input type="checkbox" className={checkboxCls} checked={skill.enabled} onChange={(e) => void skillsStore.setEnabled(skill.name, e.target.checked)} />
 						{t("common.enable", "Enable")}
 					</label>
 					<div className="flex-1" />

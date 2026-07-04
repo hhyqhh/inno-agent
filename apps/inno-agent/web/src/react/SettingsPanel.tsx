@@ -10,6 +10,9 @@ import type { InnoModelInfo, InnoProviderModel as ProviderModel, InnoSettings, C
 import type { WikiStats } from "../types/wiki.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { setLocale } from "../i18n/index.js";
+import { Switch } from "./ui/Switch.js";
+import { inputCls } from "./ui/input.js";
+import { checkboxCls } from "./ui/checkbox.js";
 
 const apiOptions = ["openai-completions", "openai-responses", "anthropic-messages"];
 
@@ -160,9 +163,9 @@ function ModelEditForm({ model, settings, onClose }: {
 				</div>
 			</div>
 			<div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
-				<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
-				<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
-				<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.preserveApiKey} onChange={(e) => setForm({ ...form, preserveApiKey: e.target.checked })} /> {t("settings.form.preserveApiKey")}</label>
+				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
+				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
+				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.preserveApiKey} onChange={(e) => setForm({ ...form, preserveApiKey: e.target.checked })} /> {t("settings.form.preserveApiKey")}</label>
 			</div>
 			{formError ? <div className="mt-2 rounded bg-red-50 px-2 py-1 text-xs text-red-700">{formError}</div> : null}
 			<div className="mt-2 flex gap-2">
@@ -306,8 +309,8 @@ function NewProviderForm() {
 						</div>
 					</div>
 					<div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
-						<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
-						<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
+						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
+						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
 					</div>
 					{formError ? <div className="mt-2 rounded bg-red-50 px-2 py-1 text-xs text-red-700">{formError}</div> : null}
 					{saveMessage ? <div className="mt-2 rounded bg-green-50 px-2 py-1 text-xs text-green-700">{saveMessage}</div> : null}
@@ -510,7 +513,6 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 		}
 	}
 
-	const inputCls = "w-full rounded-md border border-[var(--inno-border)] px-2.5 py-1.5 text-xs";
 	const labelCls = "mb-0.5 block text-[10px] text-[var(--inno-text-muted)]";
 	const checkCls = "flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]";
 
@@ -540,7 +542,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.channels.feishu.desc")}</div>
 							</div>
 							<label className={checkCls}>
-								<input type="checkbox" className="h-3.5 w-3.5" checked={feishuEnabled} onChange={(e) => setFeishuEnabled(e.target.checked)} />
+								<input type="checkbox" className={checkboxCls} checked={feishuEnabled} onChange={(e) => setFeishuEnabled(e.target.checked)} />
 								{t("settings.channels.enabled")}
 							</label>
 						</div>
@@ -576,7 +578,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 									className="w-full rounded border border-[var(--inno-border)] bg-[var(--inno-bg-alt)] px-3 py-2 text-xs text-[var(--inno-text)] hover:bg-[var(--inno-bg-hover)] flex items-center justify-center gap-2"
 									onClick={startFeishuQrRegister}
 								>
-									<QrCodeIcon className="h-3.5 w-3.5" />
+									<QrCodeIcon className={checkboxCls} />
 									{t("settings.feishu.qrRegister")}
 								</button>
 							)}
@@ -597,7 +599,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								</div>
 								<div className="col-span-2 flex items-center gap-3">
 									<label className={checkCls}>
-										<input type="checkbox" className="h-3.5 w-3.5" checked={feishuPersonalOnly} onChange={(e) => setFeishuPersonalOnly(e.target.checked)} />
+										<input type="checkbox" className={checkboxCls} checked={feishuPersonalOnly} onChange={(e) => setFeishuPersonalOnly(e.target.checked)} />
 										{t("settings.channels.personalOnly")}
 									</label>
 								</div>
@@ -617,7 +619,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.channels.qq.desc")}</div>
 							</div>
 							<label className={checkCls}>
-								<input type="checkbox" className="h-3.5 w-3.5" checked={qqEnabled} onChange={(e) => setQqEnabled(e.target.checked)} />
+								<input type="checkbox" className={checkboxCls} checked={qqEnabled} onChange={(e) => setQqEnabled(e.target.checked)} />
 								{t("settings.channels.enabled")}
 							</label>
 						</div>
@@ -629,7 +631,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								</div>
 								<div className="col-span-2 flex items-center gap-3">
 									<label className={checkCls}>
-										<input type="checkbox" className="h-3.5 w-3.5" checked={qqPersonalOnly} onChange={(e) => setQqPersonalOnly(e.target.checked)} />
+										<input type="checkbox" className={checkboxCls} checked={qqPersonalOnly} onChange={(e) => setQqPersonalOnly(e.target.checked)} />
 										{t("settings.channels.personalOnly")}
 									</label>
 								</div>
@@ -649,7 +651,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.channels.wechat.desc")}</div>
 							</div>
 							<label className={checkCls}>
-								<input type="checkbox" className="h-3.5 w-3.5" checked={wechatEnabled} onChange={(e) => setWechatEnabled(e.target.checked)} />
+								<input type="checkbox" className={checkboxCls} checked={wechatEnabled} onChange={(e) => setWechatEnabled(e.target.checked)} />
 								{t("settings.channels.enabled")}
 							</label>
 						</div>
@@ -709,7 +711,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								</div>
 								<div className="flex items-center gap-3">
 									<label className={checkCls}>
-										<input type="checkbox" className="h-3.5 w-3.5" checked={wechatPersonalOnly} onChange={(e) => setWechatPersonalOnly(e.target.checked)} />
+										<input type="checkbox" className={checkboxCls} checked={wechatPersonalOnly} onChange={(e) => setWechatPersonalOnly(e.target.checked)} />
 										{t("settings.channels.personalOnly")}
 									</label>
 								</div>
@@ -804,7 +806,6 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 		}
 	}
 
-	const inputCls = "h-8 min-w-0 w-full rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:border-blue-400 focus:outline-none";
 	const sourceLabel = type === "github"
 		? `GitHub · ${owner || "?"}/${repo || "?"}`
 		: `${t("settings.contentHub.bundle", "自托管服务")} · ${baseUrl || "?"}`;
@@ -942,8 +943,6 @@ function OcrSettings({ settings }: { settings: InnoSettings }) {
 		}
 	}
 
-	const inputCls = "h-8 min-w-0 w-full rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:border-blue-400 focus:outline-none";
-
 	return (
 		<div className="min-w-0 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
 			<button className="inno-settings-card-toggle flex w-full min-w-0 items-start gap-2 text-left" onClick={() => setOpen((v) => !v)}>
@@ -1039,15 +1038,7 @@ function MemoryToggleRow({
 				<h4 className="text-sm font-medium text-[var(--inno-text)]">{title}</h4>
 				<p className="mt-1 text-xs text-[var(--inno-text-muted)]">{desc}</p>
 			</div>
-			<button
-				role="switch"
-				aria-checked={shown}
-				disabled={saving || locked}
-				onClick={() => onToggle(!enabled)}
-				className={`relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${shown ? "bg-[var(--inno-accent)]" : "bg-slate-300"}`}
-			>
-				<span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-[var(--inno-surface)] transition-transform ${shown ? "translate-x-[18px]" : "translate-x-1"}`} />
-			</button>
+			<Switch checked={shown} onChange={onToggle} disabled={saving || locked} />
 		</div>
 	);
 }
@@ -1145,15 +1136,7 @@ function SimpleModeSettings({ settings }: { settings: InnoSettings }) {
 						{enabled ? t("settings.simpleMode.onDesc") : t("settings.simpleMode.offDesc")}
 					</p>
 				</div>
-				<button
-					role="switch"
-					aria-checked={enabled}
-					disabled={saving}
-					onClick={() => void handleToggle(!enabled)}
-					className={`relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${enabled ? "bg-[var(--inno-accent)]" : "bg-slate-300"}`}
-				>
-					<span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-[var(--inno-surface)] transition-transform ${enabled ? "translate-x-[18px]" : "translate-x-1"}`} />
-				</button>
+				<Switch checked={enabled} onChange={(v) => void handleToggle(v)} disabled={saving} />
 			</div>
 		</div>
 	);

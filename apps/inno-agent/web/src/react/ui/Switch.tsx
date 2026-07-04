@@ -8,7 +8,7 @@ interface SwitchProps {
 
 /**
  * Controlled toggle switch. Routes through --inno-* theme vars so all 4 themes
- * render correctly (the old inline version hardcoded bg-slate-300 for OFF).
+ * render correctly (the old inline version used a hardcoded slate color for OFF).
  * Press feedback uses scale(0.97) + custom ease-out per Emil's principles.
  */
 export function Switch({ checked, onChange, disabled, "aria-label": ariaLabel, className = "" }: SwitchProps) {

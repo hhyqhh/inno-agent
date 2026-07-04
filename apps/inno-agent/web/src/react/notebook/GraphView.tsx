@@ -343,7 +343,7 @@ export function GraphView() {
 					<RefreshCw size={13} />
 					<span className="hidden @[680px]:inline">{t("notebook.graph.refresh")}</span>
 				</button>
-				<div className="mx-1 h-4 w-px bg-slate-200" />
+				<div className="mx-1 h-4 w-px bg-[var(--inno-surface-muted)]" />
 				<span className="text-[var(--inno-text-subtle)]">{t("notebook.graph.show")}</span>
 				{ALL_CATEGORIES.map((cat) => {
 					const active = visibleCategories.has(cat);

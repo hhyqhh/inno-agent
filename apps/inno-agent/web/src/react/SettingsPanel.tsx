@@ -121,10 +121,10 @@ function ModelEditForm({ model, settings, onClose }: {
 	const maskedKey = provider?.apiKey ? "••••••••" : "";
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-accent-soft)] bg-blue-50/50 p-3">
+		<div className="rounded-lg border border-[var(--inno-accent-soft)] bg-[var(--inno-surface-muted)] p-3">
 			<div className="mb-2 flex items-center justify-between">
 				<span className="text-xs font-medium text-[var(--inno-text)]">{t("settings.editModel", "Edit Model")}</span>
-				<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={onClose}><X size={14} /></button>
+				<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onClose}><X size={14} /></button>
 			</div>
 			<div className="grid grid-cols-2 gap-2">
 				<div>
@@ -167,7 +167,7 @@ function ModelEditForm({ model, settings, onClose }: {
 				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
 				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.preserveApiKey} onChange={(e) => setForm({ ...form, preserveApiKey: e.target.checked })} /> {t("settings.form.preserveApiKey")}</label>
 			</div>
-			{formError ? <div className="mt-2 rounded bg-red-50 px-2 py-1 text-xs text-red-700">{formError}</div> : null}
+			{formError ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div> : null}
 			<div className="mt-2 flex gap-2">
 				<button className="rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void handleSave()}>
 					{saving ? t("settings.savingProvider") : t("settings.saveProvider")}
@@ -201,7 +201,7 @@ function ThemeSettings() {
 							className={`h-5 w-5 rounded-full border-2 transition-all ${
 								active
 									? "border-[var(--inno-accent)] ring-2 ring-[var(--inno-accent)]/30 scale-110"
-									: "border-[var(--inno-border-strong)] hover:border-slate-400"
+									: "border-[var(--inno-border-strong)] hover:border-[var(--inno-border-strong)]"
 							}`}
 							style={{ backgroundColor: THEME_PREVIEW_COLORS[id] }}
 						/>
@@ -312,8 +312,8 @@ function NewProviderForm() {
 						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
 						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
 					</div>
-					{formError ? <div className="mt-2 rounded bg-red-50 px-2 py-1 text-xs text-red-700">{formError}</div> : null}
-					{saveMessage ? <div className="mt-2 rounded bg-green-50 px-2 py-1 text-xs text-green-700">{saveMessage}</div> : null}
+					{formError ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div> : null}
+					{saveMessage ? <div className="mt-2 rounded bg-[var(--inno-success-bg)] px-2 py-1 text-xs text-[var(--inno-success)]">{saveMessage}</div> : null}
 					<button className="mt-3 rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void handleSave()}>
 						{saving ? t("settings.savingProvider") : t("settings.saveProvider")}
 					</button>
@@ -527,9 +527,9 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 					<span className="text-sm font-medium text-[var(--inno-text)]">{t("settings.channels.title")}</span>
 				</div>
 				<div className="flex items-center gap-2 text-xs text-[var(--inno-text-subtle)]">
-					{feishuEnabled && <span className="rounded bg-green-50 px-1.5 py-0.5 text-green-700">{t("settings.channels.feishu.title")}</span>}
+					{feishuEnabled && <span className="rounded bg-[var(--inno-success-bg)] px-1.5 py-0.5 text-[var(--inno-success)]">{t("settings.channels.feishu.title")}</span>}
 					{qqEnabled && <span className="rounded bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-[var(--inno-accent)]">{t("settings.channels.qq.title")}</span>}
-					{wechatEnabled && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">{t("settings.channels.wechat.title")}</span>}
+					{wechatEnabled && <span className="rounded bg-[var(--inno-success-bg)] px-1.5 py-0.5 text-[var(--inno-success)]">{t("settings.channels.wechat.title")}</span>}
 				</div>
 			</button>
 			{expanded && (
@@ -557,18 +557,18 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 									<div className="text-[10px] text-[var(--inno-accent)]">{t("settings.feishu.qrWaiting")}</div>
 								</div>
 							) : feishuQrState === "confirmed" ? (
-								<div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 p-3">
-									<CheckCircle className="h-4 w-4 text-green-600" />
-									<span className="text-xs text-green-700">{t("settings.feishu.qrConfirmed")}</span>
+								<div className="flex items-center gap-2 rounded-lg border border-[var(--inno-success-border)] bg-[var(--inno-success-bg)] p-3">
+									<CheckCircle className="h-4 w-4 text-[var(--inno-success)]" />
+									<span className="text-xs text-[var(--inno-success)]">{t("settings.feishu.qrConfirmed")}</span>
 								</div>
 							) : feishuQrState === "expired" ? (
-								<div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-									<span className="text-xs text-amber-700">{t("settings.feishu.qrExpired")}</span>
+								<div className="flex items-center gap-2 rounded-lg border border-[var(--inno-warning-border)] bg-[var(--inno-warning-bg)] p-3">
+									<span className="text-xs text-[var(--inno-warning)]">{t("settings.feishu.qrExpired")}</span>
 									<button className="ml-auto rounded bg-[var(--inno-accent)] px-2 py-0.5 text-[10px] text-white" onClick={startFeishuQrRegister}>{t("settings.feishu.qrRegenerate")}</button>
 								</div>
 							) : feishuQrState === "denied" ? (
-								<div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
-									<span className="text-xs text-red-700">{t("settings.feishu.qrDenied")}</span>
+								<div className="flex items-center gap-2 rounded-lg border border-[var(--inno-danger-border)] bg-[var(--inno-danger-bg)] p-3">
+									<span className="text-xs text-[var(--inno-danger)]">{t("settings.feishu.qrDenied")}</span>
 									<button className="ml-auto rounded bg-[var(--inno-accent)] px-2 py-0.5 text-[10px] text-white" onClick={startFeishuQrRegister}>{t("settings.feishu.qrRegenerate")}</button>
 								</div>
 							) : feishuQrState === "scanning" ? (
@@ -578,12 +578,12 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 									className="w-full rounded border border-[var(--inno-border)] bg-[var(--inno-bg-alt)] px-3 py-2 text-xs text-[var(--inno-text)] hover:bg-[var(--inno-bg-hover)] flex items-center justify-center gap-2"
 									onClick={startFeishuQrRegister}
 								>
-									<QrCodeIcon className={checkboxCls} />
+									<QrCodeIcon size={14} />
 									{t("settings.feishu.qrRegister")}
 								</button>
 							)}
 							{feishuQrError && (
-								<div className="mt-1 rounded bg-red-50 px-2 py-1 text-[10px] text-red-600">{feishuQrError}</div>
+								<div className="mt-1 rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-[10px] text-[var(--inno-danger)]">{feishuQrError}</div>
 							)}
 						</div>
 
@@ -661,8 +661,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								<div className="flex items-center gap-2 rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2.5 py-2">
 									{wxConnected ? (
 										<>
-											<Wifi size={14} className="text-green-600" />
-											<span className="text-xs font-medium text-green-700">{t("settings.channels.wechat.connected")}</span>
+											<Wifi size={14} className="text-[var(--inno-success)]" />
+											<span className="text-xs font-medium text-[var(--inno-success)]">{t("settings.channels.wechat.connected")}</span>
 											{wxBotId && <span className="text-[10px] text-[var(--inno-text-subtle)] ml-1">{t("settings.channels.wechat.botId")}: {wxBotId}</span>}
 										</>
 									) : (
@@ -679,13 +679,13 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 										<QRCodeSVG value={qrUrl} size={192} level="M" />
 									)}
 									{qrStatus === "confirmed" && (
-										<div className="flex items-center gap-1.5 text-xs text-green-600">
+										<div className="flex items-center gap-1.5 text-xs text-[var(--inno-success)]">
 											<CheckCircle size={14} />
 											{t("settings.channels.wechat.confirmed")}
 										</div>
 									)}
 									{qrStatus === "expired" && (
-										<div className="text-xs text-amber-600">{t("settings.channels.wechat.expired")}</div>
+										<div className="text-xs text-[var(--inno-warning)]">{t("settings.channels.wechat.expired")}</div>
 									)}
 									{qrStatus === "scanning" && (
 										<div className="text-xs text-[var(--inno-text-subtle)]">{t("settings.channels.wechat.scanning")}</div>
@@ -706,7 +706,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 										</button>
 									)}
 									{qrError && (
-										<div className="rounded bg-red-50 px-2 py-1 text-xs text-red-700">{qrError}</div>
+										<div className="rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{qrError}</div>
 									)}
 								</div>
 								<div className="flex items-center gap-3">
@@ -739,8 +739,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 						</div>
 					)}
 
-					{formError && <div className="rounded bg-red-50 px-2 py-1 text-xs text-red-700">{formError}</div>}
-					{saveMsg && <div className="rounded bg-green-50 px-2 py-1 text-xs text-green-700">{saveMsg}</div>}
+					{formError && <div className="rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div>}
+					{saveMsg && <div className="rounded bg-[var(--inno-success-bg)] px-2 py-1 text-xs text-[var(--inno-success)]">{saveMsg}</div>}
 					<button
 						className="rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50 justify-self-start"
 						disabled={saving}
@@ -830,13 +830,13 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 					<div className="flex flex-wrap items-center gap-1.5">
 						<button
 							onClick={() => setType("github")}
-							className={`flex h-7 items-center rounded-md border px-2.5 text-xs ${type === "github" ? "border-blue-400 bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"}`}
+							className={`flex h-7 items-center rounded-md border px-2.5 text-xs ${type === "github" ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"}`}
 						>
 							GitHub
 						</button>
 						<button
 							onClick={() => setType("bundle")}
-							className={`flex h-7 items-center rounded-md border px-2.5 text-xs ${type === "bundle" ? "border-blue-400 bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"}`}
+							className={`flex h-7 items-center rounded-md border px-2.5 text-xs ${type === "bundle" ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"}`}
 						>
 							{t("settings.contentHub.bundle", "自托管服务")}
 						</button>
@@ -1083,7 +1083,7 @@ function MemorySettings({ settings }: { settings: InnoSettings }) {
 	return (
 		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
 			<h4 className="mb-3 text-sm font-medium text-[var(--inno-text)]">{t("settings.memorySection")}</h4>
-			{locked ? <p className="mb-3 text-xs text-amber-600">{t("settings.simpleMode.memoryLocked")}</p> : null}
+			{locked ? <p className="mb-3 text-xs text-[var(--inno-warning)]">{t("settings.simpleMode.memoryLocked")}</p> : null}
 			<div className="grid gap-4">
 				{layers.map(({ key, ns }) => {
 					const enabled = state[key];
@@ -1192,11 +1192,11 @@ export function SettingsPanel() {
 						</div>
 					</div>
 					{state.isLoading ? <div className="text-sm text-[var(--inno-text-muted)]">{t("settings.loading")}</div> : null}
-					{state.error ? <div className="rounded bg-red-50 p-2 text-sm text-red-700">{state.error}</div> : null}
+					{state.error ? <div className="rounded bg-[var(--inno-danger-bg)] p-2 text-sm text-[var(--inno-danger)]">{state.error}</div> : null}
 					<div className="grid grid-cols-3 gap-3 text-sm">
 						<div className="rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
 							<div className="text-xs text-[var(--inno-text-muted)]">{t("settings.stats.server")}</div>
-							<div className={healthOk ? "font-medium text-green-700" : "font-medium text-red-600"}>
+							<div className={healthOk ? "font-medium text-[var(--inno-success)]" : "font-medium text-[var(--inno-danger)]"}>
 								{healthOk ? t("settings.stats.healthy") : t("settings.stats.offline")}
 							</div>
 						</div>
@@ -1248,7 +1248,7 @@ export function SettingsPanel() {
 											<Pencil size={13} />
 										</button>
 										<button
-											className="flex h-7 w-7 items-center justify-center rounded text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+											className="flex h-7 w-7 items-center justify-center rounded text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)] group-hover:opacity-100"
 											title={t("common.delete", "Delete")}
 											onClick={() => {
 												if (window.confirm(t("settings.confirmDelete", { id: `${model.provider}/${model.id}` }) ?? "")) {

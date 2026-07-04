@@ -12,9 +12,9 @@ import "@uiw/react-markdown-preview/markdown.css";
 function typeColor(type?: WikiPageType): string {
 	switch (type) {
 		case "source-summary":
-			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100";
+			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]";
 		case "entity":
-			return "bg-green-50 text-green-700 ring-1 ring-green-100";
+			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]";
 		case "concept":
 			return "bg-orange-50 text-orange-700 ring-1 ring-orange-100";
 		case "analysis":
@@ -28,13 +28,13 @@ function FrontmatterHeader({ frontmatter }: { frontmatter: WikiPageFrontmatter }
 	const { t } = useTranslation();
 	const statusColors: Record<string, string> = {
 		draft: "bg-yellow-50 text-yellow-700 ring-1 ring-yellow-100",
-		reviewed: "bg-green-50 text-green-700 ring-1 ring-green-100",
-		outdated: "bg-red-50 text-red-700 ring-1 ring-red-100",
+		reviewed: "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]",
+		outdated: "bg-[var(--inno-danger-bg)] text-[var(--inno-danger)] ring-1 ring-[var(--inno-danger-border)]",
 	};
 	const confidenceColors: Record<string, string> = {
-		low: "bg-red-50 text-red-700 ring-1 ring-red-100",
+		low: "bg-[var(--inno-danger-bg)] text-[var(--inno-danger)] ring-1 ring-[var(--inno-danger-border)]",
 		medium: "bg-yellow-50 text-yellow-700 ring-1 ring-yellow-100",
-		high: "bg-green-50 text-green-700 ring-1 ring-green-100",
+		high: "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]",
 	};
 
 	return (
@@ -44,13 +44,13 @@ function FrontmatterHeader({ frontmatter }: { frontmatter: WikiPageFrontmatter }
 				<span className={`rounded px-1.5 py-0.5 ${typeColor(frontmatter.type)}`}>{t(`notebook.types.${frontmatter.type}`)}</span>
 				<span className={`rounded px-1.5 py-0.5 ${statusColors[frontmatter.status] ?? ""}`}>{t(`notebook.status.${frontmatter.status}`)}</span>
 				<span className={`rounded px-1.5 py-0.5 ${confidenceColors[frontmatter.confidence] ?? ""}`}>{t(`notebook.confidence.${frontmatter.confidence}`)}</span>
-				{frontmatter.contested ? <span className="rounded bg-red-50 px-1.5 py-0.5 text-red-700 ring-1 ring-red-100">{t("notebook.contested")}</span> : null}
+				{frontmatter.contested ? <span className="rounded bg-[var(--inno-danger-bg)] px-1.5 py-0.5 text-[var(--inno-danger)] ring-1 ring-[var(--inno-danger-border)]">{t("notebook.contested")}</span> : null}
 				<span className="text-[var(--inno-text-muted)]">{frontmatter.updated}</span>
 			</div>
 			{frontmatter.tags.length > 0 ? (
 				<div className="mt-2 flex flex-wrap gap-1">
 					{frontmatter.tags.map((tag) => (
-						<span key={tag} className="rounded-full bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-xs text-[var(--inno-accent)] ring-1 ring-blue-100">
+						<span key={tag} className="rounded-full bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-xs text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]">
 							#{tag}
 						</span>
 					))}
@@ -99,7 +99,7 @@ export function PageView() {
 					<button className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={() => void notebookStore.savePage()}>
 						{t("common.save")}
 					</button>
-					<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={() => notebookStore.cancelEditing()}>
+					<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => notebookStore.cancelEditing()}>
 						{t("common.cancel")}
 					</button>
 				</div>
@@ -117,7 +117,7 @@ export function PageView() {
 				<button className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={() => notebookStore.startEditing()}>
 					{t("common.edit")}
 				</button>
-				<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={() => notebookStore.setView("graph")}>
+				<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => notebookStore.setView("graph")}>
 					{t("notebook.page.backToGraph")}
 				</button>
 			</div>

@@ -112,7 +112,7 @@ function SummarySection() {
 				<Stat label={t("profile.summary.openMisconceptions")} value={openMisc} />
 			</div>
 			<textarea
-				className="h-32 w-full resize-none rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+				className="h-32 w-full resize-none rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 				placeholder={t("profile.summary.placeholder") ?? ""}
 				value={buffer}
 				onChange={(e) => {
@@ -123,7 +123,7 @@ function SummarySection() {
 			{dirty ? (
 				<div className="mt-2 flex justify-end gap-2">
 					<button
-						className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]"
+						className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 						onClick={() => {
 							setBuffer(profile?.profile_summary ?? "");
 							setDirty(false);
@@ -214,7 +214,7 @@ function GoalsSection() {
 					</button>
 				}
 			>
-				{error ? <div className="mb-2 rounded bg-red-50 p-2 text-xs text-red-700">{error}</div> : null}
+				{error ? <div className="mb-2 rounded bg-[var(--inno-danger-bg)] p-2 text-xs text-[var(--inno-danger)]">{error}</div> : null}
 				{goals.length === 0 ? (
 					<p className="text-sm text-[var(--inno-text-muted)]">{t("profile.goals.empty")}</p>
 				) : (
@@ -273,7 +273,7 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 					<label className="block text-sm">
 						<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.goals.title")}</span>
 						<input
-							className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+							className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 							placeholder={t("profile.goals.namePlaceholder") ?? ""}
 							value={draft.title}
 							autoFocus
@@ -322,7 +322,7 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 					<label className="block text-sm">
 						<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.goals.successCriteria")}</span>
 						<textarea
-							className="h-20 w-full resize-none rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+							className="h-20 w-full resize-none rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 							placeholder={t("profile.goals.successCriteriaPlaceholder") ?? ""}
 							value={draft.success_criteria.join("\n")}
 							onChange={(e) =>
@@ -335,9 +335,9 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 					</label>
 				</div>
 				<div className="mt-4 flex justify-end gap-2">
-					{error ? <div className="mr-auto text-xs text-red-600">{error}</div> : null}
+					{error ? <div className="mr-auto text-xs text-[var(--inno-danger)]">{error}</div> : null}
 					<button
-						className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)] disabled:opacity-50"
+						className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
 						disabled={saving}
 						onClick={onClose}
 					>
@@ -415,20 +415,20 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 						) : null}
 					</div>
 					<div className="flex shrink-0 gap-1.5">
-						<button className="rounded bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={() => setEditing(true)}>
+						<button className="rounded bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => setEditing(true)}>
 							{t("common.edit")}
 						</button>
-						<button className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50" onClick={() => void doDelete()}>
+						<button className="rounded px-2 py-1 text-xs text-[var(--inno-danger)] hover:bg-[var(--inno-danger-bg)]" onClick={() => void doDelete()}>
 							{t("common.delete")}
 						</button>
 					</div>
 				</div>
-				{error ? <div className="mt-2 rounded bg-red-50 p-2 text-xs text-red-700">{error}</div> : null}
+				{error ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] p-2 text-xs text-[var(--inno-danger)]">{error}</div> : null}
 			</div>
 		);
 	}
 	return (
-		<div className="rounded-lg border border-[var(--inno-accent-soft)] bg-blue-50/40 p-3">
+		<div className="rounded-lg border border-[var(--inno-accent-soft)] bg-[var(--inno-surface-muted)] p-3">
 			<div className="grid gap-2">
 				<input
 					className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm"
@@ -493,7 +493,7 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 						{saving ? t("common.saving") : t("common.save")}
 					</button>
 				</div>
-				{error ? <div className="mt-1 rounded bg-red-50 p-2 text-xs text-red-700">{error}</div> : null}
+				{error ? <div className="mt-1 rounded bg-[var(--inno-danger-bg)] p-2 text-xs text-[var(--inno-danger)]">{error}</div> : null}
 			</div>
 		</div>
 	);
@@ -502,17 +502,17 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 function statusToneFor(status: string): string {
 	switch (status) {
 		case "active":
-			return "bg-green-50 text-green-700 ring-1 ring-green-100";
+			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]";
 		case "paused":
 			return "bg-yellow-50 text-yellow-700 ring-1 ring-yellow-100";
 		case "completed":
-			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100";
+			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]";
 		case "archived":
 			return "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]";
 		case "repairing":
 			return "bg-orange-50 text-orange-700 ring-1 ring-orange-100";
 		case "resolved":
-			return "bg-green-50 text-green-700 ring-1 ring-green-100";
+			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]";
 		case "stale":
 			return "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]";
 		default:
@@ -589,8 +589,8 @@ function KnowledgeRow({ state }: { state: KnowledgeState }) {
 				</div>
 				<div className="truncate text-xs text-[var(--inno-text-muted)]">{state.domain || "-"}</div>
 				<div>
-					<div className="h-1.5 w-full rounded-full bg-slate-200">
-						<div className="h-1.5 rounded-full bg-blue-500" style={{ width: `${pct}%` }} />
+					<div className="h-1.5 w-full rounded-full bg-[var(--inno-surface-muted)]">
+						<div className="h-1.5 rounded-full bg-[var(--inno-accent)]" style={{ width: `${pct}%` }} />
 					</div>
 					<div className="mt-0.5 text-[10px] text-[var(--inno-text-muted)]">{pct}%</div>
 				</div>
@@ -821,7 +821,7 @@ function ChipInput({ label, values, onChange, placeholder }: { label: string; va
 			<div className="mb-1 text-xs font-medium text-[var(--inno-text)]">{label}</div>
 			<div className="flex flex-wrap gap-1">
 				{values.map((v) => (
-					<span key={v} className="inline-flex items-center gap-1 rounded-full bg-[var(--inno-accent-soft)] px-2 py-0.5 text-xs text-[var(--inno-accent)] ring-1 ring-blue-100">
+					<span key={v} className="inline-flex items-center gap-1 rounded-full bg-[var(--inno-accent-soft)] px-2 py-0.5 text-xs text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]">
 						{v}
 						<button className="text-[var(--inno-accent)] hover:text-[var(--inno-accent)]" onClick={() => onChange(values.filter((x) => x !== v))}>
 							×
@@ -829,7 +829,7 @@ function ChipInput({ label, values, onChange, placeholder }: { label: string; va
 					</span>
 				))}
 				<input
-					className="min-w-[120px] flex-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 text-xs focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+					className="min-w-[120px] flex-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 text-xs focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 					placeholder={placeholder}
 					value={input}
 					onChange={(e) => setInput(e.target.value)}
@@ -883,7 +883,7 @@ export function LearnerProfilePanel() {
 					</div>
 				) : null}
 
-				{state.error ? <div className="rounded bg-red-50 p-2 text-sm text-red-700">{state.error}</div> : null}
+				{state.error ? <div className="rounded bg-[var(--inno-danger-bg)] p-2 text-sm text-[var(--inno-danger)]">{state.error}</div> : null}
 
 				{state.profile ? (
 					<>

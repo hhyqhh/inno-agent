@@ -72,7 +72,7 @@ export default function DocxPreview({ file }: { file: WorkspaceFileDetail }) {
 			{error ? (
 				<div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-[var(--inno-text-muted)]">
 					<div className="font-medium text-[var(--inno-text)]">{file.name}</div>
-					<div className="text-xs text-red-500">{error}</div>
+					<div className="text-xs text-[var(--inno-danger)]">{error}</div>
 					<button
 						className="flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)]"
 						onClick={downloadOriginal}

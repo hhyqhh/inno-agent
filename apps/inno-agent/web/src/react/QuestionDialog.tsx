@@ -22,7 +22,7 @@ function OptionRow({
 		<button
 			className={`flex w-full items-start gap-2.5 rounded-md border px-3 py-2 text-left text-[13px] transition-colors ${
 				selected
-					? "border-blue-400 bg-[var(--inno-accent-soft)] text-[var(--inno-text)]"
+					? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-text)]"
 					: "border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text)] hover:border-[var(--inno-border-strong)] hover:bg-[var(--inno-surface-muted)]"
 			}`}
 			onClick={onSelect}
@@ -30,7 +30,7 @@ function OptionRow({
 		>
 			<span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-[var(--inno-border-strong)]">
 				{selected ? (
-					<span className={`block ${multi ? "h-2 w-2 rounded-sm bg-blue-500" : "h-2 w-2 rounded-full bg-blue-500"}`} />
+					<span className={`block ${multi ? "h-2 w-2 rounded-sm bg-[var(--inno-accent)]" : "h-2 w-2 rounded-full bg-[var(--inno-accent)]"}`} />
 				) : null}
 			</span>
 			<span className="min-w-0 flex-1">
@@ -120,7 +120,7 @@ function QuestionTab({
 						<div className="flex items-center gap-1.5 pt-1">
 							<input
 								type="text"
-								className="min-w-0 flex-1 rounded-md border border-[var(--inno-border)] px-2.5 py-1.5 text-[13px] focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+								className="min-w-0 flex-1 rounded-md border border-[var(--inno-border)] px-2.5 py-1.5 text-[13px] focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 								placeholder="Type something..."
 								value={customText}
 								onChange={(e) => setCustomText(e.target.value)}
@@ -212,8 +212,8 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 								className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
 									activeTab === i
 										? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
-										: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-slate-200"
-								}${answers.has(i) ? " ring-1 ring-green-300" : ""}`}
+										: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
+								}${answers.has(i) ? " ring-1 ring-[var(--inno-success-border)]" : ""}`}
 								onClick={() => setActiveTab(i)}
 							>
 								{q.header}

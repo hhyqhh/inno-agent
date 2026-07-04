@@ -181,7 +181,7 @@ function CsvPreview({ name, content }: { name: string; content: string }) {
 				</thead>
 				<tbody>
 					{body.map((r, ri) => (
-						<tr key={ri} className="odd:bg-[var(--inno-surface)] even:bg-slate-50/60">
+						<tr key={ri} className="odd:bg-[var(--inno-surface)] even:bg-[var(--inno-surface-muted)]">
 							{header.map((_, ci) => (
 								<td key={ci} className="border border-[var(--inno-border)] px-2 py-1 align-top text-[var(--inno-text-muted)]">
 									{r[ci] ?? ""}
@@ -243,7 +243,7 @@ function OfficePreview({ file }: { file: WorkspaceFileDetail }) {
 		return (
 			<div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-[var(--inno-text-muted)]">
 				<div className="font-medium text-[var(--inno-text)]">{file.name}</div>
-				<div className="text-xs text-red-500">{error}</div>
+				<div className="text-xs text-[var(--inno-danger)]">{error}</div>
 				<button className="flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" onClick={downloadOriginal}>
 					<Download size={12} />
 					{t("files.download", "Download")}
@@ -490,7 +490,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 				</div>
 			</div>
 			<div className="workspace-scroll min-h-0 flex-1 overflow-auto">
-				{state.error ? <div className="p-4 text-sm text-red-500">{state.error}</div> : null}
+				{state.error ? <div className="p-4 text-sm text-[var(--inno-danger)]">{state.error}</div> : null}
 				{!state.error && state.file ? <Preview file={state.file} isLoading={state.isLoadingFile} /> : null}
 				{!state.error && !state.file ? <div className="flex h-full items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("preview.noPreview", "Nothing to preview")}</div> : null}
 			</div>
@@ -510,8 +510,8 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 			style={style}
 			className={`group flex items-center gap-1.5 rounded-md px-2 py-1 text-xs cursor-pointer select-none ${
 				selected
-					? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100"
-					: "text-[var(--inno-text-muted)] hover:bg-slate-100/85 hover:text-[var(--inno-text)]"
+					? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]"
+					: "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 			}`}
 			onClick={(e) => {
 				e.stopPropagation();
@@ -535,7 +535,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 			{node.isEditing ? (
 				<input
 					autoFocus
-					className="min-w-0 flex-1 rounded border border-blue-300 bg-[var(--inno-surface)] px-1 py-0.5 text-xs outline-none focus:ring-1 focus:ring-blue-200"
+					className="min-w-0 flex-1 rounded border border-[var(--inno-accent)] bg-[var(--inno-surface)] px-1 py-0.5 text-xs outline-none focus-visible:shadow-[var(--inno-ring)]"
 					defaultValue={node.data.name}
 					onFocus={(e) => {
 						const val = e.currentTarget.value;
@@ -625,7 +625,7 @@ function DeleteConfirm({ paths, onConfirm, onCancel }: { paths: string[]; onConf
 					<button className="rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]" onClick={onCancel}>
 						{t("common.cancel", "Cancel")}
 					</button>
-					<button className="rounded-md bg-red-500 px-3 py-1.5 text-xs text-white hover:bg-red-600" onClick={onConfirm}>
+					<button className="rounded-md bg-[var(--inno-danger)] px-3 py-1.5 text-xs text-white hover:bg-[var(--inno-danger)]" onClick={onConfirm}>
 						{t("common.delete", "Delete")}
 					</button>
 				</div>
@@ -834,7 +834,7 @@ export function WorkspaceBrowser() {
 		<div ref={rootRef} className={`grid h-full min-h-0 gap-3 bg-transparent p-3 transition-[grid-template-columns] duration-200 ${showContent ? (sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]") : "grid-cols-[minmax(0,1fr)]"}`}>
 			{/* --- Tree pane --- */}
 			<aside
-				className={`inno-workspace-card relative flex min-h-0 flex-col overflow-hidden rounded-lg transition-opacity duration-200 ${isDragOver ? "border-blue-400 bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+				className={`inno-workspace-card relative flex min-h-0 flex-col overflow-hidden rounded-lg transition-opacity duration-200 ${isDragOver ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
 				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
 				onDrop={handleDrop}
@@ -846,10 +846,10 @@ export function WorkspaceBrowser() {
 							{activeWorkspaceName || "工作区"}
 						</span>
 					</div>
-					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-violet-100 hover:text-violet-600 disabled:opacity-40" title={t("files.uploadSkill", "上传技能包 (.zip/.md) 到 .skills")} onClick={() => skillUploadRef.current?.click()}>
+					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-accent)] disabled:opacity-40" title={t("files.uploadSkill", "上传技能包 (.zip/.md) 到 .skills")} onClick={() => skillUploadRef.current?.click()}>
 						<Sparkles size={13} />
 					</button>
-					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-slate-200 hover:text-[var(--inno-text)] disabled:opacity-40" title={t("preview.refresh", "Refresh")} onClick={() => void workspaceStore.loadTree()}>
+					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-40" title={t("preview.refresh", "Refresh")} onClick={() => void workspaceStore.loadTree()}>
 						<RefreshCw size={13} />
 					</button>
 					<input ref={skillUploadRef} type="file" multiple accept=".zip,application/zip,.md,text/markdown" className="hidden" onChange={handleSkillUploadChange} />

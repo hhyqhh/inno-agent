@@ -12,9 +12,9 @@ const FILTER_TYPES: (WikiPageType | "all")[] = ["all", "source-summary", "entity
 function typeColor(type?: WikiPageType): string {
 	switch (type) {
 		case "source-summary":
-			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100";
+			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]";
 		case "entity":
-			return "bg-green-50 text-green-700 ring-1 ring-green-100";
+			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]";
 		case "concept":
 			return "bg-orange-50 text-orange-700 ring-1 ring-orange-100";
 		case "analysis":
@@ -58,7 +58,7 @@ export function Notebook() {
 				<div className="border-b border-[var(--inno-border)] p-2">
 					<input
 						type="text"
-						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 						placeholder={t("notebook.search") ?? ""}
 						value={state.searchQuery}
 						onChange={(event) => notebookStore.setSearchQuery(event.target.value)}
@@ -70,8 +70,8 @@ export function Notebook() {
 							key={type}
 							className={`rounded-full px-2 py-0.5 text-xs transition-colors ${
 								state.filterType === type
-									? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100"
-									: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]"
+									? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]"
+									: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 							}`}
 							onClick={() => notebookStore.setFilterType(type)}
 						>
@@ -104,7 +104,7 @@ export function Notebook() {
 									</div>
 								</button>
 								<button
-									className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-muted)] hover:bg-red-50 hover:text-red-600 disabled:opacity-50 ${state.isDeletingPage ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+									className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-muted)] hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)] disabled:opacity-50 ${state.isDeletingPage ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
 									title={t("notebook.delete.button")}
 									disabled={state.isDeletingPage}
 									onClick={(e) => {

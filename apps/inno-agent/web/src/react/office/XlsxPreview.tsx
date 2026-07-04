@@ -100,7 +100,7 @@ export default function XlsxPreview({ file }: { file: WorkspaceFileDetail }) {
 		return (
 			<div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-[var(--inno-text-muted)]">
 				<div className="font-medium text-[var(--inno-text)]">{file.name}</div>
-				<div className="text-xs text-red-500">{error}</div>
+				<div className="text-xs text-[var(--inno-danger)]">{error}</div>
 				<button className="flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)]" onClick={downloadOriginal}>
 					<Download size={12} />
 					{t("files.download", "Download")}
@@ -125,7 +125,7 @@ export default function XlsxPreview({ file }: { file: WorkspaceFileDetail }) {
 				</div>
 			) : null}
 			{truncated ? (
-				<div className="shrink-0 bg-amber-500/10 px-3 py-1 text-[11px] text-amber-600">
+				<div className="shrink-0 bg-[var(--inno-warning-bg)] px-3 py-1 text-[11px] text-[var(--inno-warning)]">
 					{t("preview.xlsxLargeSheetWarning", "Large sheet — showing first {{n}} rows", { n: MAX_ROWS })}
 				</div>
 			) : null}

@@ -10,9 +10,9 @@ interface RunsPanelProps {
 }
 
 function statusBadge(code: number | null | undefined): { text: string; cls: string } {
-	if (code === null || code === undefined) return { text: "未完成", cls: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] ring-1 ring-slate-200" };
-	if (code === 0) return { text: "✓ 0", cls: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100" };
-	return { text: `✗ ${code}`, cls: "bg-red-50 text-red-700 ring-1 ring-red-100" };
+	if (code === null || code === undefined) return { text: "未完成", cls: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] ring-1 ring-[var(--inno-border)]" };
+	if (code === 0) return { text: "✓ 0", cls: "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]" };
+	return { text: `✗ ${code}`, cls: "bg-[var(--inno-danger-bg)] text-[var(--inno-danger)] ring-1 ring-[var(--inno-danger-border)]" };
 }
 
 function formatDuration(start: string, end?: string): string {
@@ -112,7 +112,7 @@ export function RunsPanel({ sessionId, onClose }: RunsPanelProps) {
 							<button
 								key={r.id}
 								onClick={() => setSelectedId(r.id)}
-								className={`flex w-full items-start gap-2 border-b border-[var(--inno-border)] px-2 py-1.5 text-left text-[11px] transition-colors ${selected ? "bg-[var(--inno-surface)] ring-1 ring-inset ring-slate-200" : "hover:bg-[var(--inno-surface)]"}`}
+								className={`flex w-full items-start gap-2 border-b border-[var(--inno-border)] px-2 py-1.5 text-left text-[11px] transition-colors ${selected ? "bg-[var(--inno-surface)] ring-1 ring-inset ring-[var(--inno-border)]" : "hover:bg-[var(--inno-surface)]"}`}
 							>
 								<span className={`shrink-0 rounded px-1 py-0.5 font-mono ${badge.cls}`}>{badge.text}</span>
 								<div className="min-w-0 flex-1">
@@ -147,7 +147,7 @@ export function RunsPanel({ sessionId, onClose }: RunsPanelProps) {
 								</button>
 								{archiveMsg ? <span className="text-[10px] text-[var(--inno-text-muted)]">{archiveMsg}</span> : null}
 							</div>
-							<pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-[#0f172a] p-3 font-mono text-[11px] leading-snug text-slate-100">
+							<pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-[#0f172a] p-3 font-mono text-[11px] leading-snug text-[var(--inno-text-muted)]">
 								{detail.outputTail || "(无输出)"}
 							</pre>
 						</>
@@ -156,7 +156,7 @@ export function RunsPanel({ sessionId, onClose }: RunsPanelProps) {
 					)}
 				</div>
 			</div>
-			{error ? <div className="border-t border-red-200 bg-red-50 p-2 text-[11px] text-red-700">{error}</div> : null}
+			{error ? <div className="border-t border-[var(--inno-danger-border)] bg-[var(--inno-danger-bg)] p-2 text-[11px] text-[var(--inno-danger)]">{error}</div> : null}
 		</div>
 	);
 }

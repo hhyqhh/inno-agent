@@ -152,7 +152,7 @@ function SkillFileNode({ node, style, dragHandle }: NodeRendererProps<ArboristNo
 			style={style}
 			className={`group flex items-center gap-1.5 rounded-md px-2 py-1 text-xs cursor-pointer select-none ${
 				selected
-					? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100"
+					? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]"
 					: "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 			}`}
 			onClick={(e) => {
@@ -300,7 +300,7 @@ function SkillDetail({ skill, onBack }: { skill: SkillInfo; onBack: () => void }
 					<div className="min-w-0 flex-1">
 						<div className="flex items-center gap-2">
 							<span className="truncate text-sm font-medium text-[var(--inno-text)]">{skill.name}</span>
-							<span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${skill.enabled ? "bg-green-50 text-green-700 ring-1 ring-green-100" : "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]"}`}>
+							<span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${skill.enabled ? "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]" : "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]"}`}>
 								{skill.enabled ? t("common.enabled", "Enabled") : t("common.disabled", "Disabled")}
 							</span>
 						</div>
@@ -314,10 +314,10 @@ function SkillDetail({ skill, onBack }: { skill: SkillInfo; onBack: () => void }
 						{t("common.enable", "Enable")}
 					</label>
 					<div className="flex-1" />
-					<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-slate-200 hover:text-[var(--inno-text)]" title={t("preview.refresh", "Refresh")} onClick={() => void skillsStore.refreshTree()}>
+					<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" title={t("preview.refresh", "Refresh")} onClick={() => void skillsStore.refreshTree()}>
 						<RefreshCw size={12} />
 					</button>
-					<button className="flex h-6 w-6 items-center justify-center rounded text-red-400 hover:bg-red-50 hover:text-red-600" title={t("common.delete", "Delete")} onClick={() => { void skillsStore.remove(skill.name); onBack(); }}>
+					<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-danger)] hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)]" title={t("common.delete", "Delete")} onClick={() => { void skillsStore.remove(skill.name); onBack(); }}>
 						<Trash2 size={12} />
 					</button>
 				</div>
@@ -363,7 +363,7 @@ function SkillRow({ skill, onClick }: { skill: SkillInfo; onClick: () => void })
 			className="flex w-full items-center gap-3 border-b border-[var(--inno-border)] px-3 py-2.5 text-left transition-colors hover:bg-[var(--inno-surface-muted)]"
 			onClick={onClick}
 		>
-			<span className={`h-2 w-2 shrink-0 rounded-full ${skill.enabled ? "bg-green-500" : "bg-slate-300"}`} />
+			<span className={`h-2 w-2 shrink-0 rounded-full ${skill.enabled ? "bg-[var(--inno-success)]" : "bg-[var(--inno-border-strong)]"}`} />
 			<div className="min-w-0 flex-1">
 				<div className="truncate text-sm font-medium text-[var(--inno-text)]">{skill.name}</div>
 				{skill.description && <div className="truncate text-xs text-[var(--inno-text-muted)]">{skill.description}</div>}
@@ -393,7 +393,7 @@ function SkillLibraryModal({ onClose }: { onClose: () => void }) {
 	const totalMatched = useMemo(() => groups.reduce((sum, [, items]) => sum + items.length, 0), [groups]);
 
 	return (
-		<div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+		<div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
 			<div
 				className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] shadow-xl"
 				onClick={(e) => e.stopPropagation()}
@@ -445,7 +445,7 @@ function SkillLibraryModal({ onClose }: { onClose: () => void }) {
 					) : null}
 				</div>
 
-				{state.error ? <div className="border-b border-[var(--inno-border)] bg-red-50 px-4 py-2 text-xs text-red-700">{state.error}</div> : null}
+				{state.error ? <div className="border-b border-[var(--inno-border)] bg-[var(--inno-danger-bg)] px-4 py-2 text-xs text-[var(--inno-danger)]">{state.error}</div> : null}
 
 				{/* Body */}
 				<div className="min-h-0 flex-1 overflow-y-auto">
@@ -477,7 +477,7 @@ function SkillLibraryModal({ onClose }: { onClose: () => void }) {
 												{item.description && <div className="mt-0.5 line-clamp-3 text-xs leading-relaxed text-[var(--inno-text-muted)]">{item.description}</div>}
 											</div>
 											{item.installed ? (
-												<span className="flex shrink-0 items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 ring-1 ring-green-100">
+												<span className="flex shrink-0 items-center gap-1 rounded-md bg-[var(--inno-success-bg)] px-2.5 py-1 text-xs font-medium text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]">
 													<Check size={12} /> {t("skills.installed")}
 												</span>
 											) : (
@@ -594,7 +594,7 @@ export function SkillsPanel() {
 					</div>
 				) : null}
 
-				{state.error ? <div className="border-b border-[var(--inno-border)] bg-red-50 px-3 py-2 text-xs text-red-700">{state.error}</div> : null}
+				{state.error ? <div className="border-b border-[var(--inno-border)] bg-[var(--inno-danger-bg)] px-3 py-2 text-xs text-[var(--inno-danger)]">{state.error}</div> : null}
 
 				{/* Skills list */}
 				<div className="min-h-0 flex-1 overflow-y-auto">

@@ -17,12 +17,12 @@ const STATUS_LABEL: Record<TerminalStatus, string> = {
 };
 
 const STATUS_DOT: Record<TerminalStatus, string> = {
-	idle: "bg-slate-300",
-	connecting: "bg-amber-400 animate-pulse",
-	connected: "bg-emerald-500",
-	running: "bg-blue-500 animate-pulse",
-	disconnected: "bg-slate-300",
-	error: "bg-red-500",
+	idle: "bg-[var(--inno-border-strong)]",
+	connecting: "bg-[var(--inno-warning)] animate-pulse",
+	connected: "bg-[var(--inno-success)]",
+	running: "bg-[var(--inno-accent)] animate-pulse",
+	disconnected: "bg-[var(--inno-border-strong)]",
+	error: "bg-[var(--inno-danger)]",
 };
 
 /**
@@ -80,13 +80,13 @@ export function TerminalDrawer() {
 					aria-label={STATUS_LABEL[term.status]}
 				/>
 				{term.cwd ? <span className="truncate text-[11px] text-[var(--inno-text-subtle)]" title={term.cwd}>{term.cwd}</span> : null}
-				{term.error ? <span className="text-[11px] text-red-600">{term.error}</span> : null}
+				{term.error ? <span className="text-[11px] text-[var(--inno-danger)]">{term.error}</span> : null}
 				<div className="ml-auto flex items-center gap-1">
 					{term.isOpen && sess.currentSessionId ? (
 						<>
 							<button
 								onClick={toggleHistory}
-								className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${showHistory ? "bg-[var(--inno-surface)] text-[var(--inno-text)] ring-1 ring-slate-200" : "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
+								className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${showHistory ? "bg-[var(--inno-surface)] text-[var(--inno-text)] ring-1 ring-[var(--inno-border)]" : "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
 								title="历史"
 							>
 								<History size={12} />

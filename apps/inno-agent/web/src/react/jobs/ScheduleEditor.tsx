@@ -29,7 +29,7 @@ export function ScheduleEditor({ value, onChange, error }: ScheduleEditorProps) 
 				<label className="block text-sm">
 					<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("jobs.form.frequency")}</span>
 					<select
-						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 						value={value.frequency}
 						onChange={(e) => patch({ frequency: e.target.value as Frequency })}
 					>
@@ -45,7 +45,7 @@ export function ScheduleEditor({ value, onChange, error }: ScheduleEditorProps) 
 						<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("jobs.form.time")}</span>
 						<input
 							type="time"
-							className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+							className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 							value={timeStr}
 							onChange={(e) => {
 								const [h, m] = e.target.value.split(":").map(Number);
@@ -66,7 +66,7 @@ export function ScheduleEditor({ value, onChange, error }: ScheduleEditorProps) 
 								<button
 									type="button"
 									key={d}
-									className={`rounded-full px-3 py-1 text-xs transition-colors ${ active ? "inno-primary-button" : "bg-[var(--inno-surface)] text-[var(--inno-text-muted)] ring-1 ring-slate-200 hover:bg-[var(--inno-surface-muted)]" }`}
+									className={`rounded-full px-3 py-1 text-xs transition-colors ${ active ? "inno-primary-button" : "bg-[var(--inno-surface)] text-[var(--inno-text-muted)] ring-1 ring-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)]" }`}
 									onClick={() => {
 										const next = active
 											? value.weekdays.filter((x) => x !== d)
@@ -86,7 +86,7 @@ export function ScheduleEditor({ value, onChange, error }: ScheduleEditorProps) 
 				<label className="block text-sm">
 					<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("jobs.form.dayOfMonth")}</span>
 					<select
-						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 						value={String(value.day)}
 						onChange={(e) => patch({ day: Number(e.target.value) })}
 					>
@@ -105,7 +105,7 @@ export function ScheduleEditor({ value, onChange, error }: ScheduleEditorProps) 
 					<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("jobs.form.onceDate")}</span>
 					<input
 						type="date"
-						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 						value={value.date}
 						onChange={(e) => patch({ date: e.target.value })}
 					/>
@@ -116,7 +116,7 @@ export function ScheduleEditor({ value, onChange, error }: ScheduleEditorProps) 
 				<label className="block text-sm">
 					<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("jobs.form.customCron")}</span>
 					<input
-						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 font-mono text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 font-mono text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 						placeholder={t("jobs.form.cronPlaceholder") ?? ""}
 						value={value.cron}
 						onChange={(e) => patch({ cron: e.target.value })}
@@ -125,7 +125,7 @@ export function ScheduleEditor({ value, onChange, error }: ScheduleEditorProps) 
 				</label>
 			) : null}
 
-			{error ? <div className="text-xs text-red-600">{error}</div> : null}
+			{error ? <div className="text-xs text-[var(--inno-danger)]">{error}</div> : null}
 		</div>
 	);
 }

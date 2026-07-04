@@ -28,6 +28,25 @@
 	--inno-ring: 0 0 0 3px rgba(52, 54, 58, 0.14);
 	--inno-selection-bg: rgba(52, 54, 58, 0.12);
 	--inno-grid-color: rgba(31, 35, 40, 0.025);
+
+	/* Transition tokens — custom cubic-bezier per Emil's design engineering.
+	   `ease`/`ease-in` feel sluggish; these give punchy, responsive motion. */
+	--inno-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+	--inno-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+	--inno-dur-fast: 120ms;
+	--inno-dur-ui: 160ms;
+	--inno-dur-modal: 220ms;
+
+	/* Semantic state colors — derive from the palette above via color-mix so
+	   they adapt to every theme automatically. No per-theme overrides needed. */
+	--inno-danger-bg: color-mix(in srgb, var(--inno-danger) 10%, transparent);
+	--inno-danger-border: color-mix(in srgb, var(--inno-danger) 22%, transparent);
+	--inno-success-bg: color-mix(in srgb, var(--inno-success) 10%, transparent);
+	--inno-success-border: color-mix(in srgb, var(--inno-success) 22%, transparent);
+	--inno-warning-bg: color-mix(in srgb, var(--inno-warning) 12%, transparent);
+	--inno-warning-border: color-mix(in srgb, var(--inno-warning) 22%, transparent);
+	--inno-focus-border: var(--inno-accent);
+
 	color: var(--inno-text);
 	background: var(--inno-background);
 	font-synthesis-weight: none;
@@ -182,7 +201,7 @@ inno-session-sidebar {
 	height: 100%;
 	min-height: 0;
 	overflow: hidden;
-	border-right: 1px solid #d5dae2;
+	border-right: 1px solid var(--inno-border);
 	background: var(--inno-sidebar-bg);
 	font-size: 12px;
 	line-height: 1.35;
@@ -238,7 +257,7 @@ inno-workspace-panel textarea {
 
 .chat-scroll {
 	scrollbar-width: thin;
-	scrollbar-color: rgba(148, 163, 184, 0.28) transparent;
+	scrollbar-color: var(--inno-scrollbar-thumb) transparent;
 }
 
 .chat-scroll::-webkit-scrollbar,
@@ -259,14 +278,14 @@ inno-workspace-panel textarea {
 .sidebar-scroll::-webkit-scrollbar-thumb {
 	border: 2px solid transparent;
 	border-radius: 999px;
-	background: rgba(148, 163, 184, 0.26);
+	background: var(--inno-scrollbar-thumb);
 	background-clip: padding-box;
 }
 
 .chat-scroll:hover::-webkit-scrollbar-thumb,
 .workspace-scroll:hover::-webkit-scrollbar-thumb,
 .sidebar-scroll:hover::-webkit-scrollbar-thumb {
-	background: rgba(100, 116, 139, 0.42);
+	background: var(--inno-scrollbar-thumb-hover);
 	background-clip: padding-box;
 }
 
@@ -299,21 +318,21 @@ inno-workspace-panel textarea {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	border: 1px solid #cbd5e1;
-	background: #ffffff;
-	color: #64748b;
-	transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+	border: 1px solid var(--inno-border);
+	background: var(--inno-surface);
+	color: var(--inno-text-muted);
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), border-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out), transform var(--inno-dur-fast) var(--inno-ease-out);
 }
 
 .inno-icon-button:hover:not(:disabled) {
-	border-color: rgba(148, 163, 184, 0.85);
-	background: #ffffff;
-	color: #0f172a;
-	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+	border-color: var(--inno-border-strong);
+	background: var(--inno-surface);
+	color: var(--inno-text);
+	box-shadow: var(--inno-shadow-soft);
 }
 
 .inno-icon-button:active:not(:disabled) {
-	transform: translateY(1px);
+	transform: scale(0.97);
 }
 
 .inno-primary-button,
@@ -321,8 +340,8 @@ inno-workspace-panel textarea {
 	border-color: transparent;
 	background: var(--inno-accent);
 	color: #ffffff;
-	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
-	transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+	box-shadow: var(--inno-shadow-soft);
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), border-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out), transform var(--inno-dur-fast) var(--inno-ease-out);
 }
 
 .inno-primary-button:hover:not(:disabled),
@@ -334,7 +353,7 @@ inno-workspace-panel textarea {
 
 .inno-primary-button:active:not(:disabled),
 .inno-primary-icon-button:active:not(:disabled) {
-	transform: translateY(1px);
+	transform: scale(0.97);
 }
 
 .inno-primary-button:disabled,
@@ -353,7 +372,7 @@ inno-workspace-panel textarea {
 .inno-message {
 	min-width: 0;
 	max-width: 100%;
-	box-shadow: 0 1px 1px rgba(15, 23, 42, 0.03);
+	box-shadow: var(--inno-shadow-soft);
 }
 
 .inno-message details,
@@ -380,14 +399,20 @@ inno-workspace-panel textarea {
 }
 
 .inno-composer {
-	border: 1px solid #cbd5e1;
-	background: #ffffff;
-	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+	border: 1px solid var(--inno-border);
+	background: var(--inno-surface);
+	box-shadow: var(--inno-shadow-soft);
+	transition: border-color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-composer:focus-within {
+	border-color: var(--inno-focus-border);
+	box-shadow: var(--inno-ring);
 }
 
 .inno-workspace-card {
-	border: 1px solid #e2e8f0;
-	background: #ffffff;
+	border: 1px solid var(--inno-border);
+	background: var(--inno-surface);
 	box-shadow: none;
 }
 
@@ -539,13 +564,13 @@ inno-workspace-panel textarea {
 	bottom: 12px;
 	width: 1px;
 	background: transparent;
-	transition: background-color 120ms ease, box-shadow 120ms ease;
+	transition: background-color var(--inno-dur-fast) var(--inno-ease-out), box-shadow var(--inno-dur-fast) var(--inno-ease-out);
 }
 
 .workspace-resize-handle:hover::after,
 .workspace-resizing .workspace-resize-handle::after {
-	background: rgba(37, 99, 235, 0.45);
-	box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.08);
+	background: var(--inno-accent);
+	box-shadow: var(--inno-ring);
 }
 
 .workspace-resizing {
@@ -580,12 +605,6 @@ inno-workspace-panel textarea {
 	background-image: none;
 }
 
-:root[data-theme="innospark"] .inno-sidebar-scope,
-:root[data-theme="innospark"] inno-session-sidebar {
-	border-color: rgba(85, 90, 255, 0.08);
-	background: var(--inno-sidebar-bg);
-}
-
 :root[data-theme="innospark"] .inno-sidebar-scope header,
 :root[data-theme="innospark"] .inno-sidebar-scope [class*="border-b"] {
 	border-color: rgba(85, 90, 255, 0.1);
@@ -593,7 +612,7 @@ inno-workspace-panel textarea {
 
 :root[data-theme="innospark"] .inno-sidebar-scope [role="button"],
 :root[data-theme="innospark"] .inno-sidebar-scope button {
-	transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), border-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out), transform var(--inno-dur-fast) var(--inno-ease-out);
 }
 
 :root[data-theme="innospark"] .inno-sidebar-scope [role="button"]:hover,
@@ -604,7 +623,7 @@ inno-workspace-panel textarea {
 
 :root[data-theme="innospark"] .inno-sidebar-scope [role="button"]:active,
 :root[data-theme="innospark"] .inno-sidebar-scope button:active:not(:disabled) {
-	transform: translateY(1px);
+	transform: scale(0.97);
 }
 
 :root[data-theme="innospark"] .inno-panel-title,
@@ -626,9 +645,9 @@ inno-workspace-panel textarea {
 :root[data-theme="innospark"] .inno-composer {
 	border: 2px solid rgba(85, 90, 255, 0.25);
 	border-radius: 22px;
-	background: #ffffff;
+	background: var(--inno-surface);
 	box-shadow: 0 2px 4px rgba(85, 90, 255, 0.08), 0 10px 28px rgba(85, 90, 255, 0.1);
-	transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+	transition: border-color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out);
 }
 
 :root[data-theme="innospark"] .inno-composer:focus-within {
@@ -643,19 +662,6 @@ inno-workspace-panel textarea {
 :root[data-theme="innospark"] .inno-icon-button,
 :root[data-theme="innospark"] .inno-composer button {
 	border-radius: 999px;
-}
-
-:root[data-theme="innospark"] .inno-icon-button {
-	border-color: rgba(85, 90, 255, 0.14);
-	background: #ffffff;
-	color: var(--inno-text-muted);
-	box-shadow: 0 1px 2px rgba(85, 90, 255, 0.06);
-}
-
-:root[data-theme="innospark"] .inno-icon-button:hover:not(:disabled) {
-	border-color: rgba(85, 90, 255, 0.28);
-	color: var(--inno-text);
-	box-shadow: 0 2px 8px rgba(85, 90, 255, 0.1);
 }
 
 :root[data-theme="innospark"] .inno-composer button[title="Send"],
@@ -691,26 +697,6 @@ inno-workspace-panel textarea {
 	background: rgba(255, 255, 255, 0.7);
 }
 
-:root[data-theme="innospark"] .workspace-panel,
-:root[data-theme="innospark"] inno-workspace-panel {
-	border-color: rgba(85, 90, 255, 0.12);
-	background: var(--inno-workspace-bg);
-}
-
-:root[data-theme="innospark"] .inno-workspace-card,
-:root[data-theme="innospark"] .inno-workspace-scope .rounded-lg:not(.inno-primary-button):not(.inno-primary-icon-button),
-:root[data-theme="innospark"] .inno-workspace-scope .rounded:not(.inno-primary-button):not(.inno-primary-icon-button) {
-	border-color: rgba(85, 90, 255, 0.12);
-	background-color: rgba(255, 255, 255, 0.86);
-}
-
-:root[data-theme="innospark"] .workspace-resize-handle:hover::after,
-:root[data-theme="innospark"].workspace-resizing .workspace-resize-handle::after,
-:root[data-theme="innospark"] .workspace-resizing .workspace-resize-handle::after {
-	background: rgba(85, 90, 255, 0.5);
-	box-shadow: 0 0 0 2px rgba(85, 90, 255, 0.1);
-}
-
 @media (max-width: 960px) {
 	.app-layout--workspace-half {
 		--workspace-w: clamp(280px, 42vw, var(--inno-workspace-width));
@@ -726,7 +712,7 @@ inno-workspace-panel textarea {
 /* Sidebar scrollbar */
 .sidebar-scroll {
 	scrollbar-width: thin;
-	scrollbar-color: rgba(148, 163, 184, 0.25) transparent;
+	scrollbar-color: var(--inno-scrollbar-thumb) transparent;
 }
 
 /*
@@ -748,4 +734,32 @@ inno-workspace-panel textarea {
 	line-height: inherit !important;
 	letter-spacing: inherit !important;
 	tab-size: inherit !important;
+}
+
+/* Reduced motion — collapse non-essential animation for users who prefer it.
+   Keeps opacity/color transitions for comprehension; kills movement. */
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+/* Flip-card 3D — shared by ChatCenter (switch-workspace) and SessionSidebar.
+   Replaces duplicated inline style={{ transformStyle, backfaceVisibility }}. */
+.flip-card-scene {
+	perspective: 600px;
+}
+.flip-card {
+	transform-style: preserve-3d;
+	position: relative;
+}
+.flip-card-face {
+	backface-visibility: hidden;
+}
+.flip-card-back {
+	backface-visibility: hidden;
+	transform: rotateY(180deg);
 }

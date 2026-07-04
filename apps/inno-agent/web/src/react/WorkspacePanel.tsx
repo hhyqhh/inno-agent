@@ -24,12 +24,12 @@ interface WorkspacePanelProps {
 const TAB_ORDER: RightPanelTab[] = ["preview", "notebook", "profile", "jobs", "skills", "settings"];
 
 const TAB_ICONS: Record<RightPanelTab, React.ReactNode> = {
-	notebook: <BookOpen size={13} />,
-	preview: <FolderKanban size={13} />,
-	profile: <UserRound size={13} />,
-	jobs: <BriefcaseBusiness size={13} />,
-	skills: <Sparkles size={13} />,
-	settings: <Settings size={13} />,
+	notebook: <BookOpen size={14} />,
+	preview: <FolderKanban size={14} />,
+	profile: <UserRound size={14} />,
+	jobs: <BriefcaseBusiness size={14} />,
+	skills: <Sparkles size={14} />,
+	settings: <Settings size={14} />,
 };
 
 function WorkspaceContent({ activeTab }: { activeTab: RightPanelTab }) {
@@ -126,7 +126,7 @@ export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChan
 						return (
 							<button
 								key={tab}
-								className={`inno-workspace-tab flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md transition-colors ${compact ? "w-7 justify-center px-0" : "px-2"} ${isActive ? "bg-[var(--inno-surface)] font-medium text-[var(--inno-accent)] shadow-sm ring-1 ring-slate-200" : "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
+								className={`inno-workspace-tab flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md transition-colors ${compact ? "w-7 justify-center px-0" : "px-2"} ${isActive ? "bg-[var(--inno-surface)] font-medium text-[var(--inno-accent)] shadow-sm" : "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
 								title={compact ? label : undefined}
 								aria-label={compact ? label : undefined}
 								onClick={() => onTabChange(tab)}

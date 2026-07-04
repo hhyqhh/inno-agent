@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Loader2 } from "lucide-react";
+import { Download } from "lucide-react";
 import type { PptxPreviewResult, PptxSlide, WorkspaceFileDetail } from "../../types/workspace.js";
 import { triggerDownload } from "../../api/workspace.js";
+import { Spinner } from "../ui/Spinner.js";
 
 /**
  * Render a .pptx as a vertical stack of slide SVGs, produced by the backend
@@ -51,7 +52,7 @@ export default function PptxPreview({ file }: { file: WorkspaceFileDetail }) {
 	if (loading) {
 		return (
 			<div className="flex h-full items-center justify-center gap-2 text-sm text-[var(--inno-text-muted)]">
-				<Loader2 size={16} className="animate-spin" />
+				<Spinner size={16} />
 				{t("preview.pptxLoading", "Rendering slides...")}
 			</div>
 		);
@@ -60,7 +61,7 @@ export default function PptxPreview({ file }: { file: WorkspaceFileDetail }) {
 		return (
 			<div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-[var(--inno-text-muted)]">
 				<div className="font-medium text-[var(--inno-text)]">{file.name}</div>
-				<div className="text-xs text-red-500">{error}</div>
+				<div className="text-xs text-[var(--inno-danger)]">{error}</div>
 				<button className="flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)]" onClick={downloadOriginal}>
 					<Download size={12} />
 					{t("files.download", "Download")}

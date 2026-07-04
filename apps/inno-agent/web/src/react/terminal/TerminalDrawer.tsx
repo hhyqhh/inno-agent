@@ -86,7 +86,7 @@ export function TerminalDrawer() {
 						<>
 							<button
 								onClick={toggleHistory}
-								className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${showHistory ? "bg-[var(--inno-surface)] text-[var(--inno-text)] ring-1 ring-[var(--inno-border)]" : "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
+								className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${showHistory ? "bg-[var(--inno-surface)] text-[var(--inno-text)]" : "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
 								title="历史"
 							>
 								<History size={12} />

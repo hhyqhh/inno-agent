@@ -66,7 +66,7 @@ export function ScheduleEditor({ value, onChange, error }: ScheduleEditorProps) 
 								<button
 									type="button"
 									key={d}
-									className={`rounded-full px-3 py-1 text-xs transition-colors ${ active ? "inno-primary-button" : "bg-[var(--inno-surface)] text-[var(--inno-text-muted)] ring-1 ring-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)]" }`}
+									className={`rounded-full px-3 py-1 text-xs transition-colors ${ active ? "inno-primary-button" : "bg-[var(--inno-surface)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" }`}
 									onClick={() => {
 										const next = active
 											? value.weekdays.filter((x) => x !== d)

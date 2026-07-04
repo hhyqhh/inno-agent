@@ -126,7 +126,7 @@ export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChan
 						return (
 							<button
 								key={tab}
-								className={`inno-workspace-tab flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md transition-colors ${compact ? "w-7 justify-center px-0" : "px-2"} ${isActive ? "bg-[var(--inno-surface)] font-medium text-[var(--inno-accent)] shadow-sm ring-1 ring-[var(--inno-border)]" : "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
+								className={`inno-workspace-tab flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md transition-colors ${compact ? "w-7 justify-center px-0" : "px-2"} ${isActive ? "bg-[var(--inno-surface)] font-medium text-[var(--inno-accent)] shadow-sm" : "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
 								title={compact ? label : undefined}
 								aria-label={compact ? label : undefined}
 								onClick={() => onTabChange(tab)}

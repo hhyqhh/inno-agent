@@ -10,9 +10,9 @@ interface RunsPanelProps {
 }
 
 function statusBadge(code: number | null | undefined): { text: string; cls: string } {
-	if (code === null || code === undefined) return { text: "未完成", cls: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] ring-1 ring-[var(--inno-border)]" };
-	if (code === 0) return { text: "✓ 0", cls: "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]" };
-	return { text: `✗ ${code}`, cls: "bg-[var(--inno-danger-bg)] text-[var(--inno-danger)] ring-1 ring-[var(--inno-danger-border)]" };
+	if (code === null || code === undefined) return { text: "未完成", cls: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]" };
+	if (code === 0) return { text: "✓ 0", cls: "bg-[var(--inno-success-bg)] text-[var(--inno-success)]" };
+	return { text: `✗ ${code}`, cls: "bg-[var(--inno-danger-bg)] text-[var(--inno-danger)]" };
 }
 
 function formatDuration(start: string, end?: string): string {
@@ -99,7 +99,7 @@ export function RunsPanel({ sessionId, onClose }: RunsPanelProps) {
 				</button>
 			</div>
 
-			<div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)] divide-x divide-slate-200">
+			<div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)] divide-x divide-[var(--inno-border)]">
 				{/* List */}
 				<div className="min-h-0 overflow-y-auto bg-[var(--inno-workspace-bg)]">
 					{runs.length === 0 && !loading ? (
@@ -112,7 +112,7 @@ export function RunsPanel({ sessionId, onClose }: RunsPanelProps) {
 							<button
 								key={r.id}
 								onClick={() => setSelectedId(r.id)}
-								className={`flex w-full items-start gap-2 border-b border-[var(--inno-border)] px-2 py-1.5 text-left text-[11px] transition-colors ${selected ? "bg-[var(--inno-surface)] ring-1 ring-inset ring-[var(--inno-border)]" : "hover:bg-[var(--inno-surface)]"}`}
+								className={`flex w-full items-start gap-2 px-2 py-1.5 text-left text-[11px] transition-colors ${selected ? "bg-[var(--inno-surface)] ring-1 ring-inset ring-[var(--inno-border)]" : "hover:bg-[var(--inno-surface)]"}`}
 							>
 								<span className={`shrink-0 rounded px-1 py-0.5 font-mono ${badge.cls}`}>{badge.text}</span>
 								<div className="min-w-0 flex-1">

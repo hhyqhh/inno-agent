@@ -392,7 +392,7 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 
 	if (!editing) {
 		return (
-			<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-3">
+			<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 				<div className="flex items-start justify-between gap-2">
 					<div className="min-w-0">
 						<div className="text-sm font-medium text-[var(--inno-text)]">{goal.title}</div>
@@ -423,7 +423,7 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 		);
 	}
 	return (
-		<div className="rounded-lg border border-[var(--inno-accent-soft)] bg-[var(--inno-surface-muted)] p-3">
+		<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 			<div className="grid gap-2">
 				<input
 					className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm"
@@ -497,17 +497,17 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 function statusToneFor(status: string): string {
 	switch (status) {
 		case "active":
-			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]";
+			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)]";
 		case "paused":
-			return "bg-yellow-50 text-yellow-700 ring-1 ring-yellow-100";
+			return "bg-[var(--inno-warning-bg)] text-[var(--inno-warning)]";
 		case "completed":
-			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]";
+			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]";
 		case "archived":
 			return "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]";
 		case "repairing":
-			return "bg-orange-50 text-orange-700 ring-1 ring-orange-100";
+			return "bg-[var(--inno-warning-bg)] text-[var(--inno-warning)]";
 		case "resolved":
-			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]";
+			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)]";
 		case "stale":
 			return "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]";
 		default:
@@ -573,7 +573,7 @@ function KnowledgeRow({ state }: { state: KnowledgeState }) {
 	}
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+		<div className="rounded-lg bg-[var(--inno-surface)]">
 			<button
 				className="grid w-full grid-cols-[1fr_120px_100px_90px] items-center gap-3 px-3 py-2 text-left text-sm hover:bg-[var(--inno-surface-muted)]"
 				onClick={() => setExpanded(!expanded)}
@@ -690,7 +690,7 @@ function MisconceptionRow({ item }: { item: Misconception }) {
 	}
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-3">
+		<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 			<div className="mb-2 text-sm text-[var(--inno-text)]">{item.description}</div>
 			<div className="mb-2 text-xs text-[var(--inno-text-muted)]">{item.concept_id} · {formatDate(item.last_seen_at)}</div>
 			<div className="grid grid-cols-2 gap-2">
@@ -816,7 +816,7 @@ function ChipInput({ label, values, onChange, placeholder }: { label: string; va
 			<div className="mb-1 text-xs font-medium text-[var(--inno-text)]">{label}</div>
 			<div className="flex flex-wrap gap-1">
 				{values.map((v) => (
-					<span key={v} className="inline-flex items-center gap-1 rounded-full bg-[var(--inno-accent-soft)] px-2 py-0.5 text-xs text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]">
+					<span key={v} className="inline-flex items-center gap-1 rounded-full bg-[var(--inno-accent-soft)] px-2 py-0.5 text-xs text-[var(--inno-accent)]">
 						{v}
 						<button className="text-[var(--inno-accent)] hover:text-[var(--inno-accent)]" onClick={() => onChange(values.filter((x) => x !== v))}>
 							×
@@ -856,7 +856,7 @@ export function LearnerProfilePanel() {
 	return (
 		<div className="h-full overflow-y-auto p-3">
 			<div className="flex flex-col gap-3">
-				<div className="flex items-center justify-between rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-4 py-3">
+				<div className="flex items-center justify-between rounded-lg bg-[var(--inno-surface)] px-4 py-3">
 					<div>
 						<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("profile.title")}</h3>
 						<p className="text-xs text-[var(--inno-text-muted)]">{t("profile.subtitle")}</p>
@@ -866,7 +866,7 @@ export function LearnerProfilePanel() {
 							</p>
 						) : null}
 					</div>
-					<button className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void learnerStore.load()}>
+					<button className="rounded-md px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void learnerStore.load()}>
 						{t("profile.refresh")}
 					</button>
 				</div>

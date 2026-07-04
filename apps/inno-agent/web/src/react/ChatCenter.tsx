@@ -881,7 +881,7 @@ export function ChatCenter() {
 						{simpleMode ? null : preselectedWs ? (
 							<div className="mt-3 flex flex-wrap items-center gap-2">
 								<span className="text-xs text-[var(--inno-text-subtle)]">工作区</span>
-								<span className="rounded-full bg-[var(--inno-accent-soft)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]">
+								<span className="rounded-full bg-[var(--inno-accent-soft)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--inno-accent)]">
 									{preselectedWs.name}
 								</span>
 								<span className="text-[10px] text-[var(--inno-text-subtle)]">新对话将创建于此工作区</span>

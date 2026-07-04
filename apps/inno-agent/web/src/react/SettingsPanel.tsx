@@ -121,7 +121,7 @@ function ModelEditForm({ model, settings, onClose }: {
 	const maskedKey = provider?.apiKey ? "••••••••" : "";
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-accent-soft)] bg-[var(--inno-surface-muted)] p-3">
+		<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 			<div className="mb-2 flex items-center justify-between">
 				<span className="text-xs font-medium text-[var(--inno-text)]">{t("settings.editModel", "Edit Model")}</span>
 				<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onClose}><X size={14} /></button>
@@ -517,7 +517,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 	const checkCls = "flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]";
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+		<div className="rounded-lg bg-[var(--inno-surface)]">
 			<button
 				className="flex w-full items-center justify-between px-4 py-3 text-left"
 				onClick={() => { setExpanded((v) => !v); setFormError(null); setSaveMsg(null); }}
@@ -535,7 +535,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 			{expanded && (
 				<div className="border-t border-[var(--inno-border)] px-4 pb-4 pt-3 grid gap-4">
 					{/* Feishu */}
-					<div className="rounded-lg border border-[var(--inno-border)] p-3">
+					<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 						<div className="mb-2 flex items-center justify-between">
 							<div>
 								<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.channels.feishu.title")}</div>
@@ -550,7 +550,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 						{/* Feishu QR Registration */}
 						<div className="mb-3">
 							{feishuQrState === "waitingScan" && feishuQrUrl ? (
-								<div className="flex flex-col items-center gap-2 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-bg-alt)] p-4">
+								<div className="flex flex-col items-center gap-2 rounded-lg bg-[var(--inno-bg-alt)] p-4">
 									<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.feishu.qrTitle")}</div>
 									<QRCodeSVG value={feishuQrUrl} size={192} />
 									<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.feishu.qrSubtitle")}</div>
@@ -612,7 +612,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 					</div>
 
 					{/* QQ */}
-					<div className="rounded-lg border border-[var(--inno-border)] p-3">
+					<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 						<div className="mb-2 flex items-center justify-between">
 							<div>
 								<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.channels.qq.title")}</div>
@@ -644,7 +644,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 					</div>
 
 					{/* WeChat (iLink native) */}
-					<div className="rounded-lg border border-[var(--inno-border)] p-3">
+					<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 						<div className="mb-2 flex items-center justify-between">
 							<div>
 								<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.channels.wechat.title")}</div>
@@ -725,7 +725,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 
 					{/* Bridge Token (used by QQ sidecar) */}
 					{qqEnabled && (
-						<div className="rounded-lg border border-[var(--inno-border)] p-3">
+						<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 							<div className="text-xs font-medium text-[var(--inno-text)] mb-1">{t("settings.channels.bridgeToken")}</div>
 							<div className="text-[10px] text-[var(--inno-text-subtle)] mb-2">{t("settings.channels.bridgeTokenHint")}</div>
 							<input
@@ -811,7 +811,7 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 		: `${t("settings.contentHub.bundle", "自托管服务")} · ${baseUrl || "?"}`;
 
 	return (
-		<div className="min-w-0 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+		<div className="min-w-0 rounded-lg bg-[var(--inno-surface)] p-4">
 			<button className="inno-settings-card-toggle flex w-full min-w-0 items-start gap-2 text-left" onClick={() => setOpen((v) => !v)}>
 				<Database size={16} className="mt-0.5 shrink-0 text-[var(--inno-text)]" />
 				<div className="min-w-0 flex-1">
@@ -944,7 +944,7 @@ function OcrSettings({ settings }: { settings: InnoSettings }) {
 	}
 
 	return (
-		<div className="min-w-0 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+		<div className="min-w-0 rounded-lg bg-[var(--inno-surface)] p-4">
 			<button className="inno-settings-card-toggle flex w-full min-w-0 items-start gap-2 text-left" onClick={() => setOpen((v) => !v)}>
 				<KeyRound size={16} className="mt-0.5 shrink-0 text-[var(--inno-text)]" />
 				<div className="min-w-0 flex-1">
@@ -1081,7 +1081,7 @@ function MemorySettings({ settings }: { settings: InnoSettings }) {
 	];
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+		<div className="rounded-lg bg-[var(--inno-surface)] p-4">
 			<h4 className="mb-3 text-sm font-medium text-[var(--inno-text)]">{t("settings.memorySection")}</h4>
 			{locked ? <p className="mb-3 text-xs text-[var(--inno-warning)]">{t("settings.simpleMode.memoryLocked")}</p> : null}
 			<div className="grid gap-4">
@@ -1128,7 +1128,7 @@ function SimpleModeSettings({ settings }: { settings: InnoSettings }) {
 	}
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+		<div className="rounded-lg bg-[var(--inno-surface)] p-4">
 			<div className="flex items-start justify-between gap-3">
 				<div className="min-w-0">
 					<h4 className="text-sm font-medium text-[var(--inno-text)]">{t("settings.simpleMode.title")}</h4>
@@ -1170,7 +1170,7 @@ export function SettingsPanel() {
 		<div className="h-full overflow-y-auto p-3">
 			<div className="grid gap-3">
 				{/* Status cards */}
-				<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+				<div className="rounded-lg bg-[var(--inno-surface)] p-4">
 					<div className="mb-3 flex items-center justify-between">
 						<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("settings.title")}</h3>
 						<div className="flex items-center gap-2">
@@ -1214,7 +1214,7 @@ export function SettingsPanel() {
 				</div>
 
 				{/* Models */}
-				<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+				<div className="rounded-lg bg-[var(--inno-surface)] p-4">
 					<h4 className="mb-3 text-sm font-medium text-[var(--inno-text)]">{t("settings.models")}</h4>
 					<div className="grid gap-2">
 						{models.map((model) => {

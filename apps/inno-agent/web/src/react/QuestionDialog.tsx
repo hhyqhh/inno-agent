@@ -213,7 +213,7 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 									activeTab === i
 										? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
 										: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
-								}${answers.has(i) ? " ring-1 ring-[var(--inno-success-border)]" : ""}`}
+								}`}
 								onClick={() => setActiveTab(i)}
 							>
 								{q.header}

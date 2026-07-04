@@ -63,13 +63,13 @@ function channelLabel(channel: SessionChannel): string {
 
 function channelClass(channel: SessionChannel): string {
 	const classes: Record<string, string> = {
-		cli: "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]",
-		web: "bg-[var(--inno-surface-muted)] text-[var(--inno-text)] ring-1 ring-[var(--inno-border)]",
-		feishu: "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]",
+		cli: "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]",
+		web: "bg-[var(--inno-surface-muted)] text-[var(--inno-text)]",
+		feishu: "bg-[var(--inno-success-bg)] text-[var(--inno-success)]",
 		scheduler: "bg-[var(--inno-warning-bg)] text-[var(--inno-warning)] ring-1 ring-[var(--inno-warning-border)]/60",
 		qq: "bg-cyan-50 text-cyan-600 ring-1 ring-cyan-200/60",
 		wechat: "bg-lime-50 text-lime-600 ring-1 ring-lime-200/60",
-		unknown: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)] ring-1 ring-[var(--inno-border)]",
+		unknown: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]",
 	};
 	return classes[channel] ?? classes.unknown;
 }
@@ -81,13 +81,13 @@ function channelClass(channel: SessionChannel): string {
  */
 function channelInteractionClass(channel: SessionChannel): string {
 	const classes: Record<string, string> = {
-		cli: "bg-transparent text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]",
+		cli: "bg-transparent text-[var(--inno-accent)]",
 		web: "bg-transparent text-[var(--inno-text-muted)] ring-1 ring-[var(--inno-border-strong)]",
-		feishu: "bg-transparent text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]",
+		feishu: "bg-transparent text-[var(--inno-success)]",
 		scheduler: "bg-transparent text-[var(--inno-warning)] ring-1 ring-[var(--inno-warning-border)]",
 		qq: "bg-transparent text-cyan-500 ring-1 ring-cyan-300/70",
 		wechat: "bg-transparent text-lime-500 ring-1 ring-lime-300/70",
-		unknown: "bg-transparent text-[var(--inno-text-subtle)] ring-1 ring-[var(--inno-border)]",
+		unknown: "bg-transparent text-[var(--inno-text-subtle)]",
 	};
 	return classes[channel] ?? classes.unknown;
 }
@@ -107,7 +107,7 @@ function orderedSessionChannels(session: SessionMeta): Array<{ channel: SessionC
 }
 
 function channelFilterClass(channel: SessionChannel | null, active: boolean): string {
-	if (!active) return "bg-[var(--inno-surface)] text-[var(--inno-text-muted)] ring-1 ring-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] hover:ring-[var(--inno-border-strong)]";
+	if (!active) return "bg-[var(--inno-surface)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] hover:ring-[var(--inno-border-strong)]";
 	if (!channel) return "inno-primary-button ring-1 ring-[var(--inno-accent)]";
 	const map: Record<string, string> = {
 		cli: "bg-[var(--inno-accent)] text-white ring-1 ring-[var(--inno-accent)] hover:bg-[var(--inno-accent)] hover:text-white",
@@ -710,7 +710,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 									<div className="mt-1 flex items-center gap-1.5">
 										{ws ? (
 											<span
-												className="inline-flex max-w-[140px] items-center gap-1 rounded bg-[var(--inno-surface-muted)] px-1.5 py-px text-[9px] font-medium leading-none text-[var(--inno-text-muted)] ring-1 ring-[var(--inno-border)]"
+												className="inline-flex max-w-[140px] items-center gap-1 rounded bg-[var(--inno-surface-muted)] px-1.5 py-px text-[9px] font-medium leading-none text-[var(--inno-text-muted)]"
 												title={`工作区:${ws.name}`}
 											>
 												<FolderKanban size={12} className="shrink-0" />

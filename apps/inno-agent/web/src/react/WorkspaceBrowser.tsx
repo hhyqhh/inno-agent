@@ -510,7 +510,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 			style={style}
 			className={`group flex items-center gap-1.5 rounded-md px-2 py-1 text-xs cursor-pointer select-none ${
 				selected
-					? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]"
+					? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
 					: "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 			}`}
 			onClick={(e) => {

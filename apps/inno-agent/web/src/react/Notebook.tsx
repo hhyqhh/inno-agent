@@ -12,13 +12,13 @@ const FILTER_TYPES: (WikiPageType | "all")[] = ["all", "source-summary", "entity
 function typeColor(type?: WikiPageType): string {
 	switch (type) {
 		case "source-summary":
-			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]";
+			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]";
 		case "entity":
-			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]";
+			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)]";
 		case "concept":
-			return "bg-orange-50 text-orange-700 ring-1 ring-orange-100";
+			return "bg-[var(--inno-warning-bg)] text-[var(--inno-warning)]";
 		case "analysis":
-			return "bg-purple-50 text-purple-700 ring-1 ring-purple-100";
+			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]";
 		default:
 			return "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]";
 	}
@@ -70,7 +70,7 @@ export function Notebook() {
 							key={type}
 							className={`rounded-full px-2 py-0.5 text-xs transition-colors ${
 								state.filterType === type
-									? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]"
+									? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
 									: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 							}`}
 							onClick={() => notebookStore.setFilterType(type)}

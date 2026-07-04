@@ -194,7 +194,7 @@ export function JobsPanel() {
 							const isRunning = state.runningJobId === job.id;
 							const human = humanizeCron(job.cron, humanI18n);
 							return (
-								<div key={job.id} className={`rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-3 ${job.enabled ? "" : "opacity-60"}`}>
+								<div key={job.id} className={`rounded-lg bg-[var(--inno-surface)] p-3 ${job.enabled ? "" : "opacity-60"}`}>
 									<div className="flex items-start justify-between gap-2">
 										<div className="min-w-0 flex-1">
 											<div className="truncate text-sm font-medium text-[var(--inno-text)]">{job.name}</div>

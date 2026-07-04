@@ -117,7 +117,7 @@ function FilePreview({ file, skillName, isLoading }: { file: WorkspaceFileDetail
 				<div className="text-lg font-medium text-[var(--inno-text)]">{file.name}</div>
 				<div>{t("preview.binaryFile", "Binary file")} · {formatSize(file.size)}</div>
 				<button
-					className="mt-2 flex items-center gap-1.5 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
+					className="mt-2 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
 					onClick={() => skillsStore.openAsText()}
 				>
 					<FileCode2 size={14} />
@@ -153,7 +153,7 @@ function SkillFileNode({ node, style, dragHandle }: NodeRendererProps<ArboristNo
 			style={style}
 			className={`group flex items-center gap-1.5 rounded-md px-2 py-1 text-xs cursor-pointer select-none ${
 				selected
-					? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-[var(--inno-accent-soft)]"
+					? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
 					: "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 			}`}
 			onClick={(e) => {
@@ -208,7 +208,7 @@ function SkillFilePane({ skillName, onToggleSidebar, sidebarOpen }: { skillName:
 						<button disabled={state.isSaving} className="flex h-7 items-center gap-1 rounded-md inno-primary-button px-2.5 text-xs text-white disabled:opacity-50" onClick={() => void skillsStore.saveFile()}>
 							<Save size={12} /> {t("common.save", "Save")}
 						</button>
-						<button disabled={state.isSaving} className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50" onClick={() => skillsStore.cancelEditing()}>
+						<button disabled={state.isSaving} className="flex h-7 items-center gap-1 rounded-md px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50" onClick={() => skillsStore.cancelEditing()}>
 							<X size={12} /> {t("common.cancel", "Cancel")}
 						</button>
 					</div>
@@ -243,7 +243,7 @@ function SkillFilePane({ skillName, onToggleSidebar, sidebarOpen }: { skillName:
 					</div>
 				</div>
 				{canEdit && (
-					<button className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => skillsStore.startEditing()}>
+					<button className="flex h-7 items-center gap-1 rounded-md px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => skillsStore.startEditing()}>
 						<Pencil size={12} /> {t("common.edit", "Edit")}
 					</button>
 				)}
@@ -301,7 +301,7 @@ function SkillDetail({ skill, onBack }: { skill: SkillInfo; onBack: () => void }
 					<div className="min-w-0 flex-1">
 						<div className="flex items-center gap-2">
 							<span className="truncate text-sm font-medium text-[var(--inno-text)]">{skill.name}</span>
-							<span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${skill.enabled ? "bg-[var(--inno-success-bg)] text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]" : "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]"}`}>
+							<span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${skill.enabled ? "bg-[var(--inno-success-bg)] text-[var(--inno-success)]" : "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]"}`}>
 								{skill.enabled ? t("common.enabled", "Enabled") : t("common.disabled", "Disabled")}
 							</span>
 						</div>
@@ -472,13 +472,13 @@ function SkillLibraryModal({ onClose }: { onClose: () => void }) {
 								{items.map((item) => {
 									const isImporting = state.importing.has(item.name);
 									return (
-										<div key={item.name} className="flex items-start gap-3 border-b border-[var(--inno-border)] px-4 py-3">
+										<div key={item.name} className="flex items-start gap-3 px-4 py-3">
 											<div className="min-w-0 flex-1">
 												<div className="truncate text-sm font-medium text-[var(--inno-text)]">{item.name}</div>
 												{item.description && <div className="mt-0.5 line-clamp-3 text-xs leading-relaxed text-[var(--inno-text-muted)]">{item.description}</div>}
 											</div>
 											{item.installed ? (
-												<span className="flex shrink-0 items-center gap-1 rounded-md bg-[var(--inno-success-bg)] px-2.5 py-1 text-xs font-medium text-[var(--inno-success)] ring-1 ring-[var(--inno-success-border)]">
+												<span className="flex shrink-0 items-center gap-1 rounded-md bg-[var(--inno-success-bg)] px-2.5 py-1 text-xs font-medium text-[var(--inno-success)]">
 													<Check size={12} /> {t("skills.installed")}
 												</span>
 											) : (
@@ -558,11 +558,11 @@ export function SkillsPanel() {
 					<h3 className="min-w-0 truncate text-sm font-medium text-[var(--inno-text)]">{t("skills.title")}</h3>
 					<div className="flex shrink-0 items-center gap-1.5">
 						<input ref={uploadRef} type="file" className="hidden" accept=".zip,application/zip,.md,text/markdown,text/plain" onChange={handleUpload} />
-						<button className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" title={t("skills.library")} onClick={() => skillsStore.openLibrary()}>
+						<button className="flex h-7 items-center gap-1 rounded-md px-2 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" title={t("skills.library")} onClick={() => skillsStore.openLibrary()}>
 							<Library size={14} />
 							<span className="hidden @[26rem]/skillspanel:inline">{t("skills.library")}</span>
 						</button>
-						<button className="flex h-7 w-7 items-center justify-center rounded-md border border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" title={t("preview.refresh", "Refresh")} onClick={() => void skillsStore.reload()}>
+						<button className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" title={t("preview.refresh", "Refresh")} onClick={() => void skillsStore.reload()}>
 							<RefreshCw size={14} />
 						</button>
 						<button className="flex h-7 items-center gap-1 rounded-md inno-primary-button px-2 text-xs text-white disabled:opacity-50" disabled={state.isUploading} title={state.isUploading ? t("skills.uploading") : t("skills.upload")} onClick={() => uploadRef.current?.click()}>

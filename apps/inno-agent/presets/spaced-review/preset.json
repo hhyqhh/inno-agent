@@ -1,0 +1,7 @@
+{
+	"id": "spaced-review",
+	"name": "错题本与间隔复习",
+	"description": "把错题或薄弱知识点变成可间隔复习的卡片包:拆解考点、生成 Anki 风格复习卡,并按艾宾浩斯遗忘曲线排出复习日程。",
+	"icon": "graduation-cap",
+	"category": "教学"
+}

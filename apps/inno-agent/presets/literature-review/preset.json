@@ -1,0 +1,7 @@
+{
+	"id": "literature-review",
+	"name": "文献综述助手",
+	"description": "从一个研究题目出发,检索学术文献、提取核心观点、梳理分歧与空白,产出一篇带引用的结构化文献综述(开题报告 / 课程论文适用)。",
+	"icon": "book-open",
+	"category": "教学"
+}

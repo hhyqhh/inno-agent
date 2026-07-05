@@ -40,7 +40,24 @@
 		"pasteCollapsed": "«Pasted {{count}} lines»",
 		"pasteCollapsedUndo": "Undo paste",
 		"questionPending": "Please answer the question above before continuing",
-		"questionPendingJump": "View question"
+		"questionPendingJump": "View question",
+		"clear": "Clear",
+		"collapseSidebar": "Collapse sidebar",
+		"expandSidebar": "Expand sidebar"
+	},
+	"files": {
+		"newFile": "New File",
+		"newFolder": "New Folder",
+		"newFileHere": "New File Here",
+		"newFolderHere": "New Folder Here",
+		"rename": "Rename",
+		"delete": "Delete",
+		"download": "Download",
+		"downloadFolder": "Download as ZIP",
+		"confirmDelete": "Delete?",
+		"editing": "Editing",
+		"dropToUpload": "Drop files to upload",
+		"uploadSkill": "Upload skill package (.zip/.md) to .skills"
 	},
 	"notebook": {
 		"title": "Notebook",
@@ -356,6 +373,7 @@
 			"wikiStat": "{{count}} pages · {{size}}"
 		},
 		"models": "Models",
+		"editModel": "Edit Model",
 		"current": "Current",
 		"use": "Use",
 		"providers": "Providers",
@@ -399,6 +417,7 @@
 			"clear": "Clear"
 		},
 		"form": {
+			"apiType": "API Type",
 			"providerId": "Provider id",
 			"baseUrl": "Base URL",
 			"apiKey": "API key",

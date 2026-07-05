@@ -40,7 +40,24 @@
 		"pasteCollapsed": "«已粘贴 {{count}} 行»",
 		"pasteCollapsedUndo": "撤销粘贴",
 		"questionPending": "请完成上方问卷后再继续对话",
-		"questionPendingJump": "查看问卷"
+		"questionPendingJump": "查看问卷",
+		"clear": "清除",
+		"collapseSidebar": "收起侧栏",
+		"expandSidebar": "展开侧栏"
+	},
+	"files": {
+		"newFile": "新建文件",
+		"newFolder": "新建文件夹",
+		"newFileHere": "在此新建文件",
+		"newFolderHere": "在此新建文件夹",
+		"rename": "重命名",
+		"delete": "删除",
+		"download": "下载",
+		"downloadFolder": "下载为 ZIP",
+		"confirmDelete": "确认删除？",
+		"editing": "编辑中",
+		"dropToUpload": "拖放文件以上传",
+		"uploadSkill": "上传技能包 (.zip/.md) 到 .skills"
 	},
 	"notebook": {
 		"title": "笔记本",
@@ -356,6 +373,7 @@
 			"wikiStat": "{{count}} 篇 · {{size}}"
 		},
 		"models": "模型",
+		"editModel": "编辑模型",
 		"current": "当前",
 		"use": "使用",
 		"providers": "服务提供方",
@@ -399,6 +417,7 @@
 			"clear": "清除"
 		},
 		"form": {
+			"apiType": "API 类型",
 			"providerId": "提供方 ID",
 			"baseUrl": "Base URL",
 			"apiKey": "API Key",

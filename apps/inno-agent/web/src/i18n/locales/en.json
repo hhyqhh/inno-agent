@@ -42,6 +42,9 @@
 		"questionPending": "Please answer the question above before continuing",
 		"questionPendingJump": "View question"
 	},
+	"sessions": {
+		"export": "Export as Markdown"
+	},
 	"notebook": {
 		"title": "Notebook",
 		"subtitle": "{{nodes}} nodes · {{edges}} edges",

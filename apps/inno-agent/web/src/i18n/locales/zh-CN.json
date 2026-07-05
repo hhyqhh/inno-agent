@@ -42,6 +42,9 @@
 		"questionPending": "请完成上方问卷后再继续对话",
 		"questionPendingJump": "查看问卷"
 	},
+	"sessions": {
+		"export": "导出为 Markdown"
+	},
 	"notebook": {
 		"title": "笔记本",
 		"subtitle": "{{nodes}} 个节点 · {{edges}} 条连接",

@@ -4,6 +4,7 @@ import type {
 	LearnerProfile,
 	LearningEvent,
 	LearningGoal,
+	Misconception,
 } from "./types.js";
 
 function clamp01(value: number): number {
@@ -319,6 +320,40 @@ function updatePreferencesFromEvent(profile: LearnerProfile, event: LearningEven
 	return JSON.stringify(profile.preferences) !== before;
 }
 
+function updateMisconceptionsFromEvent(profile: LearnerProfile, event: LearningEvent): boolean {
+	const candidates = event.derived_signals?.misconception_candidates ?? [];
+	if (candidates.length === 0) return false;
+	const conceptId = event.context.concept_ids?.[0] ?? "general";
+	let changed = false;
+	for (const description of candidates) {
+		const trimmed = description.trim();
+		if (!trimmed) continue;
+		const id = `misc_${normalizeIdPart(trimmed).slice(0, 24)}`;
+		let m = profile.misconceptions.find((x) => x.misconception_id === id);
+		if (!m) {
+			m = {
+				misconception_id: id,
+				concept_id: conceptId,
+				description: trimmed,
+				status: "active",
+				severity: 0.5,
+				confidence: 0.4,
+				first_seen_at: event.timestamp,
+				last_seen_at: event.timestamp,
+				evidence_ids: [event.event_id],
+				repair_strategy: "",
+			} satisfies Misconception;
+			profile.misconceptions.push(m);
+			changed = true;
+		} else if (!m.evidence_ids.includes(event.event_id)) {
+			m.evidence_ids.push(event.event_id);
+			m.last_seen_at = event.timestamp;
+			changed = true;
+		}
+	}
+	return changed;
+}
+
 function appendSummary(profile: LearnerProfile, event: LearningEvent): boolean {
 	const conceptIds = event.context.concept_ids ?? [];
 	const label =
@@ -374,6 +409,7 @@ export function applyLearningEventToProfile(
 	changed = updateGoalFromEvent(profile, event) || changed;
 	changed = updateKnowledgeFromEvent(profile, event) || changed;
 	changed = updatePreferencesFromEvent(profile, event) || changed;
+	changed = updateMisconceptionsFromEvent(profile, event) || changed;
 	if (options.updateSummary ?? true) {
 		changed = appendSummary(profile, event) || changed;
 	}

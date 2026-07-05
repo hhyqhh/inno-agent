@@ -122,9 +122,9 @@ export function createLearnerTools(
 			derived_signals: Type.Optional(
 				Type.Object({
 					mastery_delta: Type.Optional(Type.Number({ description: "Change in mastery estimate" })),
-					misconception_candidates: Type.Optional(Type.Array(Type.String())),
+					misconception_candidates: Type.Optional(Type.Array(Type.String(), { description: "Observed learner misconceptions or error patterns, e.g. ['thinks Rust ownership means the variable is destroyed after borrow']" })),
 					affect: Type.Optional(Type.String({ description: "Detected affect, e.g. frustrated, confident" })),
-					preference_candidates: Type.Optional(Type.Array(Type.String())),
+					preference_candidates: Type.Optional(Type.Array(Type.String(), { description: "Observed learner preferences, e.g. ['prefers code-first explanations', '避免长篇理论']" })),
 				}),
 			),
 		}),

@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
 import type { PendingQuestion, QuestionAnswer, QuestionData, QuestionnaireResult } from "../types/chat.js";
 import { chatStore } from "../stores/chat-store.js";
@@ -58,6 +59,7 @@ function QuestionTab({
 	focusedOption: number;
 	setFocusedOption: (i: number) => void;
 }) {
+	const { t } = useTranslation();
 	const [customText, setCustomText] = useState("");
 	const isMulti = q.multiSelect === true;
 	const hasPreview = q.options.some((o) => o.preview);
@@ -121,7 +123,7 @@ function QuestionTab({
 							<input
 								type="text"
 								className="min-w-0 flex-1 rounded-md border border-[var(--inno-border)] px-2.5 py-1.5 text-[13px] focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
-								placeholder="Type something..."
+								placeholder={t("question.typeSomething")}
 								value={customText}
 								onChange={(e) => setCustomText(e.target.value)}
 								onKeyDown={(e) => {
@@ -146,13 +148,14 @@ function QuestionTab({
 				className="text-xs text-[var(--inno-text-subtle)] underline hover:text-[var(--inno-text-muted)]"
 				onClick={onDismiss}
 			>
-				Chat about this
+				{t("question.chatAboutThis")}
 			</button>
 		</div>
 	);
 }
 
 export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
+	const { t } = useTranslation();
 	const { questionId, params } = pending;
 	const questions = params.questions;
 	const [activeTab, setActiveTab] = useState(0);
@@ -238,7 +241,7 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 						disabled={!allAnswered}
 						onClick={handleSubmit}
 					>
-						Submit
+						{t("question.submit")}
 					</button>
 				</div>
 			</div>

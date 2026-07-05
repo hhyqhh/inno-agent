@@ -513,7 +513,15 @@
 		"errWsName": "Please enter a workspace name",
 		"errWsSelect": "Please select a workspace",
 		"errOpenPreset": "Failed to open preset",
-		"errCreateSession": "Failed to create session"
+		"errCreateSession": "Failed to create session",
+		"removeUpload": "Remove upload",
+		"removeImage": "Remove image",
+		"composerPlaceholder": "Type a message…"
+	},
+	"question": {
+		"typeSomething": "Type something…",
+		"chatAboutThis": "Chat about this",
+		"submit": "Submit"
 	},
 	"sidebar": {
 		"expand": "Expand",

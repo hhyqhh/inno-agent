@@ -791,7 +791,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 						</button>
 						<button
 							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
-							title="Collapse"
+							title={t("sidebar.collapse")}
 							onClick={() => appStore.setSidebarCollapsed(true)}
 						>
 							<PanelLeftClose size={14} />

@@ -513,7 +513,15 @@
 		"errWsName": "请填写工作区名称",
 		"errWsSelect": "请选择一个工作区",
 		"errOpenPreset": "打开预设失败",
-		"errCreateSession": "创建会话失败"
+		"errCreateSession": "创建会话失败",
+		"removeUpload": "移除上传",
+		"removeImage": "移除图片",
+		"composerPlaceholder": "输入消息…"
+	},
+	"question": {
+		"typeSomething": "输入自定义答案…",
+		"chatAboutThis": "直接聊聊",
+		"submit": "提交"
 	},
 	"sidebar": {
 		"expand": "展开",

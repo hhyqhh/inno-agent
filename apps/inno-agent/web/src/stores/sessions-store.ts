@@ -23,38 +23,6 @@ interface SessionsStoreEvents {
 	change: void;
 }
 
-export type DateGroup = "today" | "yesterday" | "thisWeek" | "earlier" | "archived";
-
-export interface SessionGroup {
-	key: DateGroup;
-	label: string;
-	sessions: SessionMeta[];
-}
-
-function dateGroupOf(updatedAt: string, archived?: boolean): DateGroup {
-	if (archived) return "archived";
-	const now = new Date();
-	const d = new Date(updatedAt);
-	const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-	const yesterdayStart = new Date(todayStart.getTime() - 86_400_000);
-	const weekStart = new Date(todayStart.getTime() - todayStart.getDay() * 86_400_000);
-
-	if (d >= todayStart) return "today";
-	if (d >= yesterdayStart) return "yesterday";
-	if (d >= weekStart) return "thisWeek";
-	return "earlier";
-}
-
-const GROUP_LABELS: Record<DateGroup, string> = {
-	today: "今天",
-	yesterday: "昨天",
-	thisWeek: "本周",
-	earlier: "更早",
-	archived: "已归档",
-};
-
-const GROUP_ORDER: DateGroup[] = ["today", "yesterday", "thisWeek", "earlier", "archived"];
-
 class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	sessions: SessionMeta[] = [];
 	currentSessionId: string | null = null;
@@ -106,22 +74,6 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 			);
 		}
 		return list;
-	}
-
-	get groupedSessions(): SessionGroup[] {
-		const groups = new Map<DateGroup, SessionMeta[]>();
-		for (const session of this.filteredSessions) {
-			const key = dateGroupOf(session.updatedAt, session.archived);
-			if (!groups.has(key)) groups.set(key, []);
-			groups.get(key)!.push(session);
-		}
-		return GROUP_ORDER
-			.filter((key) => groups.has(key))
-			.map((key) => ({
-				key,
-				label: GROUP_LABELS[key],
-				sessions: groups.get(key)!,
-			}));
 	}
 
 	get availableChannels(): SessionChannel[] {

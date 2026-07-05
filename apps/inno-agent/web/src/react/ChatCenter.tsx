@@ -714,7 +714,7 @@ export function ChatCenter() {
 					<span key={`${file.path}-${index}`} className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2 py-1 text-xs shadow-sm">
 						<span className="max-w-[220px] truncate">{file.fileName}</span>
 						<span className="text-[var(--inno-text-muted)]">{file.path}</span>
-						<button className="text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]" title="Remove upload" onClick={() => removeUpload(index)}>
+						<button className="text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]" title={t("chat.removeUpload")} onClick={() => removeUpload(index)}>
 							<X size={14} />
 						</button>
 					</span>
@@ -731,7 +731,7 @@ export function ChatCenter() {
 						<img src={img.previewUrl} alt={img.name} className="h-12 w-12 rounded object-cover" />
 						<button
 							className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] shadow-sm hover:bg-[var(--inno-accent-soft)] hover:text-[var(--inno-accent)]"
-							title="Remove image"
+							title={t("chat.removeImage")}
 							onClick={() => removeInlineImage(index)}
 						>
 							<X size={12} />
@@ -1056,7 +1056,7 @@ export function ChatCenter() {
 					{renderUploadChips()}
 					{renderInlineImagePreviews()}
 					{renderQuestionHint()}
-					{renderComposer("Type a message...")}
+					{renderComposer(t("chat.composerPlaceholder"))}
 				</div>
 			</div>
 		</section>

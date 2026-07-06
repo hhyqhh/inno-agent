@@ -1,19 +1,28 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
-import { readText } from "../../storage/file-store.js";
+import { readText, writeText } from "../../storage/file-store.js";
 import { parseDocument, DocumentParseError } from "./document-parser.js";
 import { convertToExtracted } from "./source-converter.js";
-import { appendManifest, findManifestByRawPath, readManifest, updateManifestEntry } from "./manifest-store.js";
+import {
+	appendManifest,
+	findManifestById,
+	findManifestByRawPath,
+	readManifest,
+	removeWikiPathFromManifest,
+	updateManifestEntry,
+} from "./manifest-store.js";
 import {
 	appendLog,
 	createSourcePage,
 	ensureL2Directories,
+	parseFrontmatter,
 	readMaintenanceContext,
 	rebuildIndex,
+	serializeFrontmatter,
 } from "./wiki-maintainer.js";
 import { summarizeContent } from "./summarizer.js";
 import { maintainLinkedWikiPages } from "./wiki-linker.js";
@@ -71,6 +80,16 @@ export interface ExtractRawFileResult {
 	pageCount?: number;
 	textLength: number;
 	status: "extracted";
+}
+
+export interface RegenerateSourceResult {
+	sourceId: string;
+	title: string;
+	rawPath: string;
+	wikiPagePath: string;
+	wikiPages: string[];
+	status: "indexed";
+	updatedAt: string;
 }
 
 const RAW_SCAN_DIRS = ["raw/uploads", "raw/conversations"] as const;
@@ -223,6 +242,67 @@ function updateEntryStatus(
 		status,
 		updatedAt: new Date().toISOString(),
 	}));
+}
+
+function detachSourceFromLinkedPage(
+	l2DataDir: string,
+	wikiPath: string,
+	source: ManifestEntry,
+	sourcePagePath: string | undefined,
+): "deleted" | "kept" | "unchanged" {
+	const absPath = join(l2DataDir, wikiPath);
+	if (!existsSync(absPath)) return "unchanged";
+	try {
+		const { frontmatter, body } = parseFrontmatter(readText(absPath));
+		if (!frontmatter) return "unchanged";
+
+		const nextSourceIds = frontmatter.source_ids.filter((id) => id !== source.id);
+		const referencesSource = nextSourceIds.length !== frontmatter.source_ids.length;
+		if (referencesSource && nextSourceIds.length === 0) {
+			unlinkSync(absPath);
+			return "deleted";
+		}
+
+		const nextSources = frontmatter.sources.filter((item) => item !== source.rawPath && item !== sourcePagePath);
+		let nextBody = body;
+		if (sourcePagePath) {
+			nextBody = body
+				.split("\n")
+				.filter((line) => !(line.trim().startsWith("-") && line.includes(sourcePagePath)))
+				.join("\n");
+		}
+
+		if (
+			!referencesSource &&
+			nextSources.length === frontmatter.sources.length &&
+			nextBody === body
+		) {
+			return "unchanged";
+		}
+
+		frontmatter.source_ids = nextSourceIds;
+		frontmatter.sources = nextSources;
+		frontmatter.updated = new Date().toISOString().slice(0, 10);
+		writeText(absPath, `${serializeFrontmatter(frontmatter)}\n${nextBody.replace(/^\n/, "")}`);
+		return "kept";
+	} catch (err) {
+		logger.warn({ err, wikiPath, sourceId: source.id }, "failed to detach source from linked page before regeneration");
+		return "unchanged";
+	}
+}
+
+function removePreviousGeneratedLinks(l2DataDir: string, source: ManifestEntry): string[] {
+	const removed: string[] = [];
+	const sourcePagePath = source.primary_wiki_path ?? primaryWikiPath(source.wikiPages);
+	for (const wikiPath of source.wikiPages) {
+		if (wikiPath === sourcePagePath || wikiPath.includes("wiki/sources/")) continue;
+		const outcome = detachSourceFromLinkedPage(l2DataDir, wikiPath, source, sourcePagePath);
+		if (outcome === "deleted") {
+			removed.push(wikiPath);
+			removeWikiPathFromManifest(l2DataDir, wikiPath);
+		}
+	}
+	return removed;
 }
 
 export async function extractL2RawFile(
@@ -402,6 +482,100 @@ export async function archiveRawFile(
 				error_message: err instanceof Error ? err.message : String(err),
 			});
 		}
+		throw err;
+	}
+}
+
+export async function regenerateL2Source(
+	l2DataDir: string,
+	sourceId: string,
+	options: {
+		regenerateTags?: boolean;
+		regenerateLinks?: boolean;
+		model?: Model<any>;
+		modelRegistry?: ModelRegistry;
+	} = {},
+): Promise<RegenerateSourceResult> {
+	ensureL2Directories(l2DataDir);
+	const source = findManifestById(l2DataDir, sourceId);
+	if (!source) {
+		throw new Error(`Source not found: ${sourceId}`);
+	}
+	if (!source.extractedPath) {
+		throw new Error(`Source has no extracted content: ${sourceId}`);
+	}
+	const extractedAbsPath = join(l2DataDir, source.extractedPath);
+	if (!existsSync(extractedAbsPath)) {
+		throw new Error(`Extracted file not found: ${source.extractedPath}`);
+	}
+
+	try {
+		const removedLinkedPages = options.regenerateLinks === false
+			? []
+			: removePreviousGeneratedLinks(l2DataDir, source);
+		updateEntryStatus(l2DataDir, source.id, "indexing", { error_message: null });
+		const entry = findManifestById(l2DataDir, source.id) ?? source;
+		const maintenanceContext = readMaintenanceContext(l2DataDir);
+		const extractedContent = readText(extractedAbsPath);
+		let summaryBody = `## 摘要\n\n${extractedContent}`;
+		if (options.model && options.modelRegistry) {
+			const summary = await summarizeContent(options.model, options.modelRegistry, entry.title, extractedContent);
+			if (summary) summaryBody = summary;
+		}
+
+		const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, entry.extractedPath);
+		const linkMaintenance = options.regenerateLinks === false
+			? { pages: entry.wikiPages.filter((page) => page !== wikiPagePath) }
+			: await maintainLinkedWikiPages(
+				l2DataDir,
+				entry,
+				wikiPagePath,
+				summaryBody,
+				options.model,
+				options.modelRegistry,
+			);
+		const updatedAt = new Date().toISOString();
+		const indexedEntry: ManifestEntry = {
+			...entry,
+			wikiPages: [wikiPagePath, ...linkMaintenance.pages],
+			tags: options.regenerateTags ? entry.tags : source.tags,
+			status: "indexed",
+			primary_wiki_path: wikiPagePath,
+			error_message: null,
+			updatedAt,
+		};
+
+		updateManifestEntry(l2DataDir, indexedEntry.id, () => indexedEntry);
+		rebuildIndex(l2DataDir, readManifest(l2DataDir));
+		appendLog(
+			l2DataDir,
+			"regenerate",
+			indexedEntry.title,
+			[
+				`- ID: ${indexedEntry.id}`,
+				`- 原始文件: ${indexedEntry.rawPath}`,
+				`- Extracted: ${indexedEntry.extractedPath}`,
+				`- Source 页面: ${wikiPagePath}`,
+				`- 清理旧关联页: ${removedLinkedPages.join(", ") || "none"}`,
+				`- 重算标签: ${options.regenerateTags ? "yes" : "no"}`,
+				`- 重跑概念链: ${options.regenerateLinks === false ? "no" : "yes"}`,
+				`- 维护前上下文: schema ${maintenanceContext.schema.length} chars`,
+			].join("\n"),
+		);
+
+		return {
+			sourceId: indexedEntry.id,
+			title: indexedEntry.title,
+			rawPath: indexedEntry.rawPath,
+			wikiPagePath,
+			wikiPages: indexedEntry.wikiPages,
+			status: "indexed",
+			updatedAt,
+		};
+	} catch (err) {
+		updateEntryStatus(l2DataDir, source.id, "error", {
+			error_message: err instanceof Error ? err.message : String(err),
+		});
 		throw err;
 	}
 }

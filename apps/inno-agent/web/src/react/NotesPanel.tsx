@@ -16,6 +16,7 @@ import {
 	RefreshCw,
 	Save,
 	Trash2,
+	X,
 } from "lucide-react";
 import { getVisibleNoteTemplates } from "../lib/build-note-from-template.js";
 import { l2RawFileUrl } from "../api/notes.js";
@@ -65,9 +66,13 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		isCreating: notesStore.isCreating,
 		isSaving: notesStore.isSaving,
 		isArchiving: notesStore.isArchiving,
+		archivingRawPath: notesStore.archivingRawPath,
+		archivingRawPaths: notesStore.archivingRawPaths,
 		isDeleting: notesStore.isDeleting,
 		isUploading: notesStore.isUploading,
 		searchQuery: notesStore.searchQuery,
+		filterTag: notesStore.filterTag,
+		tagSummaries: notesStore.tagSummaries,
 		notice: notesStore.notice,
 		error: notesStore.error,
 	}));
@@ -134,6 +139,11 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		selected &&
 		(selected.kind === "orphan" || (selected.kind === "markdown" && selected.status === "draft"));
 	const canSave = Boolean(selected && (isMarkdown || isRawEditableMarkdown));
+	const isSelectedArchiving = Boolean(selected && state.archivingRawPaths.includes(selected.rawPath));
+	const tagSearchQuery = state.searchQuery.trim().toLowerCase();
+	const visibleTagSummaries = tagSearchQuery
+		? state.tagSummaries.filter((tag) => tag.displayName.toLowerCase().includes(tagSearchQuery))
+		: state.tagSummaries;
 
 	function renderBottomActions() {
 		if (!selected) return null;
@@ -152,7 +162,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					<button
 						type="button"
 						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
-						disabled={!state.isDirty || state.isSaving}
+						disabled={!state.isDirty || state.isSaving || isSelectedArchiving}
 						onClick={() => void notesStore.saveSelected()}
 					>
 						<Save size={14} />
@@ -174,22 +184,22 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					<button
 						type="button"
 						className="inline-flex items-center gap-1 rounded-md bg-[var(--inno-accent)] px-3 py-1.5 text-sm text-white hover:opacity-90 disabled:opacity-50"
-						disabled={state.isArchiving}
+						disabled={isSelectedArchiving}
 						onClick={() => void handleArchive()}
 					>
-						{state.isArchiving ? <LoaderCircle size={14} className="animate-spin" /> : <Archive size={14} />}
-						{state.isArchiving ? t("notes.actions.archiving", "归档中...") : t("notes.actions.archive")}
+						{isSelectedArchiving ? <LoaderCircle size={14} className="animate-spin" /> : <Archive size={14} />}
+						{isSelectedArchiving ? t("notes.actions.archiving", "归档中...") : t("notes.actions.archive")}
 					</button>
 				) : null}
 				{showRearchive ? (
 					<button
 						type="button"
 						className="inline-flex items-center gap-1 rounded-md bg-[var(--inno-accent)] px-3 py-1.5 text-sm text-white hover:opacity-90 disabled:opacity-50"
-						disabled={state.isArchiving}
+						disabled={isSelectedArchiving}
 						onClick={() => void handleArchive()}
 					>
-						{state.isArchiving ? <LoaderCircle size={14} className="animate-spin" /> : <Archive size={14} />}
-						{state.isArchiving ? t("notes.actions.archiving", "归档中...") : t("notes.actions.rearchive")}
+						{isSelectedArchiving ? <LoaderCircle size={14} className="animate-spin" /> : <Archive size={14} />}
+						{isSelectedArchiving ? t("notes.actions.archiving", "归档中...") : t("notes.actions.rearchive")}
 					</button>
 				) : null}
 				{showOpenWiki ? (
@@ -206,7 +216,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					<button
 						type="button"
 						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
-						disabled={state.isArchiving}
+						disabled={state.isArchiving || isSelectedArchiving}
 						onClick={() => void handleUnarchive()}
 					>
 						<ArchiveRestore size={14} />
@@ -217,7 +227,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					<button
 						type="button"
 						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-						disabled={state.isDeleting}
+						disabled={state.isDeleting || isSelectedArchiving}
 						onClick={() => void handleDelete()}
 					>
 						<Trash2 size={14} />
@@ -324,6 +334,41 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 							{t("notes.tabs.archived", { count: state.archivedCount })}
 						</button>
 					</div>
+					<div className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-2">
+						<div className="mb-1.5 flex items-center justify-between gap-2">
+							<span className="text-[11px] font-medium uppercase tracking-wide text-[var(--inno-text-subtle)]">
+								{t("notes.properties.tags")}
+							</span>
+						{state.filterTag ? (
+							<button
+								type="button"
+									className="inline-flex max-w-[150px] items-center gap-1 rounded-full bg-[var(--inno-accent-soft)] px-2 py-0.5 text-xs text-[var(--inno-accent)] ring-1 ring-blue-100"
+								onClick={() => notesStore.setFilterTag(null)}
+									title={state.filterTag}
+							>
+									<span className="truncate">{state.filterTag}</span>
+									<X size={12} className="shrink-0" />
+							</button>
+						) : null}
+						</div>
+						<div className="flex max-h-24 flex-wrap content-start gap-1.5 overflow-y-auto pr-1">
+							{visibleTagSummaries.slice(0, 24).map((tag) => (
+								<button
+									key={tag.displayName}
+									type="button"
+									className={`max-w-full rounded-full px-2 py-0.5 text-xs transition-colors ${
+										state.filterTag?.toLowerCase() === tag.displayName.toLowerCase()
+											? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100"
+											: "bg-[var(--inno-surface)] text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]"
+									}`}
+									onClick={() => notesStore.setFilterTag(tag.displayName)}
+									title={tag.displayName}
+								>
+									<span className="block truncate">{tag.displayName}</span>
+								</button>
+							))}
+						</div>
+					</div>
 				</div>
 
 				<div className="min-h-0 flex-1 overflow-y-auto">
@@ -335,28 +380,48 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					) : null}
 					{state.notes.map((note: NoteSummary) => {
 						const isSelected = state.selected?.rawPath === note.rawPath;
-						const statusLabel = isSelected && state.isArchiving
+						const isThisNoteArchiving = state.archivingRawPaths.includes(note.rawPath);
+						const statusLabel = isThisNoteArchiving
 							? t("notes.status.archiving", "归档中")
 							: t(`notes.status.${note.status}`, note.status);
 						return (
-							<button
-								key={note.rawPath}
-								type="button"
-								className={`w-full border-b border-[var(--inno-border)] px-3 py-2 text-left text-sm ${isSelected ? "bg-[var(--inno-accent-soft)]" : "hover:bg-[var(--inno-surface-muted)]"}`}
-								onClick={() => void notesStore.selectNote(note)}
+							<div
+								key={`${note.kind}:${note.noteId}:${note.rawPath}`}
+								className={`border-b border-[var(--inno-border)] text-sm ${isSelected ? "bg-[var(--inno-accent-soft)]" : "hover:bg-[var(--inno-surface-muted)]"}`}
 							>
-								<div className="flex items-center gap-1 truncate font-medium">
-									<FileText size={13} className="shrink-0 text-[var(--inno-text-muted)]" />
-									<span className="truncate">{note.title}</span>
-								</div>
-								<div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--inno-text-muted)]">
-									<span>{statusLabel}</span>
-									{note.size ? <span>{formatSize(note.size)}</span> : null}
-									{note.tags.slice(0, 2).map((tag) => (
-										<span key={tag}>#{tag}</span>
-									))}
-								</div>
-							</button>
+								<button
+									type="button"
+									className="w-full px-3 py-2 text-left"
+									onClick={() => void notesStore.selectNote(note)}
+								>
+									<div className="flex items-center gap-1 truncate font-medium">
+										<FileText size={13} className="shrink-0 text-[var(--inno-text-muted)]" />
+										<span className="truncate">{note.title}</span>
+									</div>
+									<div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--inno-text-muted)]">
+										<span>{statusLabel}</span>
+										{note.size ? <span>{formatSize(note.size)}</span> : null}
+									</div>
+								</button>
+								{note.tags.length > 0 ? (
+									<div className="flex flex-wrap gap-1 px-3 pb-2">
+										{note.tags.slice(0, 5).map((tag) => (
+											<button
+												key={tag}
+												type="button"
+												className={`rounded-full px-1.5 py-0.5 text-xs transition-colors ${
+													state.filterTag?.toLowerCase() === tag.toLowerCase()
+														? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100"
+														: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]"
+												}`}
+												onClick={() => notesStore.setFilterTag(tag)}
+											>
+												#{tag}
+											</button>
+										))}
+									</div>
+								) : null}
+							</div>
 						);
 					})}
 				</div>

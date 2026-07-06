@@ -232,6 +232,7 @@ export function listL2Notes(
 		for (const name of readdirSync(notesDir)) {
 			if (!name.endsWith(".md")) continue;
 			const rawPath = join("raw/notes", name).replace(/\\/g, "/");
+			if (indexedRawPaths.has(rawPath)) continue;
 			const summary = noteSummaryFromFile(l2DataDir, rawPath);
 			if (!summary) continue;
 			if (options.notebookType && summary.notebookType !== options.notebookType) continue;

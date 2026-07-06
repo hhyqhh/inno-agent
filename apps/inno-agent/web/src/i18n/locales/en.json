@@ -86,6 +86,8 @@
 			"empty": "Pick a page on the left, or click a node in the graph.",
 			"selectFromGraph": "Select a node in the graph",
 			"openInNotebook": "Open page",
+			"regenerate": "Regenerate",
+			"regenerating": "Regenerating...",
 			"backToGraph": "Back to graph"
 		},
 		"delete": {
@@ -97,7 +99,12 @@
 			"empty": "Select a node to inspect. Double-click a non-tag node to open its page.",
 			"type": "Type",
 			"tags": "Tags",
-			"openPage": "Open page"
+			"openPage": "Open page",
+			"editTags": "Edit tags",
+			"editTagsPrompt": "Enter tags, separated by commas",
+			"filterTag": "Filter tag",
+			"relatedPages": "Related pages",
+			"relatedSources": "Related materials"
 		},
 		"types": {
 			"source-summary": "Source",

@@ -43,8 +43,17 @@ import { CronScheduler } from "./scheduler/cron-scheduler.js";
 import { validateCron } from "./scheduler/cron-utils.js";
 import { parseFrontmatter, serializeFrontmatter } from "./memory/l2/wiki-maintainer.js";
 import { readManifest, removeWikiPathFromManifest } from "./memory/l2/manifest-store.js";
+import {
+	listTags,
+	rebuildTagIndex,
+	suggestTags,
+	syncManifestTagsForWikiPage,
+	updateWikiPageTags,
+	wikiPathsForTag,
+	type WikiPageTagSource,
+} from "./memory/l2/tag-index.js";
 import { archiveConversation } from "./memory/l2/conversation-archive-service.js";
-import { extractL2RawFile, listL2Sources, readRawTextPreview } from "./memory/l2/sources-service.js";
+import { extractL2RawFile, listL2Sources, readRawTextPreview, regenerateL2Source } from "./memory/l2/sources-service.js";
 import {
 	archiveL2NotebookItem,
 	createL2Note,
@@ -1408,6 +1417,44 @@ function manifestSourceIdByWikiPath(): Map<string, string> {
 	return map;
 }
 
+function collectWikiPageTagSources(): WikiPageTagSource[] {
+	const pages: WikiPageTagSource[] = [];
+	for (const wikiPath of listWikiPagePaths()) {
+		const fullPath = join(l2DataDir, wikiPath);
+		if (!existsSync(fullPath)) continue;
+		const { frontmatter } = parseFrontmatter(readText(fullPath));
+		if (!frontmatter) continue;
+		pages.push({
+			wikiPath,
+			tags: frontmatter.tags,
+			sourceIds: frontmatter.source_ids,
+		});
+	}
+	return pages;
+}
+
+function refreshL2TagIndex(): void {
+	rebuildTagIndex(l2DataDir, collectWikiPageTagSources());
+}
+
+function wikiPageSummary(wikiPath: string, sourceIds: Map<string, string>): {
+	path: string;
+	frontmatter: ReturnType<typeof parseFrontmatter>["frontmatter"];
+	bodyPreview: string;
+	sourceId: string;
+} | null {
+	const fullPath = join(l2DataDir, wikiPath);
+	if (!existsSync(fullPath)) return null;
+	const content = readText(fullPath);
+	const { frontmatter, body } = parseFrontmatter(content);
+	return {
+		path: wikiPath,
+		frontmatter,
+		bodyPreview: body.slice(0, 200),
+		sourceId: sourceIds.get(wikiPath) ?? frontmatter?.source_ids[0] ?? "",
+	};
+}
+
 interface SessionMessageSummary {
 	id?: string;
 	role: "user" | "assistant";
@@ -2571,27 +2618,60 @@ const server = createServer(async (req, res) => {
 		}
 
 		// --- Wiki API ---
-		if (method === "GET" && url === "/api/wiki/pages") {
+		if (method === "GET" && (url === "/api/wiki/pages" || url.startsWith("/api/wiki/pages?"))) {
 			try {
+				refreshL2TagIndex();
+				const params = new URL(url, "http://localhost").searchParams;
+				const tagFilter = params.get("Tag") ?? params.get("tag");
+				const allowedPaths = tagFilter
+					? new Set(wikiPathsForTag(l2DataDir, tagFilter))
+					: null;
 				const sourceIds = manifestSourceIdByWikiPath();
 				const pages: unknown[] = [];
 				for (const wikiPath of listWikiPagePaths()) {
-					const fullPath = join(l2DataDir, wikiPath);
-					if (existsSync(fullPath)) {
-						const content = readText(fullPath);
-						const { frontmatter, body } = parseFrontmatter(content);
-						pages.push({
-							path: wikiPath,
-							frontmatter,
-							bodyPreview: body.slice(0, 200),
-							sourceId: sourceIds.get(wikiPath) ?? "",
-						});
-					}
+					if (allowedPaths && !allowedPaths.has(wikiPath)) continue;
+					const summary = wikiPageSummary(wikiPath, sourceIds);
+					if (summary) pages.push(summary);
 				}
 				json(res, 200, pages);
 			} catch (err) {
 				logger.warn({ err }, "failed to list wiki pages");
 				json(res, 200, []);
+			}
+			return;
+		}
+
+		if (method === "GET" && (url === "/api/l2/tags" || url.startsWith("/api/l2/tags?"))) {
+			try {
+				refreshL2TagIndex();
+				const tags = listTags(l2DataDir);
+				json(res, 200, {
+					tags,
+					Tags: tags.map((tag) => ({
+						TagID: tag.id,
+						CanonicalKey: tag.canonicalKey,
+						DisplayName: tag.displayName,
+						UsageCount: tag.usageCount,
+						UpdatedAt: tag.updatedAt,
+					})),
+				});
+			} catch (err) {
+				logger.warn({ err }, "failed to list L2 tags");
+				json(res, 200, { tags: [], Tags: [] });
+			}
+			return;
+		}
+
+		if (method === "GET" && url.startsWith("/api/l2/tags/suggest")) {
+			try {
+				refreshL2TagIndex();
+				const params = new URL(url, "http://localhost").searchParams;
+				const query = params.get("Query") ?? params.get("query") ?? "";
+				const suggestions = suggestTags(l2DataDir, query);
+				json(res, 200, { suggestions, Suggestions: suggestions });
+			} catch (err) {
+				logger.warn({ err }, "failed to suggest L2 tags");
+				json(res, 200, { suggestions: [], Suggestions: [] });
 			}
 			return;
 		}
@@ -2631,7 +2711,41 @@ const server = createServer(async (req, res) => {
 				return;
 			}
 			writeText(fullPath, content);
+			const { frontmatter } = parseFrontmatter(content);
+			if (frontmatter) {
+				syncManifestTagsForWikiPage(l2DataDir, path, frontmatter.source_ids, frontmatter.tags);
+			}
+			refreshL2TagIndex();
 			json(res, 200, { path, saved: true });
+			return;
+		}
+
+		if (method === "PATCH" && url === "/api/wiki/page/tags") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const path = (
+				typeof body.WikiPath === "string" ? body.WikiPath :
+					typeof body.path === "string" ? body.path :
+						typeof body.wikiPath === "string" ? body.wikiPath : ""
+			).trim();
+			const rawTags = Array.isArray(body.Tags) ? body.Tags : Array.isArray(body.tags) ? body.tags : [];
+			const tags = rawTags.filter((tag): tag is string => typeof tag === "string");
+			if (!path) {
+				json(res, 400, { error: "Missing wiki path" });
+				return;
+			}
+			if (!safeJoin(l2DataDir, path)) {
+				json(res, 400, { error: "Invalid wiki path" });
+				return;
+			}
+			try {
+				const updatedTags = updateWikiPageTags(l2DataDir, path, tags);
+				refreshL2TagIndex();
+				json(res, 200, { path, tags: updatedTags, WikiPath: path, Tags: updatedTags });
+			} catch (err) {
+				logger.warn({ err, path }, "failed to update wiki page tags");
+				const message = err instanceof Error ? err.message : "Failed to update wiki tags";
+				json(res, message === "Wiki page not found" ? 404 : 500, { error: message });
+			}
 			return;
 		}
 
@@ -2654,6 +2768,7 @@ const server = createServer(async (req, res) => {
 			try {
 				rmSync(fullPath);
 				removeWikiPathFromManifest(l2DataDir, path);
+				refreshL2TagIndex();
 				json(res, 200, { path, deleted: true });
 			} catch (err) {
 				logger.warn({ err }, "failed to delete wiki page");
@@ -2664,6 +2779,7 @@ const server = createServer(async (req, res) => {
 
 		if (method === "GET" && url === "/api/wiki/graph") {
 			try {
+				refreshL2TagIndex();
 				const nodes: unknown[] = [];
 				const edges: unknown[] = [];
 				const titleToNodeId = new Map<string, string>();
@@ -2722,6 +2838,92 @@ const server = createServer(async (req, res) => {
 			} catch (err) {
 				logger.warn({ err }, "failed to build wiki graph");
 				json(res, 200, { nodes: [], edges: [] });
+			}
+			return;
+		}
+
+		if (method === "GET" && url.startsWith("/api/wiki/graph/node")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const nodeId = params.get("NodeID") ?? params.get("nodeId") ?? "";
+			if (!nodeId) {
+				json(res, 400, { error: "Missing nodeId" });
+				return;
+			}
+			try {
+				refreshL2TagIndex();
+				const sourceIds = manifestSourceIdByWikiPath();
+				const entries = readManifest(l2DataDir);
+				if (nodeId.startsWith("tag:")) {
+					const tag = nodeId.slice(4);
+					const relatedPages = wikiPathsForTag(l2DataDir, tag)
+						.map((wikiPath) => wikiPageSummary(wikiPath, sourceIds))
+						.filter((page): page is NonNullable<typeof page> => Boolean(page));
+					const pagePathSet = new Set(relatedPages.map((page) => page.path));
+					const relatedSources = entries
+						.filter((entry) => entry.wikiPages.some((wikiPath) => pagePathSet.has(wikiPath)))
+						.map((entry) => ({
+							id: entry.id,
+							title: entry.title,
+							rawPath: entry.rawPath,
+							primaryWikiPath: entry.primary_wiki_path ?? entry.wikiPages[0] ?? "",
+							wikiPages: entry.wikiPages,
+							tags: entry.tags,
+							status: entry.status,
+							notebookType: entry.notebook_type ?? "file",
+							updatedAt: entry.updatedAt,
+						}));
+					json(res, 200, {
+						nodeId,
+						title: `#${tag}`,
+						type: "tag",
+						relatedPages,
+						relatedSources,
+						bodyPreview: relatedPages.map((page) => page.bodyPreview).filter(Boolean).join("\n\n").slice(0, 500),
+						NodeID: nodeId,
+						Title: `#${tag}`,
+						Type: "tag",
+						RelatedPages: relatedPages,
+						RelatedSources: relatedSources,
+					});
+					return;
+				}
+
+				const fullPath = safeJoin(l2DataDir, nodeId);
+				if (!fullPath || !existsSync(fullPath)) {
+					json(res, 404, { error: "Graph node not found" });
+					return;
+				}
+				const content = readText(fullPath);
+				const { frontmatter, body } = parseFrontmatter(content);
+				const relatedSources = entries
+					.filter((entry) => entry.wikiPages.includes(nodeId) || frontmatter?.source_ids.includes(entry.id))
+					.map((entry) => ({
+						id: entry.id,
+						title: entry.title,
+						rawPath: entry.rawPath,
+						primaryWikiPath: entry.primary_wiki_path ?? entry.wikiPages[0] ?? "",
+						wikiPages: entry.wikiPages,
+						tags: entry.tags,
+						status: entry.status,
+						notebookType: entry.notebook_type ?? "file",
+						updatedAt: entry.updatedAt,
+					}));
+				json(res, 200, {
+					nodeId,
+					title: frontmatter?.title ?? nodeId,
+					type: frontmatter?.type ?? "concept",
+					relatedPages: [],
+					relatedSources,
+					bodyPreview: body.slice(0, 500),
+					NodeID: nodeId,
+					Title: frontmatter?.title ?? nodeId,
+					Type: frontmatter?.type ?? "concept",
+					RelatedPages: [],
+					RelatedSources: relatedSources,
+				});
+			} catch (err) {
+				logger.warn({ err, nodeId }, "failed to read wiki graph node");
+				json(res, 500, { error: "Failed to read graph node" });
 			}
 			return;
 		}
@@ -3721,6 +3923,7 @@ const server = createServer(async (req, res) => {
 					model: runtimeSession.model,
 					modelRegistry: runtimeSession.modelRegistry,
 				});
+				refreshL2TagIndex();
 				json(res, 201, result);
 			} catch (err) {
 				logger.warn({ err, sessionId }, "failed to archive conversation");
@@ -3879,6 +4082,7 @@ const server = createServer(async (req, res) => {
 					model: session.model,
 					modelRegistry: session.modelRegistry,
 				});
+				refreshL2TagIndex();
 				json(res, 201, result);
 			} catch (err) {
 				logger.warn({ err, rawPath }, "failed to archive note");
@@ -3925,10 +4129,52 @@ const server = createServer(async (req, res) => {
 			}
 			try {
 				const result = unarchiveL2NotebookItem(l2DataDir, rawPath);
+				refreshL2TagIndex();
 				json(res, 200, result);
 			} catch (err) {
 				logger.warn({ err, rawPath }, "failed to unarchive note");
 				const message = err instanceof Error ? err.message : "Unarchive failed";
+				json(res, 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/sources/regenerate") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const sourceId = (
+				typeof body.SourceID === "string" ? body.SourceID :
+					typeof body.sourceId === "string" ? body.sourceId : ""
+			).trim();
+			const regenerateTags = typeof body.RegenerateTags === "boolean"
+				? body.RegenerateTags
+				: typeof body.regenerateTags === "boolean" ? body.regenerateTags : undefined;
+			const regenerateLinks = typeof body.RegenerateLinks === "boolean"
+				? body.RegenerateLinks
+				: typeof body.regenerateLinks === "boolean" ? body.regenerateLinks : undefined;
+			if (!sourceId) {
+				json(res, 400, { error: "Missing sourceId" });
+				return;
+			}
+			try {
+				const session = getSession();
+				const result = await regenerateL2Source(l2DataDir, sourceId, {
+					regenerateTags,
+					regenerateLinks,
+					model: session.model,
+					modelRegistry: session.modelRegistry,
+				});
+				refreshL2TagIndex();
+				json(res, 200, {
+					...result,
+					SourceID: result.sourceId,
+					WikiPagePath: result.wikiPagePath,
+					WikiPages: result.wikiPages,
+					Status: result.status,
+					UpdatedAt: result.updatedAt,
+				});
+			} catch (err) {
+				logger.warn({ err, sourceId }, "failed to regenerate L2 source");
+				const message = err instanceof Error ? err.message : "Regenerate source failed";
 				json(res, 500, { error: message });
 			}
 			return;
@@ -3972,6 +4218,7 @@ const server = createServer(async (req, res) => {
 					model: session.model,
 					modelRegistry: session.modelRegistry,
 				});
+				refreshL2TagIndex();
 				json(res, 201, {
 					...result,
 					SourceID: result.sourceId,

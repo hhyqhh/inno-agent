@@ -25,7 +25,7 @@ function readAttribute(lines: string[], keys: string[]): string {
 function parseTagList(value: string): string[] {
 	if (!value.trim()) return [];
 	return value
-		.split(/[,，;；、|]/)
+		.split(/[\s,\uFF0C;\uFF1B\u3001|]+/)
 		.map((tag) => tag.trim())
 		.filter(Boolean);
 }

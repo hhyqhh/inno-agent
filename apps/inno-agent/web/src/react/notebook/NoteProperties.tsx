@@ -69,7 +69,7 @@ function TagsPropertyEditor({
 	}
 
 	function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-		if (event.key === "Enter" || event.key === "," || event.key === "，" || event.key === ";" || event.key === "；") {
+		if (event.key === "Enter" || /^[\s,\uFF0C;\uFF1B\u3001|]$/.test(event.key)) {
 			event.preventDefault();
 			commitDraft(draft);
 		} else if (event.key === "Backspace" && draft.length === 0 && tags.length > 0) {

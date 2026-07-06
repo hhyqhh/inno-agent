@@ -20,6 +20,11 @@ interface NotesStoreEvents {
 	change: void;
 }
 
+export interface NotesTagSummary {
+	displayName: string;
+	usageCount: number;
+}
+
 class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	notes: NoteSummary[] = [];
 	selected: NoteSummary | null = null;
@@ -36,18 +41,22 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	savedPreviewContent = "";
 	listBox: NoteListBox = "drafts";
 	searchQuery = "";
+	filterTag: string | null = null;
 	isLoading = false;
 	isLoadingContent = false;
 	isLoadingPreview = false;
 	isCreating = false;
 	isSaving = false;
 	isArchiving = false;
+	archivingRawPath: string | null = null;
+	archivingRawPaths: string[] = [];
 	isDeleting = false;
 	isUploading = false;
 	isUploadingAttachment = false;
 	deletingAttachmentId: string | null = null;
 	error: string | null = null;
 	notice: string | null = null;
+	private archiveQueue: Promise<unknown> = Promise.resolve();
 
 	get isDirty(): boolean {
 		if (!this.selected) return false;
@@ -65,18 +74,13 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 
 	get filteredNotes(): NoteSummary[] {
 		const q = this.searchQuery.trim().toLowerCase();
-		const isUnarchivedFile = (note: NoteSummary) =>
-			note.notebookType === "file" &&
-			(note.status === "uploaded" || note.status === "extracting" || note.status === "extracted" || note.status === "error");
-		const byBox = this.notes.filter((note) =>
-			this.listBox === "drafts"
-				? note.kind === "orphan" || isUnarchivedFile(note) || (note.kind === "markdown" && note.status === "draft")
-				: note.kind === "archived" ||
-					(note.kind === "markdown" &&
-						(note.status === "indexed" || note.status === "outdated" || note.status === "error")),
-		);
-		if (!q) return byBox;
-		return byBox.filter(
+		let result = this.notesForListBox();
+		if (this.filterTag) {
+			const tagKey = this.filterTag.toLowerCase();
+			result = result.filter((note) => note.tags.some((tag) => tag.toLowerCase() === tagKey));
+		}
+		if (!q) return result;
+		return result.filter(
 			(note) =>
 				note.title.toLowerCase().includes(q) ||
 				note.rawPath.toLowerCase().includes(q) ||
@@ -85,21 +89,30 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	}
 
 	get draftCount(): number {
-		const isUnarchivedFile = (note: NoteSummary) =>
-			note.notebookType === "file" &&
-			(note.status === "uploaded" || note.status === "extracting" || note.status === "extracted" || note.status === "error");
-		return this.notes.filter(
-			(note) => note.kind === "orphan" || isUnarchivedFile(note) || (note.kind === "markdown" && note.status === "draft"),
-		).length;
+		return this.notes.filter((note) => this.isDraftBoxNote(note)).length;
 	}
 
 	get archivedCount(): number {
-		return this.notes.filter(
-			(note) =>
-				(note.kind === "archived" && note.status !== "uploaded" && note.status !== "extracting" && note.status !== "extracted" && note.status !== "error") ||
-				(note.kind === "markdown" &&
-					(note.status === "indexed" || note.status === "outdated" || note.status === "error")),
-		).length;
+		return this.notes.filter((note) => this.isArchivedBoxNote(note)).length;
+	}
+
+	get tagSummaries(): NotesTagSummary[] {
+		const byKey = new Map<string, NotesTagSummary>();
+		for (const note of this.notesForListBox()) {
+			for (const tag of note.tags) {
+				const displayName = tag.trim();
+				if (!displayName) continue;
+				const key = displayName.toLowerCase();
+				const current = byKey.get(key);
+				if (current) {
+					current.usageCount += 1;
+					current.displayName = displayName;
+				} else {
+					byKey.set(key, { displayName, usageCount: 1 });
+				}
+			}
+		}
+		return [...byKey.values()].sort((a, b) => b.usageCount - a.usageCount || a.displayName.localeCompare(b.displayName, "zh-CN"));
 	}
 
 	clearMessages() {
@@ -112,9 +125,34 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		this.emit("change", undefined);
 	}
 
+	setFilterTag(tag: string | null) {
+		this.filterTag = tag;
+		this.searchQuery = "";
+		this.emit("change", undefined);
+	}
+
 	setListBox(listBox: NoteListBox) {
 		this.listBox = listBox;
 		this.emit("change", undefined);
+	}
+
+	private isUnarchivedFile(note: NoteSummary): boolean {
+		return note.notebookType === "file" &&
+			(note.status === "uploaded" || note.status === "extracting" || note.status === "extracted" || note.status === "error");
+	}
+
+	private isDraftBoxNote(note: NoteSummary): boolean {
+		return note.kind === "orphan" || this.isUnarchivedFile(note) || (note.kind === "markdown" && note.status === "draft");
+	}
+
+	private isArchivedBoxNote(note: NoteSummary): boolean {
+		return (note.kind === "archived" && note.status !== "uploaded" && note.status !== "extracting" && note.status !== "extracted" && note.status !== "error") ||
+			(note.kind === "markdown" &&
+				(note.status === "indexed" || note.status === "outdated" || note.status === "error"));
+	}
+
+	private notesForListBox(): NoteSummary[] {
+		return this.notes.filter((note) => this.listBox === "drafts" ? this.isDraftBoxNote(note) : this.isArchivedBoxNote(note));
 	}
 
 	updateEditorTitle(title: string) {
@@ -348,13 +386,21 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			const saved = await this.saveSelected();
 			if (!saved) return null;
 		}
+		const rawPath = this.selected.rawPath;
+		if (this.archivingRawPaths.includes(rawPath)) return null;
+		const title = this.selected.kind === "markdown" ? this.editorTitle.trim() || this.selected.title : undefined;
+		const tags = this.selected.kind === "markdown" ? [...this.editorTags] : undefined;
 		this.isArchiving = true;
+		this.archivingRawPaths = [...this.archivingRawPaths, rawPath];
 		this.clearMessages();
 		this.emit("change", undefined);
-		try {
-			const result = await archiveNote(this.selected.rawPath, {
-				title: this.selected.kind === "markdown" ? this.editorTitle.trim() || this.selected.title : undefined,
-				tags: this.selected.kind === "markdown" ? this.editorTags : undefined,
+
+		const run = async (): Promise<string | null> => {
+			this.archivingRawPath = rawPath;
+			this.emit("change", undefined);
+			const result = await archiveNote(rawPath, {
+				title,
+				tags,
 			});
 			this.notice = "archived";
 			this.listBox = "archived";
@@ -364,11 +410,25 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				await this.selectNote(updated);
 			}
 			return result.wikiPagePath;
-		} catch {
-			this.error = "archiveFailed";
-			return null;
+		};
+
+		const task = this.archiveQueue
+			.catch(() => undefined)
+			.then(run)
+			.catch(() => {
+				this.error = "archiveFailed";
+				return null;
+			})
+			.finally(() => {
+				this.archivingRawPaths = this.archivingRawPaths.filter((path) => path !== rawPath);
+				this.archivingRawPath = this.archivingRawPaths[0] ?? null;
+				this.isArchiving = this.archivingRawPaths.length > 0;
+				this.emit("change", undefined);
+			});
+		this.archiveQueue = task;
+		try {
+			return await task;
 		} finally {
-			this.isArchiving = false;
 			this.emit("change", undefined);
 		}
 	}
@@ -400,11 +460,13 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 
 	async unarchiveSelected(): Promise<boolean> {
 		if (!this.selected) return false;
+		const rawPath = this.selected.rawPath;
 		this.isArchiving = true;
+		this.archivingRawPath = rawPath;
 		this.clearMessages();
 		this.emit("change", undefined);
 		try {
-			const result = await unarchiveNote(this.selected.rawPath);
+			const result = await unarchiveNote(rawPath);
 			this.notice = "unarchived";
 			this.listBox = "drafts";
 			await this.loadAll();
@@ -420,6 +482,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			return false;
 		} finally {
 			this.isArchiving = false;
+			this.archivingRawPath = null;
 			this.emit("change", undefined);
 		}
 	}

@@ -86,6 +86,8 @@
 			"empty": "在左侧选择一个页面，或在图中点击一个节点开始阅读。",
 			"selectFromGraph": "在图中选择节点查看",
 			"openInNotebook": "在笔记本中查看",
+			"regenerate": "重新生成",
+			"regenerating": "生成中...",
 			"backToGraph": "返回图谱"
 		},
 		"delete": {
@@ -97,7 +99,12 @@
 			"empty": "选择节点查看详细信息。双击非标签节点可打开页面。",
 			"type": "类型",
 			"tags": "标签",
-			"openPage": "打开页面"
+			"openPage": "打开页面",
+			"editTags": "编辑标签",
+			"editTagsPrompt": "输入标签，用英文逗号分隔",
+			"filterTag": "筛选标签",
+			"relatedPages": "关联页面",
+			"relatedSources": "关联资料"
 		},
 		"types": {
 			"source-summary": "资料摘要",

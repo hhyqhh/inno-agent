@@ -44,7 +44,7 @@ export function parseTagList(value: string): string[] {
 			.filter(Boolean);
 	}
 	return trimmed
-		.split(/[,，;；、|]/)
+		.split(/[\s,\uFF0C;\uFF1B\u3001|]+/)
 		.map((tag) => tag.trim())
 		.filter(Boolean);
 }

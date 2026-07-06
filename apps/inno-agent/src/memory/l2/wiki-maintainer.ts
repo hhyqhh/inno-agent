@@ -433,11 +433,13 @@ function mergeUniqueTags(...tagGroups: string[][]): string[] {
 	const seen = new Set<string>();
 	const tags: string[] = [];
 	for (const group of tagGroups) {
-		for (const tag of group) {
+		for (const rawTag of group) {
+			for (const tag of rawTag.split(/[\s,\uFF0C;\uFF1B\u3001|]+/)) {
 			const trimmed = tag.trim();
 			if (!trimmed || seen.has(trimmed)) continue;
 			seen.add(trimmed);
 			tags.push(trimmed);
+			}
 		}
 	}
 	return tags;

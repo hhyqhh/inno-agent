@@ -42,6 +42,7 @@ export function Notebook({
 		selectedNodeId: notebookStore.selectedNodeId,
 		isLoadingPages: notebookStore.isLoadingPages,
 		isDeletingPage: notebookStore.isDeletingPage,
+		deletingPagePath: notebookStore.deletingPagePath,
 	}));
 
 	async function handleDelete(path: string, title: string) {
@@ -91,6 +92,7 @@ export function Notebook({
 					) : null}
 					{state.pages.map((page) => {
 						const selected = state.currentPagePath === page.path || state.selectedNodeId === page.path;
+						const isThisPageDeleting = state.deletingPagePath === page.path;
 						const title = page.frontmatter?.title || page.path;
 						return (
 							<div
@@ -110,7 +112,7 @@ export function Notebook({
 									</div>
 								</button>
 								<button
-									className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-muted)] hover:bg-red-50 hover:text-red-600 disabled:opacity-50 ${state.isDeletingPage ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+									className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-muted)] hover:bg-red-50 hover:text-red-600 disabled:opacity-50 ${isThisPageDeleting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
 									title={t("notebook.delete.button")}
 									disabled={state.isDeletingPage}
 									onClick={(e) => {

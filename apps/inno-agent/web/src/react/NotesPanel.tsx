@@ -240,8 +240,9 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 	}
 
 	return (
-		<div className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] gap-3 p-3">
-			<aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+		<div className="inno-notes-panel-shell h-full min-h-0">
+			<div className="inno-notes-panel grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] gap-3 p-3">
+				<aside className="inno-notes-panel-list flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
 				<div className="space-y-2 border-b border-[var(--inno-border)] p-2">
 					<input
 						type="text"
@@ -437,7 +438,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 				</div>
 			</aside>
 
-			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+				<section className="inno-notes-panel-detail flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
 				{state.notice ? (
 					<p className="border-b border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
 						{t(`notes.flash.${state.notice}`)}
@@ -535,7 +536,8 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						{renderBottomActions()}
 					</div>
 				)}
-			</section>
+				</section>
+			</div>
 		</div>
 	);
 }

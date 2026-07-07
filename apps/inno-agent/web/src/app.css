@@ -490,6 +490,26 @@ inno-workspace-panel textarea {
 	line-height: 1.45;
 }
 
+.inno-notes-panel-shell {
+	container-type: inline-size;
+}
+
+@container (max-width: 500px) {
+	.inno-notes-panel {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0;
+		padding: 8px;
+	}
+
+	.inno-notes-panel-detail {
+		display: none;
+	}
+
+	.inno-notes-panel-list {
+		min-width: 0;
+	}
+}
+
 .vertical-label {
 	writing-mode: vertical-rl;
 	text-orientation: mixed;

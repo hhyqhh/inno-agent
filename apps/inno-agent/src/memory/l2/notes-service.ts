@@ -563,9 +563,11 @@ export function saveL2RawMarkdownContent(
 }
 
 /**
- * Permanently delete a draft note or an un-archived uploaded file.
- * Archived content is refused — it must be unarchived first so the wiki
- * stays consistent.
+ * Permanently delete a notebook item.
+ *
+ * If the item has already been archived, first undo the archive so generated
+ * wiki pages, concept/entity source references, manifest rows, and indexes are
+ * cleaned up before the raw file is removed.
  */
 export function deleteL2NotebookItem(l2DataDir: string, rawPath: string): DeleteNotebookItemResult {
 	const normalizedPath = rawPath.replace(/\\/g, "/");
@@ -573,15 +575,29 @@ export function deleteL2NotebookItem(l2DataDir: string, rawPath: string): Delete
 		throw new Error("Invalid raw path");
 	}
 	const entry = findManifestByRawPath(l2DataDir, normalizedPath);
+	let title = entry?.title ?? basename(normalizedPath);
 	if (entry) {
-		throw new Error("该内容已归档，请先撤回归档再删除");
+		const unarchived = unarchiveL2NotebookItem(l2DataDir, normalizedPath);
+		title = unarchived.title || title;
 	}
 	const absPath = join(l2DataDir, normalizedPath);
 	if (!existsSync(absPath)) {
+		if (entry) {
+			appendLog(
+				l2DataDir,
+				"delete",
+				title,
+				[
+					`- 原始文件: ${normalizedPath}`,
+					`- Raw file was already missing after archive cleanup`,
+					`- UI delete from Notes panel`,
+				].join("\n"),
+			);
+			return { rawPath: normalizedPath, title };
+		}
 		throw new Error("文件不存在");
 	}
 
-	let title = basename(normalizedPath);
 	if (normalizedPath.startsWith("raw/notes/")) {
 		try {
 			const { frontmatter, body } = readNoteFile(l2DataDir, normalizedPath);
@@ -662,6 +678,44 @@ function detachSourceFromWikiPage(
 	}
 }
 
+function wikiPathExists(l2DataDir: string, wikiPath: string): boolean {
+	const normalized = wikiPath.replace(/\\/g, "/");
+	return existsSync(join(l2DataDir, normalized));
+}
+
+function pruneOrphanDerivedWikiPages(l2DataDir: string): string[] {
+	const removed: string[] = [];
+	let changed = true;
+	const dirs = ["wiki/concepts", "wiki/entities", "wiki/analysis"];
+	while (changed) {
+		changed = false;
+		for (const dir of dirs) {
+			const absDir = join(l2DataDir, dir);
+			if (!existsSync(absDir)) continue;
+			for (const file of readdirSync(absDir)) {
+				if (!file.endsWith(".md")) continue;
+				const wikiPath = join(dir, file).replace(/\\/g, "/");
+				const absPath = join(l2DataDir, wikiPath);
+				if (!existsSync(absPath)) continue;
+				try {
+					const { frontmatter } = parseFrontmatter(readText(absPath));
+					if (!frontmatter) continue;
+					if (frontmatter.source_ids.length > 0 || frontmatter.sources.length === 0) continue;
+					const hasLiveSource = frontmatter.sources.some((sourcePath) => wikiPathExists(l2DataDir, sourcePath));
+					if (hasLiveSource) continue;
+					unlinkSync(absPath);
+					removed.push(wikiPath);
+					removeWikiPathFromManifest(l2DataDir, wikiPath);
+					changed = true;
+				} catch (err) {
+					logger.warn({ err, wikiPath }, "failed to prune orphan derived wiki page");
+				}
+			}
+		}
+	}
+	return removed;
+}
+
 /**
  * Undo an archive: remove the manifest entry, delete the generated source
  * wiki page, detach the source from linked wiki pages, and revert a note's
@@ -708,6 +762,8 @@ export function unarchiveL2NotebookItem(l2DataDir: string, rawPath: string): Una
 	for (const wikiPath of removedWikiPages) {
 		removeWikiPathFromManifest(l2DataDir, wikiPath);
 	}
+	const prunedWikiPages = pruneOrphanDerivedWikiPages(l2DataDir);
+	removedWikiPages.push(...prunedWikiPages);
 	rebuildIndex(l2DataDir, readManifest(l2DataDir));
 
 	let status: UnarchiveResult["status"] = "uploaded";

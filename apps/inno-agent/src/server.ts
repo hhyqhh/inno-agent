@@ -1402,11 +1402,31 @@ function listWikiPagePaths(): string[] {
 		if (!existsSync(dir)) continue;
 		for (const file of readdirSync(dir)) {
 			if (file.endsWith(".md")) {
-				paths.push(join("wiki", dirName, file));
+				const wikiPath = join("wiki", dirName, file).replace(/\\/g, "/");
+				if (isDeadDerivedWikiPage(wikiPath)) continue;
+				paths.push(wikiPath);
 			}
 		}
 	}
 	return paths.sort((a, b) => a.localeCompare(b, "zh-CN"));
+}
+
+function wikiReferenceExists(relativePath: string): boolean {
+	return existsSync(join(l2DataDir, relativePath.replace(/\\/g, "/")));
+}
+
+function isDeadDerivedWikiPage(wikiPath: string): boolean {
+	const fullPath = join(l2DataDir, wikiPath);
+	if (!existsSync(fullPath)) return false;
+	try {
+		const { frontmatter } = parseFrontmatter(readText(fullPath));
+		if (!frontmatter) return false;
+		if (frontmatter.source_ids.length > 0 || frontmatter.sources.length === 0) return false;
+		return !frontmatter.sources.some((sourcePath) => wikiReferenceExists(sourcePath));
+	} catch (err) {
+		logger.warn({ err, wikiPath }, "failed to inspect wiki page liveness");
+		return false;
+	}
 }
 
 function manifestSourceIdByWikiPath(): Map<string, string> {

@@ -59,23 +59,40 @@ function isUsableItemDir(name) {
 	return ITEM_NAME_RE.test(name) && name !== "." && name !== ".." && !name.startsWith("_") && !name.startsWith(".") && name !== "__MACOSX";
 }
 
-/** Read a skill's description from SKILL.md frontmatter (best-effort, single-line + block scalar). */
-function readSkillDescription(skillDir) {
+/** Read description + category from SKILL.md frontmatter in one pass. */
+function readSkillMeta(skillDir) {
 	const md = join(skillDir, "SKILL.md");
-	if (!existsSync(md)) return "";
-	const text = readFileSync(md, "utf-8").replace(/\r\n/g, "\n");
+	if (!existsSync(md)) return { description: "", category: "" };
+	const text = readFileSync(md, "utf-8").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 	const fm = text.match(/^---\n([\s\S]*?)\n---/);
-	if (!fm) return "";
+	if (!fm) return { description: "", category: "" };
 	const lines = fm[1].split("\n");
+	return {
+		description: extractFrontmatterField(lines, "description"),
+		category: extractFrontmatterField(lines, "category"),
+	};
+}
+
+/**
+ * Extract a single YAML frontmatter field by key. Supports inline values
+ * (optionally quoted) and block scalars (>, |, >-, |- etc.). Mirrors the
+ * backend's extractFrontmatterFields logic in server.ts exactly.
+ */
+function extractFrontmatterField(lines, key) {
+	const re = new RegExp(`^${key}:\\s*(.*)$`);
 	for (let i = 0; i < lines.length; i++) {
-		const m = lines[i].match(/^description:\s*(.*)$/);
+		const m = lines[i].match(re);
 		if (!m) continue;
 		const inline = m[1].trim();
+		// Block scalar (>- , |, > , |- ...) → gather indented continuation lines.
 		if (/^[>|][+-]?\s*$/.test(inline)) {
 			const block = [];
 			for (let j = i + 1; j < lines.length; j++) {
-				if (/^\s+\S/.test(lines[j]) || lines[j].trim() === "") block.push(lines[j].trim());
-				else break;
+				if (/^\s+\S/.test(lines[j]) || lines[j].trim() === "") {
+					block.push(lines[j].trim());
+				} else {
+					break;
+				}
 			}
 			return block.join(" ").replace(/\s+/g, " ").trim();
 		}
@@ -95,9 +112,8 @@ function buildIndex() {
 			if (!entry.isDirectory() || !isUsableItemDir(entry.name)) continue;
 			const dir = join(skillsRoot, entry.name);
 			if (!existsSync(join(dir, CATEGORY.skills.marker))) continue;
-			// id = directory name (used for routing/download); skills have no
-			// display name distinct from the directory, so name mirrors id.
-			index.skills.push({ id: entry.name, name: entry.name, description: readSkillDescription(dir) });
+			const meta = readSkillMeta(dir);
+			index.skills.push({ id: entry.name, name: entry.name, description: meta.description, category: meta.category || undefined });
 		}
 	}
 

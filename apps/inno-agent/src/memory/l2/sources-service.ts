@@ -25,8 +25,8 @@ import {
 	serializeFrontmatter,
 } from "./wiki-maintainer.js";
 import { summarizeContent } from "./summarizer.js";
-import { maintainLinkedWikiPages } from "./wiki-linker.js";
-import type { ManifestEntry, ManifestStatus, RawSourceType, SelectedScope } from "./types.js";
+import { maintainLinkedWikiPages, readSourceKnowledgeRelations } from "./wiki-linker.js";
+import type { ManifestEntry, ManifestStatus, RawSourceType, SelectedScope, WikiPageType } from "./types.js";
 import { logger } from "../../logger.js";
 
 export interface SourceSummaryDto {
@@ -92,6 +92,33 @@ export interface RegenerateSourceResult {
 	updatedAt: string;
 }
 
+export interface AddSourceRelationResult {
+	sourceId: string;
+	title: string;
+	rawPath: string;
+	sourcePagePath: string;
+	relationPagePath: string;
+	relationTitle: string;
+	relationType: Extract<WikiPageType, "concept" | "entity">;
+	wikiPages: string[];
+	status: "indexed";
+	updatedAt: string;
+}
+
+export interface RemoveSourceRelationResult {
+	sourceId: string;
+	title: string;
+	rawPath: string;
+	sourcePagePath: string;
+	relationPagePath: string;
+	relationTitle: string;
+	relationType: Extract<WikiPageType, "concept" | "entity">;
+	wikiPages: string[];
+	status: "indexed";
+	deletedOrphanPage: boolean;
+	updatedAt: string;
+}
+
 const RAW_SCAN_DIRS = ["raw/uploads", "raw/conversations"] as const;
 
 function inferSourceType(fileNameOrPath: string): RawSourceType {
@@ -113,6 +140,230 @@ export function inferNotebookType(rawPath: string): "conversation" | "file" | "n
 
 export function primaryWikiPath(wikiPages: string[]): string | undefined {
 	return wikiPages.find((p) => p.includes("wiki/sources/")) ?? wikiPages[0];
+}
+
+function isSourceSummaryPath(wikiPath: string | undefined): boolean {
+	return Boolean(wikiPath?.includes("wiki/sources/"));
+}
+
+function relationDirForType(type: Extract<WikiPageType, "concept" | "entity">): "concepts" | "entities" {
+	return type === "entity" ? "entities" : "concepts";
+}
+
+function slugifyWikiTitle(title: string): string {
+	const slug = title
+		.toLowerCase()
+		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
+		.replace(/^-|-$/g, "")
+		.slice(0, 60);
+	if (slug) return slug;
+	return createHash("sha256").update(title).digest("hex").slice(0, 12);
+}
+
+function relationPagePath(type: Extract<WikiPageType, "concept" | "entity">, title: string): string {
+	return join("wiki", relationDirForType(type), `${slugifyWikiTitle(title)}.md`).replace(/\\/g, "/");
+}
+
+function findRelationPage(
+	l2DataDir: string,
+	type: Extract<WikiPageType, "concept" | "entity">,
+	title: string,
+): string {
+	const preferredPath = relationPagePath(type, title);
+	if (existsSync(join(l2DataDir, preferredPath))) return preferredPath;
+
+	const dir = join(l2DataDir, "wiki", relationDirForType(type));
+	if (!existsSync(dir)) return preferredPath;
+	for (const file of readdirSync(dir)) {
+		if (!file.endsWith(".md")) continue;
+		const path = join("wiki", relationDirForType(type), file).replace(/\\/g, "/");
+		const { frontmatter } = parseFrontmatter(readText(join(l2DataDir, path)));
+		if ((frontmatter?.title || basename(file, extname(file))) === title) return path;
+	}
+	return preferredPath;
+}
+
+function mergeTags(...tagGroups: string[][]): string[] {
+	const seen = new Set<string>();
+	const tags: string[] = [];
+	for (const group of tagGroups) {
+		for (const rawTag of group) {
+			for (const tag of rawTag.split(/[\s,\uFF0C;\uFF1B\u3001|]+/)) {
+				const trimmed = tag.trim();
+				if (!trimmed || seen.has(trimmed)) continue;
+				seen.add(trimmed);
+				tags.push(trimmed);
+			}
+		}
+	}
+	return tags.slice(0, 12);
+}
+
+function relationReferenceBullet(source: ManifestEntry, sourcePagePath: string): string {
+	return `- [[${source.title}]] - \`${sourcePagePath}\``;
+}
+
+function buildRelationPage(
+	source: ManifestEntry,
+	sourcePagePath: string,
+	title: string,
+	type: Extract<WikiPageType, "concept" | "entity">,
+	description?: string,
+): string {
+	const today = new Date().toISOString().slice(0, 10);
+	const bodyDescription = description?.trim() || "User-added knowledge relation. Details can be refined later.";
+	const frontmatter = serializeFrontmatter({
+		title,
+		created: today,
+		type,
+		tags: mergeTags([type], source.tags),
+		sources: [sourcePagePath],
+		source_ids: [source.id],
+		updated: today,
+		status: "draft",
+		confidence: "medium",
+	});
+	return `${frontmatter}
+# ${title}
+
+## Definition
+
+${bodyDescription}
+
+## Related Sources
+
+${relationReferenceBullet(source, sourcePagePath)}
+`;
+}
+
+function upsertRelationPage(
+	l2DataDir: string,
+	source: ManifestEntry,
+	sourcePagePath: string,
+	title: string,
+	type: Extract<WikiPageType, "concept" | "entity">,
+	description?: string,
+): string {
+	const wikiPath = findRelationPage(l2DataDir, type, title);
+	const absPath = join(l2DataDir, wikiPath);
+	if (!existsSync(absPath)) {
+		writeText(absPath, buildRelationPage(source, sourcePagePath, title, type, description));
+		return wikiPath;
+	}
+
+	const existing = readText(absPath);
+	const { frontmatter, body } = parseFrontmatter(existing);
+	if (!frontmatter) {
+		const nextBody = `${existing.trimEnd()}\n\n## Related Sources\n\n${relationReferenceBullet(source, sourcePagePath)}\n`;
+		writeText(absPath, buildRelationPage(source, sourcePagePath, title, type, description) + "\n\n" + nextBody);
+		return wikiPath;
+	}
+
+	frontmatter.sources = [...new Set([...frontmatter.sources, sourcePagePath])];
+	frontmatter.source_ids = [...new Set([...frontmatter.source_ids, source.id])];
+	frontmatter.tags = mergeTags(frontmatter.tags, [type], source.tags);
+	frontmatter.updated = new Date().toISOString().slice(0, 10);
+
+	let nextBody = body;
+	if (description?.trim() && !nextBody.includes(description.trim())) {
+		nextBody = `${nextBody.trimEnd()}\n\n## User Added Relation\n\n${description.trim()}\n`;
+	}
+	const bullet = relationReferenceBullet(source, sourcePagePath);
+	if (!nextBody.includes(sourcePagePath)) {
+		const header = "\n## Related Sources";
+		const index = nextBody.indexOf(header);
+		if (index >= 0) {
+			nextBody = `${nextBody.trimEnd()}\n${bullet}\n`;
+		} else {
+			nextBody = `${nextBody.trimEnd()}\n\n## Related Sources\n\n${bullet}\n`;
+		}
+	}
+	writeText(absPath, `${serializeFrontmatter(frontmatter)}\n${nextBody.replace(/^\n/, "")}`);
+	return wikiPath;
+}
+
+function addRelationLinkToSourcePage(
+	l2DataDir: string,
+	sourcePagePath: string,
+	relationTitle: string,
+	relationPagePath: string,
+	description?: string,
+): void {
+	const absPath = join(l2DataDir, sourcePagePath);
+	if (!existsSync(absPath)) return;
+	const content = readText(absPath);
+	const link = `[[${relationTitle}]]`;
+	if (content.includes(link) || content.includes(relationPagePath)) return;
+
+	const bullet = description?.trim()
+		? `- ${link} - ${description.trim()} (\`${relationPagePath}\`)`
+		: `- ${link} - \`${relationPagePath}\``;
+	const section = "\n## User Added Knowledge Relations\n\n";
+	const next = content.includes("\n## User Added Knowledge Relations")
+		? `${content.trimEnd()}\n${bullet}\n`
+		: `${content.trimEnd()}${section}${bullet}\n`;
+	writeText(absPath, next);
+}
+
+function removeRelationLinkFromSourcePage(
+	l2DataDir: string,
+	sourcePagePath: string,
+	relationTitle: string,
+	relationPagePath: string,
+): void {
+	const absPath = join(l2DataDir, sourcePagePath);
+	if (!existsSync(absPath)) return;
+	const content = readText(absPath);
+	const link = `[[${relationTitle}]]`;
+	const lines = content.split("\n");
+	const nextLines = lines.filter((line) => {
+		const trimmed = line.trim();
+		if (!trimmed.startsWith("-")) return true;
+		return !trimmed.includes(link) && !trimmed.includes(relationPagePath);
+	});
+	let next = nextLines.join("\n");
+	next = next.replace(/\n## User Added Knowledge Relations\n\n(?=\n|$)/g, "\n");
+	if (next !== content) writeText(absPath, next);
+}
+
+function removeSourceReferenceFromRelationPage(
+	l2DataDir: string,
+	source: ManifestEntry,
+	sourcePagePath: string,
+	relationPagePath: string,
+	deleteOrphanPage: boolean,
+): { deleted: boolean; remainingSourceIds: string[] } {
+	const absPath = join(l2DataDir, relationPagePath);
+	if (!existsSync(absPath)) return { deleted: false, remainingSourceIds: [] };
+
+	const content = readText(absPath);
+	const { frontmatter, body } = parseFrontmatter(content);
+	if (!frontmatter) {
+		const nextBody = body
+			.split("\n")
+			.filter((line) => !(line.includes(sourcePagePath) || line.includes(source.id)))
+			.join("\n");
+		if (nextBody !== body) writeText(absPath, nextBody);
+		return { deleted: false, remainingSourceIds: [] };
+	}
+
+	frontmatter.sources = frontmatter.sources.filter((item) => item !== sourcePagePath && item !== source.rawPath);
+	frontmatter.source_ids = frontmatter.source_ids.filter((id) => id !== source.id);
+	if (frontmatter.source_ids.length === 0 && deleteOrphanPage) {
+		unlinkSync(absPath);
+		return { deleted: true, remainingSourceIds: [] };
+	}
+
+	frontmatter.updated = new Date().toISOString().slice(0, 10);
+	if (frontmatter.source_ids.length === 0) {
+		frontmatter.status = "outdated";
+	}
+	const nextBody = body
+		.split("\n")
+		.filter((line) => !(line.includes(sourcePagePath) || line.includes(source.id)))
+		.join("\n");
+	writeText(absPath, `${serializeFrontmatter(frontmatter)}\n${nextBody.replace(/^\n/, "")}`);
+	return { deleted: false, remainingSourceIds: frontmatter.source_ids };
 }
 
 function entryToSummary(entry: ManifestEntry): SourceSummaryDto {
@@ -510,22 +761,22 @@ export async function regenerateL2Source(
 	}
 
 	try {
-		const removedLinkedPages = options.regenerateLinks === false
-			? []
-			: removePreviousGeneratedLinks(l2DataDir, source);
 		updateEntryStatus(l2DataDir, source.id, "indexing", { error_message: null });
 		const entry = findManifestById(l2DataDir, source.id) ?? source;
 		const maintenanceContext = readMaintenanceContext(l2DataDir);
 		const extractedContent = readText(extractedAbsPath);
-		let summaryBody = `## 摘要\n\n${extractedContent}`;
+		const existingSourcePagePath = source.primary_wiki_path ?? primaryWikiPath(source.wikiPages);
+		let summaryBody = `## 鎽樿\n\n${extractedContent}`;
 		if (options.model && options.modelRegistry) {
 			const summary = await summarizeContent(options.model, options.modelRegistry, entry.title, extractedContent);
 			if (summary) summaryBody = summary;
 		}
-
-		const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, entry.extractedPath);
+		const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, source.extractedPath, existingSourcePagePath);
+		const existingLinkedPages = source.wikiPages.filter((page) => !isSourceSummaryPath(page));
+		const currentRelations = readSourceKnowledgeRelations(l2DataDir, source.wikiPages);
+		const removedLinkedPages = options.regenerateLinks === false ? [] : removePreviousGeneratedLinks(l2DataDir, source);
 		const linkMaintenance = options.regenerateLinks === false
-			? { pages: entry.wikiPages.filter((page) => page !== wikiPagePath) }
+			? { pages: existingLinkedPages }
 			: await maintainLinkedWikiPages(
 				l2DataDir,
 				entry,
@@ -533,11 +784,14 @@ export async function regenerateL2Source(
 				summaryBody,
 				options.model,
 				options.modelRegistry,
+				{ currentRelations },
 			);
 		const updatedAt = new Date().toISOString();
+		const linkedPages = [...new Set(linkMaintenance.pages)];
+		const wikiPages = [wikiPagePath, ...linkedPages];
 		const indexedEntry: ManifestEntry = {
 			...entry,
-			wikiPages: [wikiPagePath, ...linkMaintenance.pages],
+			wikiPages,
 			tags: options.regenerateTags ? entry.tags : source.tags,
 			status: "indexed",
 			primary_wiki_path: wikiPagePath,
@@ -553,10 +807,12 @@ export async function regenerateL2Source(
 			indexedEntry.title,
 			[
 				`- ID: ${indexedEntry.id}`,
+				`- Removed old linked pages: ${removedLinkedPages.join(", ") || "none"}`,
+				`- Linked pages after regeneration: ${linkedPages.join(", ") || "none"}`,
 				`- 原始文件: ${indexedEntry.rawPath}`,
 				`- Extracted: ${indexedEntry.extractedPath}`,
 				`- Source 页面: ${wikiPagePath}`,
-				`- 清理旧关联页: ${removedLinkedPages.join(", ") || "none"}`,
+				`- 保留旧关联页: ${existingLinkedPages.join(", ") || "none"}`,
 				`- 重算标签: ${options.regenerateTags ? "yes" : "no"}`,
 				`- 重跑概念链: ${options.regenerateLinks === false ? "no" : "yes"}`,
 				`- 维护前上下文: schema ${maintenanceContext.schema.length} chars`,
@@ -578,6 +834,159 @@ export async function regenerateL2Source(
 		});
 		throw err;
 	}
+}
+
+export function addL2SourceRelation(
+	l2DataDir: string,
+	sourceId: string,
+	options: {
+		title: string;
+		type: Extract<WikiPageType, "concept" | "entity">;
+		description?: string;
+	},
+): AddSourceRelationResult {
+	ensureL2Directories(l2DataDir);
+	const source = findManifestById(l2DataDir, sourceId);
+	if (!source) {
+		throw new Error(`Source not found: ${sourceId}`);
+	}
+	const relationTitle = options.title.trim();
+	if (!relationTitle) {
+		throw new Error("Relation title is required.");
+	}
+	if (options.type !== "concept" && options.type !== "entity") {
+		throw new Error("Relation type must be concept or entity.");
+	}
+
+	const sourcePagePath = source.primary_wiki_path ?? primaryWikiPath(source.wikiPages);
+	if (!sourcePagePath || !isSourceSummaryPath(sourcePagePath)) {
+		throw new Error(`Source has no source-summary page: ${sourceId}`);
+	}
+	const relationPage = upsertRelationPage(
+		l2DataDir,
+		source,
+		sourcePagePath,
+		relationTitle,
+		options.type,
+		options.description,
+	);
+	addRelationLinkToSourcePage(l2DataDir, sourcePagePath, relationTitle, relationPage, options.description);
+
+	const updatedAt = new Date().toISOString();
+	const wikiPages = [...new Set([sourcePagePath, ...source.wikiPages.filter((page) => page !== sourcePagePath), relationPage])];
+	const indexedEntry: ManifestEntry = {
+		...source,
+		wikiPages,
+		primary_wiki_path: sourcePagePath,
+		status: "indexed",
+		error_message: null,
+		updatedAt,
+	};
+	updateManifestEntry(l2DataDir, indexedEntry.id, () => indexedEntry);
+	rebuildIndex(l2DataDir, readManifest(l2DataDir));
+	appendLog(
+		l2DataDir,
+		"add-relation",
+		indexedEntry.title,
+		[
+			`- ID: ${indexedEntry.id}`,
+			`- Source page: ${sourcePagePath}`,
+			`- Relation: ${relationTitle}`,
+			`- Relation type: ${options.type}`,
+			`- Relation page: ${relationPage}`,
+		].join("\n"),
+	);
+
+	return {
+		sourceId: indexedEntry.id,
+		title: indexedEntry.title,
+		rawPath: indexedEntry.rawPath,
+		sourcePagePath,
+		relationPagePath: relationPage,
+		relationTitle,
+		relationType: options.type,
+		wikiPages: indexedEntry.wikiPages,
+		status: "indexed",
+		updatedAt,
+	};
+}
+
+export function removeL2SourceRelation(
+	l2DataDir: string,
+	sourceId: string,
+	options: {
+		title: string;
+		type: Extract<WikiPageType, "concept" | "entity">;
+		deleteOrphanPage?: boolean;
+	},
+): RemoveSourceRelationResult {
+	ensureL2Directories(l2DataDir);
+	const source = findManifestById(l2DataDir, sourceId);
+	if (!source) {
+		throw new Error(`Source not found: ${sourceId}`);
+	}
+	const relationTitle = options.title.trim();
+	if (!relationTitle) {
+		throw new Error("Relation title is required.");
+	}
+	if (options.type !== "concept" && options.type !== "entity") {
+		throw new Error("Relation type must be concept or entity.");
+	}
+
+	const sourcePagePath = source.primary_wiki_path ?? primaryWikiPath(source.wikiPages);
+	if (!sourcePagePath || !isSourceSummaryPath(sourcePagePath)) {
+		throw new Error(`Source has no source-summary page: ${sourceId}`);
+	}
+	const relationPage = findRelationPage(l2DataDir, options.type, relationTitle);
+	removeRelationLinkFromSourcePage(l2DataDir, sourcePagePath, relationTitle, relationPage);
+	const relationUpdate = removeSourceReferenceFromRelationPage(
+		l2DataDir,
+		source,
+		sourcePagePath,
+		relationPage,
+		options.deleteOrphanPage === true,
+	);
+
+	const updatedAt = new Date().toISOString();
+	const wikiPages = source.wikiPages.filter((page) => page !== relationPage);
+	const indexedEntry: ManifestEntry = {
+		...source,
+		wikiPages,
+		primary_wiki_path: sourcePagePath,
+		status: "indexed",
+		error_message: null,
+		updatedAt,
+	};
+	updateManifestEntry(l2DataDir, indexedEntry.id, () => indexedEntry);
+	rebuildIndex(l2DataDir, readManifest(l2DataDir));
+	appendLog(
+		l2DataDir,
+		"remove-relation",
+		indexedEntry.title,
+		[
+			`- ID: ${indexedEntry.id}`,
+			`- Source page: ${sourcePagePath}`,
+			`- Relation: ${relationTitle}`,
+			`- Relation type: ${options.type}`,
+			`- Relation page: ${relationPage}`,
+			`- Deleted orphan page: ${relationUpdate.deleted ? "yes" : "no"}`,
+			`- Remaining relation source ids: ${relationUpdate.remainingSourceIds.join(", ") || "none"}`,
+		].join("\n"),
+	);
+
+	return {
+		sourceId: indexedEntry.id,
+		title: indexedEntry.title,
+		rawPath: indexedEntry.rawPath,
+		sourcePagePath,
+		relationPagePath: relationPage,
+		relationTitle,
+		relationType: options.type,
+		wikiPages: indexedEntry.wikiPages,
+		status: "indexed",
+		deletedOrphanPage: relationUpdate.deleted,
+		updatedAt,
+	};
 }
 
 export function readRawTextPreview(l2DataDir: string, rawPath: string, maxChars = 12000): string {

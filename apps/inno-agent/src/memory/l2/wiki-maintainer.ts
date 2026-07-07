@@ -1,5 +1,5 @@
 import { readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { ensureDir, writeText, readText, appendText, fileExists } from "../../storage/file-store.js";
 import type { WikiPageFrontmatter, WikiPageType, ManifestEntry } from "./types.js";
 import { logger } from "../../logger.js";
@@ -296,10 +296,14 @@ export function createSourcePage(
 	entry: ManifestEntry,
 	summaryBody: string,
 	extractedPath?: string,
+	preferredPath?: string,
 ): string {
-	const dir = join(l2DataDir, "wiki", "sources");
-	ensureDir(dir);
 	const filename = sourcePageFilename(entry.title, entry.id);
+	const relativePath = preferredPath?.replace(/\\/g, "/").includes("wiki/sources/")
+		? preferredPath.replace(/\\/g, "/")
+		: join("wiki", "sources", filename);
+	const absPath = join(l2DataDir, relativePath);
+	ensureDir(dirname(absPath));
 	const fm: WikiPageFrontmatter = {
 		title: entry.title,
 		created: new Date().toISOString().slice(0, 10),
@@ -314,8 +318,8 @@ export function createSourcePage(
 	const ref = extractedPath ? `\n## 来源\n\n完整提取文本: \`${extractedPath}\`\n` : "";
 	const normalizedSummary = normalizeMarkdownForMilkdown(summaryBody);
 	const body = `\n# ${entry.title}\n\n${normalizedSummary}${ref}`;
-	writeText(join(dir, filename), serializeFrontmatter(fm) + body);
-	return join("wiki", "sources", filename);
+	writeText(absPath, serializeFrontmatter(fm) + body);
+	return relativePath;
 }
 
 // ============================================================================

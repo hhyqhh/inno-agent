@@ -20,6 +20,7 @@ import { summarizeContent } from "./summarizer.js";
 import { maintainLinkedWikiPages } from "./wiki-linker.js";
 import { readText } from "../../storage/file-store.js";
 import { parseDocument, DocumentParseError } from "./document-parser.js";
+import { addL2SourceRelation, regenerateL2Source, removeL2SourceRelation } from "./sources-service.js";
 import { logger } from "../../logger.js";
 
 /**
@@ -245,5 +246,125 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 		},
 	});
 
-	return [archiveTool, queryTool];
+	const regenerateTool = defineTool({
+		name: "l2_regenerate",
+		label: "Regenerate L2 knowledge",
+		description:
+			"Regenerate an existing L2 source from its original extracted content. " +
+			"Use this when the user asks to regenerate knowledge points, adjust the knowledge structure, rebuild concepts/entities, or refresh the source summary based on an existing source. " +
+			"This tool keeps the original raw material and SourceID; it must not be used to create a new material/source.",
+		parameters: Type.Object({
+			sourceId: Type.String({ description: "Existing L2 source id, for example l2src_xxxxxxxx." }),
+			regenerateTags: Type.Optional(Type.Boolean({ default: true, description: "Whether to recalculate source tags when supported." })),
+			regenerateLinks: Type.Optional(Type.Boolean({ default: true, description: "Whether to rebuild concept/entity links." })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (isEnabled && !isEnabled()) return l2DisabledResult();
+			ensureL2Directories(l2DataDir);
+			const result = await regenerateL2Source(l2DataDir, params.sourceId, {
+				regenerateTags: params.regenerateTags ?? true,
+				regenerateLinks: params.regenerateLinks ?? true,
+				model: ctx.model,
+				modelRegistry: ctx.modelRegistry,
+			});
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text:
+							`Regenerated existing L2 source without creating a new material.\n\n` +
+							`- ID: ${result.sourceId}\n` +
+							`- Title: ${result.title}\n` +
+							`- Raw material: ${result.rawPath}\n` +
+							`- Source summary: ${result.wikiPagePath}\n` +
+							`- Knowledge pages: ${result.wikiPages.join(", ") || "none"}`,
+					},
+				],
+				details: result,
+			};
+		},
+	});
+
+	const addRelationTool = defineTool({
+		name: "l2_add_relation",
+		label: "Add L2 knowledge relation",
+		description:
+			"Deterministically add a concept/entity relation to an existing L2 source. " +
+			"Use this when the user explicitly asks to add, attach, link, or associate a specific knowledge point with an existing material/source. " +
+			"This updates the source-summary, the concept/entity page, and the manifest. It keeps the original raw material and SourceID and must not create a new material.",
+		parameters: Type.Object({
+			sourceId: Type.String({ description: "Existing L2 source id, for example l2src_xxxxxxxx." }),
+			title: Type.String({ description: "Knowledge point title to add, for example KMP 算法 or Segment Tree." }),
+			type: StringEnum(["concept", "entity"] as const, {
+				description: "Use concept for methods/ideas/skills, entity for concrete named projects/people/organizations/products.",
+			}),
+			description: Type.Optional(Type.String({ description: "Optional sentence explaining why this relation belongs to the source." })),
+		}),
+		async execute(_toolCallId, params) {
+			if (isEnabled && !isEnabled()) return l2DisabledResult() as any;
+			ensureL2Directories(l2DataDir);
+			const result = addL2SourceRelation(l2DataDir, params.sourceId, {
+				title: params.title,
+				type: params.type as "concept" | "entity",
+				description: params.description,
+			});
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text:
+							`Added knowledge relation to existing L2 source without creating a new material.\n\n` +
+							`- ID: ${result.sourceId}\n` +
+							`- Source summary: ${result.sourcePagePath}\n` +
+							`- Relation: ${result.relationTitle} (${result.relationType})\n` +
+							`- Relation page: ${result.relationPagePath}`,
+					},
+				],
+				details: result,
+			};
+		},
+	});
+
+	const removeRelationTool = defineTool({
+		name: "l2_remove_relation",
+		label: "Remove L2 knowledge relation",
+		description:
+			"Deterministically disconnect a concept/entity relation from an existing L2 source. " +
+			"Use this when the user explicitly asks to remove, detach, unlink, or disconnect a specific knowledge point from an existing material/source. " +
+			"This keeps the original raw material and SourceID. By default it does not delete the concept/entity page; set deleteOrphanPage only when the user explicitly wants orphan relation pages removed.",
+		parameters: Type.Object({
+			sourceId: Type.String({ description: "Existing L2 source id, for example l2src_xxxxxxxx." }),
+			title: Type.String({ description: "Knowledge point title to disconnect, for example KMP 算法 or Segment Tree." }),
+			type: StringEnum(["concept", "entity"] as const, {
+				description: "Use concept for methods/ideas/skills, entity for concrete named projects/people/organizations/products.",
+			}),
+			deleteOrphanPage: Type.Optional(Type.Boolean({ default: false, description: "Delete the relation page only if it becomes orphaned after disconnecting this source." })),
+		}),
+		async execute(_toolCallId, params) {
+			if (isEnabled && !isEnabled()) return l2DisabledResult() as any;
+			ensureL2Directories(l2DataDir);
+			const result = removeL2SourceRelation(l2DataDir, params.sourceId, {
+				title: params.title,
+				type: params.type as "concept" | "entity",
+				deleteOrphanPage: params.deleteOrphanPage ?? false,
+			});
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text:
+							`Removed knowledge relation from existing L2 source without deleting the material.\n\n` +
+							`- ID: ${result.sourceId}\n` +
+							`- Source summary: ${result.sourcePagePath}\n` +
+							`- Relation: ${result.relationTitle} (${result.relationType})\n` +
+							`- Relation page: ${result.relationPagePath}\n` +
+							`- Deleted orphan page: ${result.deletedOrphanPage ? "yes" : "no"}`,
+					},
+				],
+				details: result,
+			};
+		},
+	});
+
+	return [archiveTool, queryTool, regenerateTool, addRelationTool, removeRelationTool];
 }

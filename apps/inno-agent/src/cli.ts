@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+import { setMaxListeners } from "node:events";
 import { installFetchLogger } from "./utils/fetch-logger.js";
 import { main, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "./config.js";
@@ -17,6 +18,7 @@ process.title = "inno";
 // timeout (retry.provider.timeoutMs, default 10 min) should fire first; this
 // ensures a hung connection can't live longer than 15 minutes even if the
 // provider timeout fails to abort.
+setMaxListeners(50);
 setGlobalDispatcher(new EnvHttpProxyAgent({ bodyTimeout: 900_000, headersTimeout: 0 }));
 installFetchLogger();
 

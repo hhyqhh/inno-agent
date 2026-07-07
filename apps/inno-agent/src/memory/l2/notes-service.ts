@@ -41,7 +41,7 @@ import {
 	serializeFrontmatter,
 } from "./wiki-maintainer.js";
 import { summarizeContent } from "./summarizer.js";
-import { maintainLinkedWikiPages } from "./wiki-linker.js";
+import { maintainLinkedWikiPages, readSourceKnowledgeRelations } from "./wiki-linker.js";
 import { logger } from "../../logger.js";
 import {
 	deleteAttachmentsForNote,
@@ -432,21 +432,32 @@ export async function archiveL2Note(
 	};
 
 	let summaryBody = content;
-	if (options.model && options.modelRegistry) {
+	if (!existing && options.model && options.modelRegistry) {
 		const summary = await summarizeContent(options.model, options.modelRegistry, title, content);
 		if (summary) summaryBody = summary;
 	}
 
-	const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody);
+	const existingSourcePagePath = existing?.primary_wiki_path ?? primaryWikiPath(existing?.wikiPages ?? []);
+	const existingLinkedPages = (existing?.wikiPages ?? []).filter((page) => !page.includes("wiki/sources/"));
+	const wikiPagePath = existing
+		? existingSourcePagePath ?? ""
+		: createSourcePage(l2DataDir, entry, summaryBody, undefined, existingSourcePagePath);
+	const graphReferencePath = wikiPagePath || normalizedPath;
+	const currentRelations = readSourceKnowledgeRelations(l2DataDir, existing?.wikiPages ?? []);
 	const linkMaintenance = await maintainLinkedWikiPages(
 		l2DataDir,
 		entry,
-		wikiPagePath,
-		summaryBody,
+		graphReferencePath,
+		existing ? content : summaryBody,
 		options.model,
 		options.modelRegistry,
+		existing ? { currentRelations } : undefined,
 	);
-	entry.wikiPages = [wikiPagePath, ...linkMaintenance.pages];
+	const linkedPages = existing
+		? [...new Set([...existingLinkedPages, ...linkMaintenance.pages])]
+		: linkMaintenance.pages;
+	entry.wikiPages = wikiPagePath ? [wikiPagePath, ...linkedPages] : linkedPages;
+	entry.primary_wiki_path = wikiPagePath || existing?.primary_wiki_path;
 	entry.status = "indexed";
 	entry.updatedAt = new Date().toISOString();
 

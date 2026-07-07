@@ -43,6 +43,7 @@ function rawFileName(rawPath: string): string {
 export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 	const { t } = useTranslation();
 	const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+	const [tagsOpen, setTagsOpen] = useState(false);
 	const templateMenuRef = useRef<HTMLDivElement>(null);
 	const uploadRef = useRef<HTMLInputElement>(null);
 	const state = useStoreSnapshot(notesStore, () => ({
@@ -334,14 +335,20 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 							{t("notes.tabs.archived", { count: state.archivedCount })}
 						</button>
 					</div>
+					{state.filterTag || visibleTagSummaries.length > 0 ? (
 					<div className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-2">
-						<div className="mb-1.5 flex items-center justify-between gap-2">
-							<span className="text-[11px] font-medium uppercase tracking-wide text-[var(--inno-text-subtle)]">
-								{t("notes.properties.tags")}
-							</span>
-						{state.filterTag ? (
+						<div className="flex items-center justify-between gap-2">
 							<button
 								type="button"
+								className="inline-flex min-w-0 flex-1 items-center gap-1 text-left text-[11px] font-medium uppercase tracking-wide text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]"
+								onClick={() => setTagsOpen((open) => !open)}
+							>
+								<ChevronDown size={13} className={`shrink-0 transition-transform ${tagsOpen ? "" : "-rotate-90"}`} />
+								<span className="truncate">{t("notes.properties.tags")}</span>
+							</button>
+							{state.filterTag ? (
+								<button
+									type="button"
 									className="inline-flex max-w-[150px] items-center gap-1 rounded-full bg-[var(--inno-accent-soft)] px-2 py-0.5 text-xs text-[var(--inno-accent)] ring-1 ring-blue-100"
 								onClick={() => notesStore.setFilterTag(null)}
 									title={state.filterTag}
@@ -349,26 +356,29 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 									<span className="truncate">{state.filterTag}</span>
 									<X size={12} className="shrink-0" />
 							</button>
+							) : null}
+						</div>
+						{tagsOpen ? (
+							<div className="mt-1.5 flex max-h-24 flex-wrap content-start gap-1.5 overflow-y-auto pr-1">
+								{visibleTagSummaries.slice(0, 24).map((tag) => (
+									<button
+										key={tag.displayName}
+										type="button"
+										className={`max-w-full rounded-full px-2 py-0.5 text-xs transition-colors ${
+											state.filterTag?.toLowerCase() === tag.displayName.toLowerCase()
+												? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100"
+												: "bg-[var(--inno-surface)] text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]"
+										}`}
+										onClick={() => notesStore.setFilterTag(tag.displayName)}
+										title={tag.displayName}
+									>
+										<span className="block truncate">{tag.displayName}</span>
+									</button>
+								))}
+							</div>
 						) : null}
-						</div>
-						<div className="flex max-h-24 flex-wrap content-start gap-1.5 overflow-y-auto pr-1">
-							{visibleTagSummaries.slice(0, 24).map((tag) => (
-								<button
-									key={tag.displayName}
-									type="button"
-									className={`max-w-full rounded-full px-2 py-0.5 text-xs transition-colors ${
-										state.filterTag?.toLowerCase() === tag.displayName.toLowerCase()
-											? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100"
-											: "bg-[var(--inno-surface)] text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]"
-									}`}
-									onClick={() => notesStore.setFilterTag(tag.displayName)}
-									title={tag.displayName}
-								>
-									<span className="block truncate">{tag.displayName}</span>
-								</button>
-							))}
-						</div>
 					</div>
+					) : null}
 				</div>
 
 				<div className="min-h-0 flex-1 overflow-y-auto">

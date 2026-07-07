@@ -4,6 +4,7 @@ import "source-map-support/register.js";
 
 import { createServer, type IncomingMessage as HttpReq, type ServerResponse } from "node:http";
 import { spawnSync } from "node:child_process";
+import { setMaxListeners } from "node:events";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
@@ -93,6 +94,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 // timeout (retry.provider.timeoutMs, default 10 min) should fire first; this
 // ensures a hung connection can't live longer than 15 minutes even if the
 // provider timeout fails to abort.
+setMaxListeners(50);
 setGlobalDispatcher(new EnvHttpProxyAgent({ bodyTimeout: 900_000, headersTimeout: 0 }));
 installFetchLogger();
 

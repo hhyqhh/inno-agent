@@ -63,7 +63,7 @@ export interface QuestionnaireResult {
 export type ChatStreamEvent =
 	| { type: "text_delta"; delta: string }
 	| { type: "thinking_delta"; delta: string }
-	| { type: "tool_call_delta"; toolCallId: string; toolName: string; args?: unknown; argsText?: string; argsDelta?: string }
+	| { type: "tool_call_delta"; toolCallId: string; toolName: string; args?: unknown; argsDelta?: string }
 	| { type: "tool_start"; toolCallId: string; toolName: string; args: unknown }
 	| { type: "tool_end"; toolCallId: string; toolName: string; result: unknown; isError: boolean }
 	| { type: "workspace_change"; changes: WorkspaceFileChange[]; toolCallId?: string; toolName?: string; workspaceId?: string; truncated?: boolean }

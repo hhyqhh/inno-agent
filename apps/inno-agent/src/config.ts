@@ -350,13 +350,16 @@ export function upsertProvider(
 	config: InnoConfig,
 	providerId: string,
 	provider: InnoProviderConfig,
-	options: { makeDefault?: boolean; preserveApiKey?: boolean } = {},
+	options: { makeDefault?: boolean; preserveApiKey?: boolean; preserveHeaders?: boolean } = {},
 ): InnoConfig {
 	const id = providerId.trim();
 	if (!id) throw new Error("Provider id is required");
 	const existing = config.providers[id];
 	const normalized = normalizeProviderConfig({
 		...provider,
+		headers: options.preserveHeaders && existing && provider.headers === undefined
+			? existing.headers
+			: provider.headers,
 		apiKey:
 			options.preserveApiKey && existing && (!provider.apiKey || provider.apiKey.startsWith("****"))
 				? existing.apiKey

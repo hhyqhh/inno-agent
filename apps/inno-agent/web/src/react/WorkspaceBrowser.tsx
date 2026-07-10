@@ -473,12 +473,11 @@ function StreamingPreviewPane({ preview, onToggleSidebar, sidebarOpen }: { previ
 					<Sparkles size={12} className="shrink-0 text-[var(--inno-accent)]" />
 					<span className="truncate">{t("preview.streamingHint", "长内容正在右侧生成，聊天区只保留摘要。")}</span>
 				</div>
-				{preview.content ? (
-					isMarkdownPreview ? (
-						<div className="px-4 py-3 text-[13px] leading-relaxed text-[var(--inno-text)] [overflow-wrap:anywhere]">
-							<markdown-artifact content={normalizeMarkdownMath(preview.content)} />
-							{isStreaming ? <span className="inno-stream-cursor" aria-hidden="true" /> : null}
-						</div>
+					{preview.content ? (
+						isMarkdownPreview && !isStreaming ? (
+							<div className="px-4 py-3 text-[13px] leading-relaxed text-[var(--inno-text)] [overflow-wrap:anywhere]">
+								<markdown-artifact content={normalizeMarkdownMath(preview.content)} />
+							</div>
 					) : (
 						<pre className="min-h-full whitespace-pre-wrap break-words px-4 py-3 font-mono text-[12px] leading-relaxed text-[var(--inno-text)] [overflow-wrap:anywhere]">
 							{preview.content}

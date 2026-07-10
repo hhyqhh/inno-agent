@@ -154,8 +154,8 @@ function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; classNam
 	const detail = useMemo(() => {
 		if (!open) return "";
 		return JSON.stringify({
-			args: compactForDisplay(tool.args),
-			result: compactForDisplay(tool.result),
+			args: tool.args,
+			result: tool.result,
 		}, null, 2);
 	}, [open, tool.args, tool.result]);
 
@@ -169,35 +169,6 @@ function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; classNam
 			) : null}
 		</details>
 	);
-}
-
-function compactForDisplay(value: unknown): unknown {
-	return compactDisplayValue(value, new WeakSet<object>(), 0);
-}
-
-function compactDisplayValue(value: unknown, seen: WeakSet<object>, depth: number): unknown {
-	if (typeof value === "string") {
-		if (value.length <= 1600) return value;
-		return `${value.slice(0, 1600)}\n\n[已省略 ${value.length - 1600} 个字符]`;
-	}
-	if (value == null || typeof value !== "object") return value;
-	if (seen.has(value)) return "[循环引用]";
-	seen.add(value);
-	if (depth >= 4) return "[内容层级较深，已折叠]";
-	if (Array.isArray(value)) {
-		const items = value.slice(0, 24).map((item) => compactDisplayValue(item, seen, depth + 1));
-		if (value.length > 24) items.push(`[已省略 ${value.length - 24} 项]`);
-		return items;
-	}
-	const record = value as Record<string, unknown>;
-	const entries = Object.entries(record).slice(0, 32);
-	const result: Record<string, unknown> = {};
-	for (const [key, item] of entries) {
-		result[key] = compactDisplayValue(item, seen, depth + 1);
-	}
-	const remaining = Object.keys(record).length - entries.length;
-	if (remaining > 0) result.__truncated = `已省略 ${remaining} 个字段`;
-	return result;
 }
 
 function MessageBubble({ message, showChannel }: { message: ChatMessage; showChannel?: boolean }) {

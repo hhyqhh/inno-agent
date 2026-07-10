@@ -132,6 +132,8 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 
 	updateStreamingPreview(id: string, patch: Partial<Pick<StreamingWorkspacePreview, "title" | "path" | "language" | "content" | "status" | "stage">>): void {
 		if (!this.streamingPreview || this.streamingPreview.id !== id) return;
+		const keys = ["title", "path", "language", "content", "status", "stage"] as const;
+		if (!keys.some((key) => key in patch && patch[key] !== this.streamingPreview?.[key])) return;
 		this.streamingPreview = {
 			...this.streamingPreview,
 			...patch,
@@ -142,6 +144,7 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 
 	finishStreamingPreview(id: string, status: "done" | "error" = "done"): void {
 		if (!this.streamingPreview || this.streamingPreview.id !== id) return;
+		if (this.streamingPreview.status === status) return;
 		this.streamingPreview = {
 			...this.streamingPreview,
 			status,

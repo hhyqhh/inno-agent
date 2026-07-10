@@ -4,11 +4,13 @@ import type { InlineImage } from "../api/chat.js";
 import type { ChatMessage, ChatStreamEvent, ChatToolRecord, PendingQuestion, QuestionnaireResult, WorkspaceFileChange } from "../types/chat.js";
 import { notebookStore } from "./notebook-store.js";
 import { appStore } from "./app-store.js";
-import { workspaceStore } from "./workspace-store.js";
+import { workspaceStore, type StreamingWorkspacePreview } from "./workspace-store.js";
 
 type StreamingTarget = "chat" | "workspace";
 
 const STREAM_CHANGE_INTERVAL_MS = 80;
+
+type StreamingPreviewPatch = Partial<Pick<StreamingWorkspacePreview, "title" | "path" | "language" | "content" | "status" | "stage">>;
 
 interface ChatStoreEvents {
 	change: void;
@@ -42,15 +44,16 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	private workspacePreviewId: string | null = null;
 	private fileToolPaths = new Map<string, string>();
 	private fileToolArgText = new Map<string, string>();
+	private completedFileToolIds = new Set<string>();
+	private previewChangeTimer: ReturnType<typeof setTimeout> | null = null;
+	private pendingPreviewUpdate: { id: string; patch: StreamingPreviewPatch } | null = null;
 
 	async send(prompt: string, images?: InlineImage[]): Promise<void> {
 		if ((!prompt.trim() && !images?.length) || this.isSending) return;
 		this.detachMode = false;
 		this.resetStreamTimers();
 		this.streamingTarget = "chat";
-		this.workspacePreviewId = null;
-		this.fileToolPaths.clear();
-		this.fileToolArgText.clear();
+		this.resetWorkspaceStreamState();
 
 		// Capture the target session at send time to prevent misalignment
 		// if the user switches sessions while the request is queued.
@@ -130,9 +133,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			this.detachMode = false;
 			this.pendingQuestion = null;
 			this.resetStreamTimers();
-			this.workspacePreviewId = null;
-			this.fileToolPaths.clear();
-			this.fileToolArgText.clear();
+			this.resetWorkspaceStreamState({ flushPreview: true });
 			const shouldRefreshWiki = this.wikiInvalidated;
 			this.wikiInvalidated = false;
 			this.emit("change", undefined);
@@ -192,9 +193,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.activeTools = [];
 		this.completedTools = [];
 		this.detachMode = false;
-		this.workspacePreviewId = null;
-		this.fileToolPaths.clear();
-		this.fileToolArgText.clear();
+		this.resetWorkspaceStreamState();
 		const controller = new AbortController();
 		this.abortController = controller;
 		this.emit("change", undefined);
@@ -239,9 +238,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			this.detachMode = false;
 			this.pendingQuestion = null;
 			this.resetStreamTimers();
-			this.workspacePreviewId = null;
-			this.fileToolPaths.clear();
-			this.fileToolArgText.clear();
+			this.resetWorkspaceStreamState({ flushPreview: true });
 			this.emit("change", undefined);
 			void import("./sessions-store.js").then((m) => m.sessionsStore.refresh());
 		}
@@ -265,7 +262,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				this.scheduleStreamChange();
 				break;
 			case "tool_call_delta":
-				this.maybePrepareFileToolPreview(event.toolCallId, event.toolName, event.args, event.argsText, event.argsDelta);
+				this.maybePrepareFileToolPreview(event.toolCallId, event.toolName, event.args, event.argsDelta);
 				break;
 			case "tool_start":
 				this.flushStreamChange();
@@ -298,16 +295,14 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				if (mutatesWiki(event.toolName)) {
 					this.wikiInvalidated = true;
 				}
-				if (event.toolName === "create_practice_lab" && !event.isError) {
-					void handlePracticeLabResult(event.result);
-				}
 				this.emit("change", undefined);
 				break;
 			case "workspace_change":
-				this.handleWorkspaceChange(event.changes);
+				this.handleWorkspaceChange(event);
 				break;
 			case "error":
 				this.flushStreamChange();
+				this.flushPreviewChange();
 				// Keep the error separate from the reply text so the UI can render
 				// it as a distinct, collapsible block rather than inline markdown.
 				this.streamingError = this.streamingError
@@ -361,48 +356,58 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	}
 
 	private maybeStartFileToolPreview(toolCallId: string, toolName: string, args: unknown): void {
+		if (!isFileWritingTool(toolName)) {
+			this.setStreamingActivity("正在执行工具", toolName);
+			return;
+		}
+		this.maybePrepareFileToolPreview(toolCallId, toolName, args);
+		this.flushPreviewChange();
 		const rawArgsText = this.fileToolArgText.get(toolCallId);
-		const filePath = this.fileToolPaths.get(toolCallId) ?? extractToolFilePath(args) ?? (rawArgsText ? extractToolFilePath(rawArgsText) : undefined);
-		this.setStreamingActivity(filePath ? fileToolExecutionLabel(toolName) : "正在执行文件操作", filePath ?? "");
-		if (this.workspacePreviewId === `tool-${toolCallId}`) {
-			workspaceStore.updateStreamingPreview(this.workspacePreviewId, {
+		const filePath = this.fileToolPaths.get(toolCallId) ?? extractToolFilePath(args) ?? extractToolFilePath(rawArgsText);
+		this.setStreamingActivity(fileToolExecutionLabel(toolName), filePath ?? "");
+		const previewId = `tool-${toolCallId}`;
+		if (this.workspacePreviewId === previewId) {
+			workspaceStore.updateStreamingPreview(previewId, {
 				stage: fileToolExecutionLabel(toolName),
 				status: "streaming",
 			});
 		}
-		this.maybePrepareFileToolPreview(toolCallId, toolName, args);
 	}
 
-	private maybePrepareFileToolPreview(toolCallId: string, toolName: string, args: unknown, argsText?: string, argsDelta?: string): void {
+	private maybePrepareFileToolPreview(toolCallId: string, toolName: string, args: unknown, argsDelta?: string): void {
 		if (!isFileWritingTool(toolName)) return;
-		const rawArgsText = this.updateToolArgText(toolCallId, argsText, argsDelta);
-		const filePath = extractToolFilePath(args) ?? (rawArgsText ? extractToolFilePath(rawArgsText) : undefined);
+		const rawArgsText = this.updateToolArgText(toolCallId, argsDelta);
+		const filePath = extractToolFilePath(args) ?? extractToolFilePath(rawArgsText);
 		if (filePath) this.fileToolPaths.set(toolCallId, filePath);
-		const content = extractToolContent(args) ?? (rawArgsText ? extractToolContent(rawArgsText) : undefined);
+		const resolvedPath = this.fileToolPaths.get(toolCallId);
+		const content = extractToolContent(args) ?? extractToolContent(rawArgsText);
+		if (!resolvedPath && content === undefined) return;
 		const hasContent = typeof content === "string" && content.length > 0;
 		const id = `tool-${toolCallId}`;
-		const title = filePath
-			? `${fileToolActionLabel(toolName)} ${filePath}`
+		const title = resolvedPath
+			? `${fileToolActionLabel(toolName)} ${resolvedPath}`
 			: `${fileToolActionLabel(toolName)}文件`;
-		const language = filePath ? languageFromPath(filePath) : "plaintext";
+		const language = resolvedPath ? languageFromPath(resolvedPath) : "plaintext";
 		const stage = hasContent ? "正在生成内容" : "正在准备文件";
-		this.setStreamingActivity(stage, filePath ?? "");
+		this.setStreamingActivity(stage, resolvedPath ?? "");
+		this.streamingTarget = "workspace";
 		this.workspacePreviewId = id;
-		revealWorkspacePreview();
 		if (workspaceStore.streamingPreview?.id === id) {
-			workspaceStore.updateStreamingPreview(id, {
+			this.schedulePreviewChange(id, {
 				title,
-				path: filePath,
+				path: resolvedPath,
 				language,
 				content: content ?? workspaceStore.streamingPreview.content,
 				status: "streaming",
 				stage,
 			});
 		} else {
+			this.flushPreviewChange();
+			revealWorkspacePreview();
 			workspaceStore.startStreamingPreview({
 				id,
 				title,
-				path: filePath,
+				path: resolvedPath,
 				language,
 				content: content ?? "",
 				stage,
@@ -413,40 +418,76 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 
 	private maybeFinishFileToolPreview(toolCallId: string, toolName: string, result: unknown, isError: boolean): void {
 		if (!isFileWritingTool(toolName)) return;
+		this.flushPreviewChange();
 		const rawArgsText = this.fileToolArgText.get(toolCallId);
-		const filePath = this.fileToolPaths.get(toolCallId) ?? extractToolFilePath(result) ?? (rawArgsText ? extractToolFilePath(rawArgsText) : undefined);
+		const filePath = this.fileToolPaths.get(toolCallId) ?? extractToolFilePath(result) ?? extractToolFilePath(rawArgsText);
 		if (!filePath && this.workspacePreviewId !== `tool-${toolCallId}`) return;
 		const previewId = `tool-${toolCallId}`;
-		if (this.workspacePreviewId === previewId) {
+		const isActivePreview = this.workspacePreviewId === previewId;
+		if (isActivePreview) {
 			workspaceStore.finishStreamingPreview(previewId, isError ? "error" : "done");
 		}
+		this.fileToolArgText.delete(toolCallId);
+		this.fileToolPaths.delete(toolCallId);
+		if (isActivePreview) this.workspacePreviewId = null;
+		this.streamingTarget = "chat";
 		if (!isError && filePath) {
-			this.setStreamingActivity("正在检查文件变化", filePath);
-			this.streamingTarget = "chat";
+			this.completedFileToolIds.add(toolCallId);
+			this.setStreamingActivity("正在刷新文件预览", filePath);
+			void openChangedWorkspacePath(filePath, isActivePreview ? previewId : undefined);
 		}
 	}
 
-	private handleWorkspaceChange(changes: WorkspaceFileChange[]): void {
-		if (!changes.length) return;
-		const previewId = this.workspacePreviewId;
-		const target = pickOpenableWorkspaceChange(changes);
+	private handleWorkspaceChange(event: Extract<ChatStreamEvent, { type: "workspace_change" }>): void {
+		if (!event.changes.length || (event.toolCallId && this.completedFileToolIds.has(event.toolCallId))) return;
+		const eventPreviewId = event.toolCallId ? `tool-${event.toolCallId}` : null;
+		const previewId = eventPreviewId && this.workspacePreviewId === eventPreviewId ? eventPreviewId : null;
+		const target = pickOpenableWorkspaceChange(event.changes);
 		this.setStreamingActivity("正在刷新文件预览", target?.path ?? "");
 		if (previewId) workspaceStore.finishStreamingPreview(previewId, "done");
-		this.streamingTarget = "chat";
-		this.workspacePreviewId = null;
+		if (previewId) {
+			this.streamingTarget = "chat";
+			this.workspacePreviewId = null;
+		}
 		void openChangedWorkspacePath(target?.path, previewId ?? undefined);
 	}
 
-	private updateToolArgText(toolCallId: string, argsText?: string, argsDelta?: string): string {
+	private updateToolArgText(toolCallId: string, argsDelta?: string): string {
 		const previous = this.fileToolArgText.get(toolCallId) ?? "";
-		let next = previous;
-		if (typeof argsText === "string" && argsText.length >= previous.length) {
-			next = argsText;
-		} else if (typeof argsDelta === "string" && argsDelta.length > 0) {
-			next = previous + argsDelta;
-		}
+		const next = typeof argsDelta === "string" && argsDelta.length > 0 ? previous + argsDelta : previous;
 		if (next !== previous) this.fileToolArgText.set(toolCallId, next);
 		return next;
+	}
+
+	private schedulePreviewChange(id: string, patch: StreamingPreviewPatch): void {
+		if (this.pendingPreviewUpdate && this.pendingPreviewUpdate.id !== id) this.flushPreviewChange();
+		this.pendingPreviewUpdate = {
+			id,
+			patch: { ...(this.pendingPreviewUpdate?.patch ?? {}), ...patch },
+		};
+		if (this.previewChangeTimer) return;
+		this.previewChangeTimer = setTimeout(() => this.flushPreviewChange(), STREAM_CHANGE_INTERVAL_MS);
+	}
+
+	private flushPreviewChange(): void {
+		if (this.previewChangeTimer) clearTimeout(this.previewChangeTimer);
+		this.previewChangeTimer = null;
+		const pending = this.pendingPreviewUpdate;
+		this.pendingPreviewUpdate = null;
+		if (pending) workspaceStore.updateStreamingPreview(pending.id, pending.patch);
+	}
+
+	private resetWorkspaceStreamState(options: { flushPreview?: boolean } = {}): void {
+		if (options.flushPreview) this.flushPreviewChange();
+		else {
+			if (this.previewChangeTimer) clearTimeout(this.previewChangeTimer);
+			this.previewChangeTimer = null;
+			this.pendingPreviewUpdate = null;
+		}
+		this.workspacePreviewId = null;
+		this.fileToolPaths.clear();
+		this.fileToolArgText.clear();
+		this.completedFileToolIds.clear();
 	}
 
 	async submitQuestionResponse(questionId: string, result: QuestionnaireResult): Promise<void> {
@@ -485,9 +526,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.completedTools = [];
 		this.pendingQuestion = null;
 		this.resetStreamTimers();
-		this.workspacePreviewId = null;
-		this.fileToolPaths.clear();
-		this.fileToolArgText.clear();
+		this.resetWorkspaceStreamState();
 		this.emit("change", undefined);
 	}
 
@@ -504,9 +543,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.activeTools = [];
 		this.completedTools = [];
 		this.resetStreamTimers();
-		this.workspacePreviewId = null;
-		this.fileToolPaths.clear();
-		this.fileToolArgText.clear();
+		this.resetWorkspaceStreamState();
 		this.emit("change", undefined);
 	}
 
@@ -527,30 +564,6 @@ function mutatesWiki(toolName: string): boolean {
 	return toolName === "l2_archive" || toolName === "l2_link_pages" || toolName.startsWith("wiki_");
 }
 
-/**
- * Reaction to a successful create_practice_lab tool call: refresh the
- * workspace tree, open the main file in the preview panel, and switch the
- * right-side tab to "preview" so the user immediately sees the new lab.
- */
-async function handlePracticeLabResult(result: unknown): Promise<void> {
-	// Result is the details object as serialized by PI. Be defensive about shape.
-	let mainFile: string | undefined;
-	if (result && typeof result === "object") {
-		const r = result as Record<string, unknown>;
-		const details = (r.details && typeof r.details === "object" ? r.details : r) as Record<string, unknown>;
-		if (typeof details.mainFile === "string") mainFile = details.mainFile;
-	}
-	try {
-		appStore.setRightPanelTab("preview");
-		await workspaceStore.loadTree();
-		if (mainFile) {
-			await workspaceStore.selectFile(mainFile);
-		}
-	} catch {
-		// best-effort — non-fatal if any store import fails
-	}
-}
-
 const FILE_EXTENSIONS = [
 	"ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "md", "markdown", "html", "htm",
 	"css", "scss", "less", "json", "jsonl", "yaml", "yml", "toml", "sh", "bash",
@@ -568,16 +581,13 @@ function revealWorkspacePreview(): void {
 
 function isFileWritingTool(toolName: string): boolean {
 	const name = toolName.toLowerCase();
-	return name.includes("write")
-		|| name.includes("edit")
-		|| name.includes("patch")
-		|| name.includes("save")
-		|| name.includes("create")
-		|| name.includes("upload")
-		|| name.includes("rename")
-		|| name.includes("move")
-		|| name.includes("delete")
-		|| name.includes("remove");
+	if (["write", "edit", "patch", "apply_patch", "create_practice_lab"].includes(name)) return true;
+	const tokens = name.split(/[^a-z0-9]+/).filter(Boolean);
+	const hasFileTarget = tokens.some((token) => token === "file" || token === "files" || token === "workspace");
+	const hasWriteAction = tokens.some((token) => [
+		"write", "edit", "patch", "save", "create", "upload", "rename", "move", "delete", "remove",
+	].includes(token));
+	return hasFileTarget && hasWriteAction;
 }
 
 function fileToolActionLabel(toolName: string): string {
@@ -613,6 +623,12 @@ function extractToolContent(args: unknown): string | undefined {
 	for (const key of ["content", "text", "new_content", "file_content", "body"]) {
 		if (typeof record[key] === "string") return record[key];
 	}
+	if (Array.isArray(record.files)) {
+		const entries = record.files.filter((file): file is Record<string, unknown> => Boolean(file) && typeof file === "object");
+		const mainFile = typeof record.mainFile === "string" ? record.mainFile : undefined;
+		const selected = entries.find((file) => mainFile && file.path === mainFile) ?? entries[0];
+		if (selected && typeof selected.content === "string") return selected.content;
+	}
 	const editPreview = extractEditPreview(record);
 	if (editPreview) return editPreview;
 	return undefined;
@@ -624,6 +640,13 @@ function extractPathFromValue(value: unknown, seen: WeakSet<object>, depth: numb
 	if (typeof value !== "object") return undefined;
 	if (seen.has(value)) return undefined;
 	seen.add(value);
+	if (Array.isArray(value)) {
+		for (const child of value) {
+			const path = extractPathFromValue(child, seen, depth + 1, keyHint);
+			if (path) return path;
+		}
+		return undefined;
+	}
 	const record = value as Record<string, unknown>;
 	const priorityKeys = [
 		"targetPath", "target_path", "newPath", "new_path", "outputPath", "output_path",
@@ -640,12 +663,6 @@ function extractPathFromValue(value: unknown, seen: WeakSet<object>, depth: numb
 	for (const [key, child] of Object.entries(record)) {
 		const path = extractPathFromValue(child, seen, depth + 1, key);
 		if (path) return path;
-	}
-	if (Array.isArray(value)) {
-		for (const child of value) {
-			const path = extractPathFromValue(child, seen, depth + 1, keyHint);
-			if (path) return path;
-		}
 	}
 	return undefined;
 }
@@ -689,9 +706,8 @@ function extractPartialJsonStringField(source: string, fieldNames: string[]): st
 		const match = pattern.exec(source);
 		if (!match) continue;
 		const start = match.index + match[0].length;
-		const raw = readJsonStringFragment(source, start);
-		const decoded = decodeJsonStringFragment(raw);
-		if (decoded) return decoded;
+		const decoded = decodeJsonStringFragment(readJsonStringFragment(source, start));
+		if (decoded !== undefined) return decoded;
 	}
 	return undefined;
 }
@@ -700,29 +716,28 @@ function readJsonStringFragment(source: string, start: number): string {
 	let result = "";
 	let escaped = false;
 	for (let i = start; i < source.length; i += 1) {
-		const ch = source[i];
+		const char = source[i];
 		if (escaped) {
-			result += ch;
+			result += char;
 			escaped = false;
 			continue;
 		}
-		if (ch === "\\") {
-			result += ch;
+		if (char === "\\") {
+			result += char;
 			escaped = true;
 			continue;
 		}
-		if (ch === "\"") break;
-		result += ch;
+		if (char === "\"") break;
+		result += char;
 	}
 	return result;
 }
 
 function decodeJsonStringFragment(raw: string): string | undefined {
 	if (!raw) return undefined;
-	let fragment = raw;
-	if (fragment.endsWith("\\")) fragment = fragment.slice(0, -1);
+	const fragment = raw.endsWith("\\") ? raw.slice(0, -1) : raw;
 	try {
-		return JSON.parse(`"${fragment}"`);
+		return JSON.parse(`"${fragment}"`) as string;
 	} catch {
 		return fragment
 			.replace(/\\n/g, "\n")

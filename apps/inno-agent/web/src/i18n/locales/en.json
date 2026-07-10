@@ -224,6 +224,8 @@
 			"saved": "Saved",
 			"polished": "AI polish applied; review and save when ready",
 			"polishedWithTemplate": "Polished with the “{{template}}” template; review and save when ready",
+			"polishedWithTags": "AI polish applied with suggested tags: {{tags}}; review and save when ready",
+			"polishedWithTemplateAndTags": "Polished with the “{{template}}” template and suggested tags: {{tags}}; review and save when ready",
 			"archived": "Archived",
 			"unarchived": "Unarchived — moved back to drafts",
 			"deleted": "Deleted",

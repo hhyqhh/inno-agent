@@ -45,6 +45,7 @@ import { validateCron } from "./scheduler/cron-utils.js";
 import { parseFrontmatter, serializeFrontmatter } from "./memory/l2/wiki-maintainer.js";
 import { readManifest, removeWikiPathFromManifest } from "./memory/l2/manifest-store.js";
 import {
+	canonicalizeTag,
 	listTags,
 	rebuildTagIndex,
 	suggestTags,
@@ -4003,6 +4004,20 @@ const server = createServer(async (req, res) => {
 			try {
 				const templates = listNoteTemplates(paths.codeDir)
 					.filter((template) => !template.hidden && template.id !== "blank");
+				const existingTagByCanonical = new Map<string, string>();
+				const rememberExistingTag = (tag: string) => {
+					const displayName = tag.trim();
+					const canonicalKey = canonicalizeTag(displayName);
+					if (canonicalKey && !existingTagByCanonical.has(canonicalKey)) {
+						existingTagByCanonical.set(canonicalKey, displayName);
+					}
+				};
+				// Prefer the note's current spelling, then the persisted tag index and
+				// finally tags found on other notebook entries.
+				tags.forEach(rememberExistingTag);
+				listTags(l2DataDir).forEach((tag) => rememberExistingTag(tag.displayName));
+				listL2Notes(l2DataDir).notes.forEach((note) => note.tags.forEach(rememberExistingTag));
+				const existingTagLibrary = [...existingTagByCanonical.values()].slice(0, 200);
 				const templateCatalog = templates.map((template) => [
 					`ID: ${template.id}`,
 					`名称: ${template.label}`,
@@ -4011,13 +4026,48 @@ const server = createServer(async (req, res) => {
 					template.body.slice(0, 3000),
 				].join("\n")).join("\n\n---\n\n");
 				const sourceExcerpt = content.slice(0, 60_000);
-				const classifyPrompt = `你是笔记模板分类器。请判断下面的笔记是否明确符合某个模板的用途与结构。\n\n` +
+				const classifyPrompt = `你是笔记模板与标签分析器。请判断下面的笔记是否明确符合某个模板的用途与结构，并推荐 3–6 个准确标签。\n\n` +
 					`笔记标题：${title}\n标签：${tags.join(", ") || "无"}\n笔记内容：\n---\n${sourceExcerpt}\n---\n\n` +
 					`可选模板：\n${templateCatalog}\n\n` +
-					`只输出一个模板 ID；如果没有明显匹配，输出 none。不要解释。`;
-				const classification = await completePromptOnce(classifyPrompt, 64, 45_000);
-				const selectionTokens = classification.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
+					`用户已有标签库：${existingTagLibrary.join("、") || "无"}\n` +
+					`标签要求：简洁、具体、便于长期检索；必须优先从用户已有标签库中选择含义相同或适合的标签，并原样返回该标签；仅在标签库确实没有合适标签时创建新标签；不要使用“笔记”“内容”“总结”等过泛标签。\n` +
+					`只输出 JSON，不要解释：{"templateId":"模板ID或none","tags":["标签1","标签2"]}`;
+				// Reasoning models count hidden reasoning against maxTokens. Leave enough
+				// room for them to finish reasoning and still emit the requested JSON.
+				const classification = await completePromptOnce(classifyPrompt, 2048, 60_000);
+				let selectedTemplateId = "none";
+				let suggestedTags: string[] = [];
+				try {
+					const jsonStart = classification.indexOf("{");
+					const jsonEnd = classification.lastIndexOf("}");
+					const parsedClassification = JSON.parse(classification.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>;
+					if (typeof parsedClassification.templateId === "string") selectedTemplateId = parsedClassification.templateId.trim();
+					if (Array.isArray(parsedClassification.tags)) {
+						const seen = new Set<string>();
+						suggestedTags = parsedClassification.tags
+							.filter((tag): tag is string => typeof tag === "string")
+							.map((tag) => tag.trim().replace(/^[#＃]+/, ""))
+							.filter((tag) => {
+								const key = tag.toLowerCase();
+								if (!tag || tag.length > 30 || seen.has(key)) return false;
+								seen.add(key);
+								return true;
+							})
+							.slice(0, 6);
+					}
+				} catch {
+					selectedTemplateId = classification.trim();
+				}
+				const reconciledTags = new Map<string, string>();
+				for (const tag of suggestedTags) {
+					const canonicalKey = canonicalizeTag(tag);
+					if (!canonicalKey || reconciledTags.has(canonicalKey)) continue;
+					reconciledTags.set(canonicalKey, existingTagByCanonical.get(canonicalKey) ?? tag.trim());
+				}
+				suggestedTags = [...reconciledTags.values()].slice(0, 6);
+				const selectionTokens = selectedTemplateId.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
 				const matchedTemplate = templates.find((template) => selectionTokens.includes(template.id.toLowerCase()));
+				logger.info({ rawPath, templateId: matchedTemplate?.id ?? null, suggestedTags, existingTagCount: existingTagByCanonical.size }, "note polish analysis completed");
 				const structureInstruction = matchedTemplate
 					? `请按照“${matchedTemplate.label}”模板的章节与组织方式润色。模板如下：\n---\n${matchedTemplate.body}\n---`
 					: "没有匹配的固定模板。请根据内容类型自行选择最清晰、自然的 Markdown 结构进行润色。";
@@ -4038,6 +4088,7 @@ const server = createServer(async (req, res) => {
 					content: normalizeMarkdownForMilkdown(polished),
 					templateId: matchedTemplate?.id ?? null,
 					templateLabel: matchedTemplate?.label ?? null,
+					suggestedTags,
 				});
 			} catch (err) {
 				logger.warn({ err, rawPath }, "failed to polish note");

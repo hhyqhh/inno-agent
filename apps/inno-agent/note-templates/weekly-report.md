@@ -9,8 +9,6 @@ title: 周报
 titleEn: Weekly report
 ---
 
-# 第XX周工作总结
-
 ## 本周完成
 
 ### 项目A

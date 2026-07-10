@@ -4,7 +4,7 @@ export interface ParsedNoteFrontmatter {
 	hasFrontmatter: boolean;
 }
 
-const FRONTMATTER_PATTERN = /^(?:\uFEFF)?---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+const FRONTMATTER_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n)?([\s\S]*)$/;
 
 export function parseNoteFrontmatter(markdown: string): ParsedNoteFrontmatter {
 	const match = markdown.match(FRONTMATTER_PATTERN);
@@ -13,7 +13,7 @@ export function parseNoteFrontmatter(markdown: string): ParsedNoteFrontmatter {
 	}
 
 	const attributes: { key: string; value: string }[] = [];
-	for (const line of match[1].split("\n")) {
+	for (const line of match[1].split(/\r?\n/)) {
 		const property = line.match(/^(\w+):\s*(.*)$/);
 		if (!property) continue;
 		attributes.push({ key: property[1], value: property[2] });

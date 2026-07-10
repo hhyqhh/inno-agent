@@ -79,6 +79,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		tagSummaries: notesStore.tagSummaries,
 		notice: notesStore.notice,
 		polishTemplateLabel: notesStore.polishTemplateLabel,
+		polishSuggestedTags: notesStore.polishSuggestedTags,
 		error: notesStore.error,
 	}));
 
@@ -452,7 +453,10 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 				<section className="inno-notes-panel-detail flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
 				{state.notice ? (
 					<p className="border-b border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-						{t(`notes.flash.${state.notice}`, { template: state.polishTemplateLabel ?? "" })}
+						{t(`notes.flash.${state.notice}`, {
+							template: state.polishTemplateLabel ?? "",
+							tags: state.polishSuggestedTags.join("、"),
+						})}
 					</p>
 				) : null}
 				{state.error ? (

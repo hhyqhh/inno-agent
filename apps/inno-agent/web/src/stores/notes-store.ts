@@ -59,6 +59,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	error: string | null = null;
 	notice: string | null = null;
 	polishTemplateLabel: string | null = null;
+	polishSuggestedTags: string[] = [];
 	private archiveQueue: Promise<unknown> = Promise.resolve();
 
 	get isDirty(): boolean {
@@ -122,6 +123,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		this.error = null;
 		this.notice = null;
 		this.polishTemplateLabel = null;
+		this.polishSuggestedTags = [];
 	}
 
 	setSearchQuery(query: string) {
@@ -400,7 +402,17 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			if (this.selected?.rawPath !== rawPath) return;
 			this.editorContent = result.content;
 			this.polishTemplateLabel = result.templateLabel;
-			this.notice = result.templateLabel ? "polishedWithTemplate" : "polished";
+			const tagsByKey = new Map(this.editorTags.map((tag) => [tag.trim().replace(/\s+/g, " ").toLowerCase(), tag.trim()]));
+			for (const tag of result.suggestedTags) {
+				const trimmed = tag.trim();
+				const key = trimmed.replace(/\s+/g, " ").toLowerCase();
+				if (key && !tagsByKey.has(key)) tagsByKey.set(key, trimmed);
+			}
+			this.editorTags = [...tagsByKey.values()].slice(0, 12);
+			this.polishSuggestedTags = result.suggestedTags;
+			this.notice = result.suggestedTags.length > 0
+				? (result.templateLabel ? "polishedWithTemplateAndTags" : "polishedWithTags")
+				: (result.templateLabel ? "polishedWithTemplate" : "polished");
 		} catch {
 			if (this.selected?.rawPath === rawPath) this.error = "polishFailed";
 		} finally {

@@ -121,6 +121,7 @@ export interface PolishNoteResult {
 	content: string;
 	templateId: string | null;
 	templateLabel: string | null;
+	suggestedTags: string[];
 }
 
 export type NoteListBox = "drafts" | "archived";

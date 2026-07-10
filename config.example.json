@@ -61,5 +61,13 @@
 		"l1Enabled": true,
 		"l2Enabled": true,
 		"l3Enabled": true
+	},
+	"meeting": {
+		"enabled": false,
+		"websocketUrl": "wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference/",
+		"apiKey": "",
+		"model": "fun-asr-realtime",
+		"vocabularyId": "",
+		"maxSentenceSilenceMs": 800
 	}
 }

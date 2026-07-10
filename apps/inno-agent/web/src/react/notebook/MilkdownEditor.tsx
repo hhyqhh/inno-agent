@@ -2,7 +2,8 @@ import { Crepe } from "@milkdown/crepe";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
 import { replaceAll } from "@milkdown/kit/utils";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 export interface MilkdownEditorProps {
@@ -10,6 +11,7 @@ export interface MilkdownEditorProps {
 	onChange: (markdown: string) => void;
 	editorKey?: string;
 	readOnly?: boolean;
+	toolbarAction?: ReactNode;
 }
 
 function splitMarkdownFrontmatter(markdown: string): { frontmatter: string; body: string } {
@@ -23,7 +25,7 @@ function splitMarkdownFrontmatter(markdown: string): { frontmatter: string; body
 	};
 }
 
-export function MilkdownEditor({ value, onChange, editorKey, readOnly = false }: MilkdownEditorProps) {
+export function MilkdownEditor({ value, onChange, editorKey, readOnly = false, toolbarAction }: MilkdownEditorProps) {
 	const { i18n, t } = useTranslation();
 	const rootRef = useRef<HTMLDivElement>(null);
 	const crepeRef = useRef<Crepe | null>(null);
@@ -35,6 +37,7 @@ export function MilkdownEditor({ value, onChange, editorKey, readOnly = false }:
 	const readOnlyRef = useRef(readOnly);
 	const [ready, setReady] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [toolbarTarget, setToolbarTarget] = useState<HTMLElement | null>(null);
 
 	useEffect(() => {
 		valueRef.current = value;
@@ -58,6 +61,7 @@ export function MilkdownEditor({ value, onChange, editorKey, readOnly = false }:
 		}
 
 		root.replaceChildren();
+		setToolbarTarget(null);
 		readyRef.current = false;
 		setReady(false);
 		setError(null);
@@ -103,6 +107,7 @@ export function MilkdownEditor({ value, onChange, editorKey, readOnly = false }:
 				readyRef.current = true;
 				setReady(true);
 				crepe.setReadonly(readOnlyRef.current);
+				setToolbarTarget(root.querySelector<HTMLElement>(".milkdown-top-bar .top-bar-inner"));
 			})
 			.catch((createError) => {
 				if (disposed) {
@@ -114,6 +119,7 @@ export function MilkdownEditor({ value, onChange, editorKey, readOnly = false }:
 		return () => {
 			disposed = true;
 			readyRef.current = false;
+			setToolbarTarget(null);
 			if (crepeRef.current === crepe) {
 				crepeRef.current = null;
 			}
@@ -157,11 +163,16 @@ export function MilkdownEditor({ value, onChange, editorKey, readOnly = false }:
 					aria-label={i18n.language.startsWith("zh") ? "Markdown 源码编辑器" : "Markdown source editor"}
 				/>
 			) : (
-				<div
-					ref={rootRef}
-					className="inno-milkdown-editor-root min-h-0 flex-1"
-					aria-label={i18n.language.startsWith("zh") ? "Markdown 编辑器" : "Markdown editor"}
-				/>
+				<>
+					<div
+						ref={rootRef}
+						className="inno-milkdown-editor-root min-h-0 flex-1"
+						aria-label={i18n.language.startsWith("zh") ? "Markdown 编辑器" : "Markdown editor"}
+					/>
+					{toolbarTarget && toolbarAction
+						? createPortal(<div className="inno-milkdown-toolbar-actions">{toolbarAction}</div>, toolbarTarget)
+						: null}
+				</>
 			)}
 		</div>
 	);

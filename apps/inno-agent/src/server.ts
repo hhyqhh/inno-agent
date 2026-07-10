@@ -72,6 +72,7 @@ import {
 	uploadNoteAttachment,
 } from "./memory/l2/note-attachments-service.js";
 import { listNoteTemplates } from "./memory/l2/note-templates.js";
+import { normalizeMarkdownForMilkdown } from "./memory/l2/markdown-normalizer.js";
 import { loadProfile, saveProfile } from "./memory/learner/profile-store.js";
 import type { LearnerProfile, LearningGoal, KnowledgeState, Misconception, LearnerPreferences } from "./memory/learner/types.js";
 import { randomUUID } from "node:crypto";
@@ -83,6 +84,7 @@ import { listPresets, listRemotePresets, ensurePresetCached, instantiatePreset }
 import { createContentSource, type RemoteContentSource } from "./content-source/index.js";
 import { RunRecordStore } from "./terminal/run-record-store.js";
 import { TerminalSessionManager } from "./terminal/terminal-session-manager.js";
+import { MeetingManager } from "./meeting/meeting-manager.js";
 import type { ClientTerminalEvent, ServerTerminalEvent } from "./terminal/terminal-types.js";
 import { WebSocketServer, type WebSocket } from "ws";
 
@@ -128,6 +130,7 @@ let channelRegistry!: ChannelRegistry;
 let workspaceRegistry!: WorkspaceRegistry;
 let runRecordStore!: RunRecordStore;
 let terminalManager!: TerminalSessionManager;
+let meetingManager!: MeetingManager;
 let feishuChannel: FeishuChannel | null = null;
 let wechatChannel: WeChatChannel | null = null;
 let dispatcher: PersonalChannelDispatcher | null = null;
@@ -257,6 +260,12 @@ async function ensureBootstrapped(): Promise<void> {
 
 		runRecordStore = new RunRecordStore(join(dataDir, "runs"));
 		terminalManager = new TerminalSessionManager(workspaceRegistry, runRecordStore);
+		meetingManager = new MeetingManager({
+			l2DataDir,
+			codeDir: paths.codeDir,
+			getConfig: () => config.meeting,
+			summarize: (prompt) => completePromptOnce(prompt, 4096, 120_000),
+		});
 
 		// Resolve agent cwd per session based on its workspace binding.
 		setWorkspaceCwdResolver((sessionPath: string) => {
@@ -475,6 +484,7 @@ function providerModelToRuntimeModel(model: InnoModelConfig, provider: string, b
 function buildSafeSettings() {
 	const session = getSession();
 	const currentModel = session.model;
+	const { meeting: _meeting, ...publicConfig } = config;
 	const configuredModels = Object.entries(config.providers).flatMap(([providerId, providerConfig]) =>
 		providerConfig.models.map((model) => providerModelToRuntimeModel(model, providerId, providerConfig.baseUrl)),
 	);
@@ -489,7 +499,7 @@ function buildSafeSettings() {
 	}));
 
 	return {
-		...config,
+		...publicConfig,
 		defaultProvider: currentModel?.provider ?? config.defaultProvider,
 		defaultModel: currentModel?.id ?? config.defaultModel,
 		configuredModels,
@@ -3972,6 +3982,70 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		if (method === "POST" && url === "/api/l2/notes/polish") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim().replace(/\\/g, "/") : "";
+			const title = typeof body.title === "string" ? body.title.trim() : "";
+			const content = typeof body.content === "string" ? body.content.trim() : "";
+			const tags = Array.isArray(body.tags)
+				? body.tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+				: [];
+			if (!rawPath || !title || !content) {
+				json(res, 400, { error: "Missing rawPath, title, or content" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath || !rawPath.startsWith("raw/notes/") || !existsSync(fullPath)) {
+				json(res, 404, { error: "Note not found" });
+				return;
+			}
+
+			try {
+				const templates = listNoteTemplates(paths.codeDir)
+					.filter((template) => !template.hidden && template.id !== "blank");
+				const templateCatalog = templates.map((template) => [
+					`ID: ${template.id}`,
+					`名称: ${template.label}`,
+					`用途: ${template.description}`,
+					"结构示例:",
+					template.body.slice(0, 3000),
+				].join("\n")).join("\n\n---\n\n");
+				const sourceExcerpt = content.slice(0, 60_000);
+				const classifyPrompt = `你是笔记模板分类器。请判断下面的笔记是否明确符合某个模板的用途与结构。\n\n` +
+					`笔记标题：${title}\n标签：${tags.join(", ") || "无"}\n笔记内容：\n---\n${sourceExcerpt}\n---\n\n` +
+					`可选模板：\n${templateCatalog}\n\n` +
+					`只输出一个模板 ID；如果没有明显匹配，输出 none。不要解释。`;
+				const classification = await completePromptOnce(classifyPrompt, 64, 45_000);
+				const selectionTokens = classification.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
+				const matchedTemplate = templates.find((template) => selectionTokens.includes(template.id.toLowerCase()));
+				const structureInstruction = matchedTemplate
+					? `请按照“${matchedTemplate.label}”模板的章节与组织方式润色。模板如下：\n---\n${matchedTemplate.body}\n---`
+					: "没有匹配的固定模板。请根据内容类型自行选择最清晰、自然的 Markdown 结构进行润色。";
+				const polishPrompt = `你是严谨的中文笔记编辑。请润色下面的笔记。\n\n${structureInstruction}\n\n` +
+					`要求：\n` +
+					`1. 保留原文全部事实、数字、专有名词、链接、任务勾选状态和重要细节，不得虚构。\n` +
+					`2. 改善标题层级、段落、列表、表格和表达，删除明显重复，但不要把内容缩成过度简略的摘要。\n` +
+					`3. 模板要求但原文缺失的信息写“待补充”，不得自行猜测负责人、日期或结论。\n` +
+					`4. 使用当前笔记标题“${title}”作为一级标题，不要输出 YAML frontmatter。\n` +
+					`5. 只输出润色后的 Markdown 正文，不要解释，不要使用代码围栏包裹全文。\n\n` +
+					`原始笔记：\n---\n${sourceExcerpt}\n---`;
+				const polished = await completePromptOnce(polishPrompt, 8192, 120_000);
+				if (!polished.trim()) {
+					json(res, 502, { error: "Text model did not return polished content" });
+					return;
+				}
+				json(res, 200, {
+					content: normalizeMarkdownForMilkdown(polished),
+					templateId: matchedTemplate?.id ?? null,
+					templateLabel: matchedTemplate?.label ?? null,
+				});
+			} catch (err) {
+				logger.warn({ err, rawPath }, "failed to polish note");
+				json(res, 500, { error: err instanceof Error ? err.message : "Polish note failed" });
+			}
+			return;
+		}
+
 		if (method === "PUT" && url === "/api/l2/notes/content") {
 			const body = (await readBody(req)) as Record<string, unknown>;
 			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
@@ -4854,9 +4928,14 @@ const server = createServer(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 const wss = new WebSocketServer({ noServer: true });
+const meetingWss = new WebSocketServer({ noServer: true });
 server.on("upgrade", (req, socket, head) => {
 	const url = req.url ?? "";
-		if (!bootstrapped) { socket.destroy(); return; }
+	if (!bootstrapped) { socket.destroy(); return; }
+	if (url.split("?")[0] === "/api/meetings/ws") {
+		meetingWss.handleUpgrade(req, socket, head, (ws) => meetingManager.bind(ws));
+		return;
+	}
 	const m = /^\/api\/terminal\/sessions\/([^/?]+)\/ws$/.exec(url.split("?")[0]);
 	if (!m) {
 		socket.destroy();

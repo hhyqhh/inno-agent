@@ -135,6 +135,25 @@
 		}
 	},
 	"notes": {
+		"meeting": {
+			"start": "Record meeting",
+			"stop": "Stop recording",
+			"connecting": "Connecting speech recognition…",
+			"recording": "Recording meeting",
+			"summarizing": "Summarizing meeting notes…",
+			"summarizingHint": "The transcript is being organized into a summary, decisions, and action items. You may leave this page; the result remains a draft.",
+			"completed": "Meeting draft created",
+			"no_speech": "No speech was recognized",
+			"error": "Meeting processing failed",
+			"status": {
+				"recording": "Recording",
+				"summarizing": "Summarizing",
+				"completed": "Meeting draft",
+				"no_speech": "No speech recognized",
+				"failed": "Summary failed",
+				"interrupted": "Recording interrupted"
+			}
+		},
 		"search": "Search notes…",
 		"empty": "No notes yet. Upload files, create a draft, or pick a template.",
 		"selectHint": "Select an item on the left to edit or archive",
@@ -190,6 +209,8 @@
 			"templates": "Create from template",
 			"upload": "Upload file",
 			"save": "Save",
+			"polish": "Polish with AI",
+			"polishing": "AI is analyzing and polishing…",
 			"archive": "Archive to Wiki",
 			"rearchive": "Re-archive",
 			"unarchive": "Unarchive",
@@ -201,6 +222,8 @@
 			"created": "Draft created — it won't enter the knowledge graph yet",
 			"createdFromTemplate": "Draft created from template",
 			"saved": "Saved",
+			"polished": "AI polish applied; review and save when ready",
+			"polishedWithTemplate": "Polished with the “{{template}}” template; review and save when ready",
 			"archived": "Archived",
 			"unarchived": "Unarchived — moved back to drafts",
 			"deleted": "Deleted",
@@ -209,6 +232,7 @@
 			"loadContentFailed": "Failed to load note content",
 			"createFailed": "Failed to create note",
 			"saveFailed": "Save failed",
+			"polishFailed": "AI polish failed; check the active text model and try again",
 			"archiveFailed": "Archive failed",
 			"unarchiveFailed": "Unarchive failed",
 			"deleteFailed": "Delete failed",

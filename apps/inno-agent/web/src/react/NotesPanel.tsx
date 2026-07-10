@@ -15,6 +15,7 @@ import {
 	Plus,
 	RefreshCw,
 	Save,
+	Sparkles,
 	Trash2,
 	X,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import { notesStore } from "../stores/notes-store.js";
 import type { NoteSummary } from "../types/notes.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { useStoreSnapshot } from "./hooks.js";
+import { MeetingProgress, MeetingRecorder } from "./meetings/MeetingRecorder.js";
 
 interface NotesPanelProps {
 	onOpenWiki?(wikiPath: string): void;
@@ -66,6 +68,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		isLoadingPreview: notesStore.isLoadingPreview,
 		isCreating: notesStore.isCreating,
 		isSaving: notesStore.isSaving,
+		isPolishing: notesStore.isPolishing,
 		isArchiving: notesStore.isArchiving,
 		archivingRawPath: notesStore.archivingRawPath,
 		archivingRawPaths: notesStore.archivingRawPaths,
@@ -75,6 +78,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		filterTag: notesStore.filterTag,
 		tagSummaries: notesStore.tagSummaries,
 		notice: notesStore.notice,
+		polishTemplateLabel: notesStore.polishTemplateLabel,
 		error: notesStore.error,
 	}));
 
@@ -140,6 +144,11 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		selected &&
 		(selected.kind === "orphan" || (selected.kind === "markdown" && selected.status === "draft"));
 	const canSave = Boolean(selected && (isMarkdown || isRawEditableMarkdown));
+	const canPolish = Boolean(
+		selected?.kind === "markdown" &&
+		selected.meetingStatus !== "recording" &&
+		selected.meetingStatus !== "summarizing",
+	);
 	const isSelectedArchiving = Boolean(selected && state.archivingRawPaths.includes(selected.rawPath));
 	const tagSearchQuery = state.searchQuery.trim().toLowerCase();
 	const visibleTagSummaries = tagSearchQuery
@@ -301,6 +310,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						>
 							<FileUp size={13} />
 						</button>
+						<MeetingRecorder />
 						<button
 							type="button"
 							className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)]"
@@ -411,6 +421,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 									</div>
 									<div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--inno-text-muted)]">
 										<span>{statusLabel}</span>
+										{note.meetingStatus ? <span>{t(`notes.meeting.status.${note.meetingStatus}`)}</span> : null}
 										{note.size ? <span>{formatSize(note.size)}</span> : null}
 									</div>
 								</button>
@@ -441,7 +452,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 				<section className="inno-notes-panel-detail flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
 				{state.notice ? (
 					<p className="border-b border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-						{t(`notes.flash.${state.notice}`)}
+						{t(`notes.flash.${state.notice}`, { template: state.polishTemplateLabel ?? "" })}
 					</p>
 				) : null}
 				{state.error ? (
@@ -455,6 +466,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						{t("notes.flash.archiving", "正在归档到 Wiki...")}
 					</p>
 				) : null}
+				{selected ? <MeetingProgress rawPath={selected.rawPath} /> : null}
 
 				{!selected ? (
 					<div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--inno-text-muted)]">
@@ -476,12 +488,24 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 										onTagsChange={(tags) => notesStore.updateEditorTags(tags)}
 										onRecordDateChange={(recordDate) => notesStore.updateEditorRecordDate(recordDate)}
 									/>
-									<MilkdownEditor
-										key={selected.rawPath}
-										editorKey={selected.rawPath}
-										value={state.editorContent}
-										onChange={(value) => notesStore.updateEditorContent(value)}
-									/>
+					<MilkdownEditor
+						key={selected.rawPath}
+						editorKey={selected.rawPath}
+						value={state.editorContent}
+						onChange={(value) => notesStore.updateEditorContent(value)}
+						toolbarAction={canPolish ? (
+							<button
+								type="button"
+								className="top-bar-item inno-milkdown-polish-button"
+								disabled={state.isPolishing || state.isLoadingContent || !state.editorContent.trim() || isSelectedArchiving}
+								onClick={() => void notesStore.polishSelected()}
+								title={state.isPolishing ? t("notes.actions.polishing") : t("notes.actions.polish")}
+								aria-label={state.isPolishing ? t("notes.actions.polishing") : t("notes.actions.polish")}
+							>
+								{state.isPolishing ? <LoaderCircle size={17} className="animate-spin" /> : <Sparkles size={17} />}
+							</button>
+						) : undefined}
+					/>
 								</>
 							)}
 						</div>

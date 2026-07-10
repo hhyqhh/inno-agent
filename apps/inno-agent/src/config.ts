@@ -57,6 +57,15 @@ export interface InnoSimpleModeConfig {
 	enabled: boolean;
 }
 
+export interface InnoMeetingConfig {
+	enabled: boolean;
+	websocketUrl: string;
+	apiKey: string;
+	model: string;
+	vocabularyId: string;
+	maxSentenceSilenceMs: number;
+}
+
 /**
  * Content Hub. The single source for remotely-fetched, ready-to-use content:
  * the global skill library and the Simple Mode preset workspaces. Both used to
@@ -147,6 +156,7 @@ export interface InnoConfig {
 	subagents?: InnoSubagentsConfig;
 	memory?: InnoMemoryConfig;
 	simpleMode?: InnoSimpleModeConfig;
+	meeting?: InnoMeetingConfig;
 	ui?: {
 		theme: string;
 	};
@@ -206,6 +216,20 @@ export function normalizeSimpleModeConfig(simpleMode: Partial<InnoSimpleModeConf
 	// Simple Mode defaults OFF; only an explicit `true` enables it.
 	return {
 		enabled: simpleMode?.enabled === true,
+	};
+}
+
+export function normalizeMeetingConfig(meeting: Partial<InnoMeetingConfig> | undefined): InnoMeetingConfig {
+	const silence = meeting?.maxSentenceSilenceMs;
+	return {
+		enabled: meeting?.enabled === true,
+		websocketUrl: meeting?.websocketUrl?.trim() ?? "",
+		apiKey: meeting?.apiKey ?? "",
+		model: meeting?.model?.trim() || "fun-asr-realtime",
+		vocabularyId: meeting?.vocabularyId?.trim() ?? "",
+		maxSentenceSilenceMs: typeof silence === "number" && Number.isFinite(silence)
+			? Math.max(200, Math.min(5000, Math.trunc(silence)))
+			: 800,
 	};
 }
 
@@ -271,6 +295,7 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		subagents: config.subagents,
 		memory: normalizeMemoryConfig(config.memory),
 		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
+		meeting: normalizeMeetingConfig(config.meeting),
 		ui: config.ui,
 	} as InnoConfig;
 }

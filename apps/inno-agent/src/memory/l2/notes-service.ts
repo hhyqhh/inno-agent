@@ -21,6 +21,7 @@ import {
 	serializeNoteFile,
 	type NoteFrontmatter,
 	type NoteStatus,
+	type MeetingStatus,
 } from "./note-frontmatter.js";
 import { resolveNoteTemplateContent } from "./note-templates.js";
 import {
@@ -69,6 +70,8 @@ export interface NoteSummaryDto {
 	size?: number;
 	createdAt: string;
 	updatedAt: string;
+	meetingId?: string;
+	meetingStatus?: MeetingStatus;
 }
 
 export interface NoteContentDto {
@@ -83,6 +86,8 @@ export interface NoteContentDto {
 	attachments: NoteAttachmentRecord[];
 	createdAt: string;
 	updatedAt: string;
+	meetingId?: string;
+	meetingStatus?: MeetingStatus;
 }
 
 export interface NotesListResponse {
@@ -164,6 +169,8 @@ function noteSummaryFromFile(l2DataDir: string, rawPath: string): NoteSummaryDto
 			origin: "user_upload",
 			createdAt: frontmatter.created || statSync(join(l2DataDir, rawPath)).mtime.toISOString(),
 			updatedAt: frontmatter.updated || frontmatter.created || statSync(join(l2DataDir, rawPath)).mtime.toISOString(),
+			meetingId: frontmatter.meeting_id,
+			meetingStatus: frontmatter.meeting_status,
 		};
 	} catch (err) {
 		logger.warn({ err, rawPath }, "failed to read note file");
@@ -322,7 +329,29 @@ export function readNoteContent(l2DataDir: string, rawPath: string): NoteContent
 		attachments: listNoteAttachments(l2DataDir, normalizedPath),
 		createdAt: frontmatter.created,
 		updatedAt: frontmatter.updated,
+		meetingId: frontmatter.meeting_id,
+		meetingStatus: frontmatter.meeting_status,
 	};
+}
+
+export function saveL2MeetingDraft(
+	l2DataDir: string,
+	rawPath: string,
+	options: { meetingId: string; meetingStatus: MeetingStatus; content: string; title?: string; tags?: string[] },
+): { rawPath: string; status: NoteStatus; meetingStatus: MeetingStatus } {
+	const normalizedPath = rawPath.replace(/\\/g, "/");
+	const { absPath, frontmatter } = readNoteFile(l2DataDir, normalizedPath);
+	const nextFrontmatter: NoteFrontmatter = {
+		...frontmatter,
+		title: options.title?.trim() || frontmatter.title,
+		tags: options.tags ?? frontmatter.tags,
+		status: "draft",
+		meeting_id: options.meetingId,
+		meeting_status: options.meetingStatus,
+		updated: new Date().toISOString(),
+	};
+	writeText(absPath, serializeNoteFile(nextFrontmatter, options.content));
+	return { rawPath: normalizedPath, status: "draft", meetingStatus: options.meetingStatus };
 }
 
 export function createL2Note(

@@ -8,6 +8,7 @@ import {
 	fetchNoteContent,
 	fetchRawContent,
 	listNotes,
+	polishNote,
 	saveNoteContent,
 	saveRawMarkdownContent,
 	unarchiveNote,
@@ -47,6 +48,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	isLoadingPreview = false;
 	isCreating = false;
 	isSaving = false;
+	isPolishing = false;
 	isArchiving = false;
 	archivingRawPath: string | null = null;
 	archivingRawPaths: string[] = [];
@@ -56,6 +58,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	deletingAttachmentId: string | null = null;
 	error: string | null = null;
 	notice: string | null = null;
+	polishTemplateLabel: string | null = null;
 	private archiveQueue: Promise<unknown> = Promise.resolve();
 
 	get isDirty(): boolean {
@@ -118,6 +121,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	clearMessages() {
 		this.error = null;
 		this.notice = null;
+		this.polishTemplateLabel = null;
 	}
 
 	setSearchQuery(query: string) {
@@ -376,6 +380,31 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			return false;
 		} finally {
 			this.isSaving = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async polishSelected(): Promise<void> {
+		if (!this.selected || this.selected.kind !== "markdown" || !this.editorContent.trim() || this.isPolishing) return;
+		const rawPath = this.selected.rawPath;
+		this.isPolishing = true;
+		this.clearMessages();
+		this.emit("change", undefined);
+		try {
+			const result = await polishNote({
+				rawPath,
+				title: this.editorTitle.trim() || this.selected.title,
+				tags: [...this.editorTags],
+				content: this.editorContent,
+			});
+			if (this.selected?.rawPath !== rawPath) return;
+			this.editorContent = result.content;
+			this.polishTemplateLabel = result.templateLabel;
+			this.notice = result.templateLabel ? "polishedWithTemplate" : "polished";
+		} catch {
+			if (this.selected?.rawPath === rawPath) this.error = "polishFailed";
+		} finally {
+			this.isPolishing = false;
 			this.emit("change", undefined);
 		}
 	}

@@ -421,6 +421,47 @@ inno-workspace-panel textarea {
 	line-height: 1;
 }
 
+.inno-stream-status-dot {
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	border-radius: 999px;
+	background: var(--inno-success);
+	box-shadow: 0 0 0 3px var(--inno-success-bg);
+}
+
+.inno-stream-status-dot.is-streaming {
+	animation: inno-stream-pulse 1.2s ease-in-out infinite;
+}
+
+.inno-stream-cursor {
+	display: inline-block;
+	width: 7px;
+	height: 1.1em;
+	margin-left: 2px;
+	vertical-align: -0.18em;
+	background: var(--inno-accent);
+	animation: inno-stream-caret 1s steps(1, end) infinite;
+}
+
+@keyframes inno-stream-pulse {
+	0%, 100% {
+		opacity: 0.45;
+	}
+	50% {
+		opacity: 1;
+	}
+}
+
+@keyframes inno-stream-caret {
+	0%, 49% {
+		opacity: 1;
+	}
+	50%, 100% {
+		opacity: 0;
+	}
+}
+
 .inno-sidebar-scope {
 	font-size: 12px;
 	line-height: 1.35;

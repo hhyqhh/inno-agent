@@ -20,6 +20,9 @@ export interface InnoProviderSettings {
 	baseUrl: string;
 	apiKey: string; // masked
 	api?: string;
+	headers?: Record<string, string>;
+	authHeader?: boolean;
+	bypassProxy?: boolean;
 	models: InnoProviderModel[];
 }
 
@@ -28,6 +31,9 @@ export interface UpsertProviderRequest {
 	baseUrl: string;
 	apiKey: string;
 	api: string;
+	headers?: Record<string, string>;
+	authHeader?: boolean;
+	bypassProxy?: boolean;
 	models: InnoProviderModel[];
 	makeDefault?: boolean;
 	preserveApiKey?: boolean;

@@ -17,8 +17,8 @@ import { cpp } from "@codemirror/lang-cpp";
 import { rust } from "@codemirror/lang-rust";
 import { go } from "@codemirror/lang-go";
 import type { Extension } from "@codemirror/state";
-import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, FileCode2, Presentation, FileSpreadsheet } from "lucide-react";
-import { workspaceStore } from "../stores/workspace-store.js";
+import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, FileCode2, Presentation, FileSpreadsheet, Copy, Check } from "lucide-react";
+import { workspaceStore, type StreamingWorkspacePreview } from "../stores/workspace-store.js";
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
@@ -400,6 +400,106 @@ function CodeEditorPane({ value, onChange, lang }: { value: string; onChange: (v
 	);
 }
 
+function StreamingPreviewPane({ preview, onToggleSidebar, sidebarOpen }: { preview: StreamingWorkspacePreview; onToggleSidebar: () => void; sidebarOpen: boolean }) {
+	const { t } = useTranslation();
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const [copied, setCopied] = useState(false);
+	const isStreaming = preview.status === "streaming";
+	const lineCount = preview.content ? preview.content.split(/\r\n|\r|\n/).length : 0;
+	const isMarkdownPreview = isStreamingMarkdownPreview(preview);
+	const statusLabel = isStreaming
+		? preview.stage ?? t("preview.streamingGenerating", "正在生成")
+		: preview.status === "error"
+			? t("preview.streamingError", "生成中断")
+			: t("preview.streamingDone", "生成完成");
+
+	useEffect(() => {
+		if (!isStreaming) return;
+		const el = scrollRef.current;
+		if (el) el.scrollTop = el.scrollHeight;
+	}, [preview.content, isStreaming]);
+
+	const copyContent = useCallback(() => {
+		if (!preview.content) return;
+		void navigator.clipboard?.writeText(preview.content).then(() => {
+			setCopied(true);
+			window.setTimeout(() => setCopied(false), 1200);
+		});
+	}, [preview.content]);
+
+	return (
+		<div className="flex h-full flex-col">
+			<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
+				<div className="flex min-w-0 flex-1 items-center gap-2">
+					<button
+						className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+						onClick={onToggleSidebar}
+						title={sidebarOpen ? t("common.collapseSidebar", "收起侧栏") : t("common.expandSidebar", "展开侧栏")}
+					>
+						{sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+					</button>
+					<span className={`inno-stream-status-dot ${isStreaming ? "is-streaming" : ""}`} />
+					<div className="min-w-0">
+						<div className="truncate text-sm font-medium">{preview.title}</div>
+						<div className="truncate text-[10px] text-[var(--inno-text-muted)]">
+							{statusLabel}
+							{preview.path ? ` · ${preview.path}` : ""}
+							{lineCount ? ` · ${lineCount} ${t("preview.streamingLines", "行")}` : ""}
+						</div>
+					</div>
+				</div>
+				<div className="flex items-center gap-1.5">
+					<button
+						disabled={!preview.content}
+						className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:cursor-not-allowed disabled:opacity-40"
+						onClick={copyContent}
+					>
+						{copied ? <Check size={12} /> : <Copy size={12} />}
+						{copied ? t("common.copied", "已复制") : t("common.copy", "复制")}
+					</button>
+					{isStreaming ? null : (
+						<button
+							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							title={t("preview.streamingClose", "关闭生成预览")}
+							onClick={() => workspaceStore.clearStreamingPreview(preview.id)}
+						>
+							<X size={14} />
+						</button>
+					)}
+				</div>
+			</div>
+			<div ref={scrollRef} className="workspace-scroll min-h-0 flex-1 overflow-auto bg-[var(--inno-surface)]">
+				<div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-4 py-2 text-[10px] text-[var(--inno-text-muted)]">
+					<Sparkles size={12} className="shrink-0 text-[var(--inno-accent)]" />
+					<span className="truncate">{t("preview.streamingHint", "长内容正在右侧生成，聊天区只保留摘要。")}</span>
+				</div>
+				{preview.content ? (
+					isMarkdownPreview ? (
+						<div className="px-4 py-3 text-[13px] leading-relaxed text-[var(--inno-text)] [overflow-wrap:anywhere]">
+							<markdown-artifact content={normalizeMarkdownMath(preview.content)} />
+							{isStreaming ? <span className="inno-stream-cursor" aria-hidden="true" /> : null}
+						</div>
+					) : (
+						<pre className="min-h-full whitespace-pre-wrap break-words px-4 py-3 font-mono text-[12px] leading-relaxed text-[var(--inno-text)] [overflow-wrap:anywhere]">
+							{preview.content}
+							{isStreaming ? <span className="inno-stream-cursor" aria-hidden="true" /> : null}
+						</pre>
+					)
+				) : (
+					<div className="flex h-full items-center justify-center px-4 text-sm text-[var(--inno-text-muted)]">
+						{t("preview.streamingWaiting", "等待模型开始输出…")}
+					</div>
+				)}
+			</div>
+		</div>
+	);
+}
+
+function isStreamingMarkdownPreview(preview: StreamingWorkspacePreview): boolean {
+	const name = `${preview.path ?? ""} ${preview.title}`.toLowerCase();
+	return preview.language === "markdown" || name.includes(".md") || name.includes(".markdown");
+}
+
 /* ---------- File Content Pane (preview + edit) ---------- */
 
 function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: () => void; sidebarOpen: boolean }) {
@@ -412,9 +512,14 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 		editBuffer: workspaceStore.editBuffer,
 		isSaving: workspaceStore.isSaving,
 		error: workspaceStore.error,
+		streamingPreview: workspaceStore.streamingPreview,
 	}));
 
 	const canEdit = state.file != null && isEditable(state.file.kind);
+
+	if (state.streamingPreview) {
+		return <StreamingPreviewPane preview={state.streamingPreview} onToggleSidebar={onToggleSidebar} sidebarOpen={sidebarOpen} />;
+	}
 
 	if (state.isEditing && state.file) {
 		const isMd = state.file.kind === "markdown";

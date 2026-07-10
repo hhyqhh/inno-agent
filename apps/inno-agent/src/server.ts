@@ -11,6 +11,7 @@ import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, deleteModel, normalizeContentHubConfig, type InnoConfig, type InnoContentHubConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
 import { installFetchLogger } from "./utils/fetch-logger.js";
+import { applyProviderProxyBypass } from "./utils/proxy-bypass.js";
 import { ensureDir, readJson, readText, writeJson, writeText } from "./storage/file-store.js";
 import {
 	createNewSession,
@@ -142,6 +143,9 @@ function piEventToSseEvent(event: any): unknown | null {
 			const ev = event.assistantMessageEvent;
 			if (ev.type === "text_delta") return { type: "text_delta", delta: ev.delta };
 			if (ev.type === "thinking_delta") return { type: "thinking_delta", delta: ev.delta };
+			if (ev.type === "toolcall_start" || ev.type === "toolcall_delta" || ev.type === "toolcall_end") {
+				return toolCallStreamEventFromAssistantEvent(ev);
+			}
 			if (ev.type === "error") return { type: "error", message: ev.error.errorMessage || `LLM API error (stopReason: ${ev.error.stopReason})` };
 			return null;
 		}
@@ -156,9 +160,55 @@ function piEventToSseEvent(event: any): unknown | null {
 			return { type: "tool_start", toolCallId: event.toolCallId, toolName: event.toolName, args: event.args };
 		case "tool_execution_end":
 			return { type: "tool_end", toolCallId: event.toolCallId, toolName: event.toolName, result: event.result, isError: event.isError };
+		case "tool_call":
+			return { type: "tool_call_delta", toolCallId: event.toolCallId, toolName: event.toolName, args: event.input };
 		default:
 			return null;
 	}
+}
+
+function toolCallStreamEventFromAssistantEvent(ev: any): unknown | null {
+	const content = Array.isArray(ev.partial?.content) ? ev.partial.content : [];
+	const block = typeof ev.contentIndex === "number" ? content[ev.contentIndex] : undefined;
+	if (!block || typeof block !== "object" || block.type !== "toolCall") return null;
+	const toolCallId = typeof block.id === "string" && block.id ? block.id : `content-${ev.contentIndex}`;
+	const toolName = typeof block.name === "string" ? block.name : "";
+	if (!toolName) return null;
+	const argsText = typeof block.partialJson === "string"
+		? block.partialJson
+		: typeof block.partialArgs === "string"
+			? block.partialArgs
+			: undefined;
+	return {
+		type: "tool_call_delta",
+		toolCallId,
+		toolName,
+		args: block.arguments,
+		argsText,
+		argsDelta: typeof ev.delta === "string" ? ev.delta : undefined,
+	};
+}
+
+function piEventToSseEvents(event: any): unknown[] {
+	const primary = piEventToSseEvent(event);
+	const events = primary ? [primary] : [];
+	if (event.type !== "message_update") return events;
+	const ev = event.assistantMessageEvent;
+	if (ev?.type === "toolcall_start" || ev?.type === "toolcall_delta" || ev?.type === "toolcall_end") return events;
+	const content = Array.isArray(event.message?.content) ? event.message.content : [];
+	for (const block of content) {
+		if (!block || typeof block !== "object" || block.type !== "toolCall") continue;
+		const toolCallId = typeof block.id === "string" ? block.id : "";
+		const toolName = typeof block.name === "string" ? block.name : "";
+		if (!toolCallId || !toolName) continue;
+		events.push({
+			type: "tool_call_delta",
+			toolCallId,
+			toolName,
+			args: block.arguments,
+		});
+	}
+	return events;
 }
 
 /** Convert a raw PI SDK event to a ChannelStreamEvent for channel streaming replies. */
@@ -202,6 +252,7 @@ async function ensureBootstrapped(): Promise<void> {
 
 		// ---- config (loaded lazily, not at process start) ----
 		config = loadConfig(paths.configPath);
+		applyProviderProxyBypass(config);
 
 		// ---- data directories ----
 		ensureDir(paths.learnerDataDir);
@@ -531,6 +582,9 @@ function buildSafeSettings() {
 				{
 					...providerConfig,
 					apiKey: maskSecret(providerConfig.apiKey),
+					headers: providerConfig.headers
+						? Object.fromEntries(Object.entries(providerConfig.headers).map(([key, value]) => [key, maskSecret(value)]))
+						: undefined,
 				},
 			]),
 		),
@@ -570,6 +624,18 @@ function parseModelConfig(value: unknown): InnoModelConfig {
 	};
 }
 
+function parseStringHeaders(value: unknown): Record<string, string> | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const headers: Record<string, string> = {};
+	for (const [key, headerValue] of Object.entries(value as Record<string, unknown>)) {
+		const normalizedKey = key.trim();
+		if (normalizedKey && typeof headerValue === "string") {
+			headers[normalizedKey] = headerValue;
+		}
+	}
+	return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
 function parseProviderPayload(body: Record<string, unknown>): {
 	providerId: string;
 	provider: InnoProviderConfig;
@@ -583,11 +649,20 @@ function parseProviderPayload(body: Record<string, unknown>): {
 	const baseUrl = typeof body.baseUrl === "string" ? body.baseUrl.trim() : "";
 	const apiKey = typeof body.apiKey === "string" ? body.apiKey : "";
 	const api = typeof body.api === "string" ? body.api.trim() : "openai-completions";
+	const headers = parseStringHeaders(body.headers);
 	const rawModels = Array.isArray(body.models) ? body.models : [];
 	const models = rawModels.map(parseModelConfig);
 	return {
 		providerId,
-		provider: { baseUrl, apiKey, api, models },
+		provider: {
+			baseUrl,
+			apiKey,
+			api,
+			...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+			...(body.authHeader === true ? { authHeader: true } : {}),
+			...(body.bypassProxy === true ? { bypassProxy: true } : {}),
+			models,
+		},
 		makeDefault: Boolean(body.makeDefault),
 		preserveApiKey: Boolean(body.preserveApiKey),
 	};
@@ -1331,6 +1406,97 @@ interface WorkspaceTreeNode {
 
 function workspaceRelativePath(rootDir: string, filePath: string): string {
 	return relative(rootDir, filePath) || "";
+}
+
+interface WorkspaceFileSnapshot {
+	files: Map<string, { mtimeMs: number; size: number }>;
+	truncated: boolean;
+}
+
+interface WorkspaceFileChange {
+	path: string;
+	change: "created" | "modified" | "deleted";
+}
+
+const WORKSPACE_SNAPSHOT_IGNORES = new Set([
+	...WORKSPACE_IGNORES,
+	".git",
+	"node_modules",
+	"dist",
+	".next",
+	".vite",
+	"coverage",
+]);
+const MAX_WORKSPACE_SNAPSHOT_FILES = 2500;
+const MAX_WORKSPACE_SNAPSHOT_DEPTH = 8;
+const MAX_WORKSPACE_CHANGE_EVENTS = 40;
+
+function snapshotWorkspaceFiles(rootDir: string | null): WorkspaceFileSnapshot | null {
+	if (!rootDir || !existsSync(rootDir)) return null;
+	const files = new Map<string, { mtimeMs: number; size: number }>();
+	let truncated = false;
+
+	const visit = (dir: string, depth: number) => {
+		if (truncated || depth > MAX_WORKSPACE_SNAPSHOT_DEPTH) return;
+		let entries: import("node:fs").Dirent[];
+		try {
+			entries = readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return;
+		}
+		for (const entry of entries) {
+			if (truncated) return;
+			if (WORKSPACE_SNAPSHOT_IGNORES.has(entry.name)) continue;
+			const fullPath = join(dir, entry.name);
+			let stat: ReturnType<typeof statSync>;
+			try {
+				stat = statSync(fullPath);
+			} catch {
+				continue;
+			}
+			if (entry.isDirectory()) {
+				visit(fullPath, depth + 1);
+				continue;
+			}
+			if (!entry.isFile()) continue;
+			files.set(workspaceRelativePath(rootDir, fullPath), {
+				mtimeMs: stat.mtimeMs,
+				size: stat.size,
+			});
+			if (files.size >= MAX_WORKSPACE_SNAPSHOT_FILES) {
+				truncated = true;
+				return;
+			}
+		}
+	};
+
+	visit(rootDir, 0);
+	return { files, truncated };
+}
+
+function diffWorkspaceFileSnapshots(before: WorkspaceFileSnapshot | null, after: WorkspaceFileSnapshot | null): { changes: WorkspaceFileChange[]; truncated: boolean } {
+	if (!before || !after) return { changes: [], truncated: false };
+	const changes: WorkspaceFileChange[] = [];
+	for (const [path, next] of after.files) {
+		const prev = before.files.get(path);
+		if (!prev) {
+			changes.push({ path, change: "created" });
+		} else if (prev.size !== next.size || prev.mtimeMs !== next.mtimeMs) {
+			changes.push({ path, change: "modified" });
+		}
+		if (changes.length >= MAX_WORKSPACE_CHANGE_EVENTS) break;
+	}
+	if (changes.length < MAX_WORKSPACE_CHANGE_EVENTS) {
+		for (const path of before.files.keys()) {
+			if (after.files.has(path)) continue;
+			changes.push({ path, change: "deleted" });
+			if (changes.length >= MAX_WORKSPACE_CHANGE_EVENTS) break;
+		}
+	}
+	return {
+		changes,
+		truncated: before.truncated || after.truncated || changes.length >= MAX_WORKSPACE_CHANGE_EVENTS,
+	};
 }
 
 /** Build a tree node for an installed private skill directory under `<root>/.skills`. */
@@ -3680,6 +3846,7 @@ const server = createServer(async (req, res) => {
 					preserveApiKey: payload.preserveApiKey,
 				}),
 			);
+			applyProviderProxyBypass(config);
 			await refreshConfiguredProviders(config);
 			if (payload.makeDefault) {
 				await switchModel(config.defaultProvider, config.defaultModel);
@@ -4081,6 +4248,14 @@ const server = createServer(async (req, res) => {
 			// to the event stream after navigating away.
 			const broadcaster = new SessionEventBroadcaster();
 			sessionBroadcasters.set(capturedSessionId, broadcaster);
+			const publishStreamEvent = (event: unknown) => {
+				broadcaster.publish(event);
+				if (!aborted) sseWrite(event);
+			};
+
+			const streamWorkspaceId = workspaceRegistry.getSessionWorkspaceId(capturedSessionId);
+			const streamWorkspaceRoot = workspaceRegistry.resolveWorkspaceDir(streamWorkspaceId);
+			const toolWorkspaceSnapshots = new Map<string, WorkspaceFileSnapshot | null>();
 
 			// Track whether the model API surfaced an error this turn. The PI SDK
 			// does NOT throw on model API errors (e.g. HTTP 413 from an over-long
@@ -4091,6 +4266,7 @@ const server = createServer(async (req, res) => {
 			let emittedError = false;
 			let promptStartTime = 0;
 			const onEvent = (event: import("@earendil-works/pi-coding-agent").AgentSessionEvent) => {
+				let workspaceChangeEvent: unknown | null = null;
 				// Logging regardless of aborted state
 				switch (event.type) {
 					case "message_update": {
@@ -4115,12 +4291,29 @@ const server = createServer(async (req, res) => {
 						break;
 					}
 					case "tool_execution_start":
+						toolWorkspaceSnapshots.set(event.toolCallId, snapshotWorkspaceFiles(streamWorkspaceRoot));
 						logger.info(
 							{ toolName: event.toolName, toolCallId: event.toolCallId },
 							"tool call started: %s", event.toolName,
 						);
 						break;
 					case "tool_execution_end":
+						if (!event.isError) {
+							const before = toolWorkspaceSnapshots.get(event.toolCallId) ?? null;
+							const after = snapshotWorkspaceFiles(streamWorkspaceRoot);
+							const { changes, truncated } = diffWorkspaceFileSnapshots(before, after);
+							if (changes.length > 0) {
+								workspaceChangeEvent = {
+									type: "workspace_change",
+									toolCallId: event.toolCallId,
+									toolName: event.toolName,
+									workspaceId: streamWorkspaceId,
+									changes,
+									truncated,
+								};
+							}
+						}
+						toolWorkspaceSnapshots.delete(event.toolCallId);
 						if (event.isError) {
 							const errText = Array.isArray(event.result?.content)
 								? event.result.content.map((c: { text?: string }) => c.text ?? "").join(" ").slice(0, 500)
@@ -4151,12 +4344,11 @@ const server = createServer(async (req, res) => {
 						break;
 				}
 
-				// Convert to SSE event and publish to broadcaster + live client
-				const sseEvent = piEventToSseEvent(event);
-				if (sseEvent) {
-					broadcaster.publish(sseEvent);
-					if (!aborted) sseWrite(sseEvent);
+				// Convert to SSE events and publish to broadcaster + live client.
+				for (const sseEvent of piEventToSseEvents(event)) {
+					publishStreamEvent(sseEvent);
 				}
+				if (workspaceChangeEvent) publishStreamEvent(workspaceChangeEvent);
 			};
 
 			promptStartTime = Date.now();

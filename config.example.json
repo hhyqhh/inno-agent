@@ -6,6 +6,8 @@
 			"baseUrl": "https://api.innospark.cn",
 			"api": "anthropic-messages",
 			"apiKey": "replace-me",
+			"authHeader": false,
+			"bypassProxy": false,
 			"models": [
 				{
 					"id": "claude-sonnet-4-6",

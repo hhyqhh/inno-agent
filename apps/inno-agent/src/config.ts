@@ -16,6 +16,9 @@ export interface InnoProviderConfig {
 	baseUrl: string;
 	apiKey: string;
 	api?: InnoProviderApi;
+	headers?: Record<string, string>;
+	authHeader?: boolean;
+	bypassProxy?: boolean;
 	models: InnoModelConfig[];
 }
 
@@ -191,15 +194,29 @@ export function normalizeModelConfig(model: Partial<InnoModelConfig> & { id: str
 	};
 }
 
+function normalizeProviderHeaders(headers: InnoProviderConfig["headers"] | undefined): Record<string, string> | undefined {
+	if (!headers || typeof headers !== "object" || Array.isArray(headers)) return undefined;
+	const normalized = Object.fromEntries(
+		Object.entries(headers)
+			.map(([key, value]) => [key.trim(), value] as const)
+			.filter(([key, value]) => key.length > 0 && typeof value === "string"),
+	);
+	return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
 export function normalizeProviderConfig(provider: Partial<InnoProviderConfig>): InnoProviderConfig {
 	const baseUrl = provider.baseUrl?.trim() ?? "";
 	if (!baseUrl) throw new Error("Provider baseUrl is required");
 	const models = (provider.models ?? []).map((model) => normalizeModelConfig(model));
 	if (models.length === 0) throw new Error("Provider must include at least one model");
+	const headers = normalizeProviderHeaders(provider.headers);
 	return {
 		baseUrl,
 		apiKey: provider.apiKey ?? "",
 		api: provider.api?.trim() || "openai-completions",
+		...(headers ? { headers } : {}),
+		...(provider.authHeader === true ? { authHeader: true } : {}),
+		...(provider.bypassProxy === true ? { bypassProxy: true } : {}),
 		models,
 	};
 }

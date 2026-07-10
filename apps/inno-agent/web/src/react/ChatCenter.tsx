@@ -3,9 +3,9 @@ import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search } from "lucide-react";
+import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search, FileCode2, Sparkles } from "lucide-react";
 import { Spinner } from "./ui/Spinner.js";
-import type { ChatMessage } from "../types/chat.js";
+import type { ChatMessage, ChatToolRecord } from "../types/chat.js";
 import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
@@ -29,6 +29,8 @@ import "@earendil-works/pi-web-ui";
 // (a few paragraphs) stays inline, but dumping a whole file collapses.
 const PASTE_COLLAPSE_LINES = 20;
 const PASTE_COLLAPSE_CHARS = 2000;
+const LONG_ASSISTANT_CHARS = 6000;
+const LONG_ASSISTANT_LINES = 140;
 
 const CHANNEL_BADGE_CLASS: Record<string, string> = {
 	cli: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]",
@@ -105,6 +107,99 @@ function ErrorBlock({ error }: { error: string }) {
 	);
 }
 
+function shouldCollapseAssistantContent(content: string): boolean {
+	if (content.length > LONG_ASSISTANT_CHARS) return true;
+	return content.split(/\r\n|\r|\n/).length > LONG_ASSISTANT_LINES;
+}
+
+function AssistantContent({ content }: { content: string }) {
+	const { t } = useTranslation();
+	const [expanded, setExpanded] = useState(false);
+	const trimmed = content.trim();
+	if (!trimmed) return null;
+	if (!shouldCollapseAssistantContent(trimmed)) {
+		return <markdown-artifact content={normalizeMarkdownMath(trimmed)} />;
+	}
+	const lineCount = trimmed.split(/\r\n|\r|\n/).length;
+	const preview = trimmed.slice(0, 900);
+	return (
+		<div className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-2.5">
+			<div className="mb-2 flex min-w-0 items-center gap-2 text-xs text-[var(--inno-text-muted)]">
+				<FileCode2 size={14} className="shrink-0 text-[var(--inno-accent)]" />
+				<span className="min-w-0 flex-1 truncate">{t("chat.longContentCollapsed", "内容较长，已折叠以保持页面流畅")}</span>
+				<span className="shrink-0 tabular-nums">{lineCount} {t("preview.streamingLines", "行")}</span>
+			</div>
+			{expanded ? (
+				<div className="max-h-[60vh] overflow-auto rounded border border-[var(--inno-border)] bg-[var(--inno-surface)] p-2">
+					<markdown-artifact content={normalizeMarkdownMath(trimmed)} />
+				</div>
+			) : (
+				<pre className="max-h-36 overflow-hidden whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[var(--inno-text-muted)] [overflow-wrap:anywhere]">
+					{preview}
+					{trimmed.length > preview.length ? "\n\n…" : ""}
+				</pre>
+			)}
+			<button
+				className="mt-2 rounded-md border border-[var(--inno-border)] px-2.5 py-1 text-xs text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
+				onClick={() => setExpanded((v) => !v)}
+			>
+				{expanded ? t("chat.collapseFullContent", "收起完整内容") : t("chat.expandFullContent", "展开完整内容")}
+			</button>
+		</div>
+	);
+}
+
+function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; className: string }) {
+	const [open, setOpen] = useState(false);
+	const detail = useMemo(() => {
+		if (!open) return "";
+		return JSON.stringify({
+			args: compactForDisplay(tool.args),
+			result: compactForDisplay(tool.result),
+		}, null, 2);
+	}, [open, tool.args, tool.result]);
+
+	return (
+		<details className={className} onToggle={(e) => setOpen(e.currentTarget.open)}>
+			<summary className={tool.isError ? "cursor-pointer break-words text-[var(--inno-danger)] [overflow-wrap:anywhere]" : "cursor-pointer break-words text-[var(--inno-text-muted)] [overflow-wrap:anywhere]"}>
+				{tool.toolName}
+			</summary>
+			{open ? (
+				<pre className="mt-1 max-h-40 max-w-full overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] [overflow-wrap:anywhere]">{detail}</pre>
+			) : null}
+		</details>
+	);
+}
+
+function compactForDisplay(value: unknown): unknown {
+	return compactDisplayValue(value, new WeakSet<object>(), 0);
+}
+
+function compactDisplayValue(value: unknown, seen: WeakSet<object>, depth: number): unknown {
+	if (typeof value === "string") {
+		if (value.length <= 1600) return value;
+		return `${value.slice(0, 1600)}\n\n[已省略 ${value.length - 1600} 个字符]`;
+	}
+	if (value == null || typeof value !== "object") return value;
+	if (seen.has(value)) return "[循环引用]";
+	seen.add(value);
+	if (depth >= 4) return "[内容层级较深，已折叠]";
+	if (Array.isArray(value)) {
+		const items = value.slice(0, 24).map((item) => compactDisplayValue(item, seen, depth + 1));
+		if (value.length > 24) items.push(`[已省略 ${value.length - 24} 项]`);
+		return items;
+	}
+	const record = value as Record<string, unknown>;
+	const entries = Object.entries(record).slice(0, 32);
+	const result: Record<string, unknown> = {};
+	for (const [key, item] of entries) {
+		result[key] = compactDisplayValue(item, seen, depth + 1);
+	}
+	const remaining = Object.keys(record).length - entries.length;
+	if (remaining > 0) result.__truncated = `已省略 ${remaining} 个字段`;
+	return result;
+}
+
 function MessageBubble({ message, showChannel }: { message: ChatMessage; showChannel?: boolean }) {
 	const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
@@ -161,18 +256,13 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 						{message.tools?.length ? (
 							<div className="mt-2 grid min-w-0 max-w-full gap-1.5">
 								{message.tools.map((tool) => (
-									<details key={tool.toolCallId} className="min-w-0 max-w-full overflow-hidden rounded border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1">
-										<summary className={tool.isError ? "cursor-pointer break-words text-[var(--inno-danger)] [overflow-wrap:anywhere]" : "cursor-pointer break-words text-[var(--inno-text-muted)] [overflow-wrap:anywhere]"}>
-											{tool.toolName}
-										</summary>
-										<pre className="mt-1 max-h-40 max-w-full overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] [overflow-wrap:anywhere]">{JSON.stringify({ args: tool.args, result: tool.result }, null, 2)}</pre>
-									</details>
+									<ToolRecordDetails key={tool.toolCallId} tool={tool} className="min-w-0 max-w-full overflow-hidden rounded border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1" />
 								))}
 							</div>
 						) : null}
 					</details>
 				) : null}
-				<markdown-artifact content={normalizeMarkdownMath(message.content)} />
+				<AssistantContent content={message.content} />
 				{message.error ? (
 					<div className={message.content.trim() ? "mt-2" : ""}>
 						<ErrorBlock error={message.error} />
@@ -378,6 +468,9 @@ export function ChatCenter() {
 		isLoadingHistory: chatStore.isLoadingHistory,
 		streamingText: chatStore.streamingText,
 		streamingThinking: chatStore.streamingThinking,
+		streamingTarget: chatStore.streamingTarget,
+		streamingActivity: chatStore.streamingActivity,
+		streamingActivityDetail: chatStore.streamingActivityDetail,
 		streamingError: chatStore.streamingError,
 		activeTools: chatStore.activeTools,
 		completedTools: chatStore.completedTools,
@@ -462,12 +555,14 @@ export function ChatCenter() {
 		}
 	}, [isWelcome, wsMode, wsExistingId]);
 
+	const scrollTextKey = chat.streamingTarget === "workspace" ? chat.streamingTarget : chat.streamingText;
+
 	useEffect(() => {
 		requestAnimationFrame(() => {
 			const el = scrollRef.current;
 			if (el) el.scrollTop = el.scrollHeight;
 		});
-	}, [chat.messages, chat.streamingText, chat.streamingThinking, chat.activeTools.length, chat.completedTools.length, chat.pendingQuestion]);
+	}, [chat.messages, scrollTextKey, chat.streamingThinking, chat.activeTools.length, chat.completedTools.length, chat.pendingQuestion]);
 
 	const handleInput = useCallback(() => {
 		const el = inputRef.current;
@@ -949,6 +1044,26 @@ export function ChatCenter() {
 						));
 					})()}
 
+					{chat.isSending && chat.streamingActivity ? (
+						<motion.div
+							className="flex justify-start"
+							initial={{ opacity: 0, y: 8 }}
+							animate={{ opacity: 1, y: 0 }}
+							transition={{ duration: 0.2, ease: "easeOut" }}
+						>
+							<div className="inno-message min-w-0 max-w-[78%] rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-[13px] text-[var(--inno-text-muted)] shadow-sm">
+								<div className="flex min-w-0 items-center gap-2">
+									<span className="inno-stream-status-dot is-streaming shrink-0" />
+									<Sparkles size={14} className="shrink-0 text-[var(--inno-accent)]" />
+									<span className="min-w-0 font-medium text-[var(--inno-text)]">{chat.streamingActivity}</span>
+									{chat.streamingActivityDetail ? (
+										<span className="min-w-0 truncate text-xs text-[var(--inno-text-subtle)]">{chat.streamingActivityDetail}</span>
+									) : null}
+								</div>
+							</div>
+						</motion.div>
+					) : null}
+
 					{chat.activeTools.length > 0 ? (
 						<motion.div
 							className="flex justify-start"
@@ -982,38 +1097,49 @@ export function ChatCenter() {
 					) : null}
 
 					{chat.completedTools.length > 0 ? (
-						<motion.div
-							className="flex justify-start"
-							initial={{ opacity: 0 }}
-							animate={{ opacity: 1 }}
-							transition={{ duration: 0.2 }}
-						>
-							<details className="inno-message min-w-0 max-w-[78%] overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-xs text-[var(--inno-text-muted)]">
-								<summary className="cursor-pointer break-words [overflow-wrap:anywhere]">Completed tool calls · {chat.completedTools.length}</summary>
-								<div className="mt-2 grid min-w-0 max-w-full gap-1.5">
-									{chat.completedTools.map((tool) => (
-										<details key={tool.toolCallId} className="min-w-0 max-w-full overflow-hidden rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2 py-1">
-											<summary className={tool.isError ? "cursor-pointer break-words text-[var(--inno-danger)] [overflow-wrap:anywhere]" : "cursor-pointer break-words text-[var(--inno-text-muted)] [overflow-wrap:anywhere]"}>{tool.toolName}</summary>
-											<pre className="mt-1 max-h-40 max-w-full overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] [overflow-wrap:anywhere]">{JSON.stringify({ args: tool.args, result: tool.result }, null, 2)}</pre>
-										</details>
-									))}
-								</div>
-							</details>
-						</motion.div>
-					) : null}
+							<motion.div
+								className="flex justify-start"
+								initial={{ opacity: 0 }}
+								animate={{ opacity: 1 }}
+								transition={{ duration: 0.2 }}
+							>
+								<details className="inno-message min-w-0 max-w-[78%] overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-xs text-[var(--inno-text-muted)]">
+									<summary className="cursor-pointer break-words [overflow-wrap:anywhere]">Completed tool calls · {chat.completedTools.length}</summary>
+									<div className="mt-2 grid min-w-0 max-w-full gap-1.5">
+										{chat.completedTools.map((tool) => (
+											<ToolRecordDetails key={tool.toolCallId} tool={tool} className="min-w-0 max-w-full overflow-hidden rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2 py-1" />
+										))}
+									</div>
+								</details>
+							</motion.div>
+						) : null}
 
-					{chat.streamingText ? (
-						<motion.div
-							className="flex justify-start"
-							initial={{ opacity: 0, y: 8 }}
-							animate={{ opacity: 1, y: 0 }}
-							transition={{ duration: 0.2, ease: "easeOut" }}
-						>
-							<div className="inno-message max-w-[78%] rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3.5 py-2.5 text-[13px] leading-relaxed text-[var(--inno-text)]">
-								<markdown-artifact content={normalizeMarkdownMath(chat.streamingText)} />
-							</div>
-						</motion.div>
-					) : null}
+						{chat.streamingText && chat.streamingTarget === "workspace" ? (
+							<motion.div
+								className="flex justify-start"
+								initial={{ opacity: 0, y: 8 }}
+								animate={{ opacity: 1, y: 0 }}
+								transition={{ duration: 0.2, ease: "easeOut" }}
+							>
+								<div className="inno-message max-w-[78%] rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-[13px] text-[var(--inno-text-muted)]">
+									<div className="flex min-w-0 items-center gap-2">
+										<span className="inno-stream-status-dot is-streaming shrink-0" />
+										<span className="min-w-0 break-words [overflow-wrap:anywhere]">{t("chat.streamingInWorkspace", "长内容正在右侧文件区生成")}</span>
+									</div>
+								</div>
+							</motion.div>
+						) : chat.streamingText ? (
+							<motion.div
+								className="flex justify-start"
+								initial={{ opacity: 0, y: 8 }}
+								animate={{ opacity: 1, y: 0 }}
+								transition={{ duration: 0.2, ease: "easeOut" }}
+							>
+								<div className="inno-message max-w-[78%] rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3.5 py-2.5 text-[13px] leading-relaxed text-[var(--inno-text)]">
+									<markdown-artifact content={normalizeMarkdownMath(chat.streamingText)} />
+								</div>
+							</motion.div>
+						) : null}
 
 					{chat.streamingError ? (
 						<motion.div

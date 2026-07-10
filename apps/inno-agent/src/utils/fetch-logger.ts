@@ -67,11 +67,31 @@ export function installFetchLogger(): void {
       );
     }
 
-    const response = (await originalFetch.call(
-      globalThis,
-      input,
-      init,
-    )) as Awaited<ReturnType<FetchFn>>;
+    let response: Awaited<ReturnType<FetchFn>>;
+    try {
+      response = (await originalFetch.call(
+        globalThis,
+        input,
+        init,
+      )) as Awaited<ReturnType<FetchFn>>;
+    } catch (err) {
+      if (isLlmCall) {
+        const elapsedMs = Date.now() - startTime;
+        const error = err instanceof Error
+          ? {
+              name: err.name,
+              message: err.message,
+              stack: err.stack,
+              cause: formatErrorCause(err.cause),
+            }
+          : { name: "Error", message: String(err), stack: undefined };
+        logger.warn(
+          { reqId, url, elapsedMs, error },
+          `[LLM ${reqId}] FETCH ERROR after ${elapsedMs}ms`,
+        );
+      }
+      throw err;
+    }
 
     // Log response for LLM API calls
     if (isLlmCall) {
@@ -97,6 +117,25 @@ function resolveURL(input: Parameters<FetchFn>[0]): string {
     return String((input as { url: unknown }).url);
   }
   return String(input);
+}
+
+function formatErrorCause(cause: unknown): Record<string, unknown> | undefined {
+  if (cause == null) return undefined;
+  if (cause instanceof Error) {
+    return {
+      name: cause.name,
+      message: cause.message,
+      stack: cause.stack,
+      ...("code" in cause ? { code: cause.code } : {}),
+    };
+  }
+  if (typeof cause === "object") {
+    return Object.fromEntries(
+      Object.entries(cause as Record<string, unknown>)
+        .filter(([, value]) => typeof value !== "function"),
+    );
+  }
+  return { message: String(cause) };
 }
 
 function extractBodyString(

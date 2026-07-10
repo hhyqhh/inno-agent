@@ -35,6 +35,8 @@
 		"ok": "确定",
 		"saving": "保存中…",
 		"saved": "已保存",
+		"copy": "复制",
+		"copied": "已复制",
 		"remove": "移除",
 		"open": "打开",
 		"close": "关闭",
@@ -148,8 +150,15 @@
 		"docxFailed": "文档渲染失败",
 		"xlsxLoading": "正在渲染表格…",
 		"xlsxFailed": "表格渲染失败",
-		"xlsxLargeSheetWarning": "表格较大 — 仅显示前 {{n}} 行"
-	},
+		"xlsxLargeSheetWarning": "表格较大 — 仅显示前 {{n}} 行",
+		"streamingGenerating": "正在生成",
+		"streamingDone": "生成完成",
+		"streamingError": "生成中断",
+		"streamingLines": "行",
+		"streamingHint": "长内容正在右侧生成，聊天区只保留摘要。",
+		"streamingWaiting": "等待模型开始输出…",
+		"streamingClose": "关闭生成预览"
+		},
 	"profile": {
 		"title": "学习者画像",
 		"subtitle": "由对话与学习事件自动累积，可手动编辑",
@@ -409,6 +418,8 @@
 			"contextWindow": "上下文窗口",
 			"maxTokens": "最大 Tokens",
 			"reasoning": "支持推理",
+			"authHeader": "使用 Bearer 鉴权",
+			"bypassProxy": "绕过系统代理",
 			"makeDefault": "设为默认",
 			"preserveApiKey": "保留现有 Key"
 		},
@@ -516,6 +527,10 @@
 		"errCreateSession": "创建会话失败",
 		"removeUpload": "移除上传",
 		"removeImage": "移除图片",
+		"streamingInWorkspace": "长内容正在右侧文件区生成",
+		"longContentCollapsed": "内容较长，已折叠以保持页面流畅",
+		"expandFullContent": "展开完整内容",
+		"collapseFullContent": "收起完整内容",
 		"composerPlaceholder": "输入消息…"
 	},
 	"question": {

@@ -195,6 +195,8 @@ export async function initSession(
 				baseUrl: providerConfig.baseUrl,
 				apiKey: providerConfig.apiKey || "local",
 				api: providerConfig.api ?? "openai-completions",
+				headers: providerConfig.headers,
+				authHeader: providerConfig.authHeader,
 				models: providerConfig.models.map(modelConfigToProviderModel),
 			});
 			_registeredProviderIds.add(providerId);
@@ -302,6 +304,8 @@ export async function refreshConfiguredProviders(config: InnoConfig): Promise<vo
 			baseUrl: providerConfig.baseUrl,
 			apiKey: providerConfig.apiKey || "local",
 			api: providerConfig.api ?? "openai-completions",
+			headers: providerConfig.headers,
+			authHeader: providerConfig.authHeader,
 			models: providerConfig.models.map(modelConfigToProviderModel),
 		});
 		_registeredProviderIds.add(providerId);

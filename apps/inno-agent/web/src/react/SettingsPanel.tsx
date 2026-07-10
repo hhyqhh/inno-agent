@@ -26,6 +26,8 @@ interface ProviderFormState {
 	contextWindow: string;
 	maxTokens: string;
 	reasoning: boolean;
+	authHeader: boolean;
+	bypassProxy: boolean;
 	makeDefault: boolean;
 	preserveApiKey: boolean;
 }
@@ -40,6 +42,8 @@ const emptyForm: ProviderFormState = {
 	contextWindow: "128000",
 	maxTokens: "8192",
 	reasoning: false,
+	authHeader: false,
+	bypassProxy: false,
 	makeDefault: true,
 	preserveApiKey: false,
 };
@@ -77,6 +81,8 @@ function ModelEditForm({ model, settings, onClose }: {
 		contextWindow: String(model.contextWindow),
 		maxTokens: String(model.maxTokens),
 		reasoning: model.reasoning,
+		authHeader: provider?.authHeader === true,
+		bypassProxy: provider?.bypassProxy === true,
 		makeDefault: settings.defaultProvider === model.provider && settings.defaultModel === model.id,
 		preserveApiKey: Boolean(provider?.apiKey),
 	});
@@ -106,6 +112,8 @@ function ModelEditForm({ model, settings, onClose }: {
 				baseUrl: form.baseUrl.trim(),
 				apiKey: form.apiKey,
 				api: form.api,
+				authHeader: form.authHeader,
+				bypassProxy: form.bypassProxy,
 				models: [providerModel],
 				makeDefault: form.makeDefault,
 				preserveApiKey: form.preserveApiKey,
@@ -164,6 +172,8 @@ function ModelEditForm({ model, settings, onClose }: {
 			</div>
 			<div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
 				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
+				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
+				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
 				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
 				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.preserveApiKey} onChange={(e) => setForm({ ...form, preserveApiKey: e.target.checked })} /> {t("settings.form.preserveApiKey")}</label>
 			</div>
@@ -243,6 +253,8 @@ function NewProviderForm() {
 				baseUrl: form.baseUrl.trim(),
 				apiKey: form.apiKey,
 				api: form.api,
+				authHeader: form.authHeader,
+				bypassProxy: form.bypassProxy,
 				models: [model],
 				makeDefault: form.makeDefault,
 				preserveApiKey: false,
@@ -310,6 +322,8 @@ function NewProviderForm() {
 					</div>
 					<div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
 						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
+						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
+						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
 						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
 					</div>
 					{formError ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div> : null}

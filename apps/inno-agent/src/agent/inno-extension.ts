@@ -134,6 +134,8 @@ export function createInnoExtension(
 				baseUrl: providerConfig.baseUrl,
 				apiKey: providerConfig.apiKey || "local",
 				api: providerConfig.api ?? "openai-completions",
+				headers: providerConfig.headers,
+				authHeader: providerConfig.authHeader,
 				models: providerConfig.models.map((m) => ({
 					id: m.id,
 					name: m.name,

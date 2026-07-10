@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Tree, type NodeRendererProps, type TreeApi, type CreateHandler, type RenameHandler, type DeleteHandler, type MoveHandler } from "react-arborist";
 import MDEditor from "@uiw/react-md-editor";
@@ -39,6 +39,58 @@ import "@uiw/react-markdown-preview/markdown.css";
 const PptxPreview = lazy(() => import("./office/PptxPreview.js"));
 const DocxPreview = lazy(() => import("./office/DocxPreview.js"));
 const XlsxPreview = lazy(() => import("./office/XlsxPreview.js"));
+
+const MAX_STREAMING_MARKDOWN_FORMAT_CHARS = 160_000;
+
+function streamingMarkdownInterval(contentLength: number): number {
+	if (contentLength < 40_000) return 240;
+	if (contentLength < 100_000) return 420;
+	return 700;
+}
+
+function useStreamingMarkdownSnapshot(content: string, enabled: boolean): string {
+	const [snapshot, setSnapshot] = useState(content);
+	const latestContentRef = useRef(content);
+	const timerRef = useRef<number | null>(null);
+	const lastSnapshotAtRef = useRef(0);
+	latestContentRef.current = content;
+
+	useEffect(() => {
+		if (!enabled) {
+			if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+			timerRef.current = null;
+			lastSnapshotAtRef.current = 0;
+			return;
+		}
+		if (timerRef.current !== null) return;
+
+		const elapsed = performance.now() - lastSnapshotAtRef.current;
+		const delay = Math.max(0, streamingMarkdownInterval(content.length) - elapsed);
+		timerRef.current = window.setTimeout(() => {
+			timerRef.current = null;
+			lastSnapshotAtRef.current = performance.now();
+			const next = latestContentRef.current;
+			setSnapshot((current) => current === next ? current : next);
+		}, delay);
+	}, [content, enabled]);
+
+	useEffect(() => () => {
+		if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+		timerRef.current = null;
+	}, []);
+
+	return enabled ? snapshot : content;
+}
+
+const MarkdownStreamSnapshot = memo(function MarkdownStreamSnapshot({ content, showCursor }: { content: string; showCursor: boolean }) {
+	const normalizedContent = useMemo(() => normalizeMarkdownMath(content), [content]);
+	return (
+		<div className="px-4 py-3 text-[13px] leading-relaxed text-[var(--inno-text)] [overflow-wrap:anywhere]">
+			<markdown-artifact content={normalizedContent} />
+			{showCursor ? <span className="inno-stream-cursor" aria-hidden="true" /> : null}
+		</div>
+	);
+});
 
 /* ---------- helpers ---------- */
 
@@ -405,8 +457,18 @@ function StreamingPreviewPane({ preview, onToggleSidebar, sidebarOpen }: { previ
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [copied, setCopied] = useState(false);
 	const isStreaming = preview.status === "streaming";
-	const lineCount = preview.content ? preview.content.split(/\r\n|\r|\n/).length : 0;
 	const isMarkdownPreview = isStreamingMarkdownPreview(preview);
+	const shouldFormatMarkdown = isMarkdownPreview
+		&& (!isStreaming || preview.content.length <= MAX_STREAMING_MARKDOWN_FORMAT_CHARS);
+	const markdownSnapshot = useStreamingMarkdownSnapshot(
+		preview.content,
+		isStreaming && shouldFormatMarkdown,
+	);
+	const visibleContent = shouldFormatMarkdown ? markdownSnapshot : preview.content;
+	const lineCount = useMemo(
+		() => visibleContent ? visibleContent.split(/\r\n|\r|\n/).length : 0,
+		[visibleContent],
+	);
 	const statusLabel = isStreaming
 		? preview.stage ?? t("preview.streamingGenerating", "正在生成")
 		: preview.status === "error"
@@ -417,7 +479,7 @@ function StreamingPreviewPane({ preview, onToggleSidebar, sidebarOpen }: { previ
 		if (!isStreaming) return;
 		const el = scrollRef.current;
 		if (el) el.scrollTop = el.scrollHeight;
-	}, [preview.content, isStreaming]);
+	}, [visibleContent, isStreaming]);
 
 	const copyContent = useCallback(() => {
 		if (!preview.content) return;
@@ -473,11 +535,9 @@ function StreamingPreviewPane({ preview, onToggleSidebar, sidebarOpen }: { previ
 					<Sparkles size={12} className="shrink-0 text-[var(--inno-accent)]" />
 					<span className="truncate">{t("preview.streamingHint", "长内容正在右侧生成，聊天区只保留摘要。")}</span>
 				</div>
-					{preview.content ? (
-						isMarkdownPreview && !isStreaming ? (
-							<div className="px-4 py-3 text-[13px] leading-relaxed text-[var(--inno-text)] [overflow-wrap:anywhere]">
-								<markdown-artifact content={normalizeMarkdownMath(preview.content)} />
-							</div>
+				{preview.content ? (
+					shouldFormatMarkdown ? (
+						<MarkdownStreamSnapshot content={visibleContent} showCursor={isStreaming} />
 					) : (
 						<pre className="min-h-full whitespace-pre-wrap break-words px-4 py-3 font-mono text-[12px] leading-relaxed text-[var(--inno-text)] [overflow-wrap:anywhere]">
 							{preview.content}
@@ -517,7 +577,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 	const canEdit = state.file != null && isEditable(state.file.kind);
 
 	if (state.streamingPreview) {
-		return <StreamingPreviewPane preview={state.streamingPreview} onToggleSidebar={onToggleSidebar} sidebarOpen={sidebarOpen} />;
+		return <StreamingPreviewPane key={state.streamingPreview.id} preview={state.streamingPreview} onToggleSidebar={onToggleSidebar} sidebarOpen={sidebarOpen} />;
 	}
 
 	if (state.isEditing && state.file) {

@@ -113,5 +113,9 @@
 			"rimraf": "6.1.2"
 		},
 		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+	},
+	"dependencies": {
+		"pptxgenjs": "^4.0.1",
+		"react-icons": "^5.7.0"
 	}
 }

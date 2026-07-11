@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search, FileCode2, Sparkles } from "lucide-react";
+import { Paperclip, X, Square, RotateCcw, Image, AlertTriangle, Search, Folder, FolderOpen, FolderPlus, Zap, Check, ArrowUp, FileCode2, Sparkles } from "lucide-react";
 import { Spinner } from "./ui/Spinner.js";
 import type { ChatMessage, ChatToolRecord } from "../types/chat.js";
 import { InnoLogoIcon, InnoLogoIconAlt, InnoLogoText } from "./ui/InnoLogo.js";
@@ -416,6 +416,10 @@ export function ChatCenter() {
 	const [wsMode, setWsMode] = useState<WsMode>(() => readLastWsMode());
 	const [wsName, setWsName] = useState("");
 	const [wsExistingId, setWsExistingId] = useState(() => readLastWsId());
+	const [showWsOptions, setShowWsOptions] = useState(false);
+	const [showWsDropdown, setShowWsDropdown] = useState(false);
+	const wsDropdownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const [showNewWsDialog, setShowNewWsDialog] = useState(false);
 	const [wsError, setWsError] = useState("");
 
 	// Simple Mode surfaces preset workspaces for one-click start.
@@ -828,19 +832,13 @@ export function ChatCenter() {
 	);
 
 	const renderComposer = (placeholder: string) => (
-		<div className="inno-composer flex items-end gap-2 rounded-lg p-2">
+		<div className="inno-composer flex flex-col gap-2 rounded-xl border-2 border-[var(--inno-border)] bg-[var(--inno-surface)] p-3" style={{ boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
 			<input ref={fileInputRef} id="file-input" type="file" className="hidden" multiple onChange={handleFiles} />
 			<input ref={imageInputRef} id="image-input" type="file" className="hidden" multiple accept="image/*" onChange={handleImageFiles} />
-			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={activeWorkspaceId ? t("chat.uploadFiles") : t("chat.uploadHint")} disabled={chat.isSending || isUploading || !activeWorkspaceId} onClick={() => fileInputRef.current?.click()}>
-				{isUploading ? <Spinner size={16} /> : <Paperclip size={16} />}
-			</button>
-			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={t("chat.attachImage")} disabled={chat.isSending} onClick={() => imageInputRef.current?.click()}>
-				<Image size={16} />
-			</button>
 			<textarea
 				ref={inputRef}
 				id="chat-input"
-				className="min-h-[36px] max-h-[200px] flex-1 resize-none overflow-hidden rounded-md border-0 bg-transparent px-2 py-2 text-sm leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
+				className="min-h-[36px] max-h-[200px] w-full resize-none overflow-hidden rounded-md border-0 bg-transparent px-2 py-2 text-sm leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
 				placeholder={placeholder}
 				rows={1}
 				onKeyDown={handleKeyDown}
@@ -848,36 +846,48 @@ export function ChatCenter() {
 				onPaste={handlePaste}
 				disabled={chat.isSending || isUploading}
 			/>
-			{chat.isSending ? (
-				<button
-					className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[var(--inno-danger)] text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
-					title={t("chat.stopGeneration")}
-					onClick={handleStop}
-				>
-					<Square size={16} />
-				</button>
-			) : (
-				<>
-					{chat.lastUserPrompt ? (
-						<button
-							className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50"
-							title={t("chat.retryLast")}
-							disabled={isUploading}
-							onClick={handleRetry}
-						>
-							<RotateCcw size={16} />
-						</button>
-					) : null}
-					<button
-						className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors ${isUploading ? "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]" : "inno-primary-button"}`}
-						title={t("chat.send")}
-						disabled={isUploading}
-						onClick={handleSend}
-					>
-						<SendHorizonal size={16} />
+			<div className="flex items-center justify-between">
+				<div className="flex items-center gap-1">
+					<button className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50" title={activeWorkspaceId ? t("chat.uploadFiles") : t("chat.uploadHint")} disabled={chat.isSending || isUploading || !activeWorkspaceId} onClick={() => fileInputRef.current?.click()}>
+						{isUploading ? <Spinner size={16} /> : <Paperclip size={16} />}
 					</button>
-				</>
-			)}
+					<button className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50" title={t("chat.attachImage")} disabled={chat.isSending} onClick={() => imageInputRef.current?.click()}>
+						<Image size={16} />
+					</button>
+				</div>
+				<div className="flex items-center gap-1">
+					{chat.isSending ? (
+						<button
+							className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--inno-danger)] text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
+							title={t("chat.stopGeneration")}
+							onClick={handleStop}
+						>
+							<Square size={14} />
+						</button>
+					) : (
+						<>
+							{chat.lastUserPrompt ? (
+								<button
+									className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
+									title={t("chat.retryLast")}
+									disabled={isUploading}
+									onClick={handleRetry}
+								>
+									<RotateCcw size={14} />
+								</button>
+							) : null}
+							<button
+								className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${isUploading ? "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]" : "inno-primary-button"}`}
+								title={t("chat.send")}
+								disabled={isUploading}
+								onClick={handleSend}
+							>
+								<ArrowUp size={16} />
+							</button>
+						</>
+					)}
+				</div>
+			</div>
 		</div>
 	);
 
@@ -918,18 +928,6 @@ export function ChatCenter() {
 							<h2 className="text-lg font-medium text-[var(--inno-text)]">
 								说说你的教学需求，我来落地
 							</h2>
-							{/* Explicit, labeled mode switch (P4): the flip logo above is a nice
-							    secondary affordance, but a worded pill makes the toggle
-							    discoverable instead of hidden behind an icon click. */}
-							<button
-								type="button"
-								onClick={toggleMode}
-								disabled={togglingMode}
-								className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1 text-[11px] text-[var(--inno-text-muted)] transition-colors hover:border-[var(--inno-accent)] hover:text-[var(--inno-accent)] disabled:cursor-wait disabled:opacity-60"
-							>
-								<span className={`h-1.5 w-1.5 rounded-full ${simpleMode ? "bg-[var(--inno-accent)]" : "bg-[var(--inno-border-strong)]"}`} />
-								{simpleMode ? t("mode.simpleShort") : t("mode.normalShort")}
-							</button>
 						</div>
 
 						{renderUploadChips()}
@@ -957,33 +955,75 @@ export function ChatCenter() {
 								<span className="text-[10px] text-[var(--inno-text-subtle)]">{t("chat.newChatHere")}</span>
 							</div>
 						) : (
-							<div className="mt-3 flex flex-wrap items-center gap-2">
-								<span className="text-xs text-[var(--inno-text-subtle)]">{t("workspace.title")}</span>
-								<ModeChip selected={wsMode === "temp"} onClick={() => setWsMode("temp")}>{t("chat.wsTemp")}</ModeChip>
-								<ModeChip selected={wsMode === "new"} onClick={() => setWsMode("new")}>{t("chat.wsNew")}</ModeChip>
-								{selectableWorkspaces.length > 0 ? (
-									<ModeChip selected={wsMode === "existing"} onClick={() => setWsMode("existing")}>{t("chat.wsExisting")}</ModeChip>
-								) : null}
-								{wsMode === "new" ? (
-									<input
-										type="text"
-										placeholder={t("chat.wsNamePlaceholder")}
-										value={wsName}
-										onChange={(e) => setWsName(e.target.value)}
-										className="ml-1 w-[200px] rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-px text-[10px] leading-tight outline-none focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
-									/>
-								) : null}
-								{wsMode === "existing" ? (
-									<select
-										value={wsExistingId}
-										onChange={(e) => setWsExistingId(e.target.value)}
-										className="ml-1 max-w-[220px] rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-px text-[10px] leading-tight outline-none focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
-									>
-										<option value="">{t("chat.wsSelectPlaceholder")}</option>
-										{selectableWorkspaces.map((w) => (
-											<option key={w.id} value={w.id}>{w.name}</option>
-										))}
-									</select>
+							<div className="mt-3">
+								<button
+									type="button"
+									onClick={() => setShowWsOptions((v) => !v)}
+									className="flex w-fit items-center gap-3.5 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-0.5 text-[11px] text-[var(--inno-text-muted)] transition-colors hover:border-[var(--inno-accent)] hover:text-[var(--inno-accent)]"
+								>
+									<span className="flex items-center gap-1"><Folder size={11} />{t("workspace.title")}</span>
+									<svg className={`h-2.5 w-2.5 transition-transform ${showWsOptions ? "rotate-90" : ""}`} viewBox="0 0 8 12" fill="none"><path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+								</button>
+								{showWsOptions ? (
+									<div className="mt-1.5 inline-flex flex-col rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-0.5">
+										{selectableWorkspaces.length > 0 ? (
+											<div className="relative" onMouseLeave={() => { wsDropdownTimerRef.current = setTimeout(() => setShowWsDropdown(false), 200); }} onMouseEnter={() => { if (wsDropdownTimerRef.current) { clearTimeout(wsDropdownTimerRef.current); wsDropdownTimerRef.current = null; } }}>
+												<button
+													type="button"
+													onClick={() => setShowWsDropdown((v) => !v)}
+													className="flex w-full items-center justify-between gap-1 rounded px-2 py-0.5 text-[11px] transition-colors text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+												>
+													<span className="flex items-center gap-1"><FolderOpen size={11} />{t("chat.wsExisting")}</span>
+													<svg className={`h-2.5 w-2.5 transition-transform ${showWsDropdown ? "rotate-90" : ""}`} viewBox="0 0 8 12" fill="none"><path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+												</button>
+												{showWsDropdown ? (
+													<div className="absolute left-full top-0 ml-1 min-w-[140px] rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] py-0.5 shadow-lg z-50" onMouseEnter={() => { if (wsDropdownTimerRef.current) { clearTimeout(wsDropdownTimerRef.current); wsDropdownTimerRef.current = null; } }} onMouseLeave={() => { wsDropdownTimerRef.current = setTimeout(() => setShowWsDropdown(false), 200); }}>
+														{selectableWorkspaces.map((w) => (
+															<button
+																key={w.id}
+																type="button"
+																onClick={() => {
+																	setWsMode("existing");
+																	setWsExistingId(w.id);
+																	setShowWsDropdown(false);
+																}}
+																className="flex w-full items-center gap-3 px-2 py-0.5 text-left text-[11px] transition-colors text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+															>
+																{wsExistingId === w.id ? <Check size={10} className="shrink-0 text-[var(--inno-accent)]" /> : <span className="w-[10px] shrink-0" />}
+																{w.name}
+															</button>
+														))}
+													</div>
+												) : null}
+											</div>
+										) : null}
+										<button
+											type="button"
+											onClick={() => {
+												setWsMode("new");
+												setShowNewWsDialog(true);
+											}}
+											className="rounded px-2 py-0.5 text-left text-[11px] transition-colors text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+										>
+											<span className="flex items-center gap-1"><FolderPlus size={11} />{t("chat.wsNew")}</span>
+										</button>
+										<button
+											type="button"
+											onClick={async () => {
+												try {
+													const ws = await workspacesStore.create({ isTemp: true });
+													setWsMode("existing");
+													setWsExistingId(ws.id);
+													setShowWsOptions(false);
+												} catch {
+													setWsMode("temp");
+												}
+											}}
+											className="rounded px-2 py-0.5 text-left text-[11px] transition-colors text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+										>
+											<span className="flex items-center gap-1"><Zap size={11} />临时工作区(用完即弃)</span>
+										</button>
+									</div>
 								) : null}
 							</div>
 						)}
@@ -991,6 +1031,57 @@ export function ChatCenter() {
 						{wsError ? <p className="mt-2 text-xs text-[var(--inno-danger)]">{wsError}</p> : null}
 					</div>
 				</div>
+
+				{/* New Workspace Dialog */}
+				{showNewWsDialog ? (
+					<>
+						<div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowNewWsDialog(false)} />
+						<div className="fixed left-1/2 top-1/2 z-50 w-80 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] p-6 shadow-xl">
+							<div className="mb-0.5 text-lg font-medium text-[var(--inno-text)]">新建工作区</div>
+							<div className="mb-5 text-xs text-[var(--inno-text-muted)]">建议简短易于识别</div>
+							<input
+								type="text"
+								autoFocus
+								placeholder="请输入工作区名称"
+								value={wsName}
+								onChange={(e) => setWsName(e.target.value)}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" && wsName.trim()) {
+										setShowNewWsDialog(false);
+									}
+								}}
+								className="mt-2 mb-4 w-full rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2 py-0.5 text-[10px] outline-none focus-visible:border-[var(--inno-focus-border)] focus-visible:shadow-[var(--inno-ring)]"
+							/>
+							<div className="flex justify-end gap-1.5">
+								<button
+									className="rounded-full border border-[var(--inno-border)] px-1.5 py-px text-[9px] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
+									onClick={() => setShowNewWsDialog(false)}
+								>
+									返回
+								</button>
+								<button
+									className="rounded-full bg-[var(--inno-accent)] px-1.5 py-px text-[9px] text-white disabled:opacity-40"
+									disabled={!wsName.trim()}
+									onClick={async () => {
+										const trimmed = wsName.trim();
+										if (!trimmed) return;
+										try {
+											const ws = await workspacesStore.create({ name: trimmed, isTemp: false });
+											setWsMode("existing");
+											setWsExistingId(ws.id);
+											setShowNewWsDialog(false);
+											setShowWsOptions(false);
+										} catch {
+											// ignore
+										}
+									}}
+								>
+									确认
+								</button>
+							</div>
+						</div>
+					</>
+				) : null}
 			</section>
 		);
 	}

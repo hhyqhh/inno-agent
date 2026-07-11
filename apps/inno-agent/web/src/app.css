@@ -85,6 +85,10 @@ summary:focus-visible {
 	box-shadow: var(--inno-ring);
 }
 
+#chat-input:focus-visible {
+	box-shadow: none;
+}
+
 ::selection {
 	background: var(--inno-selection-bg, rgba(37, 99, 235, 0.16));
 }
@@ -399,15 +403,8 @@ inno-workspace-panel textarea {
 }
 
 .inno-composer {
-	border: 1px solid var(--inno-border);
 	background: var(--inno-surface);
-	box-shadow: var(--inno-shadow-soft);
 	transition: border-color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out);
-}
-
-.inno-composer:focus-within {
-	border-color: var(--inno-focus-border);
-	box-shadow: var(--inno-ring);
 }
 
 .inno-workspace-card {
@@ -684,16 +681,7 @@ inno-workspace-panel textarea {
 }
 
 :root[data-theme="innospark"] .inno-composer {
-	border: 2px solid rgba(85, 90, 255, 0.25);
-	border-radius: 22px;
 	background: var(--inno-surface);
-	box-shadow: 0 2px 4px rgba(85, 90, 255, 0.08), 0 10px 28px rgba(85, 90, 255, 0.1);
-	transition: border-color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out);
-}
-
-:root[data-theme="innospark"] .inno-composer:focus-within {
-	border-color: rgba(85, 90, 255, 0.36);
-	box-shadow: 0 3px 8px rgba(85, 90, 255, 0.1), 0 14px 34px rgba(85, 90, 255, 0.14);
 }
 
 :root[data-theme="innospark"] .inno-composer textarea {

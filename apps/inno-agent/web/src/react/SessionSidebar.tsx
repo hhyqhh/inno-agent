@@ -26,6 +26,8 @@ import type { WorkspaceMeta } from "../api/workspaces.js";
 import type { SessionChannel, SessionMeta } from "../api/sessions.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { Spinner } from "./ui/Spinner.js";
+import { InnoLogoIcon, InnoLogoIconAlt, InnoLogoText, NewChatSimple, NewChatNormal } from "./ui/InnoLogo.js";
+import { ModeSwitch } from "./ModeSwitch.js";
 
 interface SessionSidebarProps {
 	collapsed: boolean;
@@ -406,7 +408,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 	}));
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const [togglingMode, setTogglingMode] = useState(false);
-
+	
 	// Toggle Simple/Normal mode from the top-left logo (flip animation).
 	const toggleMode = useCallback(() => {
 		if (togglingMode) return;
@@ -628,7 +630,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 		return (
 			<aside className="inno-sidebar-scope flex h-full min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-sidebar-bg)]">
 				{/* Header: brand + collapse */}
-				<div className="flex items-center justify-between gap-2 border-b border-[var(--inno-border)] px-3 py-2.5">
+				<div className="flex items-center justify-between gap-2 px-3 py-2.5">
 					<div className="flex min-w-0 items-center gap-2">
 						<button
 							type="button"
@@ -641,22 +643,22 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 							<motion.div
 								animate={{ rotateY: simpleMode ? 180 : 0 }}
 								transition={{ type: "spring", stiffness: 320, damping: 22 }}
-								className="flip-card h-7 w-7"
+								className="flip-card h-[30px] w-[30px]"
 							>
 								<span
-									className="flip-card-face absolute inset-0 flex items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)] shadow-sm"
+									className="flip-card-face absolute inset-0 flex items-center justify-center rounded-lg"
 								>
-									IA
+									<InnoLogoIcon className="h-[30px] w-[30px]" />
 								</span>
 								<span
-									className="flip-card-back absolute inset-0 flex items-center justify-center rounded-lg border border-[var(--inno-accent)] bg-[var(--inno-accent)] text-[10px] font-semibold text-white shadow-sm"
+									className="flip-card-back absolute inset-0 flex items-center justify-center rounded-lg"
 								>
-									IA
+									<InnoLogoIconAlt className="h-[30px] w-[30px]" />
 								</span>
 							</motion.div>
 						</button>
 						<h1 className="inno-sidebar-title truncate font-semibold tracking-tight text-[var(--inno-text)]">
-							Inno Agent
+							<InnoLogoText className="h-[30px] w-auto" />
 						</h1>
 					</div>
 					<button
@@ -665,6 +667,19 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 						onClick={() => appStore.setSidebarCollapsed(true)}
 					>
 						<PanelLeftClose size={14} />
+					</button>
+				</div>
+
+			<ModeSwitch simpleMode={simpleMode} />
+
+				{/* New chat button (simple mode) */}
+				<div className="p-2">
+					<button
+						className="flex w-full items-center justify-center overflow-hidden rounded-xl transition-opacity hover:opacity-90"
+						onClick={newChat}
+						title={t("sidebar.newChat")}
+					>
+						<NewChatNormal className="h-10 w-full" />
 					</button>
 				</div>
 
@@ -729,14 +744,48 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 					)}
 				</div>
 
-				{/* Footer: new chat (mode switch lives on the IA logo above) */}
-				<div className="border-t border-[var(--inno-border)] p-2">
-					<button
-						className="inno-sidebar-text inno-new-chat-button flex w-full items-center justify-center gap-2 rounded-lg inno-primary-button px-3 py-1.5 font-medium text-white shadow-sm transition-colors"
-						onClick={newChat}
-					>
-						<Plus size={14} /> {t("sidebar.newChat")}
-					</button>
+				{/* Footer: search bar */}
+				<div className="px-2 py-1.5">
+					<div className="relative">
+						{showSearch ? (
+							<div className="flex items-center gap-1">
+								<div className="relative flex-1">
+									<Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)]" />
+									<input
+										className="inno-sidebar-text w-full rounded-full border-none bg-white py-3 pl-8 pr-8 text-[13px] outline-none placeholder:text-[var(--inno-text-subtle)] focus-visible:ring-2 focus-visible:ring-[#555AFF]/30"
+										placeholder={t("sidebar.searchPlaceholder")}
+										value={state.searchQuery}
+										autoFocus
+										onChange={(e) => sessionsStore.setSearchQuery(e.target.value)}
+									/>
+									{state.searchQuery && (
+										<button
+											className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)] hover:text-[var(--inno-text-muted)]"
+											onClick={() => sessionsStore.setSearchQuery("")}
+										>
+											<X size={12} />
+										</button>
+									)}
+								</div>
+								<button
+									className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-gray-100 hover:text-[var(--inno-text)]"
+									onClick={() => { setShowSearch(false); sessionsStore.setSearchQuery(""); }}
+								>
+									<X size={14} />
+								</button>
+							</div>
+						) : (
+							<div className="relative">
+								<Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555AFF]/60 pointer-events-none" />
+								<button
+									className="inno-sidebar-text w-full rounded-full border-none bg-white py-3 pl-8 pr-3 text-left text-[13px] text-[var(--inno-text-subtle)] transition-colors hover:bg-gray-50"
+									onClick={() => setShowSearch(true)}
+								>
+									{t("sidebar.searchPlaceholder")}
+								</button>
+							</div>
+						)}
+					</div>
 				</div>
 			</aside>
 		);
@@ -747,7 +796,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 	return (
 		<aside className="inno-sidebar-scope flex h-full min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-sidebar-bg)]">
 			{/* Header */}
-			<div className="border-b border-[var(--inno-border)] px-3 py-2.5">
+			<div className="px-3 py-2.5">
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex items-center gap-2 min-w-0">
 						<button
@@ -761,23 +810,23 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 							<motion.div
 								animate={{ rotateY: simpleMode ? 180 : 0 }}
 								transition={{ type: "spring", stiffness: 320, damping: 22 }}
-								className="flip-card h-7 w-7"
+								className="flip-card h-[30px] w-[30px]"
 							>
 								<span
-									className="flip-card-face absolute inset-0 flex items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)] shadow-sm"
+									className="flip-card-face absolute inset-0 flex items-center justify-center rounded-lg"
 								>
-									IA
+									<InnoLogoIcon className="h-[30px] w-[30px]" />
 								</span>
 								<span
-									className="flip-card-back absolute inset-0 flex items-center justify-center rounded-lg border border-[var(--inno-accent)] bg-[var(--inno-accent)] text-[10px] font-semibold text-white shadow-sm"
+									className="flip-card-back absolute inset-0 flex items-center justify-center rounded-lg"
 								>
-									IA
+									<InnoLogoIconAlt className="h-[30px] w-[30px]" />
 								</span>
 							</motion.div>
 						</button>
 						<div className="min-w-0">
 							<h1 className="inno-sidebar-title font-semibold tracking-tight text-[var(--inno-text)]">
-								Inno Agent{simpleMode ? <span className="font-normal text-[var(--inno-accent)]">{t("mode.simpleTag")}</span> : null}
+								<InnoLogoText className="h-[30px] w-auto" />{simpleMode ? <span className="ml-1 font-normal text-[var(--inno-accent)]">{t("mode.simpleTag")}</span> : null}
 							</h1>
 						</div>
 					</div>
@@ -799,72 +848,39 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 					</div>
 				</div>
 			</div>
+			<ModeSwitch simpleMode={simpleMode} />
 
-			{/* Search + Filter bar */}
-			<div className="space-y-1.5 border-b border-[var(--inno-border)] px-2 py-1.5">
-				{/* Search */}
-				<div className="relative">
-					{showSearch ? (
-						<div className="flex items-center gap-1">
-							<div className="relative flex-1">
-								<Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)]" />
-								<input
-									className="inno-sidebar-text w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] py-1 pl-7 pr-7 outline-none placeholder:text-[var(--inno-text-subtle)] focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
-									placeholder={t("sidebar.searchPlaceholder")}
-									value={state.searchQuery}
-									autoFocus
-									onChange={(e) => sessionsStore.setSearchQuery(e.target.value)}
-								/>
-								{state.searchQuery && (
-									<button
-										className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)] hover:text-[var(--inno-text-muted)]"
-										onClick={() => sessionsStore.setSearchQuery("")}
-									>
-										<X size={12} />
-									</button>
-								)}
-							</div>
-							<button
-								className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text-muted)]"
-								onClick={() => { setShowSearch(false); sessionsStore.setSearchQuery(""); }}
-							>
-								<X size={14} />
-							</button>
-						</div>
-					) : (
-						<div className="relative">
-							<Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)] pointer-events-none" />
-							<button
-								className="inno-sidebar-text w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] py-1.5 pl-7 pr-3 text-left text-[var(--inno-text-subtle)] transition-colors hover:border-[var(--inno-border-strong)] hover:bg-[var(--inno-surface-muted)]"
-								onClick={() => setShowSearch(true)}
-							>
-								{t("sidebar.searchPlaceholder")}
-							</button>
-						</div>
-					)}
-				</div>
-
-				{/* Channel filter chips — hidden in Simple Mode (web-only view) */}
-				{!simpleMode && state.availableChannels.length > 1 && (
-					<div className="flex flex-wrap items-center gap-1">
-						{orderedChannels.map((ch) => (
-							<button
-								key={ch}
-								className={`inno-channel-filter-chip inno-sidebar-meta rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(ch, state.channelFilter === ch)}`}
-								onClick={() => sessionsStore.setChannelFilter(state.channelFilter === ch ? null : ch)}
-							>
-								{channelLabel(ch)}
-							</button>
-						))}
-						<button
-							className={`inno-channel-filter-chip inno-sidebar-meta rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(null, state.channelFilter === null)}`}
-							onClick={() => sessionsStore.setChannelFilter(null)}
-						>
-							{t("sidebar.all")}
-						</button>
-					</div>
-				)}
+			{/* New chat button (normal mode) */}
+			<div className="p-2">
+				<button
+					className="flex w-full items-center justify-center overflow-hidden rounded-xl transition-opacity hover:opacity-90"
+					onClick={newChat}
+					title={t("sidebar.newChat")}
+				>
+					<NewChatSimple className="h-10 w-full" />
+				</button>
 			</div>
+
+			{/* Channel filter chips — hidden in Simple Mode (web-only view) */}
+			{!simpleMode && state.availableChannels.length > 1 && (
+				<div className="flex flex-wrap items-center gap-1 border-b border-[var(--inno-border)] px-2 py-1.5">
+					{orderedChannels.map((ch) => (
+						<button
+							key={ch}
+							className={`inno-channel-filter-chip inno-sidebar-meta rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(ch, state.channelFilter === ch)}`}
+							onClick={() => sessionsStore.setChannelFilter(state.channelFilter === ch ? null : ch)}
+						>
+							{channelLabel(ch)}
+						</button>
+					))}
+					<button
+						className={`inno-channel-filter-chip inno-sidebar-meta rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(null, state.channelFilter === null)}`}
+						onClick={() => sessionsStore.setChannelFilter(null)}
+					>
+						{t("sidebar.all")}
+					</button>
+				</div>
+			)}
 
 			{/* Session list */}
 			<div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-2 sidebar-scroll">
@@ -933,14 +949,48 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 				)}
 			</div>
 
-			{/* Footer */}
-			<div className="border-t border-[var(--inno-border)] p-2">
-				<button
-					className="inno-sidebar-text inno-new-chat-button flex w-full items-center justify-center gap-2 rounded-lg inno-primary-button px-3 py-1.5 font-medium text-white shadow-sm transition-colors"
-					onClick={newChat}
-				>
-					<Plus size={14} /> {t("sidebar.newChat")}
-				</button>
+			{/* Footer: search bar */}
+			<div className="px-2 py-1.5">
+				<div className="relative">
+					{showSearch ? (
+						<div className="flex items-center gap-1">
+							<div className="relative flex-1">
+								<Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)]" />
+								<input
+									className="inno-sidebar-text w-full rounded-full border-none bg-white py-3 pl-8 pr-8 text-[13px] outline-none placeholder:text-[var(--inno-text-subtle)] focus-visible:ring-2 focus-visible:ring-[#555AFF]/30"
+									placeholder={t("sidebar.searchPlaceholder")}
+									value={state.searchQuery}
+									autoFocus
+									onChange={(e) => sessionsStore.setSearchQuery(e.target.value)}
+								/>
+								{state.searchQuery && (
+									<button
+										className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)] hover:text-[var(--inno-text-muted)]"
+										onClick={() => sessionsStore.setSearchQuery("")}
+									>
+										<X size={12} />
+									</button>
+								)}
+							</div>
+							<button
+								className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-gray-100 hover:text-[var(--inno-text)]"
+								onClick={() => { setShowSearch(false); sessionsStore.setSearchQuery(""); }}
+							>
+								<X size={14} />
+							</button>
+						</div>
+					) : (
+						<div className="relative">
+							<Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555AFF]/60 pointer-events-none" />
+							<button
+								className="inno-sidebar-text w-full rounded-full border-none bg-white py-3 pl-8 pr-3 text-left text-[13px] text-[var(--inno-text-subtle)] transition-colors hover:bg-gray-50"
+								onClick={() => setShowSearch(true)}
+							>
+								{t("sidebar.searchPlaceholder")}
+							</button>
+						</div>
+					)}
+				</div>
 			</div>
 		</aside>
 	);

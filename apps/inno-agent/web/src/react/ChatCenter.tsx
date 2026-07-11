@@ -6,6 +6,7 @@ import type { TFunction } from "i18next";
 import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search, FileCode2, Sparkles } from "lucide-react";
 import { Spinner } from "./ui/Spinner.js";
 import type { ChatMessage, ChatToolRecord } from "../types/chat.js";
+import { InnoLogoIcon, InnoLogoIconAlt, InnoLogoText } from "./ui/InnoLogo.js";
 import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
@@ -549,9 +550,9 @@ export function ChatCenter() {
 	}, []);
 
 	const buildSessionInput = useCallback((): CreateSessionInput | { __error: string } => {
-		// Simple Mode: no workspace chooser. Direct chat always goes to a temp
+		// Normal Mode: no workspace chooser. Direct chat always goes to a temp
 		// workspace; presets are opened via openPreset into their own workspace.
-		if (simpleMode) return { newWorkspace: { isTemp: true } };
+		if (!simpleMode) return { newWorkspace: { isTemp: true } };
 		if (wsMode === "temp") return { newWorkspace: { isTemp: true } };
 		if (wsMode === "new") {
 			const trimmed = wsName.trim();
@@ -563,10 +564,10 @@ export function ChatCenter() {
 	}, [simpleMode, wsMode, wsName, wsExistingId, t]);
 
 	// Load presets from the remote content hub once when the welcome screen is
-	// shown in Simple Mode. Falls back to an empty list on failure (offline /
+	// shown in Normal Mode. Falls back to an empty list on failure (offline /
 	// hub unreachable) so the composer still works.
 	useEffect(() => {
-		if (isWelcome && simpleMode && presets.length === 0) {
+		if (isWelcome && !simpleMode && presets.length === 0) {
 			void listRemotePresets().then(setPresets).catch(() => setPresets([]));
 		}
 	}, [isWelcome, simpleMode, presets.length]);
@@ -902,19 +903,21 @@ export function ChatCenter() {
 								>
 									{/* Front — Normal mode */}
 									<span
-										className="flip-card-face absolute inset-0 flex items-center justify-center rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] text-base font-semibold text-[var(--inno-accent)] shadow-sm transition-colors hover:border-[var(--inno-accent)]"
+										className="flip-card-face absolute inset-0 flex items-center justify-center rounded-xl"
 									>
-										IA
+										<InnoLogoIcon className="h-[30px] w-[30px]" />
 									</span>
 									{/* Back — Simple mode */}
 									<span
-										className="flip-card-back absolute inset-0 flex items-center justify-center rounded-xl border border-[var(--inno-accent)] bg-[var(--inno-accent)] text-base font-semibold text-white shadow-sm"
+										className="flip-card-back absolute inset-0 flex items-center justify-center rounded-xl"
 									>
-										IA
+										<InnoLogoIconAlt className="h-[30px] w-[30px]" />
 									</span>
 								</motion.div>
 							</button>
-							<h2 className="text-lg font-medium text-[var(--inno-text)]">Inno Agent</h2>
+							<h2 className="text-lg font-medium text-[var(--inno-text)]">
+								说说你的教学需求，我来落地
+							</h2>
 							{/* Explicit, labeled mode switch (P4): the flip logo above is a nice
 							    secondary affordance, but a worded pill makes the toggle
 							    discoverable instead of hidden behind an icon click. */}
@@ -934,7 +937,7 @@ export function ChatCenter() {
 						{renderQuestionHint()}
 						{renderComposer(t("chat.welcomePlaceholder"))}
 
-						{simpleMode && presets.length > 0 ? (
+						{!simpleMode && presets.length > 0 ? (
 							<PresetPicker
 								presets={presets}
 								openingPresetId={openingPresetId}
@@ -945,7 +948,7 @@ export function ChatCenter() {
 							/>
 						) : null}
 
-						{simpleMode ? null : preselectedWs ? (
+						{!simpleMode ? null : preselectedWs ? (
 							<div className="mt-3 flex flex-wrap items-center gap-2">
 								<span className="text-xs text-[var(--inno-text-subtle)]">{t("workspace.title")}</span>
 								<span className="rounded-full bg-[var(--inno-accent-soft)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--inno-accent)]">

@@ -3,7 +3,7 @@
 > An open-source **personal learning agent** with a layered memory system, a proactive scheduler, multi-channel messaging, and a workspace-scoped Practice Lab — built on the [Pi coding-agent SDK](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) **without modifying its kernel**.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20.6.0-brightgreen.svg)](https://nodejs.org)
+[![Node](<https://img.shields.io/badge/node-%3E%3D20.6.0-brightgreen.svg>)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178c6.svg)](https://www.typescriptlang.org/)
 [![Website](https://img.shields.io/badge/Website-Inno%20Agent-ff6b35.svg)](https://hhyqhh.github.io/inno-agent-website/)
 
@@ -87,9 +87,9 @@ Open **http://localhost:3000**.
 
 Real-world usage guides live in [`docs/use-cases/`](https://github.com/hhyqhh/inno-agent/tree/main/docs/use-cases).
 
-| Guide | Description |
-|---|---|
-| [Skill Tutorial — Building a Workspace Agent](./docs/use-cases/skill-tutorial.md) | Use `agent.md` and `.skills/` to build a custom learning agent scoped to a workspace, with a concrete English study example |
+| Guide                                                                             | Description                                                                                                                    |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| [Skill Tutorial — Building a Workspace Agent](./docs/use-cases/skill-tutorial.md) | Use`agent.md` and `.skills/` to build a custom learning agent scoped to a workspace, with a concrete English study example |
 
 ---
 
@@ -154,15 +154,15 @@ Each provider has a `baseUrl`, an `api` (`openai-completions` or `anthropic-mess
 
 Both CLI and server resolve paths through `apps/inno-agent/src/runtime.ts`. Precedence: **CLI flag > env var > `~/.inno-agent/...`**.
 
-| CLI flag                          | Env var                | Default                   |
-| --------------------------------- | ---------------------- | ------------------------- |
-| `--home`                          | `INNO_HOME`            | `~/.inno-agent`           |
-| `--config`                        | `INNO_CONFIG_FILE`     | `<configDir>/config.json` |
-| `--config-dir`                    | `INNO_CONFIG_DIR`      | `<home>/config`           |
-| `--data` / `--data-dir`           | `INNO_DATA_DIR`        | `<home>/data`             |
-| `--skills` / `--skills-dir`       | `INNO_SKILLS_DIR`      | `<home>/skills`           |
-| `--workspace` / `--workspace-dir` | `INNO_WORKSPACE_DIR`   | invocation CWD            |
-| `--port`                          | `INNO_PORT` (`config`) | `3000`                    |
+| CLI flag                              | Env var                    | Default                     |
+| ------------------------------------- | -------------------------- | --------------------------- |
+| `--home`                            | `INNO_HOME`              | `~/.inno-agent`           |
+| `--config`                          | `INNO_CONFIG_FILE`       | `<configDir>/config.json` |
+| `--config-dir`                      | `INNO_CONFIG_DIR`        | `<home>/config`           |
+| `--data` / `--data-dir`           | `INNO_DATA_DIR`          | `<home>/data`             |
+| `--skills` / `--skills-dir`       | `INNO_SKILLS_DIR`        | `<home>/skills`           |
+| `--workspace` / `--workspace-dir` | `INNO_WORKSPACE_DIR`     | invocation CWD              |
+| `--port`                            | `INNO_PORT` (`config`) | `3000`                    |
 
 ### Content Hub (skill library + workspace presets)
 

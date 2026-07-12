@@ -166,7 +166,7 @@ export function JobsPanel() {
 	const previewLabel = humanizeSchedule(form.schedule, humanI18n);
 
 	return (
-		<div className="flex h-full flex-col p-3">
+		<div className="flex h-full flex-col">
 			<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
 				<div className="flex items-center justify-between border-b border-[var(--inno-border)] px-3 py-3">
 					<div>

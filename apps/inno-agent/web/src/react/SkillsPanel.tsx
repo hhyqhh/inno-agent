@@ -551,7 +551,7 @@ export function SkillsPanel() {
 
 	// List view — one skill per row
 	return (
-		<div className="relative flex h-full flex-col p-3">
+		<div className="relative flex h-full flex-col">
 			<div className="@container/skillspanel flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
 				{/* Toolbar */}
 				<div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b border-[var(--inno-border)] px-3 py-2">

@@ -1185,7 +1185,7 @@ export function SettingsPanel() {
 	const models = state.settings?.availableModels ?? state.settings?.configuredModels ?? [];
 
 	return (
-		<div className="h-full overflow-y-auto p-3">
+		<div className="h-full overflow-y-auto">
 			<div className="grid gap-3">
 				{/* Status cards */}
 				<div className="rounded-lg bg-[var(--inno-surface)] p-4">

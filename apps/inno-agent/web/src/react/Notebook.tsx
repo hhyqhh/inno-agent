@@ -53,8 +53,8 @@ export function Notebook() {
 	}, []);
 
 	return (
-		<div className={`grid h-full min-h-0 gap-3 p-3 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
-			<aside className={`flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+		<div className={`grid h-full min-h-0 gap-0 p-0 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
+			<aside className={`flex h-full min-h-0 flex-col overflow-hidden border border-[var(--inno-border)] bg-[var(--inno-surface)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
 				<div className="border-b border-[var(--inno-border)] p-2">
 					<input
 						type="text"
@@ -120,7 +120,7 @@ export function Notebook() {
 				</div>
 			</aside>
 
-			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden border border-[var(--inno-border)] bg-[var(--inno-surface)]">
 				<div className="@container flex items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2">
 					<div className="flex items-center gap-2">
 						<button

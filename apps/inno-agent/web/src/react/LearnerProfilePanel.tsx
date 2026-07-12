@@ -854,9 +854,9 @@ export function LearnerProfilePanel() {
 	}, []);
 
 	return (
-		<div className="h-full overflow-y-auto p-3">
+		<div className="h-full overflow-y-auto">
 			<div className="flex flex-col gap-3">
-				<div className="flex items-center justify-between rounded-lg bg-[var(--inno-surface)] px-4 py-3">
+				<div className="flex items-center justify-between rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-4 py-3">
 					<div>
 						<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("profile.title")}</h3>
 						<p className="text-xs text-[var(--inno-text-muted)]">{t("profile.subtitle")}</p>

@@ -5,6 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.6.0-brightgreen.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178c6.svg)](https://www.typescriptlang.org/)
+[![Website](https://img.shields.io/badge/Website-Inno%20Agent-ff6b35.svg)](https://hhyqhh.github.io/inno-agent-website/)
+
+> 🌐 **Homepage:** [https://hhyqhh.github.io/inno-agent-website/](https://hhyqhh.github.io/inno-agent-website/) - project overview, feature walkthrough, and live demos.
 
 > 📄 **Technical Report:** [*Inno Agent: An Open-Source Personal Learning Agent with Layered Memory, Educational Post-Training, and Local Deployment*](./docs/inno-agent.pdf) (arXiv, June 2026) — covers the system design, three-layer memory architecture, instructional-design grounding, and preliminary educational post-training results on Qwen3.6 35B.
 >
@@ -14,7 +17,7 @@
   <img src="./docs/assets/l2-wiki.png" alt="Inno Agent — L2 wiki knowledge base and graph" width="100%" />
 </p>
 
-Inno Agent is a single-learner companion that organizes long-term learning support into three explicit memory layers — an **L1 learner profile**, an **L2 native wiki knowledge base**, and **L3 session records with cross-conversation retrieval** — and wraps them with a learning loop: a cron scheduler, personal IM channels (Feishu / QQ / WeChat), and a Practice Lab with an in-browser terminal.
+Inno Agent is a single-learner companion that organizes long-term learning support into three explicit memory layers — an **L1 learner profile**, an **L2 native wiki knowledge base**, and **L3 session records with cross-conversation retrieval** — and wraps them with a learning loop: a cron scheduler, personal IM channels (Feishu / WeChat), and a Practice Lab with an in-browser terminal.
 
 It ships in two forms that share the same `runtime/` and `workspace/` state:
 
@@ -43,7 +46,7 @@ Inno Agent takes a different stance:
   - **L2 — Native wiki**: human-readable, agent-queryable pages (sources, concepts, entities, analysis) with LLM-assisted summarization, entity/concept linking, and PDF/Office/image ingestion.
   - **L3 — Session records + cross-conversation retrieval**: Pi-SDK session history, indexed into SQLite with threshold-gated lexical recall so relevant past conversations can be surfaced across sessions.
 - ⏰ **Proactive scheduler** — cron-driven background jobs created in natural language, runnable from the agent, the UI, or the cron daemon.
-- 💬 **Personal IM channels** — Feishu (native) plus QQ / WeChat (bridge mode), with a unified dispatcher that pushes reminders back out.
+- 💬 **Personal IM channels** — Feishu (native) plus WeChat (bridge mode), with a unified dispatcher that pushes reminders back out.
 - 🧪 **Practice Lab** — a workspace-scoped web terminal (xterm.js over WebSocket) with run records the agent can read.
 - 🔌 **Pluggable providers** — any `openai-completions` or `anthropic-messages` endpoint (Anthropic, OpenAI, DeepSeek, Ollama, or a local model); switch models live in the UI.
 - 🖥️ **CLI and Web UI** — same runtime, same memory, same skills.
@@ -140,7 +143,6 @@ The included `restart-dev.sh` orchestrates both processes (build, start, stop, s
   "server": { "port": 3000 },
   "channels": {
     "feishu": { "enabled": false },
-    "qq":     { "enabled": false, "mode": "bridge", "sidecarBaseUrl": "http://127.0.0.1:4318" },
     "wechat": { "enabled": false, "mode": "bridge", "sidecarBaseUrl": "http://127.0.0.1:4319" }
   }
 }
@@ -223,7 +225,7 @@ The Pi SDK packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`,
 Inno Agent is a single-user system with four layers: **user interfaces → application layer → Pi agent runtime → layered memory.**
 
 ```text
-User Interfaces      CLI · Web UI (React) · Feishu · WeChat · QQ
+User Interfaces      CLI · Web UI (React) · Feishu · WeChat
         ↓
 Application Layer    Channel adapters · HTTP API (SSE) · Memory orchestration
                      Cron scheduler · Practice Lab · WebSocket terminal
@@ -239,7 +241,7 @@ Layered Memory       L1 learner profile · L2 native wiki · L3 session records
 - **L2 — wiki memory** (`src/memory/l2/`): structured wiki pages with frontmatter, links, graph, summarizer, and document ingestion; exposed as agent tools and via `/api/wiki/*`.
 - **L3 — session memory** (`src/memory/l3/` + Pi `SessionManager`): the SDK owns session JSONL files; Inno layers a SQLite index (`node:sqlite` + FTS5) on top for cross-conversation recall, surfaced both automatically (above a relevance threshold) and via the `l3_recall` tool.
 - **Scheduler** (`src/scheduler/`): cron jobs persisted to `jobs.json` + `runs.jsonl`; runnable from the agent (`run_scheduled_job`), the UI, or the daemon.
-- **Channels** (`src/channels/`): `ChannelRegistry` with Feishu (and bridge-mode QQ / WeChat) so reminders can be pushed back out.
+- **Channels** (`src/channels/`): `ChannelRegistry` with Feishu (and bridge-mode WeChat) so reminders can be pushed back out.
 - **HTTP server** (`src/server.ts`): plain Node `http.createServer` with SSE for chat streaming and WebSocket for the in-browser terminal.
 - **Web UI** (`web/src/`): React 19 + Lit + Tailwind 4. State lives in framework-agnostic `EventEmitter` stores under `web/src/stores/`; REST/SSE calls in `web/src/api/`.
 

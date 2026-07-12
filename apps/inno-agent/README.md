@@ -1,6 +1,6 @@
 # Inno Agent
 
-基于 PI SDK 的个人学习 Agent，支持多渠道交互（CLI / Web UI / 飞书 / QQ / 微信）、三层记忆系统（L1 学习者画像 + L2 Wiki 知识库 + L3 会话记录及跨对话检索）、定时任务调度、Practice Lab 网页终端。
+基于 PI SDK 的个人学习 Agent，支持多渠道交互（CLI / Web UI / 飞书 / 微信）、三层记忆系统（L1 学习者画像 + L2 Wiki 知识库 + L3 会话记录及跨对话检索）、定时任务调度、Practice Lab 网页终端。
 
 > 本文档聚焦后端开发与运行细节。项目整体介绍、架构和定位见仓库根目录的 [README.md](../../README.md)。
 
@@ -144,7 +144,7 @@ src/                  # 后端 (Node.js)
 ├── server.ts         # HTTP Server + SSE + REST API
 ├── runtime.ts        # 运行时路径解析（CLI flag > env > 默认）
 ├── agent/            # PI SDK AgentSession 封装 + inno 扩展
-├── channels/         # 飞书 / QQ / 微信等渠道
+├── channels/         # 飞书 / 微信等渠道
 ├── scheduler/        # 定时任务
 ├── memory/           # L1 学习者 + L2 Wiki + L3 跨对话检索记忆
 │   ├── learner/      # L1 学习者画像

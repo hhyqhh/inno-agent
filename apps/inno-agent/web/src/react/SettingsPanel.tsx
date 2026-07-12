@@ -397,6 +397,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 	const [qqAllowedUsers, setQqAllowedUsers] = useState(
 		(qqConfig?.allowedUserIds ?? []).join("\n"),
 	);
+	// QQ channel is not yet implemented; flip to true when ready to expose settings.
+	const QQ_CHANNEL_READY = false;
 
 	// WeChat (iLink native mode)
 	const wechatConfig = settings.channels?.wechat;
@@ -528,7 +530,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 				</div>
 				<div className="flex items-center gap-2 text-xs text-[var(--inno-text-subtle)]">
 					{feishuEnabled && <span className="rounded bg-[var(--inno-success-bg)] px-1.5 py-0.5 text-[var(--inno-success)]">{t("settings.channels.feishu.title")}</span>}
-					{qqEnabled && <span className="rounded bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-[var(--inno-accent)]">{t("settings.channels.qq.title")}</span>}
+					{qqEnabled && QQ_CHANNEL_READY && <span className="rounded bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-[var(--inno-accent)]">{t("settings.channels.qq.title")}</span>}
 					{wechatEnabled && <span className="rounded bg-[var(--inno-success-bg)] px-1.5 py-0.5 text-[var(--inno-success)]">{t("settings.channels.wechat.title")}</span>}
 				</div>
 			</button>
@@ -611,7 +613,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 						)}
 					</div>
 
-					{/* QQ */}
+					{/* QQ (hidden: channel not yet implemented) */}
+					{QQ_CHANNEL_READY && (
 					<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 						<div className="mb-2 flex items-center justify-between">
 							<div>
@@ -642,6 +645,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 							</div>
 						)}
 					</div>
+					)}
 
 					{/* WeChat (iLink native) */}
 					<div className="rounded-lg bg-[var(--inno-surface)] p-3">
@@ -724,7 +728,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 					</div>
 
 					{/* Bridge Token (used by QQ sidecar) */}
-					{qqEnabled && (
+					{QQ_CHANNEL_READY && qqEnabled && (
 						<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 							<div className="text-xs font-medium text-[var(--inno-text)] mb-1">{t("settings.channels.bridgeToken")}</div>
 							<div className="text-[10px] text-[var(--inno-text-subtle)] mb-2">{t("settings.channels.bridgeTokenHint")}</div>

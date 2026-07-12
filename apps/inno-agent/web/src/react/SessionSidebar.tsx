@@ -745,34 +745,27 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 				</div>
 
 				{/* Footer: search bar */}
-				<div className="px-2 py-1.5">
+				<div className="px-2 pt-1.5 pb-20">
 					<div className="relative">
 						{showSearch ? (
-							<div className="flex items-center gap-1">
-								<div className="relative flex-1">
-									<Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)]" />
-									<input
-										className="inno-sidebar-text w-full rounded-full border-none bg-white py-3 pl-8 pr-8 text-[13px] outline-none placeholder:text-[var(--inno-text-subtle)] focus-visible:ring-2 focus-visible:ring-[#555AFF]/30"
-										placeholder={t("sidebar.searchPlaceholder")}
-										value={state.searchQuery}
-										autoFocus
-										onChange={(e) => sessionsStore.setSearchQuery(e.target.value)}
-									/>
-									{state.searchQuery && (
-										<button
-											className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)] hover:text-[var(--inno-text-muted)]"
-											onClick={() => sessionsStore.setSearchQuery("")}
-										>
-											<X size={12} />
-										</button>
-									)}
-								</div>
-								<button
-									className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-gray-100 hover:text-[var(--inno-text)]"
-									onClick={() => { setShowSearch(false); sessionsStore.setSearchQuery(""); }}
-								>
-									<X size={14} />
-								</button>
+							<div className="relative flex-1">
+								<Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)]" />
+								<input
+									className="inno-sidebar-text w-full rounded-full border-none bg-white py-3 pl-8 pr-8 text-[13px] outline-none placeholder:text-[var(--inno-text-subtle)] focus-visible:ring-2 focus-visible:ring-[#555AFF]/30"
+									placeholder={t("sidebar.searchPlaceholder")}
+									value={state.searchQuery}
+									autoFocus
+									onChange={(e) => sessionsStore.setSearchQuery(e.target.value)}
+									onKeyDown={(e) => { if (e.key === "Escape") { setShowSearch(false); sessionsStore.setSearchQuery(""); } }}
+								/>
+								{state.searchQuery && (
+									<button
+										className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)] hover:text-[var(--inno-text-muted)]"
+										onClick={() => sessionsStore.setSearchQuery("")}
+									>
+										<X size={12} />
+									</button>
+								)}
 							</div>
 						) : (
 							<div className="relative">
@@ -950,34 +943,27 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			</div>
 
 			{/* Footer: search bar */}
-			<div className="px-2 py-1.5">
+			<div className="px-2 pt-1.5 pb-20">
 				<div className="relative">
 					{showSearch ? (
-						<div className="flex items-center gap-1">
-							<div className="relative flex-1">
-								<Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)]" />
-								<input
-									className="inno-sidebar-text w-full rounded-full border-none bg-white py-3 pl-8 pr-8 text-[13px] outline-none placeholder:text-[var(--inno-text-subtle)] focus-visible:ring-2 focus-visible:ring-[#555AFF]/30"
-									placeholder={t("sidebar.searchPlaceholder")}
-									value={state.searchQuery}
-									autoFocus
-									onChange={(e) => sessionsStore.setSearchQuery(e.target.value)}
-								/>
-								{state.searchQuery && (
-									<button
-										className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)] hover:text-[var(--inno-text-muted)]"
-										onClick={() => sessionsStore.setSearchQuery("")}
-									>
-										<X size={12} />
-									</button>
-								)}
-							</div>
-							<button
-								className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-subtle)] hover:bg-gray-100 hover:text-[var(--inno-text)]"
-								onClick={() => { setShowSearch(false); sessionsStore.setSearchQuery(""); }}
-							>
-								<X size={14} />
-							</button>
+						<div className="relative flex-1">
+							<Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)]" />
+							<input
+								className="inno-sidebar-text w-full rounded-full border-none bg-white py-3 pl-8 pr-8 text-[13px] outline-none placeholder:text-[var(--inno-text-subtle)] focus-visible:ring-2 focus-visible:ring-[#555AFF]/30"
+								placeholder={t("sidebar.searchPlaceholder")}
+								value={state.searchQuery}
+								autoFocus
+								onChange={(e) => sessionsStore.setSearchQuery(e.target.value)}
+								onKeyDown={(e) => { if (e.key === "Escape") { setShowSearch(false); sessionsStore.setSearchQuery(""); } }}
+							/>
+							{state.searchQuery && (
+								<button
+									className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)] hover:text-[var(--inno-text-muted)]"
+									onClick={() => sessionsStore.setSearchQuery("")}
+								>
+									<X size={12} />
+								</button>
+							)}
 						</div>
 					) : (
 						<div className="relative">

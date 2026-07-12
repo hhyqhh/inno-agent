@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Paperclip, X, Square, RotateCcw, Image, AlertTriangle, Search, Folder, FolderOpen, FolderPlus, Zap, Check, ArrowUp, FileCode2, Sparkles } from "lucide-react";
@@ -1032,11 +1032,26 @@ export function ChatCenter() {
 					</div>
 				</div>
 
-				{/* New Workspace Dialog */}
+				{/* New Workspace Dialog — portaled to body to escape .app-layout stacking context */}
+				{createPortal(
+				<AnimatePresence>
 				{showNewWsDialog ? (
 					<>
-						<div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowNewWsDialog(false)} />
-						<div className="fixed left-1/2 top-1/2 z-50 w-80 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] p-6 shadow-xl">
+						<motion.div
+							className="fixed inset-0 z-[100] bg-black/20"
+							initial={{ opacity: 0 }}
+							animate={{ opacity: 1 }}
+							exit={{ opacity: 0 }}
+							transition={{ duration: 0.2 }}
+							onClick={() => setShowNewWsDialog(false)}
+						/>
+						<motion.div
+							className="fixed left-1/2 top-1/2 z-[101] w-80 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] p-6 shadow-xl"
+							initial={{ opacity: 0, scale: 0.95, y: 8 }}
+							animate={{ opacity: 1, scale: 1, y: 0 }}
+							exit={{ opacity: 0, scale: 0.95, y: 8 }}
+							transition={{ duration: 0.2, ease: "easeOut" }}
+						>
 							<div className="mb-0.5 text-lg font-medium text-[var(--inno-text)]">新建工作区</div>
 							<div className="mb-5 text-xs text-[var(--inno-text-muted)]">建议简短易于识别</div>
 							<input
@@ -1050,17 +1065,17 @@ export function ChatCenter() {
 										setShowNewWsDialog(false);
 									}
 								}}
-								className="mt-2 mb-4 w-full rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2 py-0.5 text-[10px] outline-none focus-visible:border-[var(--inno-focus-border)] focus-visible:shadow-[var(--inno-ring)]"
+								className="mt-2 mb-4 w-full rounded border border-[var(--inno-border)] bg-white px-2 py-0.5 text-[10px] outline-none focus-visible:border-[var(--inno-focus-border)] focus-visible:shadow-[var(--inno-ring)]"
 							/>
 							<div className="flex justify-end gap-1.5">
 								<button
-									className="rounded-full border border-[var(--inno-border)] px-1.5 py-px text-[9px] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
+									className="rounded-lg border border-[var(--inno-border)] px-1.5 py-px text-[9px] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
 									onClick={() => setShowNewWsDialog(false)}
 								>
 									返回
 								</button>
 								<button
-									className="rounded-full bg-[var(--inno-accent)] px-1.5 py-px text-[9px] text-white disabled:opacity-40"
+									className="rounded-lg bg-[var(--inno-accent)] px-1.5 py-px text-[9px] text-white disabled:opacity-40"
 									disabled={!wsName.trim()}
 									onClick={async () => {
 										const trimmed = wsName.trim();
@@ -1079,9 +1094,12 @@ export function ChatCenter() {
 									确认
 								</button>
 							</div>
-						</div>
+						</motion.div>
 					</>
 				) : null}
+			</AnimatePresence>,
+			document.body,
+			)}
 			</section>
 		);
 	}

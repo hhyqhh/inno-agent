@@ -47,7 +47,7 @@ function Section({
 }) {
 	const [collapsed, setCollapsed] = useState(defaultCollapsed);
 	return (
-		<section className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+		<section className="bg-[var(--inno-surface)]">
 			<div className="flex items-center justify-between gap-3 px-4 py-3.5">
 				<button
 					className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
@@ -71,7 +71,7 @@ function Section({
 						transition={{ duration: 0.2, ease: "easeOut" }}
 						style={{ overflow: "hidden" }}
 					>
-						<div className="border-t border-[var(--inno-border)] px-4 py-4">{children}</div>
+						<div className="px-4 py-4">{children}</div>
 					</motion.div>
 				) : null}
 			</AnimatePresence>
@@ -624,12 +624,12 @@ function KnowledgeRow({ state }: { state: KnowledgeState }) {
 							/>
 						</label>
 						<div className="flex justify-end gap-2 pt-1">
-							<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1 text-xs text-[var(--inno-text-muted)]" onClick={() => setExpanded(false)}>
-								{t("common.cancel")}
-							</button>
-							<button className="rounded-md inno-primary-button px-3 py-1 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void save()}>
+						<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1 text-xs text-[var(--inno-text-muted)]" onClick={() => setExpanded(false)}>
+							{t("common.cancel")}
+								</button>
+						<button className="rounded-md inno-primary-button px-3 py-1 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void save()}>
 								{saving ? t("common.saving") : t("common.save")}
-							</button>
+								</button>
 						</div>
 					</div>
 				</div>
@@ -706,7 +706,7 @@ function MisconceptionRow({ item }: { item: Misconception }) {
 					>
 						{MISC_STATUSES.map((s) => (
 							<option key={s} value={s}>
-								{t(`profile.misconceptions.statusOptions.${s}`)}
+							{t(`profile.misconceptions.statusOptions.${s}`)}
 							</option>
 						))}
 					</select>
@@ -855,8 +855,8 @@ export function LearnerProfilePanel() {
 
 	return (
 		<div className="h-full overflow-y-auto">
-			<div className="flex flex-col gap-3">
-				<div className="flex items-center justify-between rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-4 py-3">
+			<div className="flex flex-col gap-2">
+				<div className="flex items-center justify-between bg-[var(--inno-surface)] px-4 py-3">
 					<div>
 						<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("profile.title")}</h3>
 						<p className="text-xs text-[var(--inno-text-muted)]">{t("profile.subtitle")}</p>
@@ -866,8 +866,8 @@ export function LearnerProfilePanel() {
 							</p>
 						) : null}
 					</div>
-					<button className="rounded-md px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void learnerStore.load()}>
-						{t("profile.refresh")}
+					<button className="rounded-md inno-primary-button inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-white" onClick={() => void learnerStore.load()}>
+						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-refresh-cw" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path></svg> {t("profile.refresh")}
 					</button>
 				</div>
 

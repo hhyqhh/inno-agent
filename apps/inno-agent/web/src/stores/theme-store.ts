@@ -25,7 +25,7 @@ function isValidTheme(v: string | null): v is ThemeId {
 function getInitialTheme(): ThemeId {
 	const saved = localStorage.getItem(STORAGE_KEY);
 	if (isValidTheme(saved)) return saved;
-	return "light";
+	return "innospark";
 }
 
 function applyThemeToDOM(id: ThemeId): void {

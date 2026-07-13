@@ -4,7 +4,6 @@ import { Trash2, Pencil, X, ChevronDown, ChevronRight, Plus, QrCode as QrCodeIco
 import { QRCodeSVG } from "qrcode.react";
 import { getWikiStats } from "../api/wiki.js";
 import { settingsStore } from "../stores/settings-store.js";
-import { themeStore, THEME_IDS, THEME_PREVIEW_COLORS, type ThemeId } from "../stores/theme-store.js";
 import { feishuQrRegister, feishuQrStatus, wechatQrLogin, wechatQrStatus, wechatStatus } from "../api/settings.js";
 import type { InnoModelInfo, InnoProviderModel as ProviderModel, InnoSettings, ChannelsSettingsPayload, PersonalBridgeChannelConfig } from "../types/settings.js";
 import type { WikiStats } from "../types/wiki.js";
@@ -185,38 +184,6 @@ function ModelEditForm({ model, settings, onClose }: {
 				<button className="rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" onClick={onClose}>
 					{t("common.cancel", "Cancel")}
 				</button>
-			</div>
-		</div>
-	);
-}
-
-/* ---------- New Provider Form (collapsible) ---------- */
-
-function ThemeSettings() {
-	const { t } = useTranslation();
-	const state = useStoreSnapshot(themeStore, () => ({ current: themeStore.current }));
-	return (
-		<div className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
-			<span>{t("settings.theme")}</span>
-			<div className="flex gap-1">
-				{THEME_IDS.map((id) => {
-					const active = state.current === id;
-					return (
-						<button
-							key={id}
-							type="button"
-							aria-label={t(`settings.themeOptions.${id}`)}
-							title={t(`settings.themeOptions.${id}`)}
-							onClick={() => void themeStore.save(id)}
-							className={`h-5 w-5 rounded-full border-2 transition-all ${
-								active
-									? "border-[var(--inno-accent)] ring-2 ring-[var(--inno-accent)]/30 scale-110"
-									: "border-[var(--inno-border-strong)] hover:border-[var(--inno-border-strong)]"
-							}`}
-							style={{ backgroundColor: THEME_PREVIEW_COLORS[id] }}
-						/>
-					);
-				})}
 			</div>
 		</div>
 	);
@@ -1192,8 +1159,7 @@ export function SettingsPanel() {
 					<div className="mb-3 flex items-center justify-between">
 						<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("settings.title")}</h3>
 						<div className="flex items-center gap-2">
-							<ThemeSettings />
-							<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
+														<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
 								<span>{t("settings.language")}</span>
 								<select
 									className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 text-xs"

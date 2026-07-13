@@ -17,7 +17,7 @@ import { cpp } from "@codemirror/lang-cpp";
 import { rust } from "@codemirror/lang-rust";
 import { go } from "@codemirror/lang-go";
 import type { Extension } from "@codemirror/state";
-import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, FileCode2, Presentation, FileSpreadsheet, Copy, Check } from "lucide-react";
+import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Upload, Download, FileCode2, Presentation, FileSpreadsheet, Copy, Check} from "lucide-react";
 import { workspaceStore, type StreamingWorkspacePreview } from "../stores/workspace-store.js";
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
@@ -1124,7 +1124,7 @@ export function WorkspaceBrowser() {
 						</span>
 					</div>
 					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-violet-100 hover:text-violet-600 disabled:opacity-40" title={t("files.uploadSkill", "Upload skill package (.zip/.md) to .skills")} onClick={() => skillUploadRef.current?.click()}>
-						<Sparkles size={13} />
+						<Upload size={13} />
 					</button>
 					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-slate-200 hover:text-[var(--inno-text)] disabled:opacity-40" title={t("preview.refresh", "Refresh")} onClick={() => void workspaceStore.loadTree()}>
 						<RefreshCw size={13} />

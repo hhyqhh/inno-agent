@@ -73,13 +73,13 @@ export function PageView() {
 
 	if (state.isLoading) {
 		return (
-			<div className="flex h-full items-center justify-center text-[var(--inno-text-muted)]">
+			<div className="flex h-full items-center justify-center bg-[var(--inno-workspace-bg,#fafafa)] text-[var(--inno-text-muted)]">
 				<Spinner size={20} />
 			</div>
 		);
 	}
 	if (!state.currentPage || !parsed) {
-		return <div className="flex h-full items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("notebook.page.empty")}</div>;
+		return <div className="flex h-full items-center justify-center bg-[var(--inno-workspace-bg,#fafafa)] text-sm text-[var(--inno-text-muted)]">{t("notebook.page.empty")}</div>;
 	}
 
 	if (state.isEditing) {

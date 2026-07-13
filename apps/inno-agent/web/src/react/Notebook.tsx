@@ -54,21 +54,21 @@ export function Notebook() {
 
 	return (
 		<div className={`grid h-full min-h-0 gap-0 p-0 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
-			<aside className={`flex h-full min-h-0 flex-col overflow-hidden border border-[var(--inno-border)] bg-[var(--inno-surface)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
-				<div className="border-b border-[var(--inno-border)] p-2">
+			<aside className={`flex h-full min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-surface)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+				<div className="flex items-center border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-3 py-2">
 					<input
 						type="text"
-						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] h-7 px-3 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 						placeholder={t("notebook.search") ?? ""}
 						value={state.searchQuery}
 						onChange={(event) => notebookStore.setSearchQuery(event.target.value)}
 					/>
 				</div>
-				<div className="flex flex-wrap gap-1 border-b border-[var(--inno-border)] px-2 py-2">
+				<div className="flex flex-wrap items-center gap-1 border-b border-[var(--inno-border)] px-2 py-2">
 					{FILTER_TYPES.map((type) => (
 						<button
 							key={type}
-							className={`rounded-full px-2 py-0.5 text-xs transition-colors ${
+							className={`rounded-full px-2 py-[7px] text-xs transition-colors ${
 								state.filterType === type
 									? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
 									: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
@@ -120,8 +120,8 @@ export function Notebook() {
 				</div>
 			</aside>
 
-			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden border border-[var(--inno-border)] bg-[var(--inno-surface)]">
-				<div className="@container flex items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2">
+			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-surface)]">
+				<div className="@container flex items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-3 py-2">
 					<div className="flex items-center gap-2">
 						<button
 							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"

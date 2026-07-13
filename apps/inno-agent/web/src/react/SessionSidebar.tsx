@@ -15,6 +15,11 @@ import {
 	Search,
 	X,
 	FolderKanban,
+	ArrowUpDown,
+	Check,
+	GripVertical,
+	ChevronUp,
+	ChevronDown,
 } from "lucide-react";
 import { appStore } from "../stores/app-store.js";
 import { chatStore } from "../stores/chat-store.js";
@@ -32,6 +37,28 @@ interface SessionSidebarProps {
 }
 
 const CHANNEL_FILTER_ORDER = ["web", "feishu", "wechat", "cli", "scheduler"] as const;
+const WORKSPACE_SORT_STORAGE_KEY = "inno.sidebarWorkspaceSort";
+const WORKSPACE_CUSTOM_ORDER_STORAGE_KEY = "inno.sidebarWorkspaceCustomOrder";
+
+type WorkspaceSort = "recent" | "oldest" | "nameAsc" | "nameDesc" | "custom";
+
+function readWorkspaceSort(): WorkspaceSort {
+	if (typeof window === "undefined") return "recent";
+	const saved = window.localStorage.getItem(WORKSPACE_SORT_STORAGE_KEY);
+	return saved === "oldest" || saved === "nameAsc" || saved === "nameDesc" || saved === "custom"
+		? saved
+		: "recent";
+}
+
+function readWorkspaceCustomOrder(): string[] {
+	if (typeof window === "undefined") return [];
+	try {
+		const saved = JSON.parse(window.localStorage.getItem(WORKSPACE_CUSTOM_ORDER_STORAGE_KEY) ?? "[]");
+		return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === "string") : [];
+	} catch {
+		return [];
+	}
+}
 
 /* ── helpers ── */
 
@@ -126,8 +153,12 @@ function channelFilterClass(channel: SessionChannel | null, active: boolean): st
 interface WsGroup {
 	id: string;
 	name: string;
+	/** Latest visible conversation activity; 0 means the workspace has no visible conversations. */
+	activityAt: number;
 	/** Whether rename/delete actions are offered (false for temp + archived bucket). */
 	manageable: boolean;
+	/** Whether the group participates in automatic and custom workspace ordering. */
+	sortable: boolean;
 	/** Whether a new chat can be started directly in this workspace (false for synthetic groups). */
 	canCreate: boolean;
 	sessions: SessionMeta[];
@@ -149,6 +180,15 @@ function GroupHeader({
 	onEditSave,
 	onEditCancel,
 	onDelete,
+	reorderMode,
+	dragging,
+	canMoveUp,
+	canMoveDown,
+	onDragStart,
+	onDragOver,
+	onDragEnd,
+	onMoveUp,
+	onMoveDown,
 }: {
 	group: WsGroup;
 	collapsed: boolean;
@@ -163,10 +203,37 @@ function GroupHeader({
 	onEditSave: () => void;
 	onEditCancel: () => void;
 	onDelete: () => void;
+	reorderMode: boolean;
+	dragging: boolean;
+	canMoveUp: boolean;
+	canMoveDown: boolean;
+	onDragStart: () => void;
+	onDragOver: () => void;
+	onDragEnd: () => void;
+	onMoveUp: () => void;
+	onMoveDown: () => void;
 }) {
 	const { t } = useTranslation();
 	return (
-		<div className={`group/wsh sticky top-0 z-10 flex w-full items-center gap-1.5 px-2 py-1.5 ${active ? "bg-[var(--inno-surface-muted)]" : "bg-[var(--inno-sidebar-bg)]"}`}>
+		<div
+			draggable={reorderMode}
+			onDragStart={(e) => {
+				if (!reorderMode) return;
+				e.dataTransfer.effectAllowed = "move";
+				onDragStart();
+			}}
+			onDragOver={(e) => {
+				if (!reorderMode) return;
+				e.preventDefault();
+				e.dataTransfer.dropEffect = "move";
+				onDragOver();
+			}}
+			onDragEnd={onDragEnd}
+			className={`group/wsh sticky top-0 z-10 flex w-full items-center gap-1.5 px-2 py-1.5 transition-opacity ${active ? "bg-[var(--inno-surface-muted)]" : "bg-[var(--inno-sidebar-bg)]"} ${reorderMode ? "cursor-grab active:cursor-grabbing" : ""} ${dragging ? "opacity-45" : ""}`}
+		>
+			{reorderMode ? (
+				<GripVertical size={13} className="shrink-0 text-[var(--inno-text-subtle)]" aria-hidden="true" />
+			) : null}
 			<button
 				className="shrink-0 text-[var(--inno-text-subtle)] transition-colors hover:text-[var(--inno-text-muted)]"
 				title={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
@@ -180,7 +247,7 @@ function GroupHeader({
 			<button
 				className="inno-sidebar-meta flex min-w-0 flex-1 items-center gap-1.5 font-semibold uppercase text-[var(--inno-text-subtle)] transition-colors hover:text-[var(--inno-text-muted)]"
 				title={group.canCreate ? t("sidebar.loadWorkspace") : undefined}
-				onClick={onSelect}
+				onClick={() => { if (!reorderMode) onSelect(); }}
 			>
 				<FolderKanban size={12} className="shrink-0 text-[var(--inno-text-subtle)]" />
 				{editing ? (
@@ -201,7 +268,28 @@ function GroupHeader({
 					<span className="min-w-0 truncate normal-case text-[var(--inno-text-muted)]">{group.name}</span>
 				)}
 			</button>
-			{!editing ? (
+			{reorderMode ? (
+				<div className="flex items-center gap-0.5">
+					<button
+						type="button"
+						disabled={!canMoveUp}
+						className="rounded p-0.5 text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:cursor-not-allowed disabled:opacity-25"
+						title={t("sidebar.moveWorkspaceUp")}
+						onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
+					>
+						<ChevronUp size={12} />
+					</button>
+					<button
+						type="button"
+						disabled={!canMoveDown}
+						className="rounded p-0.5 text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:cursor-not-allowed disabled:opacity-25"
+						title={t("sidebar.moveWorkspaceDown")}
+						onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
+					>
+						<ChevronDown size={12} />
+					</button>
+				</div>
+			) : !editing ? (
 				<div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/wsh:opacity-100">
 					{group.canCreate ? (
 						<button
@@ -387,6 +475,12 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 	const [showSearch, setShowSearch] = useState(false);
 	const [editingWsId, setEditingWsId] = useState<string | null>(null);
 	const [editingWsName, setEditingWsName] = useState("");
+	const [workspaceSort, setWorkspaceSort] = useState<WorkspaceSort>(readWorkspaceSort);
+	const [customOrder, setCustomOrder] = useState<string[]>(readWorkspaceCustomOrder);
+	const [sortMenuOpen, setSortMenuOpen] = useState(false);
+	const [isCustomSorting, setIsCustomSorting] = useState(false);
+	const [customOrderDraft, setCustomOrderDraft] = useState<string[]>([]);
+	const [draggingWorkspaceId, setDraggingWorkspaceId] = useState<string | null>(null);
 
 	const state = useStoreSnapshot(sessionsStore, () => ({
 		sessions: sessionsStore.sessions,
@@ -416,11 +510,21 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 	}, [togglingMode]);
 
 	const orderedChannels = CHANNEL_FILTER_ORDER.filter((ch) => state.availableChannels.includes(ch as SessionChannel));
+	const workspaceFiltering = Boolean(state.searchQuery || state.channelFilter);
 
 	useEffect(() => {
 		void sessionsStore.load();
 		void workspacesStore.load();
 	}, []);
+
+	useEffect(() => {
+		if (!sortMenuOpen) return;
+		const closeOnEscape = (event: KeyboardEvent) => {
+			if (event.key === "Escape") setSortMenuOpen(false);
+		};
+		document.addEventListener("keydown", closeOnEscape);
+		return () => document.removeEventListener("keydown", closeOnEscape);
+	}, [sortMenuOpen]);
 
 	// Build workspace-grouped session list. Non-archived sessions are grouped by
 	// their bound workspace (in workspace recency order); archived sessions go to
@@ -444,12 +548,11 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			byWs.get(w.id)!.push(s);
 		}
 		const result: WsGroup[] = [];
-		// Fixed ordering: user project workspaces (by recency) → channel workspaces
-		// (feishu → wechat → cli) → temp workspace → unknown → archived.
+		// Sortable workspaces (user projects + temp) come first, followed by fixed
+		// channel workspaces (feishu → wechat → cli), unknown and archived.
 		const CHANNEL_WS_ORDER = ["channel-feishu", "channel-wechat", "channel-cli"];
 		const channelGroups = new Map<string, WsGroup>();
-		const projectGroups: WsGroup[] = [];
-		const tempGroups: WsGroup[] = [];
+		const sortableGroups: WsGroup[] = [];
 		// When a search/filter is active, only show groups that have matching
 		// sessions so the list narrows as expected.
 		const filtering = !!state.searchQuery || !!state.channelFilter;
@@ -463,31 +566,116 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			// even with zero sessions, so they stay visible and deletable after
 			// their last session is removed (unless a filter is narrowing the list).
 			if (sessions.length === 0 && (w.isTemp || isChannel || filtering)) continue;
-			const g: WsGroup = { id: w.id, name: w.name, manageable: !w.isTemp && !isChannel, canCreate: true, sessions };
-			if (w.isTemp) {
-				tempGroups.push(g);
-			} else if (isChannel) {
+			const latestSessionAt = sessions.reduce((latest, session) => {
+				const timestamp = Date.parse(session.updatedAt);
+				return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
+			}, 0);
+			const g: WsGroup = {
+				id: w.id,
+				name: w.name,
+				activityAt: latestSessionAt,
+				manageable: !w.isTemp && !isChannel,
+				sortable: !isChannel,
+				canCreate: true,
+				sessions,
+			};
+			if (isChannel) {
 				channelGroups.set(w.id, g);
 			} else {
-				projectGroups.push(g);
+				sortableGroups.push(g);
 			}
 		}
-		// Project workspaces keep their recency order (wsState.list is sorted by updatedAt).
-		result.push(...projectGroups);
+		const activeCustomOrder = isCustomSorting ? customOrderDraft : customOrder;
+		if ((workspaceSort === "recent" || workspaceSort === "oldest") && !isCustomSorting) {
+			const direction = workspaceSort === "recent" ? -1 : 1;
+			sortableGroups.sort((a, b) => {
+				if (a.activityAt === 0 && b.activityAt !== 0) return 1;
+				if (b.activityAt === 0 && a.activityAt !== 0) return -1;
+				return direction * (a.activityAt - b.activityAt);
+			});
+		} else if ((workspaceSort === "nameAsc" || workspaceSort === "nameDesc") && !isCustomSorting) {
+			const direction = workspaceSort === "nameAsc" ? 1 : -1;
+			sortableGroups.sort((a, b) => direction * a.name.localeCompare(b.name));
+		} else if (workspaceSort === "custom" || isCustomSorting) {
+			const positions = new Map(activeCustomOrder.map((id, index) => [id, index]));
+			sortableGroups.sort((a, b) => {
+				const aPos = positions.get(a.id);
+				const bPos = positions.get(b.id);
+				if (aPos === undefined && bPos === undefined) return 0;
+				if (aPos === undefined) return -1;
+				if (bPos === undefined) return 1;
+				return aPos - bPos;
+			});
+		}
+		result.push(...sortableGroups);
 		// Channel workspaces in fixed order.
 		for (const id of CHANNEL_WS_ORDER) {
 			const g = channelGroups.get(id);
 			if (g) result.push(g);
 		}
-		result.push(...tempGroups);
 		if (unknown.length > 0) {
-			result.push({ id: "__unknown__", name: t("sidebar.ungrouped"), manageable: false, canCreate: false, sessions: unknown });
+			result.push({ id: "__unknown__", name: t("sidebar.ungrouped"), activityAt: 0, manageable: false, sortable: false, canCreate: false, sessions: unknown });
 		}
 		if (archived.length > 0) {
-			result.push({ id: "archived", name: t("sidebar.archived"), manageable: false, canCreate: false, sessions: archived });
+			result.push({ id: "archived", name: t("sidebar.archived"), activityAt: 0, manageable: false, sortable: false, canCreate: false, sessions: archived });
 		}
 		return result;
-	}, [wsState.list, state.filteredSessions, state.searchQuery, state.channelFilter, simpleMode, t]);
+	}, [wsState.list, state.filteredSessions, state.searchQuery, state.channelFilter, simpleMode, t, workspaceSort, customOrder, isCustomSorting, customOrderDraft]);
+
+	const sortableGroupIds = useMemo(() => groups.filter((group) => group.sortable).map((group) => group.id), [groups]);
+
+	const chooseWorkspaceSort = useCallback((sort: Exclude<WorkspaceSort, "custom">) => {
+		setWorkspaceSort(sort);
+		setIsCustomSorting(false);
+		setSortMenuOpen(false);
+		window.localStorage.setItem(WORKSPACE_SORT_STORAGE_KEY, sort);
+	}, []);
+
+	const beginCustomSort = useCallback(() => {
+		setCustomOrderDraft(sortableGroupIds);
+		setDraggingWorkspaceId(null);
+		setIsCustomSorting(true);
+		setSortMenuOpen(false);
+	}, [sortableGroupIds]);
+
+	const finishCustomSort = useCallback(() => {
+		setCustomOrder(customOrderDraft);
+		setWorkspaceSort("custom");
+		setIsCustomSorting(false);
+		setDraggingWorkspaceId(null);
+		window.localStorage.setItem(WORKSPACE_SORT_STORAGE_KEY, "custom");
+		window.localStorage.setItem(WORKSPACE_CUSTOM_ORDER_STORAGE_KEY, JSON.stringify(customOrderDraft));
+	}, [customOrderDraft]);
+
+	const cancelCustomSort = useCallback(() => {
+		setIsCustomSorting(false);
+		setDraggingWorkspaceId(null);
+		setCustomOrderDraft([]);
+	}, []);
+
+	const moveCustomWorkspace = useCallback((workspaceId: string, targetIndex: number) => {
+		setCustomOrderDraft((current) => {
+			const fromIndex = current.indexOf(workspaceId);
+			if (fromIndex < 0 || targetIndex < 0 || targetIndex >= current.length || fromIndex === targetIndex) return current;
+			const next = [...current];
+			next.splice(fromIndex, 1);
+			next.splice(targetIndex, 0, workspaceId);
+			return next;
+		});
+	}, []);
+
+	const moveDraggedWorkspaceBefore = useCallback((targetId: string) => {
+		if (!draggingWorkspaceId || draggingWorkspaceId === targetId) return;
+		setCustomOrderDraft((current) => {
+			const fromIndex = current.indexOf(draggingWorkspaceId);
+			const targetIndex = current.indexOf(targetId);
+			if (fromIndex < 0 || targetIndex < 0) return current;
+			const next = [...current];
+			next.splice(fromIndex, 1);
+			next.splice(targetIndex, 0, draggingWorkspaceId);
+			return next;
+		});
+	}, [draggingWorkspaceId]);
 
 	// Simple Mode (P7): a flat, recency-sorted list of web conversations — the
 	// lightweight way back to a previously generated artifact (PPT, lesson plan,
@@ -845,10 +1033,10 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 					)}
 				</div>
 
-				{/* Channel filter chips — hidden in Simple Mode (web-only view) */}
-				{!simpleMode && state.availableChannels.length > 1 && (
-					<div className="flex flex-wrap items-center gap-1">
-						{orderedChannels.map((ch) => (
+				{/* Channel filters + workspace ordering — hidden in Simple Mode. */}
+				{!simpleMode && (
+					<div className="relative flex items-center gap-1">
+						{state.availableChannels.length > 1 ? orderedChannels.map((ch) => (
 							<button
 								key={ch}
 								className={`inno-channel-filter-chip inno-sidebar-meta rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(ch, state.channelFilter === ch)}`}
@@ -856,13 +1044,68 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 							>
 								{channelLabel(ch)}
 							</button>
-						))}
-						<button
+						)) : null}
+						{state.availableChannels.length > 1 ? <button
 							className={`inno-channel-filter-chip inno-sidebar-meta rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(null, state.channelFilter === null)}`}
 							onClick={() => sessionsStore.setChannelFilter(null)}
 						>
 							{t("sidebar.all")}
-						</button>
+						</button> : null}
+						<div className="ml-auto flex shrink-0 items-center gap-1">
+							{isCustomSorting ? (
+								<>
+									<button
+										type="button"
+										className="inno-sidebar-meta rounded-md px-1.5 py-0.5 text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+										onClick={cancelCustomSort}
+									>
+										{t("common.cancel")}
+									</button>
+									<button
+										type="button"
+										className="inno-sidebar-meta rounded-md bg-[var(--inno-accent)] px-1.5 py-0.5 font-medium text-white transition-opacity hover:opacity-90"
+										onClick={finishCustomSort}
+									>
+										{t("common.done")}
+									</button>
+								</>
+							) : (
+								<button
+									type="button"
+									aria-haspopup="menu"
+									aria-expanded={sortMenuOpen}
+									aria-label={t("sidebar.sortWorkspaces")}
+									title={t("sidebar.sortWorkspaces")}
+									className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${sortMenuOpen || workspaceSort !== "recent" ? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"}`}
+									onClick={() => setSortMenuOpen((open) => !open)}
+								>
+									<ArrowUpDown size={13} />
+								</button>
+							)}
+						</div>
+						{sortMenuOpen ? (
+							<>
+								<div aria-hidden="true" className="fixed inset-0 z-30" onClick={() => setSortMenuOpen(false)} />
+								<div role="menu" className="absolute right-0 top-full z-40 mt-1 min-w-40 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] py-1 shadow-lg">
+									{([
+										["recent", t("sidebar.sortRecent")],
+										["oldest", t("sidebar.sortOldest")],
+										["nameAsc", t("sidebar.sortNameAsc")],
+										["nameDesc", t("sidebar.sortNameDesc")],
+									] as const).map(([sort, label]) => (
+										<button key={sort} type="button" role="menuitemradio" aria-checked={workspaceSort === sort} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]" onClick={() => chooseWorkspaceSort(sort)}>
+											<span className="flex h-3 w-3 items-center justify-center">{workspaceSort === sort ? <Check size={12} className="text-[var(--inno-accent)]" /> : null}</span>
+											{label}
+										</button>
+									))}
+									<div className="my-1 border-t border-[var(--inno-border)]" />
+									<button type="button" role="menuitemradio" aria-checked={workspaceSort === "custom"} disabled={workspaceFiltering} title={workspaceFiltering ? t("sidebar.sortCustomClearFilter") : undefined} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent" onClick={beginCustomSort}>
+										<span className="flex h-3 w-3 items-center justify-center">{workspaceSort === "custom" ? <Check size={12} className="text-[var(--inno-accent)]" /> : null}</span>
+										{t("sidebar.sortCustom")}
+									</button>
+								</div>
+							</>
+						) : null}
 					</div>
 				)}
 			</div>
@@ -880,6 +1123,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 				) : (
 					groups.map((group) => {
 						const isGroupCollapsed = collapsedGroups.has(group.id);
+						const customIndex = customOrderDraft.indexOf(group.id);
 						return (
 							<div key={group.id} className="mt-0.5">
 								<GroupHeader
@@ -896,6 +1140,15 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 									onEditSave={() => saveWsName(group.id)}
 									onEditCancel={() => setEditingWsId(null)}
 									onDelete={() => handleDeleteWorkspace(group)}
+									reorderMode={isCustomSorting && group.sortable}
+									dragging={draggingWorkspaceId === group.id}
+									canMoveUp={customIndex > 0}
+									canMoveDown={customIndex >= 0 && customIndex < customOrderDraft.length - 1}
+									onDragStart={() => setDraggingWorkspaceId(group.id)}
+									onDragOver={() => moveDraggedWorkspaceBefore(group.id)}
+									onDragEnd={() => setDraggingWorkspaceId(null)}
+									onMoveUp={() => moveCustomWorkspace(group.id, customIndex - 1)}
+									onMoveDown={() => moveCustomWorkspace(group.id, customIndex + 1)}
 								/>
 								<AnimatePresence initial={false}>
 									{!isGroupCollapsed && (

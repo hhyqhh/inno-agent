@@ -1137,8 +1137,7 @@ function SimpleModeSettings({ settings }: { settings: InnoSettings }) {
 		setEnabled(next);
 		setSaving(true);
 		try {
-			// saveSimpleMode 内部会取反存储（为适配 ModeSwitch 的 Chat/Agent 互换），此处再取反抵消
-			await settingsStore.saveSimpleMode(!next);
+			await settingsStore.saveSimpleMode(next);
 		} catch {
 			setEnabled(!next);
 		} finally {

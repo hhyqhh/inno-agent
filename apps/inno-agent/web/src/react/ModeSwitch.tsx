@@ -36,14 +36,14 @@ export function ModeSwitch({ simpleMode }: ModeSwitchProps) {
 						<div
 							className="absolute z-10 cursor-pointer"
 							style={{ left: 0, top: 0, width: "310px", height: "54px" }}
-							onClick={() => { setShowCard(false); if (simpleMode) void settingsStore.saveSimpleMode(true); }}
+							onClick={() => { setShowCard(false); if (simpleMode) void settingsStore.saveSimpleMode(false); }}
 						/>
 
 						{/* Bottom row: click to switch to Agent (simple mode) */}
 						<div
 							className="absolute z-10 cursor-pointer"
 							style={{ left: 0, top: "54px", width: "310px", height: "54px" }}
-							onClick={() => { setShowCard(false); if (!simpleMode) void settingsStore.saveSimpleMode(false); }}
+							onClick={() => { setShowCard(false); if (!simpleMode) void settingsStore.saveSimpleMode(true); }}
 						/>
 
 						{/* Dynamic checkmark - moves with active mode */}

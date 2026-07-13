@@ -554,9 +554,9 @@ export function ChatCenter() {
 	}, []);
 
 	const buildSessionInput = useCallback((): CreateSessionInput | { __error: string } => {
-		// Normal Mode: no workspace chooser. Direct chat always goes to a temp
+		// Simple Mode: no workspace chooser. Direct chat always goes to a temp
 		// workspace; presets are opened via openPreset into their own workspace.
-		if (!simpleMode) return { newWorkspace: { isTemp: true } };
+		if (simpleMode) return { newWorkspace: { isTemp: true } };
 		if (wsMode === "temp") return { newWorkspace: { isTemp: true } };
 		if (wsMode === "new") {
 			const trimmed = wsName.trim();
@@ -568,10 +568,10 @@ export function ChatCenter() {
 	}, [simpleMode, wsMode, wsName, wsExistingId, t]);
 
 	// Load presets from the remote content hub once when the welcome screen is
-	// shown in Normal Mode. Falls back to an empty list on failure (offline /
+	// shown in Simple Mode. Falls back to an empty list on failure (offline /
 	// hub unreachable) so the composer still works.
 	useEffect(() => {
-		if (isWelcome && !simpleMode && presets.length === 0) {
+		if (isWelcome && simpleMode && presets.length === 0) {
 			void listRemotePresets().then(setPresets).catch(() => setPresets([]));
 		}
 	}, [isWelcome, simpleMode, presets.length]);
@@ -935,7 +935,7 @@ export function ChatCenter() {
 						{renderQuestionHint()}
 						{renderComposer(t("chat.welcomePlaceholder"))}
 
-						{!simpleMode && presets.length > 0 ? (
+						{simpleMode && presets.length > 0 ? (
 							<PresetPicker
 								presets={presets}
 								openingPresetId={openingPresetId}
@@ -946,7 +946,7 @@ export function ChatCenter() {
 							/>
 						) : null}
 
-						{!simpleMode ? null : preselectedWs ? (
+						{simpleMode ? null : preselectedWs ? (
 							<div className="mt-3 flex flex-wrap items-center gap-2">
 								<span className="text-xs text-[var(--inno-text-subtle)]">{t("workspace.title")}</span>
 								<span className="rounded-full bg-[var(--inno-accent-soft)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--inno-accent)]">

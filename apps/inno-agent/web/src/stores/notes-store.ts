@@ -26,6 +26,12 @@ export interface NotesTagSummary {
 	usageCount: number;
 }
 
+function errorDetail(error: unknown): string | null {
+	if (!(error instanceof Error)) return null;
+	const message = error.message.trim();
+	return message || null;
+}
+
 class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	notes: NoteSummary[] = [];
 	selected: NoteSummary | null = null;
@@ -57,6 +63,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	isUploadingAttachment = false;
 	deletingAttachmentId: string | null = null;
 	error: string | null = null;
+	errorDetail: string | null = null;
 	notice: string | null = null;
 	polishTemplateLabel: string | null = null;
 	polishSuggestedTags: string[] = [];
@@ -121,6 +128,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 
 	clearMessages() {
 		this.error = null;
+		this.errorDetail = null;
 		this.notice = null;
 		this.polishTemplateLabel = null;
 		this.polishSuggestedTags = [];
@@ -216,9 +224,10 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				const updated = this.notes.find((note) => note.rawPath === this.selected?.rawPath);
 				this.selected = updated ?? null;
 			}
-		} catch {
+		} catch (error) {
 			this.notes = [];
 			this.error = "loadFailed";
+			this.errorDetail = errorDetail(error);
 		} finally {
 			this.isLoading = false;
 			this.emit("change", undefined);
@@ -248,8 +257,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				this.savedRecordDate = detail.recordDate || getTodayRecordDate();
 				this.savedContent = detail.content;
 				this.selected = { ...note, ...detail };
-			} catch {
+			} catch (error) {
 				this.error = "loadContentFailed";
+				this.errorDetail = errorDetail(error);
 				this.editorContent = "";
 				this.attachments = [];
 			} finally {
@@ -275,8 +285,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			if (created) {
 				await this.selectNote(created);
 			}
-		} catch {
+		} catch (error) {
 			this.error = "createFailed";
+			this.errorDetail = errorDetail(error);
 		} finally {
 			this.isCreating = false;
 			this.emit("change", undefined);
@@ -296,8 +307,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			this.notice = "uploaded";
 			this.listBox = "drafts";
 			await this.loadAll();
-		} catch {
+		} catch (error) {
 			this.error = "uploadFailed";
+			this.errorDetail = errorDetail(error);
 		} finally {
 			this.isUploading = false;
 			this.emit("change", undefined);
@@ -317,8 +329,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				this.attachments = [result.attachment, ...this.attachments.filter((item) => item.id !== result.attachment.id)];
 			}
 			this.notice = "attachmentUploaded";
-		} catch {
+		} catch (error) {
 			this.error = "attachmentUploadFailed";
+			this.errorDetail = errorDetail(error);
 		} finally {
 			this.isUploadingAttachment = false;
 			this.emit("change", undefined);
@@ -334,8 +347,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			await deleteNoteAttachment(attachmentId);
 			this.attachments = this.attachments.filter((item) => item.id !== attachmentId);
 			this.notice = "attachmentDeleted";
-		} catch {
+		} catch (error) {
 			this.error = "attachmentDeleteFailed";
+			this.errorDetail = errorDetail(error);
 		} finally {
 			this.deletingAttachmentId = null;
 			this.emit("change", undefined);
@@ -377,8 +391,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				this.selected = this.notes.find((note) => note.rawPath === result.rawPath) ?? this.selected;
 			}
 			return true;
-		} catch {
+		} catch (error) {
 			this.error = "saveFailed";
+			this.errorDetail = errorDetail(error);
 			return false;
 		} finally {
 			this.isSaving = false;
@@ -413,8 +428,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			this.notice = result.suggestedTags.length > 0
 				? (result.templateLabel ? "polishedWithTemplateAndTags" : "polishedWithTags")
 				: (result.templateLabel ? "polishedWithTemplate" : "polished");
-		} catch {
-			if (this.selected?.rawPath === rawPath) this.error = "polishFailed";
+		} catch (error) {
+			if (this.selected?.rawPath === rawPath) {
+				this.error = "polishFailed";
+				this.errorDetail = errorDetail(error);
+			}
 		} finally {
 			this.isPolishing = false;
 			this.emit("change", undefined);
@@ -456,8 +474,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		const task = this.archiveQueue
 			.catch(() => undefined)
 			.then(run)
-			.catch(() => {
+			.catch((error) => {
 				this.error = "archiveFailed";
+				this.errorDetail = errorDetail(error);
 				return null;
 			})
 			.finally(() => {
@@ -490,8 +509,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			this.notice = "deleted";
 			await this.loadAll();
 			return true;
-		} catch {
+		} catch (error) {
 			this.error = "deleteFailed";
+			this.errorDetail = errorDetail(error);
 			return false;
 		} finally {
 			this.isDeleting = false;
@@ -518,8 +538,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				this.selected = null;
 			}
 			return true;
-		} catch {
+		} catch (error) {
 			this.error = "unarchiveFailed";
+			this.errorDetail = errorDetail(error);
 			return false;
 		} finally {
 			this.isArchiving = false;

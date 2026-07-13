@@ -171,7 +171,8 @@
 			"goals": "学习目标",
 			"knowledge": "知识状态",
 			"misconceptions": "误解记录",
-			"preferences": "学习偏好"
+			"preferences": "学习偏好",
+			"boundary": "学习边界"
 		},
 		"summary": {
 			"placeholder": "Agent 对学习者的整体认知摘要…",
@@ -237,6 +238,39 @@
 			"feedbackTone": "反馈语气",
 			"avoid": "应避免",
 			"addPlaceholder": "回车添加…"
+		},
+		"boundary": {
+			"stage": "当前阶段",
+			"stagePlaceholder": "例如：高中二年级",
+			"subjects": "主要课程",
+			"knowledgeScope": "知识范围",
+			"knowledgeScopePlaceholder": "例如：人教A版必修一至选择性必修二",
+			"defaultDifficulty": "默认难度",
+			"beyondScopeStrategy": "超纲策略",
+			"methodConstraint": "解题方法",
+			"notationStandard": "符号规范",
+			"notationStandardPlaceholder": "例如：采用课本常用符号",
+			"referenceMaterials": "参考资料",
+			"referenceMaterialsPlaceholder": "例如：高中数学人教A版",
+			"warnBeforeBeyondScope": "使用超纲知识前先提醒",
+			"annotateKnowledgeScope": "解题时标注使用的知识范围",
+			"unset": "未设定",
+			"difficultyOptions": {
+				"school_exam": "校内考试水平",
+				"foundation": "基础",
+				"advanced": "拔高",
+				"competition": "竞赛"
+			},
+			"beyondScopeOptions": {
+				"prompt_first": "需提示后再使用",
+				"allowed": "可直接使用",
+				"forbidden": "完全禁止"
+			},
+			"methodOptions": {
+				"textbook_first": "优先教材方法",
+				"textbook_only": "仅教材方法",
+				"unrestricted": "不限制"
+			}
 		}
 	},
 	"jobs": {
@@ -541,7 +575,9 @@
 	"question": {
 		"typeSomething": "输入自定义答案…",
 		"chatAboutThis": "直接聊聊",
-		"submit": "提交"
+		"submit": "提交",
+		"submitNext": "提交并下一题",
+		"optionSelectedHint": "已选选项，此文字不生效"
 	},
 	"sidebar": {
 		"expand": "展开",

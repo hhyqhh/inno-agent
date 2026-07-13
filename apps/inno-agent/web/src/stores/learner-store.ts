@@ -14,6 +14,7 @@ import type {
 	KnowledgeState,
 	Misconception,
 	LearnerPreferences,
+	LearningBoundary,
 } from "../types/learner.js";
 
 interface LearnerStoreEvents {
@@ -56,6 +57,17 @@ class LearnerStoreImpl extends EventEmitter<LearnerStoreEvents> {
 		this.emit("change", undefined);
 		try {
 			this.profile = await patchLearnerProfile({ preferences: prefs });
+		} finally {
+			this.isSaving = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async patchBoundary(boundary: LearningBoundary): Promise<void> {
+		this.isSaving = true;
+		this.emit("change", undefined);
+		try {
+			this.profile = await patchLearnerProfile({ boundary });
 		} finally {
 			this.isSaving = false;
 			this.emit("change", undefined);

@@ -9,9 +9,18 @@ const EVENTS_FILE = "events.jsonl";
 
 /**
  * Load the learner profile. Returns a default empty profile if not found.
+ * Backfills any top-level fields missing from an older on-disk profile so that
+ * newly added structures (e.g. boundary) always have valid defaults.
  */
 export function loadProfile(dataDir: string): LearnerProfile {
-	return readJson<LearnerProfile>(join(dataDir, PROFILE_FILE), createDefaultProfile());
+	const defaults = createDefaultProfile();
+	const loaded = readJson<Partial<LearnerProfile>>(join(dataDir, PROFILE_FILE), defaults);
+	return {
+		...defaults,
+		...loaded,
+		preferences: { ...defaults.preferences, ...(loaded.preferences ?? {}) },
+		boundary: { ...defaults.boundary, ...(loaded.boundary ?? {}) },
+	};
 }
 
 /**

@@ -57,6 +57,19 @@ const PreferencesSchema = Type.Object({
 	avoid: Type.Optional(Type.Array(Type.String(), { description: "Things to avoid in teaching" })),
 });
 
+const BoundarySchema = Type.Object({
+	stage: Type.Optional(Type.String({ description: "当前阶段，如“高中二年级”，用于确定解释深度" })),
+	subjects: Type.Optional(Type.Array(Type.String(), { description: "主要课程，如 [\"数学\", \"物理\"]，限定学科范围" })),
+	knowledge_scope: Type.Optional(Type.String({ description: "知识范围，如“人教A版必修一至选择性必修二”，防止调用未学内容" })),
+	default_difficulty: Type.Optional(StringEnum(["school_exam", "foundation", "advanced", "competition"] as const, { description: "默认难度" })),
+	beyond_scope_strategy: Type.Optional(StringEnum(["prompt_first", "allowed", "forbidden"] as const, { description: "超纲内容策略" })),
+	method_constraint: Type.Optional(StringEnum(["textbook_first", "textbook_only", "unrestricted"] as const, { description: "解题方法约束" })),
+	notation_standard: Type.Optional(Type.String({ description: "符号规范，如“采用课本常用符号”" })),
+	reference_materials: Type.Optional(Type.String({ description: "参考资料，作为默认知识依据" })),
+	warn_before_beyond_scope: Type.Optional(Type.Boolean({ description: "使用超纲知识前先提醒" })),
+	annotate_knowledge_scope: Type.Optional(Type.Boolean({ description: "解题时标注使用的知识范围" })),
+});
+
 // ============================================================================
 // Tool Factory
 // ============================================================================
@@ -200,12 +213,13 @@ export function createLearnerTools(
 		name: "update_learner_profile",
 		label: "Update Learner Profile",
 		description:
-			"更新学习者画像的特定字段。可以更新目标、知识状态、误区、偏好和画像摘要。数组字段按 ID 合并（已存在则替换，不存在则新增）。",
+			"更新学习者画像的特定字段。可以更新目标、知识状态、误区、偏好、学习边界和画像摘要。数组字段按 ID 合并（已存在则替换，不存在则新增）。学习边界为整体替换。",
 		parameters: Type.Object({
 			goals: Type.Optional(Type.Array(LearningGoalSchema)),
 			knowledge_states: Type.Optional(Type.Array(KnowledgeStateSchema)),
 			misconceptions: Type.Optional(Type.Array(MisconceptionSchema)),
 			preferences: Type.Optional(PreferencesSchema),
+			boundary: Type.Optional(BoundarySchema),
 			profile_summary: Type.Optional(Type.String({ description: "Updated profile summary text" })),
 		}),
 		async execute(_toolCallId, params) {
@@ -263,6 +277,18 @@ export function createLearnerTools(
 				`- 练习风格: ${profile.preferences.practice_style.join(", ") || "未设定"}`,
 				`- 反馈语气: ${profile.preferences.feedback_tone.join(", ") || "未设定"}`,
 				`- 避免: ${profile.preferences.avoid.join(", ") || "未设定"}`,
+				``,
+				`## 学习边界`,
+				`- 当前阶段: ${profile.boundary.stage || "未设定"}`,
+				`- 主要课程: ${profile.boundary.subjects.join("、") || "未设定"}`,
+				`- 知识范围: ${profile.boundary.knowledge_scope || "未设定"}`,
+				`- 默认难度: ${(({ school_exam: "校内考试水平", foundation: "基础", advanced: "拔高", competition: "竞赛" } as Record<string, string>)[profile.boundary.default_difficulty] ?? profile.boundary.default_difficulty) || "未设定"}`,
+				`- 超纲策略: ${(({ prompt_first: "需提示后再使用", allowed: "可直接使用", forbidden: "完全禁止" } as Record<string, string>)[profile.boundary.beyond_scope_strategy] ?? profile.boundary.beyond_scope_strategy) || "未设定"}`,
+				`- 解题方法: ${(({ textbook_first: "优先教材方法", textbook_only: "仅教材方法", unrestricted: "不限制" } as Record<string, string>)[profile.boundary.method_constraint] ?? profile.boundary.method_constraint) || "未设定"}`,
+				`- 符号规范: ${profile.boundary.notation_standard || "未设定"}`,
+				`- 参考资料: ${profile.boundary.reference_materials || "未设定"}`,
+				`- 使用超纲前提醒: ${profile.boundary.warn_before_beyond_scope ? "是" : "否"}`,
+				`- 解题标注知识范围: ${profile.boundary.annotate_knowledge_scope ? "是" : "否"}`,
 				``,
 				`## 画像摘要`,
 				profile.profile_summary || "暂无摘要",

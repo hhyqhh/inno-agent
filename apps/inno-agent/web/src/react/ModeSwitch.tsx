@@ -14,52 +14,58 @@ const EXPANDED_SVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" versio
 export function ModeSwitch({ simpleMode }: ModeSwitchProps) {
 	const [showCard, setShowCard] = useState(false);
 
-	if (!showCard) {
-		return (
-			<div className="flex justify-center cursor-pointer mt-2" onClick={() => setShowCard(true)}>
-				<div className="w-[310px]" dangerouslySetInnerHTML={{ __html: simpleMode ? CHAT_PILL : AGENT_PILL }} />
-			</div>
-		);
-	}
-
 	return (
-		<div className="relative overflow-hidden rounded-2xl mx-auto mt-2" style={{ width: "310px" }}>
-			{/* Expanded card background SVG - hide built-in checkmark via clip */}
-			<div style={{ clipPath: "inset(0 0 0 0)" }}>
-				<div dangerouslySetInnerHTML={{ __html: EXPANDED_SVG }} />
+		<div className="relative flex justify-center mt-2">
+			{/* Pill - always visible, click to toggle */}
+			<div className="cursor-pointer w-[310px]" onClick={() => setShowCard(!showCard)}>
+				<div dangerouslySetInnerHTML={{ __html: simpleMode ? AGENT_PILL : CHAT_PILL }} />
 			</div>
 
-			{/* Top row: click to switch to Chat (simple mode) */}
-			<div
-				className="absolute z-10 cursor-pointer"
-				style={{ left: 0, top: 0, width: "310px", height: "54px" }}
-				onClick={() => { setShowCard(false); if (!simpleMode) void settingsStore.saveSimpleMode(true); }}
-			/>
+			{/* Expanded card - floating popup below the pill */}
+			{showCard && (
+				<>
+					{/* Overlay to capture outside clicks */}
+					<div className="fixed inset-0 z-40" onClick={() => setShowCard(false)} />
+					<div className="absolute z-50 left-1/2 -translate-x-1/2 top-full overflow-hidden rounded-2xl bg-white" style={{ width: "310px" }}>
+						{/* Expanded card background SVG - hide built-in checkmark via clip */}
+						<div style={{ clipPath: "inset(0 0 0 0)" }}>
+							<div dangerouslySetInnerHTML={{ __html: EXPANDED_SVG }} />
+						</div>
 
-			{/* Bottom row: click to switch to Agent (normal mode) */}
-			<div
-				className="absolute z-10 cursor-pointer"
-				style={{ left: 0, top: "54px", width: "310px", height: "54px" }}
-				onClick={() => { setShowCard(false); if (simpleMode) void settingsStore.saveSimpleMode(false); }}
-			/>
+						{/* Top row: click to switch to Chat (normal mode) */}
+						<div
+							className="absolute z-10 cursor-pointer"
+							style={{ left: 0, top: 0, width: "310px", height: "54px" }}
+							onClick={() => { setShowCard(false); if (simpleMode) void settingsStore.saveSimpleMode(true); }}
+						/>
 
-			{/* Dynamic checkmark - moves with active mode */}
-			<div
-				className="absolute pointer-events-none z-30"
-				style={{
-					left: "276px",
-					top: simpleMode ? "20px" : "60px",
-					width: "20px",
-					height: "20px",
-					display: "flex",
-					alignItems: "center",
-					justifyContent: "center",
-				}}
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 11.19 8" width="11" height="8">
-					<path d="M10.955761,0.23422961C11.105762,0.38425121,11.190001,0.58769763,11.190001,0.79982889C11.190001,1.0119601,11.105762,1.2154081,10.955761,1.3654321C10.955761,1.3654321,4.555768,7.7654324,4.555768,7.7654324C4.4057446,7.9154086,4.2023044,7.9996562,3.9901683,7.9996562C3.7780399,7.9996562,3.5745921,7.9154086,3.4245682,7.7654324C3.4245682,7.7654324,0.22456962,4.5654325,0.22456962,4.5654325C0.078842968,4.4145441,-0.0017924961,4.2124643,0.000030242081,4.0027122C0.001852976,3.7929523,0.085988007,3.592304,0.23431441,3.4439762C0.38264081,3.2956481,0.58329123,3.2115123,0.79304808,3.2096882C1.0028081,3.2078643,1.2048881,3.2885044,1.3557681,3.4342322C1.3557681,3.4342322,3.9901683,6.0686321,3.9901683,6.0686321C3.9901683,6.0686321,9.8245602,0.23422961,9.8245602,0.23422961C9.9745607,0.084252805,10.178,0,10.390162,0C10.602321,0,10.805761,0.084252805,10.955761,0.23422961Z" fill-rule="evenodd" fill="#555AFF"/>
-				</svg>
-			</div>
+						{/* Bottom row: click to switch to Agent (simple mode) */}
+						<div
+							className="absolute z-10 cursor-pointer"
+							style={{ left: 0, top: "54px", width: "310px", height: "54px" }}
+							onClick={() => { setShowCard(false); if (!simpleMode) void settingsStore.saveSimpleMode(false); }}
+						/>
+
+						{/* Dynamic checkmark - moves with active mode */}
+						<div
+							className="absolute pointer-events-none z-30"
+							style={{
+								left: "276px",
+								top: simpleMode ? "60px" : "20px",
+								width: "20px",
+								height: "20px",
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "center",
+							}}
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 11.19 8" width="11" height="8">
+								<path d="M10.955761,0.23422961C11.105762,0.38425121,11.190001,0.58769763,11.190001,0.79982889C11.190001,1.0119601,11.105762,1.2154081,10.955761,1.3654321C10.955761,1.3654321,4.555768,7.7654324,4.555768,7.7654324C4.4057446,7.9154086,4.2023044,7.9996562,3.9901683,7.9996562C3.7780399,7.9996562,3.5745921,7.9154086,3.4245682,7.7654324C3.4245682,7.7654324,0.22456962,4.5654325,0.22456962,4.5654325C0.078842968,4.4145441,-0.0017924961,4.2124643,0.000030242081,4.0027122C0.001852976,3.7929523,0.085988007,3.592304,0.23431441,3.4439762C0.38264081,3.2956481,0.58329123,3.2115123,0.79304808,3.2096882C1.0028081,3.2078643,1.2048881,3.2885044,1.3557681,3.4342322C1.3557681,3.4342322,3.9901683,6.0686321,3.9901683,6.0686321C3.9901683,6.0686321,9.8245602,0.23422961,9.8245602,0.23422961C9.9745607,0.084252805,10.178,0,10.390162,0C10.602321,0,10.805761,0.084252805,10.955761,0.23422961Z" fill-rule="evenodd" fill="#555AFF"/>
+							</svg>
+						</div>
+					</div>
+				</>
+			)}
 		</div>
 	);
 }

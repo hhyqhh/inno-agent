@@ -679,7 +679,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 						onClick={newChat}
 						title={t("sidebar.newChat")}
 					>
-						<NewChatNormal className="h-10 w-full" />
+						<NewChatSimple className="h-10 w-full" />
 					</button>
 				</div>
 
@@ -850,7 +850,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 					onClick={newChat}
 					title={t("sidebar.newChat")}
 				>
-					<NewChatSimple className="h-10 w-full" />
+					<NewChatNormal className="h-10 w-full" />
 				</button>
 			</div>
 

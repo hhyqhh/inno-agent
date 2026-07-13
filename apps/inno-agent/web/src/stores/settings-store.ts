@@ -144,7 +144,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 		this.error = null;
 		this.emit("change", undefined);
 		try {
-			this.settings = await saveSimpleModeSettings(enabled);
+			this.settings = await saveSimpleModeSettings(!enabled);
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : "Failed to save simple mode setting";
 			this.emit("change", undefined);

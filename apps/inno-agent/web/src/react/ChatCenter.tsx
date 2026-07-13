@@ -520,12 +520,15 @@ export function ChatCenter() {
 		if (isWelcome && wsMode === "existing" && wsExistingId) {
 			void workspaceStore.setActiveWorkspace(wsExistingId);
 			appStore.setRightPanelTab("preview");
-			if (appStore.workspaceMode === "collapsed") {
+			if (
+				appStore.workspaceMode === "collapsed"
+				&& sessions.preselectedWorkspaceId === wsExistingId
+			) {
 				appStore.setWorkspaceWidth(300);
 				appStore.setWorkspaceMode("quarter");
 			}
 		}
-	}, [isWelcome, wsMode, wsExistingId]);
+	}, [isWelcome, wsMode, wsExistingId, sessions.preselectedWorkspaceId]);
 
 	const scrollTextKey = chat.streamingTarget === "workspace" ? chat.streamingTarget : chat.streamingText;
 

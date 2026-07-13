@@ -396,6 +396,7 @@ function PresetPicker({
 export function ChatCenter() {
 	const { t } = useTranslation();
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
+	const draftRef = useRef("");
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const imageInputRef = useRef<HTMLInputElement | null>(null);
 	const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -538,6 +539,7 @@ export function ChatCenter() {
 	const handleInput = useCallback(() => {
 		const el = inputRef.current;
 		if (!el) return;
+		draftRef.current = el.value;
 		const maxHeight = 200;
 		el.style.height = "auto";
 		const h = Math.min(el.scrollHeight, maxHeight);
@@ -612,6 +614,7 @@ export function ChatCenter() {
 			: undefined;
 
 		const resetComposer = () => {
+			draftRef.current = "";
 			if (inputRef.current) {
 				inputRef.current.value = "";
 				inputRef.current.style.height = "auto";
@@ -839,6 +842,7 @@ export function ChatCenter() {
 			<textarea
 				ref={inputRef}
 				id="chat-input"
+				defaultValue={draftRef.current}
 				className="min-h-[36px] max-h-[200px] flex-1 resize-none overflow-hidden rounded-md border-0 bg-transparent px-2 py-2 text-sm leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
 				placeholder={placeholder}
 				rows={1}

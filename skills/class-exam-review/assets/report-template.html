@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>班级试卷讲评</title>
+<style>
+:root{--ink:#1a2332;--muted:#6b7280;--paper:#fffdf8;--accent:#2c5f8d;--accent2:#1f6f78;--line:#e7dfd3;--good:#237a57;--warn:#a86518;--bad:#a33a3a;--bg:#f4efe6}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.6}
+.app{max-width:1180px;margin:0 auto;padding:28px clamp(16px,4vw,48px) 60px}
+header.top{background:var(--paper);border:1px solid var(--line);border-radius:22px;padding:26px 32px;margin-bottom:22px;box-shadow:0 12px 35px #463b2c12}
+header.top h1{margin:0 0 6px;font-size:clamp(22px,3vw,32px)}
+header.top .subtitle{color:var(--muted);font-size:14px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px}
+.tab{border:0;border-radius:999px;padding:10px 20px;cursor:pointer;background:var(--paper);border:1px solid var(--line);font-weight:650;color:var(--ink)}
+.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.panel{display:none}.panel.active{display:block;animation:fade .25s ease}@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:22px 26px;margin-bottom:16px;box-shadow:0 8px 24px #463b2c0d}
+.card h2,.card h3{margin-top:0}
+.grid{display:grid;gap:16px}
+@media(min-width:720px){.grid.cols-2{grid-template-columns:1fr 1fr}.grid.cols-3{grid-template-columns:repeat(3,1fr)}.grid.cols-4{grid-template-columns:repeat(4,1fr)}}
+.stat{text-align:center;padding:18px 10px;border-radius:14px;background:#f6eee5}.stat .num{font-size:clamp(22px,3vw,34px);font-weight:800;color:var(--accent)}.stat .label{color:var(--muted);font-size:13px;margin-top:4px}
+.band-bar{display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}.band-bar .seg{display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700}
+.band-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--muted)}.band-legend .dot{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:middle}
+.ktable,.qtable{width:100%;border-collapse:collapse;font-size:14px}.ktable th,.ktable td,.qtable th,.qtable td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left}.ktable th,.qtable th{background:#f6eee5;font-weight:700}
+.pill{display:inline-block;padding:3px 11px;border-radius:999px;font-size:12px;font-weight:700}.pill.must{background:#fde2e2;color:var(--bad)}.pill.brief{background:#fff2d9;color:var(--warn)}.pill.self{background:#e3f0ef;color:var(--accent2)}.pill.skip{background:#ececec;color:var(--muted)}
+.pill.weak{background:#fde2e2;color:var(--bad)}.pill.ok{background:#fff2d9;color:var(--warn)}.pill.good{background:#e8f3ec;color:var(--good)}
+.qcard{cursor:pointer;transition:box-shadow .15s}.qcard:hover{box-shadow:0 10px 28px #463b2c1a}.qcard .qhead{display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap}.qcard .qmeta{color:var(--muted);font-size:13px;margin-top:6px}
+.qdetail{display:none;margin-top:16px;padding-top:16px;border-top:1px dashed var(--line)}.qcard.open .qdetail{display:block}
+.dist-bar{display:flex;gap:4px;align-items:flex-end;height:60px;margin:10px 0}.dist-bar .dcol{flex:1;background:var(--accent);border-radius:5px 5px 0 0;position:relative;min-height:4px}.dist-bar .dcol.wrong{background:var(--bad)}.dist-bar .dcol .dtag{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--muted)}
+.script-step{margin:6px 0;padding-left:26px;position:relative}.script-step:before{content:counter(s);counter-increment:s;position:absolute;left:0;top:0;background:var(--accent);color:#fff;width:20px;height:20px;border-radius:50%;font-size:12px;display:flex;align-items:center;justify-content:center;font-weight:700}.script-steps{counter-reset:s}
+.board{background:#f6eee5;border-left:4px solid var(--accent2);padding:14px 18px;border-radius:0 10px 10px 0;white-space:pre-wrap;font-family:"Songti SC",serif}
+.ex-card{border-left:4px solid var(--accent2);padding:12px 16px;background:#faf6ef;border-radius:0 10px 10px 0;margin-bottom:10px}.ex-card .ex-meta{font-size:12px;color:var(--muted);margin-bottom:6px}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+button,select{font:inherit}button{border:0;border-radius:10px;padding:9px 16px;cursor:pointer;background:var(--accent);color:#fff;font-weight:650}button.secondary{background:var(--paper);color:var(--ink);border:1px solid var(--line)}
+.empty{color:var(--muted);text-align:center;padding:40px}
+.tag-kn{display:inline-block;background:#e3f0ef;color:var(--accent2);padding:2px 9px;border-radius:6px;font-size:12px;margin:2px}
+@media print{.tabs,.btnrow{display:none!important}.panel{display:block!important;page-break-after:always}.card{box-shadow:none;break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1 id="title">班级试卷讲评</h1>
+    <div class="subtitle" id="subtitle"></div>
+    <div class="btnrow">
+      <button onclick="window.print()">导出 / 打印 (PDF)</button>
+      <button class="secondary" id="exportWord">导出 Word</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="overview">班级概览</button>
+    <button class="tab" data-tab="questions">题目分析</button>
+    <button class="tab" data-tab="knowledge">知识点分析</button>
+    <button class="tab" data-tab="review">讲评方案</button>
+    <button class="tab" data-tab="exercises">补偿练习</button>
+  </nav>
+
+  <section id="overview" class="panel active"></section>
+  <section id="questions" class="panel"></section>
+  <section id="knowledge" class="panel"></section>
+  <section id="review" class="panel"></section>
+  <section id="exercises" class="panel"></section>
+</div>
+
+<script id="report-data" type="application/json">__REPORT_JSON__</script>
+<script>
+const DATA = JSON.parse(document.getElementById('report-data').textContent);
+
+document.getElementById('title').textContent =
+  `${DATA.meta.subject} · ${DATA.meta.examTitle} · 试卷讲评`;
+document.getElementById('subtitle').textContent =
+  `${DATA.meta.grade} · 考试日期 ${DATA.meta.examDate} · 实考 ${DATA.meta.headcount} 人 / 缺考 ${DATA.meta.absent || 0} 人 · 满分 ${DATA.meta.fullScore}`;
+
+const BAND_COLORS = ['#a33a3a','#a86518','#2c5f8d','#1f6f78','#237a57'];
+const TIER_LABEL = {must:'必须重点讲',brief:'简要讲解',self:'自行订正',skip:'无需统一讲解'};
+const TYPE_LABEL = {single:'单选',multiple:'多选',judge:'判断',subjective:'主观'};
+const LEVEL_CLASS = {薄弱:'weak',合格:'ok',掌握:'good'};
+
+// 班级概览
+(function(){
+  const s = DATA.classSummary || {};
+  const bands = s.scoreBands || [];
+  const bandBar = bands.map((b,i)=>`<div class="seg" style="width:${b.ratio*100}%;background:${BAND_COLORS[i]||'#999'}">${Math.round(b.ratio*100)}%</div>`).join('');
+  const legend = bands.map((b,i)=>`<span><span class="dot" style="background:${BAND_COLORS[i]||'#999'}"></span>${b.band} 段：${b.count} 人</span>`).join('');
+  const issues = (s.mainIssues||[]).map(x=>`<li>${x}</li>`).join('') || '<li class="empty">无明显共性问题</li>';
+  const focus = (s.reviewFocus||[]).map(x=>`<li>${x}</li>`).join('') || '<li class="empty">—</li>';
+  document.getElementById('overview').innerHTML = `
+    <div class="grid cols-4">
+      <div class="stat"><div class="num">${s.average?.toFixed(1) ?? '—'}</div><div class="label">平均分</div></div>
+      <div class="stat"><div class="num">${s.max ?? '—'}</div><div class="label">最高分</div></div>
+      <div class="stat"><div class="num">${s.min ?? '—'}</div><div class="label">最低分</div></div>
+      <div class="stat"><div class="num">${(s.passRate*100).toFixed(0)}%</div><div class="label">及格率</div></div>
+    </div>
+    <div class="card">
+      <h3>分数段分布</h3>
+      <div class="band-bar">${bandBar}</div>
+      <div class="band-legend">${legend}</div>
+    </div>
+    <div class="grid cols-2">
+      <div class="card"><h3>班级主要问题</h3><ul>${issues}</ul></div>
+      <div class="card"><h3>建议补讲 / 重点</h3><ul>${focus}</ul></div>
+    </div>`;
+})();
+
+// 题目分析
+(function(){
+  const qs = DATA.questions || [];
+  const plan = Object.fromEntries((DATA.reviewPlan||[]).map(p=>[p.id,p]));
+  if(!qs.length){document.getElementById('questions').innerHTML='<div class="card empty">无题目数据</div>';return;}
+  document.getElementById('questions').innerHTML = qs.map(q=>{
+    const rate = q.type==='subjective' ? q.scoreRate : q.accuracy;
+    const rateTxt = q.type==='subjective' ? `得分率 ${(rate*100).toFixed(0)}%` : `正确率 ${(rate*100).toFixed(0)}%`;
+    const tier = plan[q.id]?.tier;
+    const tierPill = tier ? `<span class="pill ${tier}">${TIER_LABEL[tier]}</span>` : '';
+    const ktag = (q.knowledge||[]).map(k=>`<span class="tag-kn">${k}</span>`).join('');
+    let detail = '';
+    if(q.type==='subjective'){
+      const buckets = (q.scoreBuckets||[]).map(b=>`${b.band}：${b.count}人 (${(b.ratio*100).toFixed(0)}%)`).join(' · ');
+      detail = `
+        <h4>得分段分布</h4><p>${buckets||'—'}</p>
+        <p>零分率：${((q.zeroCount?.ratio)||0)*100|0}%（${q.zeroCount?.count||0} 人）</p>
+        ${diag(q.diagnosis)}
+        ${script(q.id)}
+        ${exercises(q.id)}`;
+    } else {
+      const dist = (q.distribution||[]).map(d=>{
+        const isWrong = String(d.option)!==String(q.correct);
+        const h = Math.max(4, d.ratio*60);
+        return `<div class="dcol ${isWrong?'wrong':''}" style="height:${h}px" title="${d.option}: ${d.count}人"><span class="dtag">${d.option}</span></div>`;
+      }).join('');
+      const distLegend = (q.distribution||[]).map(d=>`${d.option}=${(d.ratio*100).toFixed(0)}%`).join(' · ');
+      detail = `
+        <h4>答案分布</h4>
+        <div class="dist-bar">${dist}</div>
+        <p style="font-size:13px;color:var(--muted)">${distLegend} · 正确答案 <b>${q.correct}</b></p>
+        ${diag(q.diagnosis)}
+        ${script(q.id)}
+        ${exercises(q.id)}`;
+    }
+    return `<div class="card qcard" onclick="this.classList.toggle('open')">
+      <div class="qhead">
+        <div><b>第 ${q.id} 题</b> <span class="pill ${LEVEL_CLASS[difficultyClass(q)]}">${TYPE_LABEL[q.type]} · ${q.score}分</span> ${tierPill}</div>
+        <div class="qmeta">${rateTxt}</div>
+      </div>
+      <div class="qmeta">知识点：${ktag||'待补充'}</div>
+      <div class="qdetail">
+        <h4>题目原文</h4><p style="white-space:pre-wrap">${q.stem||'—'}</p>
+        ${detail}
+      </div>
+    </div>`;
+  }).join('');
+
+  function diag(d){ if(!d||!d.length) return ''; const items=d.map(x=>`<li>${x.option?`${x.option} (${(x.ratio*100).toFixed(0)}%)：`:''}${x.reason||x.evidence||''}</li>`).join(''); return `<h4>错误原因（推断）</h4><ul>${items}</ul>`; }
+  function script(qid){ const s=(DATA.reviewScripts||[]).find(x=>x.id===qid); if(!s)return ''; const steps=(s.steps||[]).map(st=>`<div class="script-step">${st}</div>`).join(''); return `<h4>讲评稿</h4><p><b>讲评目标：</b>${s.goal}</p><div class="script-steps">${steps}</div><p><b>板书：</b></p><div class="board">${s.board||''}</div>`; }
+  function exercises(qid){ const ex=(DATA.remedialExercises||[]).filter(e=>e.sourceQuestion===qid); if(!ex.length)return ''; const items=ex.map(e=>`<div class="ex-card"><div class="ex-meta">${e.category} · ${e.id}</div><div style="white-space:pre-wrap">${e.stem}</div><details><summary>答案</summary><p>${e.answer||''}</p></details></div>`).join(''); return `<h4>配套补偿练习</h4>${items}`; }
+  function difficultyClass(q){ if(q.difficulty==='hard')return '薄弱'; if(q.difficulty==='easy')return '掌握'; return '合格'; }
+})();
+
+// 知识点分析
+(function(){
+  const ks = DATA.knowledgeStats || [];
+  if(!ks.length){document.getElementById('knowledge').innerHTML='<div class="card empty">无知识点数据</div>';return;}
+  const rows = ks.map(k=>`<tr><td>${k.name}</td><td>${(k.scoreRate*100).toFixed(0)}%</td><td><span class="pill ${LEVEL_CLASS[k.level]||'ok'}">${k.level}</span></td><td>${k.questionCount}</td></tr>`).join('');
+  document.getElementById('knowledge').innerHTML = `<div class="card"><h3>知识点掌握情况</h3><table class="ktable"><thead><tr><th>知识点</th><th>得分率</th><th>掌握程度</th><th>题量</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+})();
+
+// 讲评方案
+(function(){
+  const plan = DATA.reviewPlan || [];
+  const byTier = {must:[],brief:[],self:[],skip:[]};
+  plan.forEach(p=>{(byTier[p.tier]||byTier.skip).push(p);});
+  const qmap = Object.fromEntries((DATA.questions||[]).map(q=>[q.id,q]));
+  const section = (tier,title,showFactors)=>{
+    const items = (byTier[tier]||[]).map(p=>{
+      const q = qmap[p.id];
+      const rate = q?.type==='subjective' ? q?.scoreRate : q?.accuracy;
+      const rateTxt = rate!=null ? `${(rate*100).toFixed(0)}%` : '—';
+      const f = p.factors||{};
+      const factors = showFactors ? `<div class="qmeta">错误 ${(f.errorPeople*100|0)}% · 知识权重 ${f.knowledgeWeight} · 后续 ${f.downstream} · 典型 ${f.typical} · 预计 ${f.estimatedMinutes}分钟 · 价值分 ${p.reviewValue?.toFixed(2)}</div>` : '';
+      return `<li><b>第 ${p.id} 题</b> ${q?('· '+TYPE_LABEL[q.type]):''} · ${rateTxt}${factors}</li>`;
+    }).join('') || '<li class="empty">无</li>';
+    return `<div class="card"><h3>${title}</h3><ul>${items}</ul></div>`;
+  };
+  document.getElementById('review').innerHTML =
+    section('must','必须重点讲（含价值分明细）',true) +
+    section('brief','简要讲解',false) +
+    section('self','学生自行订正',false) +
+    section('skip','无需统一讲解',false);
+})();
+
+// 补偿练习
+(function(){
+  const ex = DATA.remedialExercises || [];
+  if(!ex.length){document.getElementById('exercises').innerHTML='<div class="card empty">无补偿练习</div>';return;}
+  document.getElementById('exercises').innerHTML = ex.map(e=>`
+    <div class="card">
+      <div class="qhead"><div><b>${e.id}</b> <span class="pill self">${e.category}</span></div><div class="qmeta">对应原第 ${e.sourceQuestion} 题</div></div>
+      <p style="white-space:pre-wrap;margin-top:12px">${e.stem}</p>
+      <details><summary>查看答案 / 解析</summary><p>${e.answer||''}</p></details>
+      <div class="qmeta">知识点：${(e.knowledge||[]).map(k=>`<span class="tag-kn">${k}</span>`).join('')||'待补充'}</div>
+    </div>`).join('');
+})();
+
+// 标签切换
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+  });
+});
+
+// 导出 Word（用 Blob 触发下载 .doc，Word 可打开）
+document.getElementById('exportWord').addEventListener('click',()=>{
+  const html = '<!doctype html><html><head><meta charset="utf-8"></head><body>'+document.querySelector('.app').innerHTML+'</body></html>';
+  const blob = new Blob(['\ufeff',html],{type:'application/msword'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${DATA.meta.subject||''}${DATA.meta.examTitle||''}讲评报告.doc`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+</script>
+</body>
+</html>

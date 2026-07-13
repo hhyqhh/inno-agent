@@ -18,13 +18,13 @@ export function MeetingRecorder() {
 	return (
 		<button
 			type="button"
-			className="inline-flex items-center justify-center gap-1 rounded-md border border-[var(--inno-border)] px-2 py-1 text-xs hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
+			className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
 			disabled={state.status === "connecting" || state.status === "recording" || state.status === "summarizing"}
 			onClick={() => void meetingStore.start()}
 			title={t("notes.meeting.start")}
+			aria-label={t("notes.meeting.start")}
 		>
 			{state.status === "connecting" ? <LoaderCircle size={13} className="animate-spin" /> : <Mic size={13} />}
-			<span className="hidden xl:inline">{t("notes.meeting.start")}</span>
 		</button>
 	);
 }

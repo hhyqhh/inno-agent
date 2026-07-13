@@ -13,7 +13,6 @@ import {
 	FileUp,
 	LoaderCircle,
 	Plus,
-	RefreshCw,
 	Save,
 	Sparkles,
 	Trash2,
@@ -168,7 +167,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 			showOpenWiki;
 		if (!hasActions) return null;
 		return (
-			<div className="flex flex-wrap gap-2 border-t border-[var(--inno-border)] p-3">
+			<div className="flex flex-wrap items-center gap-2 border-t border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2.5">
 				{canSave ? (
 					<button
 						type="button"
@@ -237,7 +236,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 				{canDelete ? (
 					<button
 						type="button"
-						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+						className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
 						disabled={state.isDeleting || isSelectedArchiving}
 						onClick={() => void handleDelete()}
 					>
@@ -261,20 +260,20 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						value={state.searchQuery}
 						onChange={(e) => notesStore.setSearchQuery(e.target.value)}
 					/>
-					<div className="flex gap-1">
-						<div className="relative flex flex-1" ref={templateMenuRef}>
+					<div className="grid grid-cols-[minmax(0,1fr)_2rem_2rem] gap-1.5">
+						<div className="relative flex min-w-0" ref={templateMenuRef}>
 							<button
 								type="button"
-								className="inline-flex flex-1 items-center justify-center gap-1 rounded-l-md border border-[var(--inno-border)] px-2 py-1 text-xs hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
+								className="inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-l-md border border-[var(--inno-border)] px-1.5 text-xs font-medium hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
 								disabled={state.isCreating}
 								onClick={() => void notesStore.createFromTemplate("blank")}
 							>
 								<Plus size={13} />
-								{t("notes.actions.createDraft")}
+								<span className="truncate">{t("notes.actions.createDraft")}</span>
 							</button>
 							<button
 								type="button"
-								className="inline-flex w-7 items-center justify-center rounded-r-md border border-l-0 border-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
+								className="inline-flex h-8 w-7 shrink-0 items-center justify-center rounded-r-md border border-l-0 border-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
 								disabled={state.isCreating}
 								onClick={() => setTemplateMenuOpen((open) => !open)}
 								title={t("notes.actions.templates")}
@@ -304,22 +303,15 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						</div>
 						<button
 							type="button"
-							className="inline-flex items-center justify-center gap-1 rounded-md border border-[var(--inno-border)] px-2 py-1 text-xs hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
+							className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
 							disabled={state.isUploading}
 							onClick={() => uploadRef.current?.click()}
 							title={t("notes.actions.upload")}
+							aria-label={t("notes.actions.upload")}
 						>
 							<FileUp size={13} />
 						</button>
 						<MeetingRecorder />
-						<button
-							type="button"
-							className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)]"
-							title={t("common.refresh")}
-							onClick={() => void notesStore.loadAll()}
-						>
-							<RefreshCw size={13} className={state.isLoading ? "animate-spin" : ""} />
-						</button>
 					</div>
 					<input
 						ref={uploadRef}

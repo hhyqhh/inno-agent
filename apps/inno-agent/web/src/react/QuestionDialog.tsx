@@ -50,6 +50,8 @@ function QuestionTab({
 	onDismiss,
 	focusedOption,
 	setFocusedOption,
+	customDraft,
+	onCustomDraftChange,
 }: {
 	q: QuestionData;
 	questionIndex: number;
@@ -58,44 +60,61 @@ function QuestionTab({
 	onDismiss: () => void;
 	focusedOption: number;
 	setFocusedOption: (i: number) => void;
+	customDraft: string;
+	onCustomDraftChange: (text: string) => void;
 }) {
 	const { t } = useTranslation();
-	const [customText, setCustomText] = useState("");
 	const isMulti = q.multiSelect === true;
 	const hasPreview = q.options.some((o) => o.preview);
 	const selectedLabels = new Set(answer?.selected ?? (answer?.answer ? [answer.answer] : []));
+	// 选项优先：当前题已选了选项/多选时，文字输入框不生效
+	const hasOptionAnswer = answer?.kind === "option" || answer?.kind === "multi";
 
 	const handleOptionClick = (label: string) => {
 		if (isMulti) {
 			const next = new Set(selectedLabels);
 			if (next.has(label)) next.delete(label);
 			else next.add(label);
-			onAnswer({
-				questionIndex,
-				question: q.question,
-				kind: "multi",
-				answer: null,
-				selected: Array.from(next),
-			});
+			if (next.size === 0) {
+				// 多选全部脱选 → 撤回答案
+				onAnswer({ questionIndex, question: q.question, kind: "multi", answer: null, selected: [] });
+			} else {
+				onAnswer({
+					questionIndex,
+					question: q.question,
+					kind: "multi",
+					answer: null,
+					selected: Array.from(next),
+				});
+			}
 		} else {
-			onAnswer({
-				questionIndex,
-				question: q.question,
-				kind: "option",
-				answer: label,
-				preview: q.options.find((o) => o.label === label)?.preview,
-			});
+			// 单选：再次点击已选项 = 脱选，回到未答
+			if (selectedLabels.has(label)) {
+				onAnswer({ questionIndex, question: q.question, kind: "option", answer: null });
+			} else {
+				onAnswer({
+					questionIndex,
+					question: q.question,
+					kind: "option",
+					answer: label,
+					preview: q.options.find((o) => o.label === label)?.preview,
+				});
+			}
 		}
 	};
 
-	const handleCustomSubmit = () => {
-		if (!customText.trim()) return;
-		onAnswer({
-			questionIndex,
-			question: q.question,
-			kind: "custom",
-			answer: customText.trim(),
-		});
+	// 输入即作答：文字非空且未选选项时立刻同步为 custom 答案；清空则撤回。
+	// 草稿始终写入父组件（跨 tab 持久），但只在无选项答案时才成为正式答案。
+	const handleCustomChange = (text: string) => {
+		onCustomDraftChange(text);
+		if (hasOptionAnswer) return; // 选项优先，文字不生效
+		const trimmed = text.trim();
+		if (trimmed) {
+			onAnswer({ questionIndex, question: q.question, kind: "custom", answer: trimmed });
+		} else if (answer?.kind === "custom") {
+			// 文字清空：撤回 custom 作答
+			onAnswer({ questionIndex, question: q.question, kind: "custom", answer: null });
+		}
 	};
 
 	const preview = hasPreview ? q.options[focusedOption]?.preview : undefined;
@@ -118,23 +137,20 @@ function QuestionTab({
 						/>
 					))}
 
-					{!isMulti ? (
-						<div className="flex items-center gap-1.5 pt-1">
-							<input
-								type="text"
-								className="min-w-0 flex-1 rounded-md border border-[var(--inno-border)] px-2.5 py-1.5 text-[13px] focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
-								placeholder={t("question.typeSomething")}
-								value={customText}
-								onChange={(e) => setCustomText(e.target.value)}
-								onKeyDown={(e) => {
-									if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-										e.preventDefault();
-										handleCustomSubmit();
-									}
-								}}
-							/>
-						</div>
-					) : null}
+					<div className="flex flex-col gap-1 pt-1">
+						<input
+							type="text"
+							className={`min-w-0 flex-1 rounded-md border px-2.5 py-1.5 text-[13px] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)] ${
+								hasOptionAnswer
+									? "cursor-not-allowed border-[var(--inno-border)] bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]"
+									: "border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text)] focus-visible:border-[var(--inno-focus-border)]"
+							}`}
+							placeholder={hasOptionAnswer ? t("question.optionSelectedHint") : t("question.typeSomething")}
+							value={customDraft}
+							disabled={hasOptionAnswer}
+							onChange={(e) => handleCustomChange(e.target.value)}
+						/>
+					</div>
 				</div>
 
 				{hasPreview && preview ? (
@@ -161,12 +177,22 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 	const [activeTab, setActiveTab] = useState(0);
 	const [answers, setAnswers] = useState<Map<number, QuestionAnswer>>(new Map());
 	const [focusedOptions, setFocusedOptions] = useState<number[]>(questions.map(() => 0));
+	// 每个 tab 的自定义文字草稿，提升到外层避免切换 tab 丢失
+	const [customDrafts, setCustomDrafts] = useState<Map<number, string>>(new Map());
 
 	const handleAnswer = useCallback(
 		(a: QuestionAnswer) => {
 			setAnswers((prev) => {
 				const next = new Map(prev);
-				next.set(a.questionIndex, a);
+				// custom/option 答案被撤回（answer 为 null）视为未答，移出 Map。
+				// 否则 allAnswered 会把空答案误判为已答。
+				if ((a.kind === "custom" || a.kind === "option") && a.answer === null) {
+					next.delete(a.questionIndex);
+				} else if (a.kind === "multi" && (!a.selected || a.selected.length === 0)) {
+					next.delete(a.questionIndex);
+				} else {
+					next.set(a.questionIndex, a);
+				}
 				return next;
 			});
 		},
@@ -177,16 +203,24 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 		void chatStore.dismissQuestion(questionId);
 	}, [questionId]);
 
-	const allAnswered = questions.every((_, i) => answers.has(i));
+	// 逐题推进：只要当前题答了，就能点按钮推进或提交。
+	const currentAnswered = answers.has(activeTab);
+	const isLast = activeTab === questions.length - 1;
 
-	const handleSubmit = useCallback(() => {
-		if (!allAnswered) return;
-		const result: QuestionnaireResult = {
-			answers: Array.from(answers.values()),
-			cancelled: false,
-		};
-		void chatStore.submitQuestionResponse(questionId, result);
-	}, [questionId, answers, allAnswered]);
+	const handleClick = useCallback(() => {
+		if (!answers.has(activeTab)) return;
+		if (isLast) {
+			// 最后一题（或单题）：提交全部已答题目。未答的题不在 answers 里，自然不发。
+			const result: QuestionnaireResult = {
+				answers: Array.from(answers.values()),
+				cancelled: false,
+			};
+			void chatStore.submitQuestionResponse(questionId, result);
+		} else {
+			// 暂存当前答案，跳到下一题
+			setActiveTab((prev) => Math.min(prev + 1, questions.length - 1));
+		}
+	}, [questionId, answers, activeTab, isLast, questions.length]);
 
 	const setFocusedForTab = useCallback(
 		(tab: number, optionIdx: number) => {
@@ -198,6 +232,14 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 		},
 		[],
 	);
+
+	const setCustomDraftForTab = useCallback((tab: number, text: string) => {
+		setCustomDrafts((prev) => {
+			const next = new Map(prev);
+			next.set(tab, text);
+			return next;
+		});
+	}, []);
 
 	return (
 		<motion.div
@@ -233,15 +275,22 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 					onDismiss={handleDismiss}
 					focusedOption={focusedOptions[activeTab]}
 					setFocusedOption={(i) => setFocusedForTab(activeTab, i)}
+					customDraft={customDrafts.get(activeTab) ?? ""}
+					onCustomDraftChange={(text) => setCustomDraftForTab(activeTab, text)}
 				/>
 
-				<div className="mt-3 flex justify-end">
+				<div className="mt-3 flex items-center justify-end gap-2">
+					{questions.length > 1 ? (
+						<span className="text-xs text-[var(--inno-text-subtle)]">
+							{activeTab + 1} / {questions.length}
+						</span>
+					) : null}
 					<button
-						className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${ allAnswered ? "inno-primary-button" : "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]" }`}
-						disabled={!allAnswered}
-						onClick={handleSubmit}
+						className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${ currentAnswered ? "inno-primary-button" : "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]" }`}
+						disabled={!currentAnswered}
+						onClick={handleClick}
 					>
-						{t("question.submit")}
+						{isLast ? t("question.submit") : t("question.submitNext")}
 					</button>
 				</div>
 			</div>

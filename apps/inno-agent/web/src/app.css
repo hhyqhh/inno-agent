@@ -750,6 +750,34 @@ inno-workspace-panel textarea {
 	}
 }
 
+/* Settings lives in a resizable workspace panel, so its responsive layout
+   must follow the panel width rather than the browser viewport width. */
+.settings-panel {
+	container: settings-panel / inline-size;
+}
+
+.settings-stats-grid {
+	grid-template-columns: minmax(0, 1fr);
+}
+
+@container settings-panel (min-width: 30rem) {
+	.settings-stats-grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+
+@container settings-panel (min-width: 40rem) {
+	.settings-panel-header {
+		align-items: center;
+		flex-direction: row;
+		justify-content: space-between;
+	}
+
+	.settings-panel-controls {
+		flex-wrap: nowrap;
+	}
+}
+
 /* Sidebar scrollbar */
 .sidebar-scroll {
 	scrollbar-width: thin;

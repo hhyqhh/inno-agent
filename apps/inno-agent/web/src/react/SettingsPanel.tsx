@@ -201,7 +201,7 @@ function ThemeSettings() {
 	const { t } = useTranslation();
 	const state = useStoreSnapshot(themeStore, () => ({ current: themeStore.current }));
 	return (
-		<div className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
+		<div className="flex shrink-0 items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
 			<span>{t("settings.theme")}</span>
 			<div className="flex gap-1">
 				{THEME_IDS.map((id) => {
@@ -1192,15 +1192,15 @@ export function SettingsPanel() {
 	const models = state.settings?.availableModels ?? state.settings?.configuredModels ?? [];
 
 	return (
-		<div className="h-full overflow-y-auto p-3">
+		<div className="settings-panel h-full overflow-y-auto p-3">
 			<div className="grid gap-3">
 				{/* Status cards */}
 				<div className="rounded-lg bg-[var(--inno-surface)] p-4">
-					<div className="mb-3 flex items-center justify-between">
+					<div className="settings-panel-header mb-3 flex flex-col items-stretch gap-3">
 						<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("settings.title")}</h3>
-						<div className="flex items-center gap-2">
+						<div className="settings-panel-controls flex flex-wrap items-center gap-2">
 							<ThemeSettings />
-							<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
+							<label className="flex shrink-0 items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
 								<span>{t("settings.language")}</span>
 								<select
 									className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 text-xs"
@@ -1211,23 +1211,23 @@ export function SettingsPanel() {
 									<option value="en">{t("settings.languageOptions.en")}</option>
 								</select>
 							</label>
-							<button className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void settingsStore.load()}>
+							<button className="shrink-0 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void settingsStore.load()}>
 								{t("settings.refresh")}
 							</button>
 						</div>
 					</div>
 					{state.isLoading ? <div className="text-sm text-[var(--inno-text-muted)]">{t("settings.loading")}</div> : null}
 					{state.error ? <div className="rounded bg-[var(--inno-danger-bg)] p-2 text-sm text-[var(--inno-danger)]">{state.error}</div> : null}
-					<div className="grid grid-cols-3 gap-3 text-sm">
+					<div className="settings-stats-grid grid gap-3 text-sm">
 						<div className="rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
 							<div className="text-xs text-[var(--inno-text-muted)]">{t("settings.stats.server")}</div>
 							<div className={healthOk ? "font-medium text-[var(--inno-success)]" : "font-medium text-[var(--inno-danger)]"}>
 								{healthOk ? t("settings.stats.healthy") : t("settings.stats.offline")}
 							</div>
 						</div>
-						<div className="rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
+						<div className="min-w-0 rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
 							<div className="text-xs text-[var(--inno-text-muted)]">{t("settings.stats.defaultModel")}</div>
-							<div className="font-medium text-[var(--inno-text)]">{state.settings ? `${state.settings.defaultProvider}/${state.settings.defaultModel}` : "-"}</div>
+							<div className="font-medium text-[var(--inno-text)] [overflow-wrap:anywhere]">{state.settings ? `${state.settings.defaultProvider}/${state.settings.defaultModel}` : "-"}</div>
 						</div>
 						<div className="rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
 							<div className="text-xs text-[var(--inno-text-muted)]">{t("settings.stats.wiki")}</div>

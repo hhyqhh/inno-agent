@@ -27,6 +27,13 @@ let _runtime: AgentSessionRuntime | null = null;
 let _queue: Promise<void> = Promise.resolve();
 let _workspaceDir = "";
 let _currentCwd = "";
+/**
+ * The SDK's session file is normally available through AgentSession, but a
+ * prompt can start while the runtime is replacing a session. Keep the
+ * explicitly targeted file visible to extension tools for the duration of
+ * that prompt so question persistence never depends on that timing window.
+ */
+let _activePromptSessionId: string | null = null;
 let _config: InnoConfig | null = null;
 let _configHolder: ConfigHolder | null = null;
 let _cwdResolver: ((sessionPath: string) => string | null) | null = null;
@@ -55,6 +62,17 @@ function resolveCwdFor(sessionPath: string | null | undefined): string {
 		}
 	}
 	return _workspaceDir;
+}
+
+function beginPromptSession(sessionPath?: string): () => void {
+	const previous = _activePromptSessionId;
+	const candidate = sessionPath ?? _runtime?.session.sessionFile;
+	if (candidate) {
+		_activePromptSessionId = basename(resolve(candidate));
+	}
+	return () => {
+		_activePromptSessionId = previous;
+	};
 }
 
 async function switchToSession(sessionPath: string, opts?: { force?: boolean }): Promise<void> {
@@ -385,6 +403,7 @@ export async function abortCurrentPrompt(): Promise<void> {
  * Return current runtime session id.
  */
 export function getCurrentSessionId(): string {
+	if (_activePromptSessionId) return _activePromptSessionId;
 	const sessionFile = getSession().sessionFile;
 	return sessionFile ? basename(sessionFile) : "";
 }
@@ -669,11 +688,13 @@ export async function runPrompt(prompt: string, images?: ImageContent[]): Promis
 		}
 	});
 
+	const restorePromptSession = beginPromptSession();
 	try {
 		await session.prompt(prompt, images?.length ? { images } : undefined);
 	} finally {
 		unsubscribe();
 		obsUnsub();
+		restorePromptSession();
 	}
 
 	if (streamError) {
@@ -833,11 +854,13 @@ export function runPromptStreaming(
 				}
 			}
 		});
+		const restorePromptSession = beginPromptSession();
 		try {
 			await session.prompt(prompt, images?.length ? { images } : undefined);
 		} finally {
 			unsubscribe();
 			obsUnsub();
+			restorePromptSession();
 		}
 
 		if (streamError) {
@@ -908,11 +931,13 @@ export function runPromptStreamingInSession(
 				}
 			}
 		});
+		const restorePromptSession = beginPromptSession(sessionPath);
 		try {
 			await session.prompt(prompt, images?.length ? { images } : undefined);
 		} finally {
 			unsubscribe();
 			obsUnsub();
+			restorePromptSession();
 		}
 
 		if (streamError) {

@@ -521,11 +521,19 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.pendingQuestion = null;
 		this.emit("change", undefined);
 		try {
-			await fetch("/api/chat/question-response", {
+			const res = await fetch("/api/chat/question-response", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ questionId, result }),
 			});
+			const body = await res.json().catch(() => ({}));
+			// If the server resent the answer as a new prompt (restart scenario),
+			// connect to the broadcaster to receive the agent's response.
+			if (body.resent && !this.isSending) {
+				const { sessionsStore } = await import("./sessions-store.js");
+				const sessionId = sessionsStore.currentSessionId;
+				if (sessionId) void this.resumeStream(sessionId);
+			}
 		} catch {
 			// best-effort — the agent will time out or get cancelled if this fails
 		}
@@ -570,6 +578,10 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
+		// Clear any stale question card from the previous session. The correct
+		// card (if any) is restored AFTER loadHistory via restorePendingQuestion
+		// or from the server's pendingQuestion field.
+		this.pendingQuestion = null;
 		// NOTE: answeredQuestionIds is intentionally NOT cleared here.
 		// loadHistory is called when switching sessions; clearing it would
 		// forget which questions were already answered, causing stale

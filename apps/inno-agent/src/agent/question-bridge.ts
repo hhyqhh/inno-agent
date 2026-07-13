@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { logger } from "../logger.js";
 
 export interface QuestionBridgeAnswer {
 	questionIndex: number;
@@ -70,6 +71,7 @@ class QuestionBridge {
 
 	ask(params: unknown, sessionId?: string): Promise<QuestionBridgeResult> {
 		if (!this.emitter) {
+			logger.warn("[diag] question: ask skipped because no emitter is registered");
 			return Promise.resolve({ answers: [], cancelled: true, error: "no_ui" });
 		}
 
@@ -82,14 +84,25 @@ class QuestionBridge {
 
 		const questionId = randomUUID();
 		const emitter = this.emitter;
-		this.pendingSessionId = sessionId ?? null;
+		const normalizedSessionId = typeof sessionId === "string" && sessionId.trim() ? sessionId.trim() : null;
+		this.pendingSessionId = normalizedSessionId;
+		logger.info(
+			{
+				questionId,
+				sessionId: normalizedSessionId,
+				hasPersistence: Boolean(this.persistence),
+			},
+			"[diag] question: ask",
+		);
 
-		if (sessionId) {
-			this.persistence?.save(sessionId, {
+		if (normalizedSessionId) {
+			this.persistence?.save(normalizedSessionId, {
 				questionId,
 				params,
 				createdAt: new Date().toISOString(),
 			});
+		} else {
+			logger.warn({ questionId }, "[diag] question: missing sessionId; pending question is not restart-safe");
 		}
 
 		return new Promise<QuestionBridgeResult>((resolve) => {
@@ -99,13 +112,45 @@ class QuestionBridge {
 	}
 
 	respond(questionId: string, result: QuestionBridgeResult): boolean {
-		if (!this.pending || this.pending.questionId !== questionId) return false;
+		if (!this.pending || this.pending.questionId !== questionId) {
+			logger.info({ questionId, hasLivePrompt: Boolean(this.pending) }, "[diag] question: respond rejected");
+			return false;
+		}
 		const { resolve } = this.pending;
+		logger.info({ questionId, sessionId: this.pendingSessionId }, "[diag] question: respond accepted");
 		if (this.pendingSessionId) this.persistence?.remove(this.pendingSessionId);
 		this.pending = null;
 		this.pendingSessionId = null;
 		resolve(result);
 		return true;
+	}
+
+	/**
+	 * Stop waiting on the live UI prompt without deleting its persisted card.
+	 * The owning session can then be resumed through the persisted-question
+	 * path, just like a card that survived an app restart.
+	 */
+	suspendPending(): {
+		questionId: string;
+		params: PendingQuestion["params"];
+		sessionId: string | null;
+	} | null {
+		const pending = this.pending;
+		if (!pending) return null;
+
+		const sessionId = this.pendingSessionId;
+		this.pending = null;
+		this.pendingSessionId = null;
+		logger.info(
+			{ questionId: pending.questionId, sessionId },
+			"[diag] question: suspended for session switch",
+		);
+		pending.resolve({ answers: [], cancelled: true, error: "session_switched" });
+		return {
+			questionId: pending.questionId,
+			params: pending.params,
+			sessionId,
+		};
 	}
 
 	cancel(): void {

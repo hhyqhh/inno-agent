@@ -2145,30 +2145,39 @@ ${excerpt}`;
  * Auto-generate a topic for a session if it doesn't already have one.
  * Runs asynchronously — fire and forget.
  */
-const _pendingAutoTopics = new Set<string>();
+const _pendingAutoTopics = new Map<string, Promise<string | null>>();
 
-function maybeAutoGenerateTopic(sessionId: string): void {
-	if (!sessionId || _pendingAutoTopics.has(sessionId)) return;
+async function generateAutoTopic(sessionId: string): Promise<string | null> {
+	if (!sessionId) return null;
 	const topicMeta = readSessionTopicMetadata();
-	if (topicMeta[sessionId]) return; // already has a topic
+	if (topicMeta[sessionId]?.topic) return topicMeta[sessionId].topic;
+	const pending = _pendingAutoTopics.get(sessionId);
+	if (pending) return pending;
 
 	const sessionPath = sessionFileFromId(join(dataDir, "sessions"), sessionId);
-	if (!sessionPath || !existsSync(sessionPath)) return;
+	if (!sessionPath || !existsSync(sessionPath)) return null;
 
-	_pendingAutoTopics.add(sessionId);
-	void (async () => {
+	const task = (async (): Promise<string | null> => {
 		try {
 			const parsed = parseSessionFile(sessionPath);
-			if (!parsed || parsed.messages.length < 2) return;
+			if (!parsed || parsed.messages.length < 2) return null;
 			const topic = await generateSessionTopic(parsed.summary, parsed.messages);
 			writeSessionTopic(sessionId, topic, true);
 			logger.info(`[auto-topic] ${sessionId} → ${topic}`);
+			return topic;
 		} catch (err) {
 			logger.warn({ err }, `auto-topic generation failed for ${sessionId}`);
+			return null;
 		} finally {
 			_pendingAutoTopics.delete(sessionId);
 		}
 	})();
+	_pendingAutoTopics.set(sessionId, task);
+	return task;
+}
+
+function maybeAutoGenerateTopic(sessionId: string): void {
+	void generateAutoTopic(sessionId);
 }
 
 // ---------------------------------------------------------------------------
@@ -4469,13 +4478,16 @@ const server = createServer(async (req, res) => {
 				const fullText = targetSessionPath
 					? await runPromptStreamingInSession(targetSessionPath, promptWithHint, onEvent, imageArgs)
 					: await runPromptStreaming(promptWithHint, onEvent, imageArgs);
-				const doneEvent = { type: "done", fullText };
+				// Auto-topic generation is a separate model request. Wait for it here
+				// and include the result in the terminal event so the sidebar can update
+				// immediately instead of refreshing before meta.json has been written.
+				const topic = emittedError ? null : await generateAutoTopic(capturedSessionId);
+				const doneEvent = { type: "done", fullText, sessionId: capturedSessionId, topic: topic ?? undefined };
 				broadcaster.publish(doneEvent);
 				if (!aborted) sseWrite(doneEvent);
 				// Skip topic auto-generation when the turn errored — there is no
 				// meaningful assistant reply to summarize and the model API is
 				// likely still failing (which would just block again).
-				if (!emittedError) maybeAutoGenerateTopic(capturedSessionId);
 			} catch (err) {
 				logger.error({ err }, "SSE stream error");
 				const errorEvent = { type: "error", message: err instanceof Error ? err.message : "Unknown error" };

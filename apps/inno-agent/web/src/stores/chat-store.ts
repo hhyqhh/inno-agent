@@ -325,6 +325,11 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				if (event.fullText) {
 					this.streamingText = event.fullText;
 				}
+				if (event.sessionId && event.topic) {
+					void import("./sessions-store.js").then((m) => {
+						m.sessionsStore.applyGeneratedTopic(event.sessionId!, event.topic!);
+					});
+				}
 				this.emit("change", undefined);
 				break;
 		}

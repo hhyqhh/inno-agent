@@ -46,7 +46,7 @@ import { validateCron } from "./scheduler/cron-utils.js";
 import { parseFrontmatter, serializeFrontmatter } from "./memory/l2/wiki-maintainer.js";
 import { readManifest, removeWikiPathFromManifest } from "./memory/l2/manifest-store.js";
 import { loadProfile, saveProfile } from "./memory/learner/profile-store.js";
-import type { LearnerProfile, LearningGoal, KnowledgeState, Misconception, LearnerPreferences } from "./memory/learner/types.js";
+import type { LearnerProfile, LearningGoal, KnowledgeState, Misconception, LearnerPreferences, LearningBoundary } from "./memory/learner/types.js";
 import { randomUUID } from "node:crypto";
 import { logger } from "./logger.js";
 import { applyRuntimeEnvironment, parseRuntimeArgs, resolveRuntimePaths } from "./runtime.js";
@@ -764,6 +764,39 @@ function normalizePreferences(input: Partial<LearnerPreferences>): LearnerPrefer
 		practice_style: arr(input.practice_style),
 		feedback_tone: arr(input.feedback_tone),
 		avoid: arr(input.avoid),
+	};
+}
+
+const DIFFICULTY_VALUES = new Set(["school_exam", "foundation", "advanced", "competition"]);
+const BEYOND_SCOPE_VALUES = new Set(["prompt_first", "allowed", "forbidden"]);
+const METHOD_VALUES = new Set(["textbook_first", "textbook_only", "unrestricted"]);
+
+/** Normalize and validate a learning boundary patch from the HTTP API. */
+function normalizeBoundary(input: Partial<LearningBoundary>): LearningBoundary {
+	function str(value: unknown): string {
+		return typeof value === "string" ? value.trim() : "";
+	}
+	function arr(value: unknown): string[] {
+		if (!Array.isArray(value)) return [];
+		return value.filter((s): s is string => typeof s === "string" && s.trim().length > 0);
+	}
+	function bool(value: unknown): boolean {
+		return value === true;
+	}
+	function pick(value: unknown, allowed: Set<string>): string {
+		return typeof value === "string" && allowed.has(value) ? value : "";
+	}
+	return {
+		stage: str(input.stage),
+		subjects: arr(input.subjects),
+		knowledge_scope: str(input.knowledge_scope),
+		default_difficulty: pick(input.default_difficulty, DIFFICULTY_VALUES),
+		beyond_scope_strategy: pick(input.beyond_scope_strategy, BEYOND_SCOPE_VALUES),
+		method_constraint: pick(input.method_constraint, METHOD_VALUES),
+		notation_standard: str(input.notation_standard),
+		reference_materials: str(input.reference_materials),
+		warn_before_beyond_scope: bool(input.warn_before_beyond_scope),
+		annotate_knowledge_scope: bool(input.annotate_knowledge_scope),
 	};
 }
 
@@ -3192,6 +3225,9 @@ const server = createServer(async (req, res) => {
 			}
 			if (body.preferences && typeof body.preferences === "object") {
 				profile.preferences = normalizePreferences(body.preferences as Partial<LearnerPreferences>);
+			}
+			if (body.boundary && typeof body.boundary === "object") {
+				profile.boundary = normalizeBoundary(body.boundary as Partial<LearningBoundary>);
 			}
 			saveProfile(paths.learnerDataDir, profile);
 			json(res, 200, profile);

@@ -174,7 +174,8 @@
 			"goals": "Goals",
 			"knowledge": "Knowledge",
 			"misconceptions": "Misconceptions",
-			"preferences": "Preferences"
+			"preferences": "Preferences",
+			"boundary": "Learning boundary"
 		},
 		"summary": {
 			"placeholder": "Agent's high-level summary of the learner…",
@@ -240,6 +241,39 @@
 			"feedbackTone": "Feedback tone",
 			"avoid": "Avoid",
 			"addPlaceholder": "Press Enter to add…"
+		},
+		"boundary": {
+			"stage": "Current stage",
+			"stagePlaceholder": "e.g. Grade 11",
+			"subjects": "Main subjects",
+			"knowledgeScope": "Knowledge scope",
+			"knowledgeScopePlaceholder": "e.g. PEP Edition Vol. 1 to Selective Vol. 2",
+			"defaultDifficulty": "Default difficulty",
+			"beyondScopeStrategy": "Beyond-scope strategy",
+			"methodConstraint": "Method constraint",
+			"notationStandard": "Notation standard",
+			"notationStandardPlaceholder": "e.g. Follow textbook conventions",
+			"referenceMaterials": "Reference materials",
+			"referenceMaterialsPlaceholder": "e.g. PEP Edition high school math",
+			"warnBeforeBeyondScope": "Warn before using beyond-scope knowledge",
+			"annotateKnowledgeScope": "Annotate knowledge scope when solving",
+			"unset": "Not set",
+			"difficultyOptions": {
+				"school_exam": "School exam level",
+				"foundation": "Foundation",
+				"advanced": "Advanced",
+				"competition": "Competition"
+			},
+			"beyondScopeOptions": {
+				"prompt_first": "Prompt before use",
+				"allowed": "Allowed directly",
+				"forbidden": "Forbidden"
+			},
+			"methodOptions": {
+				"textbook_first": "Textbook methods first",
+				"textbook_only": "Textbook methods only",
+				"unrestricted": "Unrestricted"
+			}
 		}
 	},
 	"jobs": {
@@ -544,7 +578,9 @@
 	"question": {
 		"typeSomething": "Type something…",
 		"chatAboutThis": "Chat about this",
-		"submit": "Submit"
+		"submit": "Submit",
+		"submitNext": "Submit & Next",
+		"optionSelectedHint": "Option selected — this text won't be submitted"
 	},
 	"sidebar": {
 		"expand": "Expand",

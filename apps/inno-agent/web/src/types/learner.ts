@@ -6,6 +6,7 @@ export interface LearnerProfile {
 	knowledge_states: KnowledgeState[];
 	misconceptions: Misconception[];
 	preferences: LearnerPreferences;
+	boundary: LearningBoundary;
 	profile_summary: string;
 }
 
@@ -57,4 +58,17 @@ export interface LearnerPreferences {
 	practice_style: string[];
 	feedback_tone: string[];
 	avoid: string[];
+}
+
+export interface LearningBoundary {
+	stage: string;
+	subjects: string[];
+	knowledge_scope: string;
+	default_difficulty: string;
+	beyond_scope_strategy: string;
+	method_constraint: string;
+	notation_standard: string;
+	reference_materials: string;
+	warn_before_beyond_scope: boolean;
+	annotate_knowledge_scope: boolean;
 }

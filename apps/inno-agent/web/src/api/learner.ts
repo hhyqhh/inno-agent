@@ -1,11 +1,11 @@
 import { apiFetch } from "./client.js";
-import type { LearnerProfile, LearningGoal, KnowledgeState, Misconception, LearnerPreferences } from "../types/learner.js";
+import type { LearnerProfile, LearningGoal, KnowledgeState, Misconception, LearnerPreferences, LearningBoundary } from "../types/learner.js";
 
 export async function getLearnerProfile(): Promise<LearnerProfile> {
 	return apiFetch<LearnerProfile>("/api/learner/profile");
 }
 
-export async function patchLearnerProfile(patch: { profile_summary?: string; preferences?: LearnerPreferences }): Promise<LearnerProfile> {
+export async function patchLearnerProfile(patch: { profile_summary?: string; preferences?: LearnerPreferences; boundary?: LearningBoundary }): Promise<LearnerProfile> {
 	return apiFetch<LearnerProfile>("/api/learner/profile", {
 		method: "PATCH",
 		body: JSON.stringify(patch),

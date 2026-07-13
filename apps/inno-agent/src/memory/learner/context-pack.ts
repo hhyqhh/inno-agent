@@ -107,9 +107,63 @@ export function buildContextPack(profile: LearnerProfile, recentEvents: Learning
 		relevant_concepts: relevantConcepts,
 		active_misconceptions: activeMisconceptions,
 		teaching_hints: teachingHints,
+		boundary: profile.boundary,
 		recent_events: recentEventSummaries,
 		review_due_concepts: reviewDueConcepts,
 	};
+}
+
+const difficultyMap: Record<string, string> = {
+	school_exam: "校内考试水平",
+	foundation: "基础",
+	advanced: "拔高",
+	competition: "竞赛",
+};
+
+const beyondScopeMap: Record<string, string> = {
+	prompt_first: "需提示后再使用",
+	allowed: "可直接使用",
+	forbidden: "完全禁止",
+};
+
+const methodMap: Record<string, string> = {
+	textbook_first: "优先使用教材内方法",
+	textbook_only: "仅使用教材内方法",
+	unrestricted: "不限制",
+};
+
+/**
+ * Render the learning boundary as a markdown subsection for prompt injection.
+ * Returns an empty string when no boundary field has been set, so the section
+ * is omitted entirely for learners who haven't configured a boundary yet.
+ */
+function formatBoundaryForPrompt(boundary?: LearnerContextPack["boundary"]): string {
+	if (!boundary) return "";
+
+	const items: string[] = [];
+	if (boundary.stage) items.push(`当前阶段：${boundary.stage}`);
+	if (boundary.subjects.length > 0) items.push(`主要课程：${boundary.subjects.join("、")}`);
+	if (boundary.knowledge_scope) items.push(`知识范围：${boundary.knowledge_scope}`);
+	if (boundary.default_difficulty) {
+		items.push(`默认难度：${difficultyMap[boundary.default_difficulty] ?? boundary.default_difficulty}`);
+	}
+	if (boundary.beyond_scope_strategy) {
+		items.push(`超纲内容：${beyondScopeMap[boundary.beyond_scope_strategy] ?? boundary.beyond_scope_strategy}`);
+	}
+	if (boundary.method_constraint) {
+		items.push(`解题方法：${methodMap[boundary.method_constraint] ?? boundary.method_constraint}`);
+	}
+	if (boundary.notation_standard) items.push(`符号规范：${boundary.notation_standard}`);
+	if (boundary.reference_materials) items.push(`参考资料：${boundary.reference_materials}`);
+
+	if (items.length === 0) return "";
+
+	items.push(`使用超纲知识前先提醒：${boundary.warn_before_beyond_scope ? "是" : "否"}`);
+	items.push(`解题时标注使用的知识范围：${boundary.annotate_knowledge_scope ? "是" : "否"}`);
+
+	return `\n## 学习边界\n以上学习边界为长期约束，请在每次讲解与解题时严格遵守：只在设定的阶段、课程与知识范围内展开，优先使用教材内方法与符号；若必须使用超纲内容${
+		boundary.warn_before_beyond_scope ? "（须先征得学习者同意）" : ""
+	}，请明确标注其超出当前范围。\n- ${items.join("\n- ")}`;
 }
 
 /**
@@ -143,6 +197,11 @@ export function formatContextPackForPrompt(pack: LearnerContextPack): string {
 		for (const h of pack.teaching_hints) {
 			lines.push(`- ${h}`);
 		}
+	}
+
+	const boundarySection = formatBoundaryForPrompt(pack.boundary);
+	if (boundarySection) {
+		lines.push(boundarySection);
 	}
 
 	if (pack.review_due_concepts && pack.review_due_concepts.length > 0) {

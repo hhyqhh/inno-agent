@@ -52,6 +52,9 @@
 		"baseUrl": "",
 		"token": ""
 	},
+	"autoReminders": {
+		"enabled": true
+	},
 	"memory": {
 		"l1Enabled": true,
 		"l2Enabled": true,

@@ -61,6 +61,17 @@ export interface InnoSimpleModeConfig {
 }
 
 /**
+ * Auto-reminders. When enabled (default), three default learning-reminder
+ * push_reminder jobs are created on first boot if they don't already exist:
+ * a daily morning reminder (09:03), an evening review (19:07), and a weekly
+ * Sunday review (21:07). Set to false to opt out entirely — no jobs are
+ * created and the user manages reminders manually via the Jobs page.
+ */
+export interface InnoAutoRemindersConfig {
+	enabled: boolean;
+}
+
+/**
  * Content Hub. The single source for remotely-fetched, ready-to-use content:
  * the global skill library and the Simple Mode preset workspaces. Both used to
  * be either hardcoded (skill library → a fixed GitHub repo) or bundled with the
@@ -150,6 +161,8 @@ export interface InnoConfig {
 	subagents?: InnoSubagentsConfig;
 	memory?: InnoMemoryConfig;
 	simpleMode?: InnoSimpleModeConfig;
+	/** Auto-reminders: create default learning reminders on first boot (default ON). */
+	autoReminders?: InnoAutoRemindersConfig;
 	ui?: {
 		theme: string;
 	};
@@ -237,6 +250,13 @@ export function normalizeSimpleModeConfig(simpleMode: Partial<InnoSimpleModeConf
 	};
 }
 
+export function normalizeAutoRemindersConfig(autoReminders: Partial<InnoAutoRemindersConfig> | undefined): InnoAutoRemindersConfig {
+	// Auto-reminders default ON; only an explicit `false` disables them.
+	return {
+		enabled: autoReminders?.enabled !== false,
+	};
+}
+
 /**
  * Normalize the Content Hub config, filling missing fields from the built-in
  * public-hub defaults. `legacyGithubToken` lets us migrate the older
@@ -299,6 +319,7 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		subagents: config.subagents,
 		memory: normalizeMemoryConfig(config.memory),
 		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
+		autoReminders: normalizeAutoRemindersConfig(config.autoReminders),
 		ui: config.ui,
 		ocrApi: config.ocrApi,
 	} as InnoConfig;

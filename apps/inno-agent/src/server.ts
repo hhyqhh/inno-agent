@@ -51,6 +51,7 @@ import { randomUUID } from "node:crypto";
 import { logger } from "./logger.js";
 import { applyRuntimeEnvironment, parseRuntimeArgs, resolveRuntimePaths } from "./runtime.js";
 import { questionBridge, type QuestionBridgeResult } from "./agent/question-bridge.js";
+import { ensureDefaultReminders } from "./agent/learning-reminders.js";
 import { DEFAULT_WORKSPACE_ID, TEMP_WORKSPACE_ID, WorkspaceRegistry } from "./workspace/workspace-registry.js";
 import { listPresets, listRemotePresets, ensurePresetCached, instantiatePreset } from "./presets/preset-store.js";
 import { createContentSource, type RemoteContentSource } from "./content-source/index.js";
@@ -300,6 +301,15 @@ async function ensureBootstrapped(): Promise<void> {
 			channelRegistry.register(wechatChannel);
 		}
 		migrateReminderChannels();
+
+		// Create default learning reminders on first boot (idempotent —
+		// checks by name before creating, so existing jobs are untouched).
+		if (config.autoReminders?.enabled !== false) {
+			const created = ensureDefaultReminders(jobStore);
+			if (created > 0) {
+				logger.info({ created }, "[inno-server] created default learning reminders");
+			}
+		}
 
 		// ---- agent session ----
 		logger.info("[inno-server] initializing agent session...");

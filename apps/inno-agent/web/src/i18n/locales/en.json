@@ -418,6 +418,7 @@
 			"contextWindow": "Context window",
 			"maxTokens": "Max tokens",
 			"reasoning": "reasoning",
+			"supportsImages": "image input",
 			"authHeader": "use Bearer auth",
 			"bypassProxy": "bypass system proxy",
 			"makeDefault": "make default",

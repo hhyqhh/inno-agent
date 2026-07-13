@@ -3,6 +3,7 @@ export interface InnoModelInfo {
 	name: string;
 	provider: string;
 	reasoning: boolean;
+	input: Array<"text" | "image">;
 	contextWindow: number;
 	maxTokens: number;
 	baseUrl?: string;
@@ -12,6 +13,7 @@ export interface InnoProviderModel {
 	id: string;
 	name: string;
 	reasoning: boolean;
+	input: Array<"text" | "image">;
 	contextWindow: number;
 	maxTokens: number;
 }

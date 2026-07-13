@@ -68,5 +68,5 @@ export type ChatStreamEvent =
 	| { type: "tool_end"; toolCallId: string; toolName: string; result: unknown; isError: boolean }
 	| { type: "workspace_change"; changes: WorkspaceFileChange[]; toolCallId?: string; toolName?: string; workspaceId?: string; truncated?: boolean }
 	| { type: "question"; questionId: string; params: { questions: QuestionData[] } }
-	| { type: "done"; fullText: string }
+	| { type: "done"; fullText: string; sessionId?: string; topic?: string }
 	| { type: "error"; message: string };

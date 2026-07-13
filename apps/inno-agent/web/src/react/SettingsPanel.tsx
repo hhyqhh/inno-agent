@@ -26,6 +26,7 @@ interface ProviderFormState {
 	contextWindow: string;
 	maxTokens: string;
 	reasoning: boolean;
+	supportsImages: boolean;
 	authHeader: boolean;
 	bypassProxy: boolean;
 	makeDefault: boolean;
@@ -42,6 +43,7 @@ const emptyForm: ProviderFormState = {
 	contextWindow: "128000",
 	maxTokens: "8192",
 	reasoning: false,
+	supportsImages: false,
 	authHeader: false,
 	bypassProxy: false,
 	makeDefault: true,
@@ -81,6 +83,7 @@ function ModelEditForm({ model, settings, onClose }: {
 		contextWindow: String(model.contextWindow),
 		maxTokens: String(model.maxTokens),
 		reasoning: model.reasoning,
+		supportsImages: model.input.includes("image"),
 		authHeader: provider?.authHeader === true,
 		bypassProxy: provider?.bypassProxy === true,
 		makeDefault: settings.defaultProvider === model.provider && settings.defaultModel === model.id,
@@ -104,6 +107,7 @@ function ModelEditForm({ model, settings, onClose }: {
 				id: form.modelId.trim(),
 				name: form.modelName.trim() || form.modelId.trim(),
 				reasoning: form.reasoning,
+				input: form.supportsImages ? ["text", "image"] : ["text"],
 				contextWindow: Math.trunc(contextWindow),
 				maxTokens: Math.trunc(maxTokens),
 			};
@@ -172,6 +176,7 @@ function ModelEditForm({ model, settings, onClose }: {
 			</div>
 			<div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
 				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
+				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.supportsImages} onChange={(e) => setForm({ ...form, supportsImages: e.target.checked })} /> {t("settings.form.supportsImages")}</label>
 				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
 				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
 				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
@@ -245,6 +250,7 @@ function NewProviderForm() {
 				id: form.modelId.trim(),
 				name: form.modelName.trim() || form.modelId.trim(),
 				reasoning: form.reasoning,
+				input: form.supportsImages ? ["text", "image"] : ["text"],
 				contextWindow: Math.trunc(contextWindow),
 				maxTokens: Math.trunc(maxTokens),
 			};
@@ -322,6 +328,7 @@ function NewProviderForm() {
 					</div>
 					<div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
 						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
+						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.supportsImages} onChange={(e) => setForm({ ...form, supportsImages: e.target.checked })} /> {t("settings.form.supportsImages")}</label>
 						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
 						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
 						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>

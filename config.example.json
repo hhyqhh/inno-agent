@@ -13,6 +13,7 @@
 					"id": "claude-sonnet-4-6",
 					"name": "Claude Sonnet 4.6 via InnoSpark",
 					"reasoning": true,
+					"input": ["text", "image"],
 					"contextWindow": 200000,
 					"maxTokens": 16384
 				}

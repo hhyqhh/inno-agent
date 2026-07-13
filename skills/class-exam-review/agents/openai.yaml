@@ -1,0 +1,4 @@
+interface:
+  display_name: "班级试卷讲评"
+  short_description: "上传试卷、答案与班级作答明细，生成学情分析、讲评顺序、重点题讲稿与补偿练习"
+  default_prompt: "使用 $class-exam-review 根据我上传的试卷、标准答案和班级作答明细 Excel，生成班级试卷讲评方案。"

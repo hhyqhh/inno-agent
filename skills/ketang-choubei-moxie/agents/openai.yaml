@@ -1,0 +1,4 @@
+interface:
+  display_name: "课堂抽背与默写"
+  short_description: "根据教材内容和学生名单生成可离线使用的课堂抽背与默写页面"
+  default_prompt: "使用 $ketang-choubei-moxie 根据我上传的教材和学生名单生成课堂抽背与默写网页。"

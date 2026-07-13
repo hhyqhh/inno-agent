@@ -1,5 +1,5 @@
 import { ChevronRight, CalendarDays, Hash, Tag, Type, X } from "lucide-react";
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { formatRecordDateDisplay, parseTagList } from "../../lib/note-frontmatter.js";
 import { RecordDatePropertyEditor } from "./RecordDatePropertyEditor.js";
@@ -103,6 +103,86 @@ function TagsPropertyEditor({
 	);
 }
 
+function NotePropertiesPreview({
+	tags,
+	recordDate,
+	uiLanguage,
+}: {
+	tags: string[];
+	recordDate: string;
+	uiLanguage: "zh" | "en";
+}) {
+	const previewRef = useRef<HTMLDivElement>(null);
+	const dateMeasureRef = useRef<HTMLSpanElement>(null);
+	const moreMeasureRef = useRef<HTMLSpanElement>(null);
+	const tagMeasureRefs = useRef<Array<HTMLSpanElement | null>>([]);
+	const [visibleTagCount, setVisibleTagCount] = useState(0);
+	const formattedDate = recordDate ? formatRecordDateDisplay(recordDate, uiLanguage) : "";
+
+	useLayoutEffect(() => {
+		const preview = previewRef.current;
+		if (!preview) return;
+
+		const updateVisibleTagCount = () => {
+			const gap = Number.parseFloat(getComputedStyle(preview).columnGap) || 0;
+			const availableWidth = preview.clientWidth;
+			let usedWidth = formattedDate ? (dateMeasureRef.current?.offsetWidth ?? 0) : 0;
+			let nextVisibleCount = 0;
+			const moreWidth = moreMeasureRef.current?.offsetWidth ?? 0;
+
+			for (let index = 0; index < tags.length; index += 1) {
+				const tagWidth = tagMeasureRefs.current[index]?.offsetWidth ?? 0;
+				const widthWithTag = usedWidth + (usedWidth > 0 ? gap : 0) + tagWidth;
+				const hasHiddenTags = index < tags.length - 1;
+				const requiredWidth = widthWithTag + (hasHiddenTags ? gap + moreWidth : 0);
+				if (requiredWidth > availableWidth) break;
+				usedWidth = widthWithTag;
+				nextVisibleCount = index + 1;
+			}
+
+			setVisibleTagCount((current) => current === nextVisibleCount ? current : nextVisibleCount);
+		};
+
+		updateVisibleTagCount();
+		const resizeObserver = new ResizeObserver(updateVisibleTagCount);
+		resizeObserver.observe(preview);
+		return () => resizeObserver.disconnect();
+	}, [formattedDate, tags]);
+
+	const hiddenTagCount = tags.length - visibleTagCount;
+
+	return (
+		<div ref={previewRef} className="inno-note-properties-preview" aria-hidden="true">
+			{formattedDate ? (
+				<span className="inno-note-properties-date-preview">
+					<CalendarDays size={12} />
+					{formattedDate}
+				</span>
+			) : null}
+			{tags.slice(0, visibleTagCount).map((tag) => (
+				<TagPill key={tag} tag={tag} readOnly uiLanguage={uiLanguage} />
+			))}
+			{hiddenTagCount > 0 ? (
+				<span className="inno-note-properties-more">+{hiddenTagCount}</span>
+			) : null}
+			<div className="inno-note-properties-preview-measure">
+				{formattedDate ? (
+					<span ref={dateMeasureRef} className="inno-note-properties-date-preview">
+						<CalendarDays size={12} />
+						{formattedDate}
+					</span>
+				) : null}
+				{tags.map((tag, index) => (
+					<span key={tag} ref={(element) => { tagMeasureRefs.current[index] = element; }}>
+						<TagPill tag={tag} readOnly uiLanguage={uiLanguage} />
+					</span>
+				))}
+				<span ref={moreMeasureRef} className="inno-note-properties-more">+{tags.length}</span>
+			</div>
+		</div>
+	);
+}
+
 export function NoteProperties({
 	title,
 	tags,
@@ -138,20 +218,7 @@ export function NoteProperties({
 					<span className="inno-note-properties-count">{propertyCount}</span>
 				</button>
 				{!expanded ? (
-					<div className="inno-note-properties-preview" aria-hidden="true">
-						{recordDate ? (
-							<span className="inno-note-properties-date-preview">
-								<CalendarDays size={12} />
-								{formatRecordDateDisplay(recordDate, uiLanguage)}
-							</span>
-						) : null}
-						{tags.slice(0, 4).map((tag) => (
-							<TagPill key={tag} tag={tag} readOnly uiLanguage={uiLanguage} />
-						))}
-						{tags.length > 4 ? (
-							<span className="inno-note-properties-more">+{tags.length - 4}</span>
-						) : null}
-					</div>
+					<NotePropertiesPreview tags={tags} recordDate={recordDate} uiLanguage={uiLanguage} />
 				) : null}
 			</div>
 			{expanded ? (

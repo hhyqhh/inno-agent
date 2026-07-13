@@ -33,8 +33,6 @@ interface SessionSidebarProps {
 	collapsed: boolean;
 }
 
-const CHANNEL_FILTER_ORDER = ["web", "feishu", "wechat", "cli", "scheduler"] as const;
-
 /* ── helpers ── */
 
 function formatTime(iso: string): string {
@@ -64,64 +62,6 @@ function channelLabel(channel: SessionChannel): string {
 	return labels[channel] ?? channel;
 }
 
-function channelClass(channel: SessionChannel): string {
-	const classes: Record<string, string> = {
-		cli: "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]",
-		web: "bg-[var(--inno-surface-muted)] text-[var(--inno-text)]",
-		feishu: "bg-[var(--inno-success-bg)] text-[var(--inno-success)]",
-		scheduler: "bg-[var(--inno-warning-bg)] text-[var(--inno-warning)] ring-1 ring-[var(--inno-warning-border)]/60",
-		qq: "bg-cyan-50 text-cyan-600 ring-1 ring-cyan-200/60",
-		wechat: "bg-lime-50 text-lime-600 ring-1 ring-lime-200/60",
-		unknown: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]",
-	};
-	return classes[channel] ?? classes.unknown;
-}
-
-/**
- * Outline (interaction) badge: the session merely interacted with this channel
- * (e.g. a web session that pushed a file to feishu). Distinct from the solid
- * origin badge (channelClass), which marks where the session was born.
- */
-function channelInteractionClass(channel: SessionChannel): string {
-	const classes: Record<string, string> = {
-		cli: "bg-transparent text-[var(--inno-accent)]",
-		web: "bg-transparent text-[var(--inno-text-muted)] ring-1 ring-[var(--inno-border-strong)]",
-		feishu: "bg-transparent text-[var(--inno-success)]",
-		scheduler: "bg-transparent text-[var(--inno-warning)] ring-1 ring-[var(--inno-warning-border)]",
-		qq: "bg-transparent text-cyan-500 ring-1 ring-cyan-300/70",
-		wechat: "bg-transparent text-lime-500 ring-1 ring-lime-300/70",
-		unknown: "bg-transparent text-[var(--inno-text-subtle)]",
-	};
-	return classes[channel] ?? classes.unknown;
-}
-
-/**
- * Order a session's channel badges: the origin channel first (solid), then the
- * remaining interaction channels (outline). De-duplicates and keeps a stable
- * display order.
- */
-function orderedSessionChannels(session: SessionMeta): Array<{ channel: SessionChannel; isOrigin: boolean }> {
-	const origin = session.origin;
-	const rest = session.channels.filter((c) => c !== origin);
-	const ordered: Array<{ channel: SessionChannel; isOrigin: boolean }> = [];
-	if (origin) ordered.push({ channel: origin, isOrigin: true });
-	for (const c of rest) ordered.push({ channel: c, isOrigin: false });
-	return ordered;
-}
-
-function channelFilterClass(channel: SessionChannel | null, active: boolean): string {
-	if (!active) return "bg-[var(--inno-surface)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] hover:ring-[var(--inno-border-strong)]";
-	if (!channel) return "inno-primary-button ring-1 ring-[var(--inno-accent)]";
-	const map: Record<string, string> = {
-		cli: "bg-[var(--inno-accent)] text-white ring-1 ring-[var(--inno-accent)] hover:bg-[var(--inno-accent)] hover:text-white",
-		web: "inno-primary-button ring-1 ring-[var(--inno-accent)]",
-		feishu: "bg-[var(--inno-success)] text-white ring-1 ring-[var(--inno-success)] hover:bg-[var(--inno-success)] hover:text-white",
-		scheduler: "bg-[var(--inno-warning)] text-white ring-1 ring-[var(--inno-warning)] hover:bg-[var(--inno-warning)] hover:text-white",
-		qq: "bg-cyan-600 text-white ring-1 ring-cyan-600 hover:bg-cyan-600 hover:text-white",
-		wechat: "bg-lime-600 text-white ring-1 ring-lime-600 hover:bg-lime-600 hover:text-white",
-	};
-	return map[channel] ?? "inno-primary-button ring-1 ring-[var(--inno-accent)]";
-}
 
 /* ── Workspace group definition ── */
 
@@ -323,17 +263,6 @@ function SessionCard({
 
 			{/* Bottom row: channels + actions */}
 			<div className="mt-1.5 flex items-center justify-between gap-1">
-				<div className="flex flex-wrap items-center gap-1">
-					{orderedSessionChannels(session).map(({ channel, isOrigin }) => (
-						<span
-							key={channel}
-							title={isOrigin ? t("sidebar.originChannel", { channel: channelLabel(channel) }) : t("sidebar.interactedChannel", { channel: channelLabel(channel) })}
-							className={`rounded px-1.5 py-px text-[9px] font-medium leading-none ${isOrigin ? channelClass(channel) : channelInteractionClass(channel)}`}
-						>
-							{channelLabel(channel)}
-						</span>
-					))}
-				</div>
 				<div className="flex items-center gap-0.5 opacity-0 group-hover/card:opacity-100 transition-opacity duration-150">
 					{opening ? (
 						<Spinner size={12} className="text-[var(--inno-border-strong)]" />
@@ -395,8 +324,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 		currentSessionId: sessionsStore.currentSessionId,
 		isLoading: sessionsStore.isLoading,
 		openingSessionId: sessionsStore.openingSessionId,
-		channelFilter: sessionsStore.channelFilter,
-		searchQuery: sessionsStore.searchQuery,
+				searchQuery: sessionsStore.searchQuery,
 		availableChannels: sessionsStore.availableChannels,
 		filteredSessions: sessionsStore.filteredSessions,
 	}));
@@ -416,8 +344,6 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 		setTogglingMode(true);
 		void settingsStore.saveSimpleMode(next).finally(() => setTogglingMode(false));
 	}, [togglingMode]);
-
-	const orderedChannels = CHANNEL_FILTER_ORDER.filter((ch) => state.availableChannels.includes(ch as SessionChannel));
 
 	useEffect(() => {
 		void sessionsStore.load();
@@ -454,7 +380,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 		const tempGroups: WsGroup[] = [];
 		// When a search/filter is active, only show groups that have matching
 		// sessions so the list narrows as expected.
-		const filtering = !!state.searchQuery || !!state.channelFilter;
+		const filtering = !!state.searchQuery;
 		for (const w of wsState.list) {
 			const sessions = byWs.get(w.id) ?? [];
 			const isChannel = CHANNEL_WS_ORDER.includes(w.id);
@@ -489,7 +415,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			result.push({ id: "archived", name: t("sidebar.archived"), manageable: false, canCreate: false, sessions: archived });
 		}
 		return result;
-	}, [wsState.list, state.filteredSessions, state.searchQuery, state.channelFilter, simpleMode, t]);
+	}, [wsState.list, state.filteredSessions, state.searchQuery, simpleMode, t]);
 
 	// Simple Mode (P7): a flat, recency-sorted list of web conversations — the
 	// lightweight way back to a previously generated artifact (PPT, lesson plan,
@@ -854,27 +780,6 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 				</button>
 			</div>
 
-			{/* Channel filter chips — hidden in Simple Mode (web-only view) */}
-			{!simpleMode && state.availableChannels.length > 1 && (
-				<div className="flex flex-wrap items-center gap-1 border-b border-[var(--inno-border)] px-2 py-1.5">
-					{orderedChannels.map((ch) => (
-						<button
-							key={ch}
-							className={`inno-channel-filter-chip inno-sidebar-meta rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(ch, state.channelFilter === ch)}`}
-							onClick={() => sessionsStore.setChannelFilter(state.channelFilter === ch ? null : ch)}
-						>
-							{channelLabel(ch)}
-						</button>
-					))}
-					<button
-						className={`inno-channel-filter-chip inno-sidebar-meta rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(null, state.channelFilter === null)}`}
-						onClick={() => sessionsStore.setChannelFilter(null)}
-					>
-						{t("sidebar.all")}
-					</button>
-				</div>
-			)}
-
 			{/* Session list */}
 			<div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-2 sidebar-scroll">
 				{state.isLoading ? (
@@ -883,7 +788,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 					</div>
 				) : groups.length === 0 ? (
 					<div className="inno-sidebar-text px-2 py-8 text-center text-[var(--inno-text-subtle)]">
-						{state.searchQuery || state.channelFilter ? t("sidebar.noMatch") : t("sidebar.noSessions")}
+						{state.searchQuery ? t("sidebar.noMatch") : t("sidebar.noSessions")}
 					</div>
 				) : (
 					groups.map((group) => {

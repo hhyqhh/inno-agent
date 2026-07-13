@@ -28,7 +28,6 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	currentSessionId: string | null = null;
 	isLoading = false;
 	openingSessionId: string | null = null;
-	channelFilter: SessionChannel | null = null;
 	searchQuery = "";
 	/** When true, ChatCenter shows the workspace chooser instead of opening a session. */
 	pendingNewSession = false;
@@ -63,10 +62,6 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 
 	get filteredSessions(): SessionMeta[] {
 		let list = this.sessions;
-		if (this.channelFilter) {
-			const ch = this.channelFilter;
-			list = list.filter((s) => s.channels.includes(ch));
-		}
 		if (this.searchQuery) {
 			const q = this.searchQuery.toLowerCase();
 			list = list.filter(
@@ -82,11 +77,6 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 			for (const ch of s.channels) channels.add(ch);
 		}
 		return Array.from(channels).sort();
-	}
-
-	setChannelFilter(channel: SessionChannel | null) {
-		this.channelFilter = channel;
-		this.emit("change", undefined);
 	}
 
 	setSearchQuery(query: string) {

@@ -977,7 +977,7 @@ export function ChatCenter() {
 													<svg className={`h-2.5 w-2.5 transition-transform ${showWsDropdown ? "rotate-90" : ""}`} viewBox="0 0 8 12" fill="none"><path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
 												</button>
 												{showWsDropdown ? (
-													<div className="absolute left-full top-0 ml-1 min-w-[140px] rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] py-0.5 shadow-lg z-50" onMouseEnter={() => { if (wsDropdownTimerRef.current) { clearTimeout(wsDropdownTimerRef.current); wsDropdownTimerRef.current = null; } }} onMouseLeave={() => { wsDropdownTimerRef.current = setTimeout(() => setShowWsDropdown(false), 200); }}>
+													<div className="absolute left-full top-0 ml-1 w-auto whitespace-nowrap rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] py-0.5 shadow-lg z-50" onMouseEnter={() => { if (wsDropdownTimerRef.current) { clearTimeout(wsDropdownTimerRef.current); wsDropdownTimerRef.current = null; } }} onMouseLeave={() => { wsDropdownTimerRef.current = setTimeout(() => setShowWsDropdown(false), 200); }}>
 														{selectableWorkspaces.map((w) => (
 															<button
 																key={w.id}
@@ -989,7 +989,7 @@ export function ChatCenter() {
 																}}
 																className="flex w-full items-center gap-3 px-2 py-0.5 text-left text-[11px] transition-colors text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 															>
-																{wsExistingId === w.id ? <Check size={10} className="shrink-0 text-[var(--inno-accent)]" /> : <span className="w-[10px] shrink-0" />}
+																{wsExistingId === w.id ? <Check size={14} className="shrink-0 text-[var(--inno-accent)]" /> : <span className="w-[14px] shrink-0" />}
 																{w.name}
 															</button>
 														))}

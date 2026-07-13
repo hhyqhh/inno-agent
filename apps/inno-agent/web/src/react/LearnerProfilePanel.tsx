@@ -3,11 +3,13 @@ import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronRight } from "lucide-react";
 import { Spinner } from "./ui/Spinner.js";
+import { Switch } from "./ui/Switch.js";
 import { learnerStore } from "../stores/learner-store.js";
 import type {
 	GoalStatus,
 	GoalType,
 	KnowledgeState,
+	LearningBoundary,
 	LearningGoal,
 	Misconception,
 	MisconceptionStatus,
@@ -17,6 +19,22 @@ import { useStoreSnapshot } from "./hooks.js";
 const GOAL_TYPES: GoalType[] = ["skill", "concept", "project", "exam", "habit"];
 const GOAL_STATUSES: GoalStatus[] = ["active", "paused", "completed", "archived"];
 const MISC_STATUSES: MisconceptionStatus[] = ["active", "repairing", "resolved", "stale"];
+const DIFFICULTY_OPTIONS = ["school_exam", "foundation", "advanced", "competition"] as const;
+const BEYOND_SCOPE_OPTIONS = ["prompt_first", "allowed", "forbidden"] as const;
+const METHOD_OPTIONS = ["textbook_first", "textbook_only", "unrestricted"] as const;
+
+const DEFAULT_BOUNDARY: LearningBoundary = {
+	stage: "",
+	subjects: [],
+	knowledge_scope: "",
+	default_difficulty: "",
+	beyond_scope_strategy: "",
+	method_constraint: "",
+	notation_standard: "",
+	reference_materials: "",
+	warn_before_beyond_scope: true,
+	annotate_knowledge_scope: false,
+};
 
 function formatDate(iso?: string): string {
 	if (!iso) return "-";
@@ -800,6 +818,162 @@ function PreferencesSection() {
 	);
 }
 
+function BoundarySection() {
+	const { t } = useTranslation();
+	const state = useStoreSnapshot(learnerStore, () => ({ profile: learnerStore.profile, isSaving: learnerStore.isSaving }));
+	const boundary = state.profile?.boundary ?? DEFAULT_BOUNDARY;
+	const [draft, setDraft] = useState<LearningBoundary>(boundary);
+	const [dirty, setDirty] = useState(false);
+
+	useEffect(() => {
+		if (!dirty) setDraft(boundary);
+	}, [state.profile, dirty, boundary]);
+
+	function update<K extends keyof LearningBoundary>(key: K, value: LearningBoundary[K]) {
+		setDraft((prev) => ({ ...prev, [key]: value }));
+		setDirty(true);
+	}
+
+	async function save() {
+		await learnerStore.patchBoundary(draft);
+		setDirty(false);
+	}
+
+	// Build the summary line shown under the section title, e.g.
+	// "高中数学 · 人教A版 · 校内考试难度 · 优先课内方法"
+	const summaryParts: string[] = [];
+	if (draft.subjects.length > 0) summaryParts.push(draft.subjects.join("/"));
+	if (draft.reference_materials) summaryParts.push(draft.reference_materials);
+	if (draft.default_difficulty) summaryParts.push(t(`profile.boundary.difficultyOptions.${draft.default_difficulty}`));
+	if (draft.method_constraint && draft.method_constraint !== "unrestricted") {
+		summaryParts.push(t(`profile.boundary.methodOptions.${draft.method_constraint}`));
+	}
+	const summary = summaryParts.join(" · ");
+
+	const inputClsStr = "w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]";
+	const selectClsStr = "w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]";
+
+	return (
+		<Section title={t("profile.sections.boundary")}>
+			{summary ? (
+				<p className="mb-3 rounded-md bg-[var(--inno-accent-soft)] px-3 py-1.5 text-xs text-[var(--inno-accent)]">{summary}</p>
+			) : null}
+			<div className="grid gap-3 sm:grid-cols-2">
+				<label className="block text-sm">
+					<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.boundary.stage")}</span>
+					<input
+						className={inputClsStr}
+						placeholder={t("profile.boundary.stagePlaceholder")}
+						value={draft.stage}
+						onChange={(e) => update("stage", e.target.value)}
+					/>
+				</label>
+				<div>
+					<div className="mb-1 text-xs font-medium text-[var(--inno-text)]">{t("profile.boundary.subjects")}</div>
+					<ChipInput
+						label=""
+						values={draft.subjects}
+						onChange={(v) => update("subjects", v)}
+						placeholder={t("profile.preferences.addPlaceholder") ?? ""}
+					/>
+				</div>
+				<label className="block text-sm">
+					<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.boundary.knowledgeScope")}</span>
+					<input
+						className={inputClsStr}
+						placeholder={t("profile.boundary.knowledgeScopePlaceholder")}
+						value={draft.knowledge_scope}
+						onChange={(e) => update("knowledge_scope", e.target.value)}
+					/>
+				</label>
+				<label className="block text-sm">
+					<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.boundary.defaultDifficulty")}</span>
+					<select
+						className={selectClsStr}
+						value={draft.default_difficulty}
+						onChange={(e) => update("default_difficulty", e.target.value)}
+					>
+						<option value="">{t("profile.boundary.unset")}</option>
+						{DIFFICULTY_OPTIONS.map((o) => (
+							<option key={o} value={o}>
+								{t(`profile.boundary.difficultyOptions.${o}`)}
+							</option>
+						))}
+					</select>
+				</label>
+				<label className="block text-sm">
+					<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.boundary.beyondScopeStrategy")}</span>
+					<select
+						className={selectClsStr}
+						value={draft.beyond_scope_strategy}
+						onChange={(e) => update("beyond_scope_strategy", e.target.value)}
+					>
+						<option value="">{t("profile.boundary.unset")}</option>
+						{BEYOND_SCOPE_OPTIONS.map((o) => (
+							<option key={o} value={o}>
+								{t(`profile.boundary.beyondScopeOptions.${o}`)}
+							</option>
+						))}
+					</select>
+				</label>
+				<label className="block text-sm">
+					<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.boundary.methodConstraint")}</span>
+					<select
+						className={selectClsStr}
+						value={draft.method_constraint}
+						onChange={(e) => update("method_constraint", e.target.value)}
+					>
+						<option value="">{t("profile.boundary.unset")}</option>
+						{METHOD_OPTIONS.map((o) => (
+							<option key={o} value={o}>
+								{t(`profile.boundary.methodOptions.${o}`)}
+							</option>
+						))}
+					</select>
+				</label>
+				<label className="block text-sm">
+					<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.boundary.notationStandard")}</span>
+					<input
+						className={inputClsStr}
+						placeholder={t("profile.boundary.notationStandardPlaceholder")}
+						value={draft.notation_standard}
+						onChange={(e) => update("notation_standard", e.target.value)}
+					/>
+				</label>
+				<label className="block text-sm">
+					<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.boundary.referenceMaterials")}</span>
+					<input
+						className={inputClsStr}
+						placeholder={t("profile.boundary.referenceMaterialsPlaceholder")}
+						value={draft.reference_materials}
+						onChange={(e) => update("reference_materials", e.target.value)}
+					/>
+				</label>
+			</div>
+			<div className="mt-3 grid gap-2 sm:grid-cols-2">
+				<label className="flex items-center gap-2 text-sm text-[var(--inno-text)]">
+					<Switch checked={draft.warn_before_beyond_scope} onChange={(v) => update("warn_before_beyond_scope", v)} aria-label={t("profile.boundary.warnBeforeBeyondScope")} />
+					{t("profile.boundary.warnBeforeBeyondScope")}
+				</label>
+				<label className="flex items-center gap-2 text-sm text-[var(--inno-text)]">
+					<Switch checked={draft.annotate_knowledge_scope} onChange={(v) => update("annotate_knowledge_scope", v)} aria-label={t("profile.boundary.annotateKnowledgeScope")} />
+					{t("profile.boundary.annotateKnowledgeScope")}
+				</label>
+			</div>
+			{dirty ? (
+				<div className="mt-3 flex justify-end gap-2">
+					<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)]" onClick={() => setDirty(false)}>
+						{t("common.cancel")}
+					</button>
+					<button className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50" disabled={state.isSaving} onClick={() => void save()}>
+						{state.isSaving ? t("common.saving") : t("common.save")}
+					</button>
+				</div>
+			) : null}
+		</Section>
+	);
+}
+
 function ChipInput({ label, values, onChange, placeholder }: { label: string; values: string[]; onChange(next: string[]): void; placeholder: string }) {
 	const [input, setInput] = useState("");
 	function add() {
@@ -887,6 +1061,7 @@ export function LearnerProfilePanel() {
 						<KnowledgeSection />
 						<MisconceptionsSection />
 						<PreferencesSection />
+						<BoundarySection />
 					</>
 				) : null}
 			</div>

@@ -4,6 +4,7 @@ import type {
 	KnowledgeState,
 	Misconception,
 	LearnerPreferences,
+	LearningBoundary,
 } from "./types.js";
 import { loadProfile, saveProfile } from "./profile-store.js";
 
@@ -16,6 +17,7 @@ export interface ProfileUpdate {
 	knowledge_states?: KnowledgeState[];
 	misconceptions?: Misconception[];
 	preferences?: Partial<LearnerPreferences>;
+	boundary?: Partial<LearningBoundary>;
 	profile_summary?: string;
 }
 
@@ -102,6 +104,13 @@ export function updateProfile(dataDir: string, update: ProfileUpdate): LearnerPr
 		profile.preferences = {
 			...profile.preferences,
 			...update.preferences,
+		};
+	}
+
+	if (update.boundary) {
+		profile.boundary = {
+			...profile.boundary,
+			...update.boundary,
 		};
 	}
 

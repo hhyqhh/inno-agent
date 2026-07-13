@@ -8,7 +8,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { saveConfig, setDefaultModel, type InnoConfig } from "../config.js";
 import { createLearnerTools } from "../memory/learner/learner-tools.js";
-import { loadEvents, loadProfile } from "../memory/learner/profile-store.js";
+import { isProfileEmpty, loadEvents, loadProfile } from "../memory/learner/profile-store.js";
 import { buildContextPack, formatContextPackForPrompt } from "../memory/learner/context-pack.js";
 import { JobStore } from "../scheduler/job-store.js";
 import { createSchedulerTools } from "../scheduler/scheduler-tools.js";
@@ -19,7 +19,7 @@ import { createPracticeTools } from "./practice-tools.js";
 import { createDocumentTools } from "./document-tools.js";
 import { createOcrTools } from "./ocr-tools.js";
 import { checkWorkspaceMutationPath } from "./workspace-path-guard.js";
-import { INNO_SYSTEM_PROMPT } from "./system-prompt.js";
+import { INNO_SYSTEM_PROMPT, ONBOARDING_GUIDE } from "./system-prompt.js";
 import { syncProvidersForSubagents } from "./provider-sync.js";
 import { questionBridge } from "./question-bridge.js";
 import { logger } from "../logger.js";
@@ -336,6 +336,14 @@ export function createInnoExtension(
 				// unless the learner has turned L1 off in settings.
 				if (isL1Enabled()) {
 					const profile = loadProfile(paths.learnerDataDir);
+
+					// If the profile is empty (new user), inject the structured
+					// onboarding guide so the agent prioritises building a baseline
+					// learner profile over casual conversation.
+					if (isProfileEmpty(profile)) {
+						sections.push(ONBOARDING_GUIDE);
+					}
+
 					const recentEvents = loadEvents(paths.learnerDataDir).slice(-8);
 					const contextPack = buildContextPack(profile, recentEvents);
 					const contextSection = formatContextPackForPrompt(contextPack);

@@ -1,1 +1,1 @@
-修改apps/inno-agent/web/src/react/LearnerProfilePanel.tsx的样式，像概述、学习目标、知识状态、误解记录、学习偏好的框改成直角，去掉边框
+修改apps/inno-agent/web/src/react/SettingsPanel.tsx的样式，像设置、模型、简单模式、新增提供方、记忆分层等等的框改成直角，去掉边框

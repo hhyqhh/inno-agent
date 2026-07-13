@@ -167,8 +167,8 @@ export function JobsPanel() {
 
 	return (
 		<div className="flex h-full flex-col">
-			<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
-				<div className="flex items-center justify-between border-b border-[var(--inno-border)] px-3 py-3">
+			<div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--inno-surface)]">
+				<div className="flex items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-3 py-3">
 					<div>
 						<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("jobs.title")}</h3>
 						<p className="text-xs text-[var(--inno-text-muted)]">{t("jobs.subtitle")}</p>

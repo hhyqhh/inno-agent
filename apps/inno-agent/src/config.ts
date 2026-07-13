@@ -59,6 +59,10 @@ export interface InnoSimpleModeConfig {
 
 export interface InnoMeetingConfig {
 	enabled: boolean;
+	transcriptionProvider: "dashscope" | string;
+	language: string;
+	saveAudio: boolean;
+	summaryTemplate: string;
 	websocketUrl: string;
 	apiKey: string;
 	model: string;
@@ -223,6 +227,10 @@ export function normalizeMeetingConfig(meeting: Partial<InnoMeetingConfig> | und
 	const silence = meeting?.maxSentenceSilenceMs;
 	return {
 		enabled: meeting?.enabled === true,
+		transcriptionProvider: meeting?.transcriptionProvider?.trim() || "dashscope",
+		language: meeting?.language?.trim() || "zh",
+		saveAudio: meeting?.saveAudio !== false,
+		summaryTemplate: meeting?.summaryTemplate?.trim() || "default",
 		websocketUrl: meeting?.websocketUrl?.trim() ?? "",
 		apiKey: meeting?.apiKey ?? "",
 		model: meeting?.model?.trim() || "fun-asr-realtime",

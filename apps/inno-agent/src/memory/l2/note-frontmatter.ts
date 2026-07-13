@@ -1,5 +1,5 @@
 export type NoteStatus = "draft" | "indexed" | "outdated" | "error";
-export type MeetingStatus = "recording" | "summarizing" | "completed" | "no_speech" | "failed" | "interrupted";
+export type MeetingStatus = "connecting" | "recording" | "paused" | "finishing" | "summarizing" | "completed" | "no_speech" | "failed" | "interrupted";
 
 export interface NoteFrontmatter {
 	note_id: string;
@@ -122,6 +122,7 @@ export function parseNoteFrontmatter(content: string): { frontmatter: NoteFrontm
 	const rawMeetingStatus = parseScalar(String(fm.meeting_status ?? ""));
 	const meetingStatus: MeetingStatus | undefined =
 		rawMeetingStatus === "recording" || rawMeetingStatus === "summarizing" || rawMeetingStatus === "completed" ||
+		rawMeetingStatus === "connecting" || rawMeetingStatus === "paused" || rawMeetingStatus === "finishing" ||
 		rawMeetingStatus === "no_speech" || rawMeetingStatus === "failed" || rawMeetingStatus === "interrupted"
 			? rawMeetingStatus
 			: undefined;

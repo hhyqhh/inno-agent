@@ -35,10 +35,14 @@
 
 > ⚠️ **注意**：当前 Dockerfile 的 runtime 阶段只安装了 `unzip`，缺少 `zip`。如需支持工作区下载功能，需补充安装 `zip`。
 
+### Meeting audio import: FFmpeg
+
+Importing or retranscribing meeting audio requires `ffmpeg` on `PATH`. It normalizes WAV, MP3, M4A, WebM, OGG, MP4, AAC and FLAC input to 16 kHz mono PCM WAV. Install it with `apt-get install -y ffmpeg`, `brew install ffmpeg`, or `winget install Gyan.FFmpeg`.
+
 ### 2.2 安装命令（Debian/Ubuntu）
 
 ```bash
-apt-get update && apt-get install -y unzip zip bash && rm -rf /var/lib/apt/lists/*
+apt-get update && apt-get install -y unzip zip bash ffmpeg && rm -rf /var/lib/apt/lists/*
 ```
 
 `bash` 在 Debian 基础镜像中通常已预装，但建议显式声明。

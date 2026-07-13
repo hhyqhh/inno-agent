@@ -25,6 +25,7 @@ import type { NoteSummary } from "../types/notes.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { MeetingProgress, MeetingRecorder } from "./meetings/MeetingRecorder.js";
+import { meetingStore } from "../stores/meeting-store.js";
 
 interface NotesPanelProps {
 	onOpenWiki?(wikiPath: string): void;
@@ -81,6 +82,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		polishSuggestedTags: notesStore.polishSuggestedTags,
 		error: notesStore.error,
 	}));
+	const meetingState = useStoreSnapshot(meetingStore, () => meetingStore.state);
 
 	useEffect(() => {
 		void notesStore.loadAll();
@@ -98,6 +100,16 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 	}, [templateMenuOpen]);
 
 	const templates = getVisibleNoteTemplates();
+
+	async function handleUploadedFiles(files: FileList): Promise<void> {
+		if (["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(meetingState)) return;
+		const audioExtensions = new Set(["wav", "mp3", "m4a", "webm", "ogg", "mp4", "aac", "flac"]);
+		const all = Array.from(files);
+		const audioFiles = all.filter((file) => audioExtensions.has(file.name.split(".").pop()?.toLowerCase() ?? ""));
+		const otherFiles = all.filter((file) => !audioFiles.includes(file));
+		for (const file of audioFiles) await meetingStore.importAudio(file);
+		if (otherFiles.length > 0) await notesStore.uploadFiles(otherFiles);
+	}
 
 	const handleArchive = useCallback(async () => {
 		const wikiPath = await notesStore.archiveSelected();
@@ -304,7 +316,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						<button
 							type="button"
 							className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
-							disabled={state.isUploading}
+							disabled={state.isUploading || ["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(meetingState)}
 							onClick={() => uploadRef.current?.click()}
 							title={t("notes.actions.upload")}
 							aria-label={t("notes.actions.upload")}
@@ -319,7 +331,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						className="hidden"
 						multiple
 						onChange={(e) => {
-							if (e.target.files?.length) void notesStore.uploadFiles(e.target.files);
+							if (e.target.files?.length) void handleUploadedFiles(e.target.files);
 							e.target.value = "";
 						}}
 					/>

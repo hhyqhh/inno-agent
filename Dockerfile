@@ -26,6 +26,9 @@ RUN npm run build
 FROM node:22-bookworm AS runtime
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV NODE_ENV=production \
     INNO_HOME=/var/lib/inno-agent \
     INNO_CONFIG_DIR=/etc/inno-agent \

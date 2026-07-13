@@ -5,11 +5,11 @@ import "source-map-support/register.js";
 import { createServer, type IncomingMessage as HttpReq, type ServerResponse } from "node:http";
 import { spawnSync } from "node:child_process";
 import { setMaxListeners } from "node:events";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
-import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, deleteModel, normalizeContentHubConfig, type InnoConfig, type InnoContentHubConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
+import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, deleteModel, normalizeContentHubConfig, normalizeMeetingConfig, type InnoConfig, type InnoContentHubConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
 import { installFetchLogger } from "./utils/fetch-logger.js";
 import { ensureDir, readJson, readText, writeJson, writeText } from "./storage/file-store.js";
 import {
@@ -264,6 +264,7 @@ async function ensureBootstrapped(): Promise<void> {
 		meetingManager = new MeetingManager({
 			l2DataDir,
 			codeDir: paths.codeDir,
+			meetingsDir: join(dataDir, "meetings"),
 			getConfig: () => config.meeting,
 			summarize: (prompt) => completePromptOnce(prompt, 4096, 120_000),
 		});
@@ -525,6 +526,9 @@ function buildSafeSettings() {
 			: undefined,
 		contentHub: config.contentHub
 			? { ...config.contentHub, token: maskSecret(config.contentHub.token) }
+			: undefined,
+		meeting: config.meeting
+			? { ...config.meeting, apiKey: maskSecret(config.meeting.apiKey) }
 			: undefined,
 	};
 }
@@ -4571,6 +4575,35 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		// --- Meeting transcription settings ---
+		if (method === "PUT" && url === "/api/settings/meeting") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const current = config.meeting ?? normalizeMeetingConfig(undefined);
+			if (body.transcriptionProvider !== undefined && body.transcriptionProvider !== "dashscope") {
+				json(res, 400, { error: "Only the dashscope transcription provider is available" });
+				return;
+			}
+			const incomingKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+			const apiKey = incomingKey.startsWith("****") || !incomingKey ? current.apiKey : incomingKey;
+			config.meeting = normalizeMeetingConfig({
+				...current,
+				enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled,
+				transcriptionProvider: typeof body.transcriptionProvider === "string" ? body.transcriptionProvider : current.transcriptionProvider,
+				language: typeof body.language === "string" ? body.language : current.language,
+				saveAudio: typeof body.saveAudio === "boolean" ? body.saveAudio : current.saveAudio,
+				summaryTemplate: typeof body.summaryTemplate === "string" ? body.summaryTemplate : current.summaryTemplate,
+				websocketUrl: typeof body.websocketUrl === "string" ? body.websocketUrl : current.websocketUrl,
+				apiKey,
+				model: typeof body.model === "string" ? body.model : current.model,
+				vocabularyId: typeof body.vocabularyId === "string" ? body.vocabularyId : current.vocabularyId,
+				maxSentenceSilenceMs: typeof body.maxSentenceSilenceMs === "number" ? body.maxSentenceSilenceMs : current.maxSentenceSilenceMs,
+			});
+			config = saveConfig(paths.configPath, config);
+			syncConfig(config);
+			json(res, 200, buildSafeSettings());
+			return;
+		}
+
 		// --- Memory Settings (L3 cross-conversation recall toggle) ---
 		if (method === "PUT" && url === "/api/settings/memory") {
 			const body = (await readBody(req)) as Record<string, unknown>;
@@ -4673,6 +4706,75 @@ const server = createServer(async (req, res) => {
 			config = saveConfig(paths.configPath, config);
 			json(res, 200, buildSafeSettings());
 			return;
+		}
+
+		// --- Meeting lifecycle and recovery API ---
+		if (method === "GET" && url === "/api/meetings/active") {
+			json(res, 200, { meetings: meetingManager.getActiveMeetings() });
+			return;
+		}
+		if (method === "POST" && url === "/api/meetings/import") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const fileName = typeof body.fileName === "string" ? body.fileName.trim() : "";
+			const dataBase64 = typeof body.dataBase64 === "string" ? body.dataBase64 : "";
+			const extension = extname(fileName).toLowerCase();
+			const allowed = new Set([".wav", ".mp3", ".m4a", ".webm", ".ogg", ".mp4", ".aac", ".flac"]);
+			if (!fileName || !dataBase64 || !allowed.has(extension)) {
+				json(res, 400, { error: "Provide a supported audio file: wav, mp3, m4a, webm, ogg, mp4, aac or flac" });
+				return;
+			}
+			const data = Buffer.from(dataBase64, "base64");
+			if (data.length > 250 * 1024 * 1024) {
+				json(res, 413, { error: "Audio file exceeds the 250 MB limit" });
+				return;
+			}
+			try {
+				const result = meetingManager.importAudio(fileName, data);
+				json(res, 202, { jobId: result.job.id, meetingId: result.meeting.id, rawPath: result.meeting.rawPath });
+			} catch (error) {
+				json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+			}
+			return;
+		}
+		const importJobMatch = url.match(/^\/api\/meetings\/import\/([^/?]+)$/);
+		if (method === "GET" && importJobMatch) {
+			const job = meetingManager.getImportJob(decodeURIComponent(importJobMatch[1]));
+			json(res, job ? 200 : 404, job ?? { error: "Import job not found" });
+			return;
+		}
+		const meetingMatch = url.match(/^\/api\/meetings\/([^/?]+)$/);
+		if (method === "GET" && meetingMatch) {
+			const meeting = meetingManager.getMeeting(decodeURIComponent(meetingMatch[1]));
+			json(res, meeting ? 200 : 404, meeting ?? { error: "Meeting not found" });
+			return;
+		}
+		const meetingActionMatch = url.match(/^\/api\/meetings\/([^/?]+)\/(stop|retry-summary|retranscribe|audio)$/);
+		if (meetingActionMatch) {
+			const meetingId = decodeURIComponent(meetingActionMatch[1]);
+			const action = meetingActionMatch[2];
+			if (method === "POST" && action === "stop") {
+				const stopped = meetingManager.stopMeeting(meetingId);
+				json(res, stopped ? 202 : 404, stopped ? { ok: true } : { error: "Active meeting not found" });
+				return;
+			}
+			if (method === "POST" && action === "retry-summary") {
+				const accepted = await meetingManager.retrySummary(meetingId);
+				json(res, accepted ? 202 : 404, accepted ? { ok: true } : { error: "Meeting transcript not found" });
+				return;
+			}
+			if (method === "POST" && action === "retranscribe") {
+				const job = meetingManager.retranscribe(meetingId);
+				json(res, job ? 202 : 404, job ? { jobId: job.id, meetingId } : { error: "Meeting audio not found" });
+				return;
+			}
+			if (method === "GET" && action === "audio" && /^meeting_[a-zA-Z0-9_-]+$/.test(meetingId)) {
+				const audioPath = join(dataDir, "meetings", meetingId, "audio.wav");
+				if (!existsSync(audioPath)) { json(res, 404, { error: "Audio not found" }); return; }
+				const size = statSync(audioPath).size;
+				res.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": size, "Accept-Ranges": "bytes" });
+				createReadStream(audioPath).pipe(res);
+				return;
+			}
 		}
 
 		// --- Chat API ---

@@ -64,6 +64,10 @@
 	},
 	"meeting": {
 		"enabled": false,
+		"transcriptionProvider": "dashscope",
+		"language": "zh",
+		"saveAudio": true,
+		"summaryTemplate": "default",
 		"websocketUrl": "wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference/",
 		"apiKey": "",
 		"model": "fun-asr-realtime",

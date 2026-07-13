@@ -1007,7 +1007,17 @@ export function ChatCenter() {
 					{chat.isLoadingHistory && chat.messages.length === 0 ? (
 						<div className="flex h-full flex-col items-center justify-center pt-20 text-[var(--inno-text-muted)]">
 							<Spinner size={20} className="mb-3 text-[var(--inno-border-strong)]" />
-							<p className="text-sm">Loading session…</p>
+							<p className="text-sm">{t("chat.loadingSession")}</p>
+						</div>
+					) : null}
+
+					{!chat.isLoadingHistory && chat.messages.length === 0 && !chat.isSending ? (
+						<div className="flex flex-col items-center justify-center pt-20 text-center text-[var(--inno-text-muted)]">
+							<div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]">
+								<Sparkles size={18} />
+							</div>
+							<p className="text-sm font-medium text-[var(--inno-text)]">{t("chat.emptySessionTitle")}</p>
+							<p className="mt-1 text-xs">{t("chat.emptySessionHint")}</p>
 						</div>
 					) : null}
 

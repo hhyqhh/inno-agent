@@ -508,6 +508,9 @@
 	},
 	"chat": {
 		"welcomePlaceholder": "What would you like to learn or build? Send a message to start…",
+		"loadingSession": "Loading session…",
+		"emptySessionTitle": "No messages in this conversation",
+		"emptySessionHint": "Type a message below to start the conversation.",
 		"uploadFiles": "Upload files to workspace",
 		"uploadHint": "Select an existing workspace or start a conversation before uploading files",
 		"attachImage": "Attach image",

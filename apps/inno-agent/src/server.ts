@@ -1753,7 +1753,7 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 		const messages: SessionMessageSummary[] = [];
 		const channels = new Set<SessionChannel>();
 		let createdAt = "";
-		let updatedAt = "";
+		let lastMessageAt = "";
 
 		// Aggregator for the in-progress assistant turn. PI splits one assistant
 		// turn into multiple JSONL entries (thinking + toolCalls + toolResults
@@ -1776,7 +1776,6 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 			const entry = JSON.parse(line) as Record<string, unknown>;
 			const timestamp = typeof entry.timestamp === "string" ? entry.timestamp : "";
 			if (!createdAt && timestamp) createdAt = timestamp;
-			if (timestamp) updatedAt = timestamp;
 			const entryText = line.toLowerCase();
 			// Detect channel from entry content
 			let entryChannel: SessionChannel | undefined;
@@ -1807,6 +1806,7 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 			}
 
 			if (entry.type !== "message" || !entry.message || typeof entry.message !== "object") continue;
+			if (timestamp) lastMessageAt = timestamp;
 			const message = entry.message as Record<string, unknown>;
 			const role = message.role;
 			const ts = timestamp ? Date.parse(timestamp) : Date.now();
@@ -1891,7 +1891,7 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 				id: basename(filePath),
 				name,
 				createdAt: createdAt || fallbackTime,
-				updatedAt: updatedAt || fallbackTime,
+				updatedAt: lastMessageAt || createdAt || fallbackTime,
 				messageCount: filtered.length,
 				preview,
 				channels: channels.size > 0 ? Array.from(channels) : [],
@@ -2647,6 +2647,7 @@ const server = createServer(async (req, res) => {
 			const channelMetadata = readSessionChannelMetadata();
 			const topicMetadata = readSessionTopicMetadata();
 			const archiveMetadata = readJson<Record<string, boolean>>(sessionArchiveMetadataPath(), {});
+			const currentSessionId = getCurrentSessionId();
 			const sessions = existsSync(sessionDir)
 				? readdirSync(sessionDir)
 						.filter((file) => file.endsWith(".jsonl"))
@@ -2656,6 +2657,7 @@ const server = createServer(async (req, res) => {
 						.map((summary) => bindCliSessionWorkspace(summary))
 						.map((summary) => withRecordedTopic(summary, topicMetadata))
 						.map((summary) => ({ ...summary, archived: archiveMetadata[summary.id] === true }))
+						.filter((summary) => summary.messageCount > 0 || (summary.id === currentSessionId && summary.origin === "web"))
 						.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
 				: [];
 			json(res, 200, sessions);

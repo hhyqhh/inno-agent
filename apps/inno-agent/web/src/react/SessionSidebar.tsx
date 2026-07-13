@@ -526,6 +526,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			await sessionsStore.clearSelection();
 			chatStore.clear();
 			appStore.setRightPanelTab("preview");
+			appStore.setWorkspaceMode("collapsed");
 		})();
 	}, []);
 

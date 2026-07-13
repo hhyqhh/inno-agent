@@ -81,6 +81,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		polishTemplateLabel: notesStore.polishTemplateLabel,
 		polishSuggestedTags: notesStore.polishSuggestedTags,
 		error: notesStore.error,
+		errorDetail: notesStore.errorDetail,
 	}));
 	const meetingState = useStoreSnapshot(meetingStore, () => meetingStore.state);
 
@@ -464,9 +465,13 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					</p>
 				) : null}
 				{state.error ? (
-					<p className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
-						{t(`notes.flash.${state.error}`)}
-					</p>
+					<div className="flex items-start gap-2 border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">
+						<div className="min-w-0 flex-1">
+							<p>{t(`notes.flash.${state.error}`)}</p>
+							{state.errorDetail ? <p className="mt-0.5 break-words text-red-600">{t("notes.flash.errorDetail", { message: state.errorDetail })}</p> : null}
+						</div>
+						<button type="button" className="shrink-0 rounded p-0.5 hover:bg-red-100" onClick={() => notesStore.clearMessages()} aria-label={t("notes.flash.dismissError")}><X size={13} /></button>
+					</div>
 				) : null}
 				{state.isArchiving ? (
 					<p className="flex items-center gap-2 border-b border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">

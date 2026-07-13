@@ -260,7 +260,9 @@
 			"attachmentUploaded": "附件上传成功",
 			"attachmentUploadFailed": "附件上传失败",
 			"attachmentDeleted": "附件已删除",
-			"attachmentDeleteFailed": "附件删除失败"
+			"attachmentDeleteFailed": "附件删除失败",
+			"errorDetail": "错误详情：{{message}}",
+			"dismissError": "关闭错误提示"
 		}
 	},
 	"preview": {

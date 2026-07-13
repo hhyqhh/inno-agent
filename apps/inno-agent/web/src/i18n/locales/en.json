@@ -260,7 +260,9 @@
 			"attachmentUploaded": "Attachment uploaded",
 			"attachmentUploadFailed": "Failed to upload attachment",
 			"attachmentDeleted": "Attachment deleted",
-			"attachmentDeleteFailed": "Failed to delete attachment"
+			"attachmentDeleteFailed": "Failed to delete attachment",
+			"errorDetail": "Details: {{message}}",
+			"dismissError": "Dismiss error"
 		}
 	},
 	"preview": {

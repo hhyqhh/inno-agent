@@ -4105,10 +4105,10 @@ const server = createServer(async (req, res) => {
 			const body = (await readBody(req)) as Record<string, unknown>;
 			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
 			const title = typeof body.title === "string" ? body.title.trim() : "";
-			const content = typeof body.content === "string" ? body.content : "";
+			const content = body.content;
 			const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === "string") : undefined;
 			const recordDate = typeof body.recordDate === "string" ? body.recordDate.trim() : undefined;
-			if (!rawPath || !title || !content) {
+			if (!rawPath || !title || typeof content !== "string") {
 				json(res, 400, { error: "Missing rawPath, title, or content" });
 				return;
 			}

@@ -3,11 +3,13 @@ import { dirname, join } from "node:path";
 import type { RuntimePaths } from "./runtime.js";
 
 export type InnoProviderApi = "openai-completions" | "openai-responses" | "anthropic-messages" | string;
+export type InnoModelInput = "text" | "image";
 
 export interface InnoModelConfig {
 	id: string;
 	name: string;
 	reasoning: boolean;
+	input: InnoModelInput[];
 	contextWindow: number;
 	maxTokens: number;
 }
@@ -185,10 +187,20 @@ export function normalizeModelConfig(model: Partial<InnoModelConfig> & { id: str
 	if (!id) throw new Error("Model id is required");
 	const contextWindow = model.contextWindow;
 	const maxTokens = model.maxTokens;
+	// Vision support is controlled by the optional `input` array. For legacy
+	// configs that predate this field, preserve the historical behavior
+	// (text+image) instead of silently downgrading vision-capable models
+	// (Claude/GPT-4o) to text-only. Only configs that explicitly set `input`
+	// without "image" are treated as text-only.
+	const hasInputField = "input" in model;
+	const supportsImages = hasInputField
+		? Array.isArray(model.input) && model.input.includes("image")
+		: true;
 	return {
 		id,
 		name: (model.name?.trim() || id),
 		reasoning: Boolean(model.reasoning),
+		input: supportsImages ? ["text", "image"] : ["text"],
 		contextWindow: contextWindow !== undefined && Number.isFinite(contextWindow) && contextWindow > 0 ? Math.trunc(contextWindow) : 128000,
 		maxTokens: maxTokens !== undefined && Number.isFinite(maxTokens) && maxTokens > 0 ? Math.trunc(maxTokens) : 8192,
 	};

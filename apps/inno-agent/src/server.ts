@@ -521,6 +521,7 @@ function providerModelToRuntimeModel(model: InnoModelConfig, provider: string, b
 		name: model.name,
 		provider,
 		reasoning: model.reasoning,
+		input: model.input,
 		contextWindow: model.contextWindow,
 		maxTokens: model.maxTokens,
 		baseUrl,
@@ -538,6 +539,7 @@ function buildSafeSettings() {
 		name: model.name,
 		provider: model.provider,
 		reasoning: model.reasoning,
+		input: model.input,
 		contextWindow: model.contextWindow,
 		maxTokens: model.maxTokens,
 		baseUrl: model.baseUrl,
@@ -592,6 +594,9 @@ function parseModelConfig(value: unknown): InnoModelConfig {
 		id,
 		name: typeof record.name === "string" && record.name.trim() ? record.name.trim() : id,
 		reasoning: Boolean(record.reasoning),
+		input: ("input" in record)
+			? (Array.isArray(record.input) && record.input.includes("image") ? ["text", "image"] : ["text"])
+			: ["text", "image"],
 		contextWindow: typeof record.contextWindow === "number" ? record.contextWindow : Number(record.contextWindow ?? 128000),
 		maxTokens: typeof record.maxTokens === "number" ? record.maxTokens : Number(record.maxTokens ?? 8192),
 	};

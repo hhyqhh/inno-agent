@@ -31,6 +31,7 @@ RUN sed -i 's|http://deb.debian.org/debian|http://mirrors.tuna.tsinghua.edu.cn/d
     bubblewrap \
     socat \
     ripgrep \
+    ffmpeg \
     # 文档解析（Office 格式转换）
     libreoffice \
     # 中文字体（CJK），避免中文显示为方块/tofu

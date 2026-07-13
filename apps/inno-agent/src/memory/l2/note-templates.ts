@@ -39,10 +39,10 @@ function loadTemplateFile(codeDir: string, fileName: string): NoteTemplateDefini
 	const absPath = join(codeDir, "note-templates", fileName);
 	if (!existsSync(absPath)) return null;
 	const raw = readFileSync(absPath, "utf8");
-	const match = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+	const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n)?([\s\S]*)$/);
 	if (!match) return null;
 
-	const metaLines = match[1].split("\n");
+	const metaLines = match[1].split(/\r?\n/);
 	const body = match[2];
 	const id = basename(fileName, ".md");
 	const heading = extractFirstHeading(body);

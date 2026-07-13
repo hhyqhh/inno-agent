@@ -63,6 +63,19 @@ export interface ChannelsSettingsPayload {
 	};
 }
 
+export interface MeetingSettings {
+	enabled: boolean;
+	transcriptionProvider: string;
+	language: string;
+	saveAudio: boolean;
+	summaryTemplate: string;
+	websocketUrl: string;
+	apiKey: string;
+	model: string;
+	vocabularyId: string;
+	maxSentenceSilenceMs: number;
+}
+
 export interface InnoSettings {
 	defaultProvider: string;
 	defaultModel: string;
@@ -91,5 +104,6 @@ export interface InnoSettings {
 	};
 	memory?: { l1Enabled: boolean; l2Enabled: boolean; l3Enabled: boolean };
 	simpleMode?: { enabled: boolean };
+	meeting?: MeetingSettings;
 	ui?: { theme: string };
 }

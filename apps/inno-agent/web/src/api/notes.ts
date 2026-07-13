@@ -6,6 +6,7 @@ import type {
 	NoteAttachment,
 	NoteContent,
 	NotesListResponse,
+	PolishNoteResult,
 	SaveNoteResult,
 	SaveRawMarkdownResult,
 	UnarchiveNoteResult,
@@ -74,6 +75,18 @@ export async function saveNoteContent(options: {
 }): Promise<SaveNoteResult> {
 	return apiFetch<SaveNoteResult>("/api/l2/notes/content", {
 		method: "PUT",
+		body: JSON.stringify(options),
+	});
+}
+
+export async function polishNote(options: {
+	rawPath: string;
+	title: string;
+	tags: string[];
+	content: string;
+}): Promise<PolishNoteResult> {
+	return apiFetch<PolishNoteResult>("/api/l2/notes/polish", {
+		method: "POST",
 		body: JSON.stringify(options),
 	});
 }

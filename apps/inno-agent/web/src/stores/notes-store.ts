@@ -8,6 +8,7 @@ import {
 	fetchNoteContent,
 	fetchRawContent,
 	listNotes,
+	polishNote,
 	saveNoteContent,
 	saveRawMarkdownContent,
 	unarchiveNote,
@@ -47,6 +48,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	isLoadingPreview = false;
 	isCreating = false;
 	isSaving = false;
+	isPolishing = false;
 	isArchiving = false;
 	archivingRawPath: string | null = null;
 	archivingRawPaths: string[] = [];
@@ -56,6 +58,8 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	deletingAttachmentId: string | null = null;
 	error: string | null = null;
 	notice: string | null = null;
+	polishTemplateLabel: string | null = null;
+	polishSuggestedTags: string[] = [];
 	private archiveQueue: Promise<unknown> = Promise.resolve();
 
 	get isDirty(): boolean {
@@ -118,6 +122,8 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	clearMessages() {
 		this.error = null;
 		this.notice = null;
+		this.polishTemplateLabel = null;
+		this.polishSuggestedTags = [];
 	}
 
 	setSearchQuery(query: string) {
@@ -376,6 +382,41 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			return false;
 		} finally {
 			this.isSaving = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async polishSelected(): Promise<void> {
+		if (!this.selected || this.selected.kind !== "markdown" || !this.editorContent.trim() || this.isPolishing) return;
+		const rawPath = this.selected.rawPath;
+		this.isPolishing = true;
+		this.clearMessages();
+		this.emit("change", undefined);
+		try {
+			const result = await polishNote({
+				rawPath,
+				title: this.editorTitle.trim() || this.selected.title,
+				tags: [...this.editorTags],
+				content: this.editorContent,
+			});
+			if (this.selected?.rawPath !== rawPath) return;
+			this.editorContent = result.content;
+			this.polishTemplateLabel = result.templateLabel;
+			const tagsByKey = new Map(this.editorTags.map((tag) => [tag.trim().replace(/\s+/g, " ").toLowerCase(), tag.trim()]));
+			for (const tag of result.suggestedTags) {
+				const trimmed = tag.trim();
+				const key = trimmed.replace(/\s+/g, " ").toLowerCase();
+				if (key && !tagsByKey.has(key)) tagsByKey.set(key, trimmed);
+			}
+			this.editorTags = [...tagsByKey.values()].slice(0, 12);
+			this.polishSuggestedTags = result.suggestedTags;
+			this.notice = result.suggestedTags.length > 0
+				? (result.templateLabel ? "polishedWithTemplateAndTags" : "polishedWithTags")
+				: (result.templateLabel ? "polishedWithTemplate" : "polished");
+		} catch {
+			if (this.selected?.rawPath === rawPath) this.error = "polishFailed";
+		} finally {
+			this.isPolishing = false;
 			this.emit("change", undefined);
 		}
 	}

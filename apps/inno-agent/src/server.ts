@@ -5,11 +5,11 @@ import "source-map-support/register.js";
 import { createServer, type IncomingMessage as HttpReq, type ServerResponse } from "node:http";
 import { spawnSync } from "node:child_process";
 import { setMaxListeners } from "node:events";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
-import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, deleteModel, normalizeContentHubConfig, type InnoConfig, type InnoContentHubConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
+import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, deleteModel, normalizeContentHubConfig, normalizeMeetingConfig, type InnoConfig, type InnoContentHubConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
 import { installFetchLogger } from "./utils/fetch-logger.js";
 import { ensureDir, readJson, readText, writeJson, writeText } from "./storage/file-store.js";
 import {
@@ -45,6 +45,7 @@ import { validateCron } from "./scheduler/cron-utils.js";
 import { parseFrontmatter, serializeFrontmatter } from "./memory/l2/wiki-maintainer.js";
 import { readManifest, removeWikiPathFromManifest } from "./memory/l2/manifest-store.js";
 import {
+	canonicalizeTag,
 	listTags,
 	rebuildTagIndex,
 	suggestTags,
@@ -72,6 +73,7 @@ import {
 	uploadNoteAttachment,
 } from "./memory/l2/note-attachments-service.js";
 import { listNoteTemplates } from "./memory/l2/note-templates.js";
+import { normalizeMarkdownForMilkdown } from "./memory/l2/markdown-normalizer.js";
 import { loadProfile, saveProfile } from "./memory/learner/profile-store.js";
 import type { LearnerProfile, LearningGoal, KnowledgeState, Misconception, LearnerPreferences } from "./memory/learner/types.js";
 import { randomUUID } from "node:crypto";
@@ -83,6 +85,7 @@ import { listPresets, listRemotePresets, ensurePresetCached, instantiatePreset }
 import { createContentSource, type RemoteContentSource } from "./content-source/index.js";
 import { RunRecordStore } from "./terminal/run-record-store.js";
 import { TerminalSessionManager } from "./terminal/terminal-session-manager.js";
+import { MeetingManager } from "./meeting/meeting-manager.js";
 import type { ClientTerminalEvent, ServerTerminalEvent } from "./terminal/terminal-types.js";
 import { WebSocketServer, type WebSocket } from "ws";
 
@@ -128,6 +131,7 @@ let channelRegistry!: ChannelRegistry;
 let workspaceRegistry!: WorkspaceRegistry;
 let runRecordStore!: RunRecordStore;
 let terminalManager!: TerminalSessionManager;
+let meetingManager!: MeetingManager;
 let feishuChannel: FeishuChannel | null = null;
 let wechatChannel: WeChatChannel | null = null;
 let dispatcher: PersonalChannelDispatcher | null = null;
@@ -257,6 +261,13 @@ async function ensureBootstrapped(): Promise<void> {
 
 		runRecordStore = new RunRecordStore(join(dataDir, "runs"));
 		terminalManager = new TerminalSessionManager(workspaceRegistry, runRecordStore);
+		meetingManager = new MeetingManager({
+			l2DataDir,
+			codeDir: paths.codeDir,
+			meetingsDir: join(dataDir, "meetings"),
+			getConfig: () => config.meeting,
+			summarize: (prompt) => completePromptOnce(prompt, 4096, 120_000),
+		});
 
 		// Resolve agent cwd per session based on its workspace binding.
 		setWorkspaceCwdResolver((sessionPath: string) => {
@@ -475,6 +486,7 @@ function providerModelToRuntimeModel(model: InnoModelConfig, provider: string, b
 function buildSafeSettings() {
 	const session = getSession();
 	const currentModel = session.model;
+	const { meeting: _meeting, ...publicConfig } = config;
 	const configuredModels = Object.entries(config.providers).flatMap(([providerId, providerConfig]) =>
 		providerConfig.models.map((model) => providerModelToRuntimeModel(model, providerId, providerConfig.baseUrl)),
 	);
@@ -489,7 +501,7 @@ function buildSafeSettings() {
 	}));
 
 	return {
-		...config,
+		...publicConfig,
 		defaultProvider: currentModel?.provider ?? config.defaultProvider,
 		defaultModel: currentModel?.id ?? config.defaultModel,
 		configuredModels,
@@ -514,6 +526,9 @@ function buildSafeSettings() {
 			: undefined,
 		contentHub: config.contentHub
 			? { ...config.contentHub, token: maskSecret(config.contentHub.token) }
+			: undefined,
+		meeting: config.meeting
+			? { ...config.meeting, apiKey: maskSecret(config.meeting.apiKey) }
 			: undefined,
 	};
 }
@@ -3972,6 +3987,120 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		if (method === "POST" && url === "/api/l2/notes/polish") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim().replace(/\\/g, "/") : "";
+			const title = typeof body.title === "string" ? body.title.trim() : "";
+			const content = typeof body.content === "string" ? body.content.trim() : "";
+			const tags = Array.isArray(body.tags)
+				? body.tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+				: [];
+			if (!rawPath || !title || !content) {
+				json(res, 400, { error: "Missing rawPath, title, or content" });
+				return;
+			}
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath || !rawPath.startsWith("raw/notes/") || !existsSync(fullPath)) {
+				json(res, 404, { error: "Note not found" });
+				return;
+			}
+
+			try {
+				const templates = listNoteTemplates(paths.codeDir)
+					.filter((template) => !template.hidden && template.id !== "blank");
+				const existingTagByCanonical = new Map<string, string>();
+				const rememberExistingTag = (tag: string) => {
+					const displayName = tag.trim();
+					const canonicalKey = canonicalizeTag(displayName);
+					if (canonicalKey && !existingTagByCanonical.has(canonicalKey)) {
+						existingTagByCanonical.set(canonicalKey, displayName);
+					}
+				};
+				// Prefer the note's current spelling, then the persisted tag index and
+				// finally tags found on other notebook entries.
+				tags.forEach(rememberExistingTag);
+				listTags(l2DataDir).forEach((tag) => rememberExistingTag(tag.displayName));
+				listL2Notes(l2DataDir).notes.forEach((note) => note.tags.forEach(rememberExistingTag));
+				const existingTagLibrary = [...existingTagByCanonical.values()].slice(0, 200);
+				const templateCatalog = templates.map((template) => [
+					`ID: ${template.id}`,
+					`名称: ${template.label}`,
+					`用途: ${template.description}`,
+					"结构示例:",
+					template.body.slice(0, 3000),
+				].join("\n")).join("\n\n---\n\n");
+				const sourceExcerpt = content.slice(0, 60_000);
+				const classifyPrompt = `你是笔记模板与标签分析器。请判断下面的笔记是否明确符合某个模板的用途与结构，并推荐 3–6 个准确标签。\n\n` +
+					`笔记标题：${title}\n标签：${tags.join(", ") || "无"}\n笔记内容：\n---\n${sourceExcerpt}\n---\n\n` +
+					`可选模板：\n${templateCatalog}\n\n` +
+					`用户已有标签库：${existingTagLibrary.join("、") || "无"}\n` +
+					`标签要求：简洁、具体、便于长期检索；必须优先从用户已有标签库中选择含义相同或适合的标签，并原样返回该标签；仅在标签库确实没有合适标签时创建新标签；不要使用“笔记”“内容”“总结”等过泛标签。\n` +
+					`只输出 JSON，不要解释：{"templateId":"模板ID或none","tags":["标签1","标签2"]}`;
+				// Reasoning models count hidden reasoning against maxTokens. Leave enough
+				// room for them to finish reasoning and still emit the requested JSON.
+				const classification = await completePromptOnce(classifyPrompt, 2048, 60_000);
+				let selectedTemplateId = "none";
+				let suggestedTags: string[] = [];
+				try {
+					const jsonStart = classification.indexOf("{");
+					const jsonEnd = classification.lastIndexOf("}");
+					const parsedClassification = JSON.parse(classification.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>;
+					if (typeof parsedClassification.templateId === "string") selectedTemplateId = parsedClassification.templateId.trim();
+					if (Array.isArray(parsedClassification.tags)) {
+						const seen = new Set<string>();
+						suggestedTags = parsedClassification.tags
+							.filter((tag): tag is string => typeof tag === "string")
+							.map((tag) => tag.trim().replace(/^[#＃]+/, ""))
+							.filter((tag) => {
+								const key = tag.toLowerCase();
+								if (!tag || tag.length > 30 || seen.has(key)) return false;
+								seen.add(key);
+								return true;
+							})
+							.slice(0, 6);
+					}
+				} catch {
+					selectedTemplateId = classification.trim();
+				}
+				const reconciledTags = new Map<string, string>();
+				for (const tag of suggestedTags) {
+					const canonicalKey = canonicalizeTag(tag);
+					if (!canonicalKey || reconciledTags.has(canonicalKey)) continue;
+					reconciledTags.set(canonicalKey, existingTagByCanonical.get(canonicalKey) ?? tag.trim());
+				}
+				suggestedTags = [...reconciledTags.values()].slice(0, 6);
+				const selectionTokens = selectedTemplateId.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
+				const matchedTemplate = templates.find((template) => selectionTokens.includes(template.id.toLowerCase()));
+				logger.info({ rawPath, templateId: matchedTemplate?.id ?? null, suggestedTags, existingTagCount: existingTagByCanonical.size }, "note polish analysis completed");
+				const structureInstruction = matchedTemplate
+					? `请按照“${matchedTemplate.label}”模板的章节与组织方式润色。模板如下：\n---\n${matchedTemplate.body}\n---`
+					: "没有匹配的固定模板。请根据内容类型自行选择最清晰、自然的 Markdown 结构进行润色。";
+				const polishPrompt = `你是严谨的中文笔记编辑。请润色下面的笔记。\n\n${structureInstruction}\n\n` +
+					`要求：\n` +
+					`1. 保留原文全部事实、数字、专有名词、链接、任务勾选状态和重要细节，不得虚构。\n` +
+					`2. 改善标题层级、段落、列表、表格和表达，删除明显重复，但不要把内容缩成过度简略的摘要。\n` +
+					`3. 模板要求但原文缺失的信息写“待补充”，不得自行猜测负责人、日期或结论。\n` +
+					`4. 使用当前笔记标题“${title}”作为一级标题，不要输出 YAML frontmatter。\n` +
+					`5. 只输出润色后的 Markdown 正文，不要解释，不要使用代码围栏包裹全文。\n\n` +
+					`原始笔记：\n---\n${sourceExcerpt}\n---`;
+				const polished = await completePromptOnce(polishPrompt, 8192, 120_000);
+				if (!polished.trim()) {
+					json(res, 502, { error: "Text model did not return polished content" });
+					return;
+				}
+				json(res, 200, {
+					content: normalizeMarkdownForMilkdown(polished),
+					templateId: matchedTemplate?.id ?? null,
+					templateLabel: matchedTemplate?.label ?? null,
+					suggestedTags,
+				});
+			} catch (err) {
+				logger.warn({ err, rawPath }, "failed to polish note");
+				json(res, 500, { error: err instanceof Error ? err.message : "Polish note failed" });
+			}
+			return;
+		}
+
 		if (method === "PUT" && url === "/api/l2/notes/content") {
 			const body = (await readBody(req)) as Record<string, unknown>;
 			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
@@ -4446,6 +4575,35 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		// --- Meeting transcription settings ---
+		if (method === "PUT" && url === "/api/settings/meeting") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const current = config.meeting ?? normalizeMeetingConfig(undefined);
+			if (body.transcriptionProvider !== undefined && body.transcriptionProvider !== "dashscope") {
+				json(res, 400, { error: "Only the dashscope transcription provider is available" });
+				return;
+			}
+			const incomingKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+			const apiKey = incomingKey.startsWith("****") || !incomingKey ? current.apiKey : incomingKey;
+			config.meeting = normalizeMeetingConfig({
+				...current,
+				enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled,
+				transcriptionProvider: typeof body.transcriptionProvider === "string" ? body.transcriptionProvider : current.transcriptionProvider,
+				language: typeof body.language === "string" ? body.language : current.language,
+				saveAudio: typeof body.saveAudio === "boolean" ? body.saveAudio : current.saveAudio,
+				summaryTemplate: typeof body.summaryTemplate === "string" ? body.summaryTemplate : current.summaryTemplate,
+				websocketUrl: typeof body.websocketUrl === "string" ? body.websocketUrl : current.websocketUrl,
+				apiKey,
+				model: typeof body.model === "string" ? body.model : current.model,
+				vocabularyId: typeof body.vocabularyId === "string" ? body.vocabularyId : current.vocabularyId,
+				maxSentenceSilenceMs: typeof body.maxSentenceSilenceMs === "number" ? body.maxSentenceSilenceMs : current.maxSentenceSilenceMs,
+			});
+			config = saveConfig(paths.configPath, config);
+			syncConfig(config);
+			json(res, 200, buildSafeSettings());
+			return;
+		}
+
 		// --- Memory Settings (L3 cross-conversation recall toggle) ---
 		if (method === "PUT" && url === "/api/settings/memory") {
 			const body = (await readBody(req)) as Record<string, unknown>;
@@ -4548,6 +4706,75 @@ const server = createServer(async (req, res) => {
 			config = saveConfig(paths.configPath, config);
 			json(res, 200, buildSafeSettings());
 			return;
+		}
+
+		// --- Meeting lifecycle and recovery API ---
+		if (method === "GET" && url === "/api/meetings/active") {
+			json(res, 200, { meetings: meetingManager.getActiveMeetings() });
+			return;
+		}
+		if (method === "POST" && url === "/api/meetings/import") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const fileName = typeof body.fileName === "string" ? body.fileName.trim() : "";
+			const dataBase64 = typeof body.dataBase64 === "string" ? body.dataBase64 : "";
+			const extension = extname(fileName).toLowerCase();
+			const allowed = new Set([".wav", ".mp3", ".m4a", ".webm", ".ogg", ".mp4", ".aac", ".flac"]);
+			if (!fileName || !dataBase64 || !allowed.has(extension)) {
+				json(res, 400, { error: "Provide a supported audio file: wav, mp3, m4a, webm, ogg, mp4, aac or flac" });
+				return;
+			}
+			const data = Buffer.from(dataBase64, "base64");
+			if (data.length > 250 * 1024 * 1024) {
+				json(res, 413, { error: "Audio file exceeds the 250 MB limit" });
+				return;
+			}
+			try {
+				const result = meetingManager.importAudio(fileName, data);
+				json(res, 202, { jobId: result.job.id, meetingId: result.meeting.id, rawPath: result.meeting.rawPath });
+			} catch (error) {
+				json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+			}
+			return;
+		}
+		const importJobMatch = url.match(/^\/api\/meetings\/import\/([^/?]+)$/);
+		if (method === "GET" && importJobMatch) {
+			const job = meetingManager.getImportJob(decodeURIComponent(importJobMatch[1]));
+			json(res, job ? 200 : 404, job ?? { error: "Import job not found" });
+			return;
+		}
+		const meetingMatch = url.match(/^\/api\/meetings\/([^/?]+)$/);
+		if (method === "GET" && meetingMatch) {
+			const meeting = meetingManager.getMeeting(decodeURIComponent(meetingMatch[1]));
+			json(res, meeting ? 200 : 404, meeting ?? { error: "Meeting not found" });
+			return;
+		}
+		const meetingActionMatch = url.match(/^\/api\/meetings\/([^/?]+)\/(stop|retry-summary|retranscribe|audio)$/);
+		if (meetingActionMatch) {
+			const meetingId = decodeURIComponent(meetingActionMatch[1]);
+			const action = meetingActionMatch[2];
+			if (method === "POST" && action === "stop") {
+				const stopped = meetingManager.stopMeeting(meetingId);
+				json(res, stopped ? 202 : 404, stopped ? { ok: true } : { error: "Active meeting not found" });
+				return;
+			}
+			if (method === "POST" && action === "retry-summary") {
+				const accepted = await meetingManager.retrySummary(meetingId);
+				json(res, accepted ? 202 : 404, accepted ? { ok: true } : { error: "Meeting transcript not found" });
+				return;
+			}
+			if (method === "POST" && action === "retranscribe") {
+				const job = meetingManager.retranscribe(meetingId);
+				json(res, job ? 202 : 404, job ? { jobId: job.id, meetingId } : { error: "Meeting audio not found" });
+				return;
+			}
+			if (method === "GET" && action === "audio" && /^meeting_[a-zA-Z0-9_-]+$/.test(meetingId)) {
+				const audioPath = join(dataDir, "meetings", meetingId, "audio.wav");
+				if (!existsSync(audioPath)) { json(res, 404, { error: "Audio not found" }); return; }
+				const size = statSync(audioPath).size;
+				res.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": size, "Accept-Ranges": "bytes" });
+				createReadStream(audioPath).pipe(res);
+				return;
+			}
 		}
 
 		// --- Chat API ---
@@ -4854,9 +5081,14 @@ const server = createServer(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 const wss = new WebSocketServer({ noServer: true });
+const meetingWss = new WebSocketServer({ noServer: true });
 server.on("upgrade", (req, socket, head) => {
 	const url = req.url ?? "";
-		if (!bootstrapped) { socket.destroy(); return; }
+	if (!bootstrapped) { socket.destroy(); return; }
+	if (url.split("?")[0] === "/api/meetings/ws") {
+		meetingWss.handleUpgrade(req, socket, head, (ws) => meetingManager.bind(ws));
+		return;
+	}
 	const m = /^\/api\/terminal\/sessions\/([^/?]+)\/ws$/.exec(url.split("?")[0]);
 	if (!m) {
 		socket.destroy();

@@ -1,6 +1,6 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveGithubSettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload } from "../api/settings.js";
-import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveMeetingSettings, saveGithubSettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload } from "../api/settings.js";
+import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload, MeetingSettings } from "../types/settings.js";
 
 interface SettingsStoreEvents {
 	change: void;
@@ -16,6 +16,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingGithub = false;
 	isSavingContentHub = false;
 	isSavingSimpleMode = false;
+	isSavingMeeting = false;
 	error: string | null = null;
 
 	async load(): Promise<void> {
@@ -150,6 +151,21 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			throw err;
 		} finally {
 			this.isSavingSimpleMode = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveMeeting(payload: MeetingSettings): Promise<void> {
+		this.isSavingMeeting = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveMeetingSettings(payload);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save meeting settings";
+			throw err;
+		} finally {
+			this.isSavingMeeting = false;
 			this.emit("change", undefined);
 		}
 	}

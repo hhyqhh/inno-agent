@@ -13,8 +13,8 @@ import {
 	FileUp,
 	LoaderCircle,
 	Plus,
-	RefreshCw,
 	Save,
+	Sparkles,
 	Trash2,
 	X,
 } from "lucide-react";
@@ -24,6 +24,8 @@ import { notesStore } from "../stores/notes-store.js";
 import type { NoteSummary } from "../types/notes.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { useStoreSnapshot } from "./hooks.js";
+import { MeetingProgress, MeetingRecorder } from "./meetings/MeetingRecorder.js";
+import { meetingStore } from "../stores/meeting-store.js";
 
 interface NotesPanelProps {
 	onOpenWiki?(wikiPath: string): void;
@@ -66,6 +68,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		isLoadingPreview: notesStore.isLoadingPreview,
 		isCreating: notesStore.isCreating,
 		isSaving: notesStore.isSaving,
+		isPolishing: notesStore.isPolishing,
 		isArchiving: notesStore.isArchiving,
 		archivingRawPath: notesStore.archivingRawPath,
 		archivingRawPaths: notesStore.archivingRawPaths,
@@ -75,8 +78,11 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		filterTag: notesStore.filterTag,
 		tagSummaries: notesStore.tagSummaries,
 		notice: notesStore.notice,
+		polishTemplateLabel: notesStore.polishTemplateLabel,
+		polishSuggestedTags: notesStore.polishSuggestedTags,
 		error: notesStore.error,
 	}));
+	const meetingState = useStoreSnapshot(meetingStore, () => meetingStore.state);
 
 	useEffect(() => {
 		void notesStore.loadAll();
@@ -94,6 +100,16 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 	}, [templateMenuOpen]);
 
 	const templates = getVisibleNoteTemplates();
+
+	async function handleUploadedFiles(files: FileList): Promise<void> {
+		if (["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(meetingState)) return;
+		const audioExtensions = new Set(["wav", "mp3", "m4a", "webm", "ogg", "mp4", "aac", "flac"]);
+		const all = Array.from(files);
+		const audioFiles = all.filter((file) => audioExtensions.has(file.name.split(".").pop()?.toLowerCase() ?? ""));
+		const otherFiles = all.filter((file) => !audioFiles.includes(file));
+		for (const file of audioFiles) await meetingStore.importAudio(file);
+		if (otherFiles.length > 0) await notesStore.uploadFiles(otherFiles);
+	}
 
 	const handleArchive = useCallback(async () => {
 		const wikiPath = await notesStore.archiveSelected();
@@ -140,6 +156,11 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		selected &&
 		(selected.kind === "orphan" || (selected.kind === "markdown" && selected.status === "draft"));
 	const canSave = Boolean(selected && (isMarkdown || isRawEditableMarkdown));
+	const canPolish = Boolean(
+		selected?.kind === "markdown" &&
+		selected.meetingStatus !== "recording" &&
+		selected.meetingStatus !== "summarizing",
+	);
 	const isSelectedArchiving = Boolean(selected && state.archivingRawPaths.includes(selected.rawPath));
 	const tagSearchQuery = state.searchQuery.trim().toLowerCase();
 	const visibleTagSummaries = tagSearchQuery
@@ -158,7 +179,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 			showOpenWiki;
 		if (!hasActions) return null;
 		return (
-			<div className="flex flex-wrap gap-2 border-t border-[var(--inno-border)] p-3">
+			<div className="flex flex-wrap items-center gap-2 border-t border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2.5">
 				{canSave ? (
 					<button
 						type="button"
@@ -227,7 +248,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 				{canDelete ? (
 					<button
 						type="button"
-						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+						className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
 						disabled={state.isDeleting || isSelectedArchiving}
 						onClick={() => void handleDelete()}
 					>
@@ -251,20 +272,20 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						value={state.searchQuery}
 						onChange={(e) => notesStore.setSearchQuery(e.target.value)}
 					/>
-					<div className="flex gap-1">
-						<div className="relative flex flex-1" ref={templateMenuRef}>
+					<div className="grid grid-cols-[minmax(0,1fr)_2rem_2rem] gap-1.5">
+						<div className="relative flex min-w-0" ref={templateMenuRef}>
 							<button
 								type="button"
-								className="inline-flex flex-1 items-center justify-center gap-1 rounded-l-md border border-[var(--inno-border)] px-2 py-1 text-xs hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
+								className="inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-l-md border border-[var(--inno-border)] px-1.5 text-xs font-medium hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
 								disabled={state.isCreating}
 								onClick={() => void notesStore.createFromTemplate("blank")}
 							>
 								<Plus size={13} />
-								{t("notes.actions.createDraft")}
+								<span className="truncate">{t("notes.actions.createDraft")}</span>
 							</button>
 							<button
 								type="button"
-								className="inline-flex w-7 items-center justify-center rounded-r-md border border-l-0 border-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
+								className="inline-flex h-8 w-7 shrink-0 items-center justify-center rounded-r-md border border-l-0 border-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
 								disabled={state.isCreating}
 								onClick={() => setTemplateMenuOpen((open) => !open)}
 								title={t("notes.actions.templates")}
@@ -294,21 +315,15 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						</div>
 						<button
 							type="button"
-							className="inline-flex items-center justify-center gap-1 rounded-md border border-[var(--inno-border)] px-2 py-1 text-xs hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
-							disabled={state.isUploading}
+							className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
+							disabled={state.isUploading || ["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(meetingState)}
 							onClick={() => uploadRef.current?.click()}
 							title={t("notes.actions.upload")}
+							aria-label={t("notes.actions.upload")}
 						>
 							<FileUp size={13} />
 						</button>
-						<button
-							type="button"
-							className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)]"
-							title={t("common.refresh")}
-							onClick={() => void notesStore.loadAll()}
-						>
-							<RefreshCw size={13} className={state.isLoading ? "animate-spin" : ""} />
-						</button>
+						<MeetingRecorder />
 					</div>
 					<input
 						ref={uploadRef}
@@ -316,7 +331,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						className="hidden"
 						multiple
 						onChange={(e) => {
-							if (e.target.files?.length) void notesStore.uploadFiles(e.target.files);
+							if (e.target.files?.length) void handleUploadedFiles(e.target.files);
 							e.target.value = "";
 						}}
 					/>
@@ -411,6 +426,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 									</div>
 									<div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--inno-text-muted)]">
 										<span>{statusLabel}</span>
+										{note.meetingStatus ? <span>{t(`notes.meeting.status.${note.meetingStatus}`)}</span> : null}
 										{note.size ? <span>{formatSize(note.size)}</span> : null}
 									</div>
 								</button>
@@ -441,7 +457,10 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 				<section className="inno-notes-panel-detail flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
 				{state.notice ? (
 					<p className="border-b border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-						{t(`notes.flash.${state.notice}`)}
+						{t(`notes.flash.${state.notice}`, {
+							template: state.polishTemplateLabel ?? "",
+							tags: state.polishSuggestedTags.join("、"),
+						})}
 					</p>
 				) : null}
 				{state.error ? (
@@ -455,6 +474,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						{t("notes.flash.archiving", "正在归档到 Wiki...")}
 					</p>
 				) : null}
+				{selected ? <MeetingProgress rawPath={selected.rawPath} /> : null}
 
 				{!selected ? (
 					<div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--inno-text-muted)]">
@@ -476,12 +496,24 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 										onTagsChange={(tags) => notesStore.updateEditorTags(tags)}
 										onRecordDateChange={(recordDate) => notesStore.updateEditorRecordDate(recordDate)}
 									/>
-									<MilkdownEditor
-										key={selected.rawPath}
-										editorKey={selected.rawPath}
-										value={state.editorContent}
-										onChange={(value) => notesStore.updateEditorContent(value)}
-									/>
+					<MilkdownEditor
+						key={selected.rawPath}
+						editorKey={selected.rawPath}
+						value={state.editorContent}
+						onChange={(value) => notesStore.updateEditorContent(value)}
+						toolbarAction={canPolish ? (
+							<button
+								type="button"
+								className="top-bar-item inno-milkdown-polish-button"
+								disabled={state.isPolishing || state.isLoadingContent || !state.editorContent.trim() || isSelectedArchiving}
+								onClick={() => void notesStore.polishSelected()}
+								title={state.isPolishing ? t("notes.actions.polishing") : t("notes.actions.polish")}
+								aria-label={state.isPolishing ? t("notes.actions.polishing") : t("notes.actions.polish")}
+							>
+								{state.isPolishing ? <LoaderCircle size={17} className="animate-spin" /> : <Sparkles size={17} />}
+							</button>
+						) : undefined}
+					/>
 								</>
 							)}
 						</div>

@@ -7,8 +7,8 @@ tags: 总结
 tagsEn: summary
 title: AI Summary
 titleEn: AI Summary
+hidden: true
 ---
-# AI Summary
 
 ## TL;DR
 

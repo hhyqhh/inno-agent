@@ -542,7 +542,9 @@
 	"question": {
 		"typeSomething": "输入自定义答案…",
 		"chatAboutThis": "直接聊聊",
-		"submit": "提交"
+		"submit": "提交",
+		"submitNext": "下一题",
+		"optionSelectedHint": "已选择选项，如需自定义请先取消选择"
 	},
 	"sidebar": {
 		"expand": "展开",

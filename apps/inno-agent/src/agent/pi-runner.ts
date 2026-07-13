@@ -76,6 +76,44 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Enqueue a task with a timeout. If the shared prompt queue is still busy
+ * (e.g. a prompt is blocked waiting on an unanswered question card), the
+ * task resolves early with `fallback` instead of blocking indefinitely.
+ *
+ * Used by session-switch operations so that navigating between sessions
+ * doesn't stall behind a long-running prompt. The switch is not lost —
+ * it is retried lazily by the next prompt's own switchToSession call.
+ */
+function enqueueWithTimeout<T>(task: () => Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+	return new Promise<T>((resolve) => {
+		let settled = false;
+		const timer = setTimeout(() => {
+			if (!settled) {
+				settled = true;
+				resolve(fallback);
+			}
+		}, timeoutMs);
+		const run = _queue.then(async () => {
+			try {
+				const result = await task();
+				if (!settled) {
+					settled = true;
+					resolve(result);
+				}
+			} catch (err) {
+				if (!settled) {
+					settled = true;
+					resolve(fallback);
+				}
+			} finally {
+				clearTimeout(timer);
+			}
+		});
+		_queue = run.then(() => undefined, () => undefined);
+	});
+}
+
+/**
  * Initialize an AgentSessionRuntime for server use.
  * This matches CLI's PI runtime model (runtime + services + session replacement).
  */
@@ -521,9 +559,17 @@ export async function reloadResources(): Promise<void> {
  */
 export async function switchSessionFile(sessionPath: string): Promise<void> {
 	if (!_runtime) throw new Error("Session not initialized. Call initSession() first.");
-	await enqueue(async () => {
-		await switchToSession(sessionPath);
-	});
+	// Session switching is a lightweight operation (change session file path +
+	// cwd). It must NOT block behind a long-running prompt — especially one
+	// that is stuck waiting on an unanswered question card, which holds the
+	// shared queue indefinitely. If the queue is busy for more than a short
+	// timeout, bail out: the next prompt will re-switch to the correct session
+	// via its own switchToSession call.
+	await enqueueWithTimeout(
+		async () => { await switchToSession(sessionPath); },
+		500,
+		undefined,
+	);
 }
 
 /**

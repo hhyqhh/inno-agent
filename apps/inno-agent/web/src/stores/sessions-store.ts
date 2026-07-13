@@ -15,6 +15,7 @@ import {
 } from "../api/sessions.js";
 import { getSessionWorkspace } from "../api/workspaces.js";
 import { chatStore } from "./chat-store.js";
+import type { PendingQuestion } from "../types/chat.js";
 import { workspaceStore } from "./workspace-store.js";
 import { workspacesStore } from "./workspaces-store.js";
 import { terminalStore } from "./terminal-store.js";
@@ -36,6 +37,10 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	preselectedWorkspaceId: string | null = null;
 	private _openRequestId = 0;
 	private _messageCache = new Map<string, Awaited<ReturnType<typeof getSession>>["messages"]>();
+	/** Caches an unanswered question card across session switches so it can be
+	 *  restored instantly when switching back, before the backend reconnect
+	 *  replay re-delivers the question event. Keyed by session id. */
+	private _pendingQuestionCache = new Map<string, NonNullable<typeof chatStore.pendingQuestion>>();
 	private _backgroundRunningSessions = new Set<string>();
 
 	/**
@@ -140,8 +145,15 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 			if (chatStore.isSending) {
 				this._backgroundRunningSessions.add(prevSessionId);
 				this._messageCache.set(prevSessionId, chatStore.messages);
+				// Preserve an unanswered question card so it can be restored on return.
+				if (chatStore.pendingQuestion) {
+					this._pendingQuestionCache.set(prevSessionId, chatStore.pendingQuestion);
+				} else {
+					this._pendingQuestionCache.delete(prevSessionId);
+				}
 			} else {
 				this._messageCache.delete(prevSessionId);
+				this._pendingQuestionCache.delete(prevSessionId);
 			}
 		}
 
@@ -194,7 +206,31 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 
 			if (isBackground) {
 				this._backgroundRunningSessions.delete(id);
+				// Restore the question card before resuming the stream so the UI
+				// shows it immediately; the backend reconnect (re-push + replay)
+				// reconciles it once events arrive.
+				chatStore.restorePendingQuestion(this._pendingQuestionCache.get(id) ?? null);
 				void chatStore.resumeStream(id);
+			} else {
+				this._pendingQuestionCache.delete(id);
+				// Non-background session (e.g. opened after a full restart): if the
+				// server has a persisted pending question, restore the card.
+				if (session.pendingQuestion) {
+					chatStore.restorePendingQuestion({
+						questionId: session.pendingQuestion.questionId,
+						params: session.pendingQuestion.params as PendingQuestion["params"],
+					});
+				}
+			}
+		} catch (err) {
+			// getSession failed (timeout, network). Fall back to cached messages
+			// if available so the UI doesn't get stuck on "loading session…".
+			if (requestId === this._openRequestId) {
+				const fallback = this._messageCache.get(id);
+				if (fallback && fallback.length > 0) {
+					chatStore.loadHistory(fallback);
+				}
+				console.warn(`[sessions] failed to open session ${id}:`, err instanceof Error ? err.message : err);
 			}
 		} finally {
 			if (requestId === this._openRequestId) {
@@ -216,8 +252,14 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		if (this.currentSessionId && chatStore.isSending) {
 			this._backgroundRunningSessions.add(this.currentSessionId);
 			this._messageCache.set(this.currentSessionId, chatStore.messages);
+			if (chatStore.pendingQuestion) {
+				this._pendingQuestionCache.set(this.currentSessionId, chatStore.pendingQuestion);
+			} else {
+				this._pendingQuestionCache.delete(this.currentSessionId);
+			}
 		} else if (this.currentSessionId) {
 			this._messageCache.delete(this.currentSessionId);
+			this._pendingQuestionCache.delete(this.currentSessionId);
 		}
 		this.currentSessionId = null;
 		this.pendingNewSession = true;
@@ -256,6 +298,9 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		if (this.currentSessionId && chatStore.isSending) {
 			this._backgroundRunningSessions.add(this.currentSessionId);
 			this._messageCache.set(this.currentSessionId, chatStore.messages);
+			if (chatStore.pendingQuestion) {
+				this._pendingQuestionCache.set(this.currentSessionId, chatStore.pendingQuestion);
+			}
 		}
 		chatStore.detach();
 		void terminalStore.disconnect();
@@ -263,6 +308,7 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		try {
 			const created = await createSession(input);
 			this._messageCache.clear();
+			this._pendingQuestionCache.clear();
 			chatStore.clear();
 			// Refresh side panels so the new workspace shows up.
 			void workspacesStore.load();
@@ -310,6 +356,7 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	async deleteSession(id: string): Promise<void> {
 		const result = await deleteSession(id);
 		this._messageCache.delete(id);
+		this._pendingQuestionCache.delete(id);
 		this._backgroundRunningSessions.delete(id);
 		this.sessions = this.sessions.filter((session) => session.id !== id);
 		if (this.currentSessionId === id) {

@@ -50,7 +50,7 @@ import type { LearnerProfile, LearningGoal, KnowledgeState, Misconception, Learn
 import { randomUUID } from "node:crypto";
 import { logger } from "./logger.js";
 import { applyRuntimeEnvironment, parseRuntimeArgs, resolveRuntimePaths } from "./runtime.js";
-import { questionBridge, type QuestionBridgeResult } from "./agent/question-bridge.js";
+import { questionBridge, type QuestionBridgeResult, type PendingQuestionSnapshot } from "./agent/question-bridge.js";
 import { DEFAULT_WORKSPACE_ID, TEMP_WORKSPACE_ID, WorkspaceRegistry } from "./workspace/workspace-registry.js";
 import { listPresets, listRemotePresets, ensurePresetCached, instantiatePreset } from "./presets/preset-store.js";
 import { createContentSource, type RemoteContentSource } from "./content-source/index.js";
@@ -1946,6 +1946,29 @@ function sessionArchiveMetadataPath(): string {
 	return join(dataDir, "sessions", "archives.json");
 }
 
+// --- Pending question persistence (survives process restart) ---
+function sessionQuestionMetadataPath(): string {
+	return join(dataDir, "sessions", "questions.json");
+}
+
+type SessionQuestionMetadata = Record<string, import("./agent/question-bridge.js").PersistedQuestion>;
+
+/** In-memory cache of questions.json — read once at startup, updated on
+ *  every write. Avoids a synchronous readFileSync on every getSession call. */
+let _questionMetadataCache: SessionQuestionMetadata | null = null;
+
+function readSessionQuestionMetadata(): SessionQuestionMetadata {
+	if (_questionMetadataCache === null) {
+		_questionMetadataCache = readJson<SessionQuestionMetadata>(sessionQuestionMetadataPath(), {});
+	}
+	return _questionMetadataCache;
+}
+
+function writeSessionQuestionMetadata(meta: SessionQuestionMetadata): void {
+	_questionMetadataCache = meta;
+	writeJson(sessionQuestionMetadataPath(), meta);
+}
+
 function readSessionChannelMetadata(): SessionChannelMetadata {
 	return readJson<SessionChannelMetadata>(sessionChannelMetadataPath(), {});
 }
@@ -2715,7 +2738,12 @@ const server = createServer(async (req, res) => {
 				withRecordedChannels(parsed.summary, channelMetadata),
 				topicMetadata,
 			);
-			json(res, 200, { ...summary, messages: parsed.messages });
+			// Attach any persisted pending question so the frontend can restore
+			// the card after a full process restart.
+			const sessionId = basename(sessionPath);
+			const questionMeta = readSessionQuestionMetadata();
+			const pendingQuestion = questionMeta[sessionId] ?? undefined;
+			json(res, 200, { ...summary, messages: parsed.messages, pendingQuestion });
 			return;
 		}
 
@@ -2869,6 +2897,11 @@ const server = createServer(async (req, res) => {
 				if (archiveMeta[sessionId]) {
 					delete archiveMeta[sessionId];
 					writeJson(sessionArchiveMetadataPath(), archiveMeta);
+				}
+				const questionMeta = readSessionQuestionMetadata();
+				if (questionMeta[sessionId]) {
+					delete questionMeta[sessionId];
+					writeSessionQuestionMetadata(questionMeta);
 				}
 				workspaceRegistry.unbindSession(sessionId);
 				if (shouldDropTempWorkspace) {
@@ -4186,7 +4219,51 @@ const server = createServer(async (req, res) => {
 				return;
 			}
 			const accepted = questionBridge.respond(questionId, result);
-			json(res, accepted ? 200 : 404, { accepted });
+			if (accepted) {
+				json(res, 200, { accepted: true });
+				return;
+			}
+			// No live prompt waiting on this question — the server was restarted
+			// after the question was asked. Reconstruct the answer as a plain user
+			// message and send it as a new prompt so the agent picks up from the
+			// session history.
+			const persistedMeta = readSessionQuestionMetadata();
+			const persisted = Object.entries(persistedMeta).find(([, q]) => q.questionId === questionId);
+			if (persisted) {
+				// Clean up the persisted question.
+				delete persistedMeta[persisted[0]];
+				writeSessionQuestionMetadata(persistedMeta);
+				// Build a user-readable summary of the answers.
+				const answerText = result.answers
+					.map((a) => {
+						if (a.kind === "multi" && a.selected?.length) return `${a.question}: ${a.selected.join(", ")}`;
+						return `${a.question}: ${a.answer ?? a.selected?.join(", ") ?? ""}`;
+					})
+					.join("\n");
+				const sessionId = persisted[0];
+				const sessionPath = sessionFileFromId(join(dataDir, "sessions"), sessionId);
+				// Fire-and-forget: run the prompt in the background. Events go
+				// through a broadcaster so the client can reconnect to see results.
+				void (async () => {
+					try {
+						await switchSessionFile(sessionPath!);
+						const bc = new SessionEventBroadcaster();
+						sessionBroadcasters.set(sessionId, bc);
+						questionBridge.setEmitter((data: unknown) => bc.publish(data));
+						await runPromptStreamingInSession(
+							sessionPath!,
+							answerText,
+							(event) => { bc.publish(event); },
+						);
+						bc.close();
+					} catch (err) {
+						logger.warn({ err, questionId }, "Failed to re-send question answer after restart");
+					}
+				})();
+				json(res, 200, { accepted: true, resent: true });
+			} else {
+				json(res, 404, { accepted: false });
+			}
 			return;
 		}
 
@@ -4219,7 +4296,40 @@ const server = createServer(async (req, res) => {
 				"Connection": "keep-alive",
 				"X-Accel-Buffering": "no",
 			});
+
 			let ended = false;
+			const writeEvent = (data: unknown) => {
+				if (!ended) res.write(`data: ${JSON.stringify(data)}\n\n`);
+			};
+
+			// Re-register the question bridge emitter onto this live connection.
+			// When the user answers (POST /api/chat/question-response), the agent
+			// run resumes and emits new events via publishStreamEvent → broadcaster
+			// → this subscriber. Without re-registering, the answer would resolve
+			// the promise but its follow-up events would still reach the (dead)
+			// original emitter. Note: the question event itself is NOT emitted via
+			// the emitter on resume — it is re-pushed explicitly below and/or via
+			// broadcaster replay — so the emitter only needs to handle later
+			// question events (rare, multi-step questionnaires).
+			questionBridge.setEmitter((data: unknown) => {
+				writeEvent(data);
+				// Also publish so any other subscribers (and replay) see it.
+				bc.publish(data);
+			});
+
+			// If the agent is still waiting on an answer for this session, re-push
+			// the question event immediately so the card reappears. The broadcaster
+			// replay (bc.subscribe below) already covers the normal case, but this
+			// is a deterministic guarantee that survives even if the original
+			// emitter ran before the broadcaster existed.
+			// Note: questionBridge is a global singleton, so we only re-push when
+			// a pending question actually exists (at most one turn runs at a time
+			// due to runPromptSerialized).
+			const pending = questionBridge.getPending() as PendingQuestionSnapshot | null;
+			if (pending) {
+				writeEvent({ type: "question", questionId: pending.questionId, params: pending.params });
+			}
+
 			const unsub = bc.subscribe((event: unknown) => {
 				if (ended) return;
 				res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -4233,7 +4343,10 @@ const server = createServer(async (req, res) => {
 				res.write("data: [DONE]\n\n");
 				res.end();
 			}
-			req.on("close", unsub);
+			req.on("close", () => {
+				unsub();
+				questionBridge.setEmitter(null);
+			});
 			return;
 		}
 
@@ -4282,10 +4395,14 @@ const server = createServer(async (req, res) => {
 			req.on("close", () => {
 				aborted = true;
 				questionBridge.setEmitter(null);
-				questionBridge.cancel();
+				// Do NOT cancel a pending question on disconnect. The agent run
+				// (session.prompt) is independent of this HTTP connection and keeps
+				// waiting on questionBridge.ask()'s promise. Cancelling here would
+				// resolve it as cancelled, ending the turn and dropping the card —
+				// the "card vanishes on session switch" bug. A reconnecting client
+				// (/api/chat/events/:id) re-registers the emitter and the question
+				// event is replayed so the card reappears.
 			});
-
-			questionBridge.setEmitter(sseWrite);
 
 			// Create a broadcaster for this session so clients can reconnect
 			// to the event stream after navigating away.
@@ -4295,6 +4412,12 @@ const server = createServer(async (req, res) => {
 				broadcaster.publish(event);
 				if (!aborted) sseWrite(event);
 			};
+
+			// Question emitter: deliver to the live SSE response AND publish to
+			// the broadcaster so reconnecting clients replay the question event.
+			questionBridge.setEmitter((data: unknown) => {
+				publishStreamEvent(data);
+			});
 
 			const streamWorkspaceId = workspaceRegistry.getSessionWorkspaceId(capturedSessionId);
 			const streamWorkspaceRoot = workspaceRegistry.resolveWorkspaceDir(streamWorkspaceId);
@@ -4552,6 +4675,23 @@ function bindTerminalWs(ws: WebSocket, terminalId: string): void {
 // Start listening immediately — /health and static files work right away.
 // All other endpoints call ensureBootstrapped() lazily on first request.
 // ---------------------------------------------------------------------------
+
+// Inject persistence callbacks into questionBridge so pending questions
+// survive a full process restart.
+questionBridge.setPersistence({
+	save: (sessionId, question) => {
+		const meta = readSessionQuestionMetadata();
+		meta[sessionId] = question;
+		writeSessionQuestionMetadata(meta);
+	},
+	remove: (sessionId) => {
+		const meta = readSessionQuestionMetadata();
+		if (sessionId in meta) {
+			delete meta[sessionId];
+			writeSessionQuestionMetadata(meta);
+		}
+	},
+});
 
 server.listen(port, () => {
 	console.log(`[inno-server] listening on http://localhost:${port}`);

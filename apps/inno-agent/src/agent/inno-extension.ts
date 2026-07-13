@@ -533,7 +533,9 @@ export function createInnoExtension(
 					}
 
 					// Web mode: delegate to QuestionBridge
-					const bridgeResult = await questionBridge.ask(typed);
+					let currentSessionId: string | undefined;
+					if (deps?.getCurrentSessionId) currentSessionId = deps.getCurrentSessionId();
+					const bridgeResult = await questionBridge.ask(typed, currentSessionId);
 					return buildQuestionnaireResponse(bridgeResult, typed);
 				},
 			} as Parameters<typeof pi.registerTool>[0]);

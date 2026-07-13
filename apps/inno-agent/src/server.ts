@@ -137,6 +137,15 @@ class SessionEventBroadcaster {
 
 const sessionBroadcasters = new Map<string, SessionEventBroadcaster>();
 
+function retainSessionBroadcaster(sessionId: string, broadcaster: SessionEventBroadcaster): void {
+	setTimeout(() => {
+		if (sessionBroadcasters.get(sessionId) === broadcaster) {
+			broadcaster.close();
+			sessionBroadcasters.delete(sessionId);
+		}
+	}, 60_000);
+}
+
 function piEventToSseEvent(event: any): unknown | null {
 	switch (event.type) {
 		case "message_update": {
@@ -2944,6 +2953,17 @@ const server = createServer(async (req, res) => {
 
 		if (method === "POST" && url === "/api/sessions") {
 			const body = await readBody(req).catch(() => ({})) as Record<string, unknown>;
+			const suspendedQuestion = questionBridge.suspendPending();
+			if (suspendedQuestion) {
+				logger.info(
+					{
+						questionId: suspendedQuestion.questionId,
+						sessionId: suspendedQuestion.sessionId,
+					},
+					"[diag] question: aborting old prompt before new session",
+				);
+				await abortCurrentPrompt();
+			}
 			const id = await createNewSession();
 			// This endpoint is exclusively the Web UI's session-creation path.
 			// Record the origin immediately so Simple Mode includes the new empty
@@ -4374,22 +4394,46 @@ const server = createServer(async (req, res) => {
 					.join("\n");
 				const sessionId = persisted[0];
 				const sessionPath = sessionFileFromId(join(dataDir, "sessions"), sessionId);
-				// Fire-and-forget: run the prompt in the background. Events go
-				// through a broadcaster so the client can reconnect to see results.
+				logger.info({ sessionId, sessionPath }, "[diag] resend: question-response resend path");
+				if (!sessionPath || !existsSync(sessionPath)) {
+					logger.warn({ sessionId }, "[diag] resend: session file not found");
+					json(res, 404, { accepted: false });
+					return;
+				}
+				// resumeStream (triggered by the resent:true response) finds it
+				// already registered — no 404 race.
+				const bc = new SessionEventBroadcaster();
+				sessionBroadcasters.set(sessionId, bc);
+				questionBridge.setEmitter((data: unknown) => bc.publish(data));
+				// Fire-and-forget: run the prompt in the background.
 				void (async () => {
 					try {
-						await switchSessionFile(sessionPath!);
-						const bc = new SessionEventBroadcaster();
-						sessionBroadcasters.set(sessionId, bc);
-						questionBridge.setEmitter((data: unknown) => bc.publish(data));
-						await runPromptStreamingInSession(
+						logger.info({ sessionId, questionId, sessionPath }, "[diag] resend: starting runPromptStreamingInSession");
+						const fullText = await runPromptStreamingInSession(
 							sessionPath!,
 							answerText,
-							(event) => { bc.publish(event); },
+							(event) => {
+								// runPromptStreamingInSession emits PI AgentSessionEvents;
+								// the web client consumes the normalized SSE event shape.
+								const sseEvent = piEventToSseEvent(event);
+								if (sseEvent) bc.publish(sseEvent);
+							},
 						);
+						bc.publish({ type: "done", fullText, sessionId });
+						logger.info({ sessionId, resultLen: fullText.length }, "[diag] resend: prompt completed");
 						bc.close();
 					} catch (err) {
-						logger.warn({ err, questionId }, "Failed to re-send question answer after restart");
+						logger.warn({ err, questionId }, "[diag] resend: FAILED");
+						bc.publish({
+							type: "error",
+							message: err instanceof Error ? err.message : "Failed to resume generation",
+						});
+						bc.close();
+					} finally {
+						questionBridge.setEmitter(null);
+						recordCurrentSessionChannel("web", sessionId, { setOriginIfEmpty: true });
+						persistPendingUserTurn(sessionId);
+						retainSessionBroadcaster(sessionId, bc);
 					}
 				})();
 				json(res, 200, { accepted: true, resent: true });
@@ -4670,12 +4714,7 @@ const server = createServer(async (req, res) => {
 				persistPendingUserTurn(capturedSessionId);
 				// Keep the broadcaster alive for 60s so reconnecting clients can
 				// replay the full event history, then clean up.
-				setTimeout(() => {
-					if (sessionBroadcasters.get(capturedSessionId) === broadcaster) {
-						broadcaster.close();
-						sessionBroadcasters.delete(capturedSessionId);
-					}
-				}, 60_000);
+				retainSessionBroadcaster(capturedSessionId, broadcaster);
 			}
 			if (!aborted) {
 				res.write("data: [DONE]\n\n");

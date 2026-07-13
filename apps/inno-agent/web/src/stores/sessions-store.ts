@@ -249,17 +249,21 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	 * can't keep `chatStore.isSending` true and block the chooser / input.
 	 */
 	beginNewSession(): void {
-		if (this.currentSessionId && chatStore.isSending) {
-			this._backgroundRunningSessions.add(this.currentSessionId);
-			this._messageCache.set(this.currentSessionId, chatStore.messages);
+		const previousSessionId = this.currentSessionId;
+		if (previousSessionId && chatStore.isSending) {
+			this._messageCache.set(previousSessionId, chatStore.messages);
 			if (chatStore.pendingQuestion) {
-				this._pendingQuestionCache.set(this.currentSessionId, chatStore.pendingQuestion);
+				// The card is persisted and will be resumed after an answer. It is
+				// no longer a live background stream once a new session is created.
+				this._backgroundRunningSessions.delete(previousSessionId);
+				this._pendingQuestionCache.set(previousSessionId, chatStore.pendingQuestion);
 			} else {
-				this._pendingQuestionCache.delete(this.currentSessionId);
+				this._backgroundRunningSessions.add(previousSessionId);
+				this._pendingQuestionCache.delete(previousSessionId);
 			}
-		} else if (this.currentSessionId) {
-			this._messageCache.delete(this.currentSessionId);
-			this._pendingQuestionCache.delete(this.currentSessionId);
+		} else if (previousSessionId) {
+			this._messageCache.delete(previousSessionId);
+			this._pendingQuestionCache.delete(previousSessionId);
 		}
 		this.currentSessionId = null;
 		this.pendingNewSession = true;
@@ -295,11 +299,15 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		this.pendingNewSession = false;
 		this.preselectedWorkspaceId = null;
 		// Make sure no previous stream / terminal lingers.
-		if (this.currentSessionId && chatStore.isSending) {
-			this._backgroundRunningSessions.add(this.currentSessionId);
-			this._messageCache.set(this.currentSessionId, chatStore.messages);
+		const previousSessionId = this.currentSessionId;
+		if (previousSessionId && chatStore.isSending) {
+			this._messageCache.set(previousSessionId, chatStore.messages);
 			if (chatStore.pendingQuestion) {
-				this._pendingQuestionCache.set(this.currentSessionId, chatStore.pendingQuestion);
+				this._backgroundRunningSessions.delete(previousSessionId);
+				this._pendingQuestionCache.set(previousSessionId, chatStore.pendingQuestion);
+			} else {
+				this._backgroundRunningSessions.add(previousSessionId);
+				this._pendingQuestionCache.delete(previousSessionId);
 			}
 		}
 		chatStore.detach();

@@ -16,8 +16,16 @@ export interface SessionMeta {
 	archived?: boolean;
 }
 
+export interface PendingQuestionData {
+	questionId: string;
+	params: unknown;
+	createdAt: string;
+}
+
 export interface SessionDetail extends SessionMeta {
 	messages: ChatMessage[];
+	/** A pending question restored from the server (e.g. after restart). */
+	pendingQuestion?: PendingQuestionData;
 }
 
 export interface SessionActivationResult {

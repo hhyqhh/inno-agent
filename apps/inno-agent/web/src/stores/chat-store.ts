@@ -37,6 +37,11 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	lastImages: InlineImage[] | undefined = undefined;
 	/** Pending question from agent's ask_user_question tool */
 	pendingQuestion: PendingQuestion | null = null;
+	/** Question IDs the user has already answered. Used to suppress stale
+	 *  replays from the backend (e.g. when reconnecting via resumeStream
+	 *  before the answer POST has been processed server-side) so an
+	 *  already-submitted card doesn't reappear. */
+	private answeredQuestionIds = new Set<string>();
 	private abortController: AbortController | null = null;
 	private detachMode = false;
 	private wikiInvalidated = false;
@@ -169,6 +174,16 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	/**
 	 * Detach from the current stream without stopping the backend task.
 	 * Used when the user navigates to a different session.
+	 */
+	/**
+	 * Detach from the current stream without stopping the backend task.
+	 * Used when the user navigates to a different session.
+	 *
+	 * Aborting the AbortController signals readSSEStream (via its abort
+	 * listener) to immediately cancel the response body reader, releasing
+	 * the underlying TCP connection back to Chromium's connection pool.
+	 * This prevents stale SSE connections from accumulating and exhausting
+	 * the per-origin connection limit during rapid session switching.
 	 */
 	detach(): void {
 		this.detachMode = true;
@@ -312,6 +327,12 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				if (this.workspacePreviewId) workspaceStore.finishStreamingPreview(this.workspacePreviewId, "error");
 				break;
 			case "question":
+				// Skip replays of questions the user has already answered. The
+				// backend questionBridge may still hold a pending question briefly
+				// after the answer POST is sent but before it is processed — a
+				// reconnecting SSE stream would replay it, re-showing a card the
+				// user already submitted.
+				if (this.answeredQuestionIds.has(event.questionId)) break;
 				this.flushStreamChange();
 				this.pendingQuestion = {
 					questionId: event.questionId,
@@ -496,6 +517,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	}
 
 	async submitQuestionResponse(questionId: string, result: QuestionnaireResult): Promise<void> {
+		this.answeredQuestionIds.add(questionId);
 		this.pendingQuestion = null;
 		this.emit("change", undefined);
 		try {
@@ -530,6 +552,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.activeTools = [];
 		this.completedTools = [];
 		this.pendingQuestion = null;
+		this.answeredQuestionIds.clear();
 		this.resetStreamTimers();
 		this.resetWorkspaceStreamState();
 		this.emit("change", undefined);
@@ -547,6 +570,10 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
+		// NOTE: answeredQuestionIds is intentionally NOT cleared here.
+		// loadHistory is called when switching sessions; clearing it would
+		// forget which questions were already answered, causing stale
+		// cards to reappear via restorePendingQuestion / SSE replay.
 		this.resetStreamTimers();
 		this.resetWorkspaceStreamState();
 		this.emit("change", undefined);
@@ -555,6 +582,20 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	setLoadingHistory(loading: boolean) {
 		this.isLoadingHistory = loading;
 		this.emit("change", undefined);
+	}
+
+	/** Restore a previously-shown question card after switching back to a
+	 *  session. Lets the card reappear immediately instead of waiting for the
+	 *  backend replay on reconnect. No-op if a newer question is already shown
+	 *  (the replay/update path wins). */
+	restorePendingQuestion(question: PendingQuestion | null): void {
+		if (this.pendingQuestion) return;
+		// Don't restore a card the user already answered — the cache may be
+		// stale if the user answered, switched away, and switched back before
+		// the cache was cleared.
+		if (question && this.answeredQuestionIds.has(question.questionId)) return;
+		this.pendingQuestion = question;
+		if (question) this.emit("change", undefined);
 	}
 }
 

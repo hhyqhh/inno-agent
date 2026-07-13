@@ -852,7 +852,7 @@ export function ChatCenter() {
 				onKeyDown={handleKeyDown}
 				onInput={handleInput}
 				onPaste={handlePaste}
-				disabled={chat.isSending || isUploading}
+				disabled={chat.isSending || isUploading || !!chat.pendingQuestion}
 			/>
 			{chat.isSending ? (
 				<button

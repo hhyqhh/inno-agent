@@ -18,7 +18,7 @@ export function ModeSwitch({ simpleMode }: ModeSwitchProps) {
 		<div className="relative flex justify-center mt-2">
 			{/* Pill - always visible, click to toggle */}
 			<div className="cursor-pointer w-[310px]" onClick={() => setShowCard(!showCard)}>
-				<div dangerouslySetInnerHTML={{ __html: simpleMode ? AGENT_PILL : CHAT_PILL }} />
+				<div dangerouslySetInnerHTML={{ __html: simpleMode ? CHAT_PILL : AGENT_PILL }} />
 			</div>
 
 			{/* Expanded card - floating popup below the pill */}
@@ -32,26 +32,26 @@ export function ModeSwitch({ simpleMode }: ModeSwitchProps) {
 							<div dangerouslySetInnerHTML={{ __html: EXPANDED_SVG }} />
 						</div>
 
-						{/* Top row: click to switch to Chat (normal mode) */}
-						<div
-							className="absolute z-10 cursor-pointer"
-							style={{ left: 0, top: 0, width: "310px", height: "54px" }}
-							onClick={() => { setShowCard(false); if (simpleMode) void settingsStore.saveSimpleMode(false); }}
-						/>
+						{/* Top row: click to switch to Chat (simple mode) */}
+					<div
+						className="absolute z-10 cursor-pointer"
+						style={{ left: 0, top: 0, width: "310px", height: "54px" }}
+						onClick={() => { setShowCard(false); if (!simpleMode) void settingsStore.saveSimpleMode(true); }}
+					/>
 
-						{/* Bottom row: click to switch to Agent (simple mode) */}
-						<div
-							className="absolute z-10 cursor-pointer"
-							style={{ left: 0, top: "54px", width: "310px", height: "54px" }}
-							onClick={() => { setShowCard(false); if (!simpleMode) void settingsStore.saveSimpleMode(true); }}
-						/>
+					{/* Bottom row: click to switch to Agent (normal mode) */}
+					<div
+						className="absolute z-10 cursor-pointer"
+						style={{ left: 0, top: "54px", width: "310px", height: "54px" }}
+						onClick={() => { setShowCard(false); if (simpleMode) void settingsStore.saveSimpleMode(false); }}
+					/>
 
 						{/* Dynamic checkmark - moves with active mode */}
 						<div
 							className="absolute pointer-events-none z-30"
 							style={{
 								left: "276px",
-								top: simpleMode ? "60px" : "20px",
+								top: simpleMode ? "20px" : "60px",
 								width: "20px",
 								height: "20px",
 								display: "flex",

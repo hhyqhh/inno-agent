@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search } from "lucide-react";
-import type { ChatMessage } from "../types/chat.js";
+import type { ChatMessage, ChatToolRecord } from "../types/chat.js";
 import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
@@ -103,8 +103,25 @@ function ErrorBlock({ error }: { error: string }) {
 	);
 }
 
+function visibleUserMessage(content: string): string {
+	return content
+		.replace(/\s*<inno-internal-context>[\s\S]*?<\/inno-internal-context>\s*/g, "")
+		.trim();
+}
+
+function visibleToolDetails(tool: ChatToolRecord): string {
+	if (tool.toolName === "note_read") {
+		return tool.isError ? "读取笔记失败" : "笔记内容已安全传递给 Agent";
+	}
+	if (tool.toolName === "note_polish") {
+		return tool.isError ? "笔记润色保存失败" : "笔记已完成润色并保存";
+	}
+	return JSON.stringify({ args: tool.args, result: tool.result }, null, 2);
+}
+
 function MessageBubble({ message, showChannel }: { message: ChatMessage; showChannel?: boolean }) {
 	const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+	const visibleContent = message.role === "user" ? visibleUserMessage(message.content) : message.content;
 
 	if (message.role === "user") {
 		return (
@@ -132,7 +149,7 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 						</div>
 					) : null}
 					{lightboxSrc ? <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} /> : null}
-					{message.content.trim()}
+					{visibleContent}
 				</div>
 			</motion.div>
 		);
@@ -163,7 +180,7 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 										<summary className={tool.isError ? "cursor-pointer break-words text-red-600 [overflow-wrap:anywhere]" : "cursor-pointer break-words text-[var(--inno-text-muted)] [overflow-wrap:anywhere]"}>
 											{tool.toolName}
 										</summary>
-										<pre className="mt-1 max-h-40 max-w-full overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] [overflow-wrap:anywhere]">{JSON.stringify({ args: tool.args, result: tool.result }, null, 2)}</pre>
+										<pre className="mt-1 max-h-40 max-w-full overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] [overflow-wrap:anywhere]">{visibleToolDetails(tool)}</pre>
 									</details>
 								))}
 							</div>
@@ -376,6 +393,7 @@ export function ChatCenter() {
 		isLoadingHistory: chatStore.isLoadingHistory,
 		streamingText: chatStore.streamingText,
 		streamingThinking: chatStore.streamingThinking,
+		activityText: chatStore.activityText,
 		streamingError: chatStore.streamingError,
 		activeTools: chatStore.activeTools,
 		completedTools: chatStore.completedTools,
@@ -465,7 +483,7 @@ export function ChatCenter() {
 			const el = scrollRef.current;
 			if (el) el.scrollTop = el.scrollHeight;
 		});
-	}, [chat.messages, chat.streamingText, chat.streamingThinking, chat.activeTools.length, chat.completedTools.length, chat.pendingQuestion]);
+	}, [chat.messages, chat.streamingText, chat.streamingThinking, chat.activityText, chat.activeTools.length, chat.completedTools.length, chat.pendingQuestion]);
 
 	const handleInput = useCallback(() => {
 		const el = inputRef.current;
@@ -969,6 +987,20 @@ export function ChatCenter() {
 						</motion.div>
 					) : null}
 
+					{chat.activityText && !chat.pendingQuestion && !chat.streamingText && chat.activeTools.length === 0 ? (
+						<motion.div
+							className="flex justify-start"
+							initial={{ opacity: 0, y: 8 }}
+							animate={{ opacity: 1, y: 0 }}
+							transition={{ duration: 0.2, ease: "easeOut" }}
+						>
+							<div className="inno-message inline-flex max-w-[78%] items-center gap-2 rounded-lg border border-blue-100 bg-[var(--inno-accent-soft)] px-3.5 py-2.5 text-[13px] text-[var(--inno-text)]">
+								<span className="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-[var(--inno-accent)] border-t-transparent" />
+								<span>{chat.activityText}</span>
+							</div>
+						</motion.div>
+					) : null}
+
 					{chat.streamingThinking ? (
 						<motion.div
 							className="flex justify-start"
@@ -996,7 +1028,7 @@ export function ChatCenter() {
 									{chat.completedTools.map((tool) => (
 										<details key={tool.toolCallId} className="min-w-0 max-w-full overflow-hidden rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2 py-1">
 											<summary className={tool.isError ? "cursor-pointer break-words text-red-600 [overflow-wrap:anywhere]" : "cursor-pointer break-words text-[var(--inno-text-muted)] [overflow-wrap:anywhere]"}>{tool.toolName}</summary>
-											<pre className="mt-1 max-h-40 max-w-full overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] [overflow-wrap:anywhere]">{JSON.stringify({ args: tool.args, result: tool.result }, null, 2)}</pre>
+											<pre className="mt-1 max-h-40 max-w-full overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] [overflow-wrap:anywhere]">{visibleToolDetails(tool)}</pre>
 										</details>
 									))}
 								</div>
@@ -1030,7 +1062,7 @@ export function ChatCenter() {
 						</motion.div>
 					) : null}
 
-					{chat.isSending && !chat.pendingQuestion && !chat.streamingText && !chat.streamingError && chat.activeTools.length === 0 ? (
+					{chat.isSending && !chat.activityText && !chat.pendingQuestion && !chat.streamingText && !chat.streamingError && chat.activeTools.length === 0 ? (
 						<motion.div
 							className="flex justify-start"
 							initial={{ opacity: 0 }}

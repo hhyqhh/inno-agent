@@ -14,6 +14,8 @@ export interface ActiveMeeting {
 	error?: string;
 }
 
+export type PersistedMeeting = ActiveMeeting;
+
 export interface MeetingImportJob {
 	id: string;
 	meetingId: string;
@@ -57,6 +59,12 @@ export async function getActiveMeetings(): Promise<ActiveMeeting[]> {
 	if (!response.ok) throw new Error("Failed to load active meetings");
 	const data = await response.json() as { meetings: ActiveMeeting[] };
 	return data.meetings;
+}
+
+export async function getMeeting(meetingId: string, signal?: AbortSignal): Promise<PersistedMeeting> {
+	const response = await fetch(`/api/meetings/${encodeURIComponent(meetingId)}`, { signal });
+	if (!response.ok) throw new Error("Failed to load meeting");
+	return response.json() as Promise<PersistedMeeting>;
 }
 
 export async function retryMeetingSummary(meetingId: string): Promise<void> {

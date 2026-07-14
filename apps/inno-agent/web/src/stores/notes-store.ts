@@ -7,7 +7,6 @@ import {
 	deleteNoteItem,
 	fetchNoteContent,
 	fetchRawContent,
-	listNoteAttachments,
 	listNotes,
 	polishNote,
 	saveNoteContent,
@@ -129,6 +128,23 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		return [...byKey.values()].sort((a, b) => b.usageCount - a.usageCount || a.displayName.localeCompare(b.displayName, "zh-CN"));
 	}
 
+	get availableTags(): string[] {
+		const byKey = new Map<string, NotesTagSummary>();
+		for (const note of this.notes) {
+			for (const tag of note.tags) {
+				const displayName = tag.trim();
+				if (!displayName) continue;
+				const key = displayName.toLowerCase();
+				const current = byKey.get(key);
+				if (current) current.usageCount += 1;
+				else byKey.set(key, { displayName, usageCount: 1 });
+			}
+		}
+		return [...byKey.values()]
+			.sort((a, b) => b.usageCount - a.usageCount || a.displayName.localeCompare(b.displayName, "zh-CN"))
+			.map((tag) => tag.displayName);
+	}
+
 	clearMessages() {
 		this.error = null;
 		this.errorDetail = null;
@@ -237,6 +253,13 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		}
 	}
 
+	async reloadNoteIfSelected(rawPath: string): Promise<void> {
+		if (this.selected?.rawPath !== rawPath) return;
+		await this.loadAll();
+		const note = this.notes.find((entry) => entry.rawPath === rawPath);
+		if (note && this.selected?.rawPath === rawPath) await this.selectNote(note);
+	}
+
 	async selectNote(note: NoteSummary): Promise<void> {
 		this.selected = note;
 		this.previewContent = "";
@@ -276,7 +299,13 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			this.isLoadingContent = true;
 			this.emit("change", undefined);
 			try {
-				this.attachments = await listNoteAttachments(note.rawPath);
+				const detail = await fetchNoteContent(note.rawPath);
+				this.attachments = detail.attachments ?? [];
+				this.selected = {
+					...note,
+					meetingId: detail.meetingId,
+					meetingStatus: detail.meetingStatus,
+				};
 			} catch (error) {
 				this.error = "loadContentFailed";
 				this.errorDetail = errorDetail(error);
@@ -459,6 +488,12 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 
 	async archiveSelected(): Promise<string | null> {
 		if (!this.selected) return null;
+		if (this.selected.kind === "markdown" && !this.editorContent.trim() && this.attachments.length === 0) {
+			this.clearMessages();
+			this.error = "emptyCannotArchive";
+			this.emit("change", undefined);
+			return null;
+		}
 		if (this.selected.kind === "markdown" && this.isDirty) {
 			const saved = await this.saveSelected();
 			if (!saved) return null;

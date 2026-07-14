@@ -15,6 +15,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	isLoadingHistory = false;
 	streamingText = "";
 	streamingThinking = "";
+	activityText = "";
 	/** Backend/model error for the in-flight turn, surfaced in the UI (collapsible). */
 	streamingError = "";
 	/** Active tool calls in progress */
@@ -24,13 +25,14 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	lastUserPrompt: string | null = null;
 	/** Images from the last send, kept so users can Retry. */
 	lastImages: InlineImage[] | undefined = undefined;
+	private lastActivityText: string | undefined = undefined;
 	/** Pending question from agent's ask_user_question tool */
 	pendingQuestion: PendingQuestion | null = null;
 	private abortController: AbortController | null = null;
 	private detachMode = false;
 	private wikiInvalidated = false;
 
-	async send(prompt: string, images?: InlineImage[]): Promise<void> {
+	async send(prompt: string, images?: InlineImage[], activityText?: string): Promise<void> {
 		if ((!prompt.trim() && !images?.length) || this.isSending) return;
 		this.detachMode = false;
 
@@ -41,6 +43,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 
 		this.lastUserPrompt = prompt;
 		this.lastImages = images;
+		this.lastActivityText = activityText;
 		this.messages = [...this.messages, {
 			role: "user",
 			content: prompt,
@@ -53,6 +56,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.isSending = true;
 		this.streamingText = "";
 		this.streamingThinking = "";
+		this.activityText = activityText ?? "";
 		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
@@ -98,6 +102,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			this.isSending = false;
 			this.streamingText = "";
 			this.streamingThinking = "";
+			this.activityText = "";
 			this.streamingError = "";
 			this.activeTools = [];
 			this.completedTools = [];
@@ -155,6 +160,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.isSending = true;
 		this.streamingText = "";
 		this.streamingThinking = "";
+		this.activityText = "";
 		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
@@ -191,6 +197,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			this.isSending = false;
 			this.streamingText = "";
 			this.streamingThinking = "";
+			this.activityText = "";
 			this.streamingError = "";
 			this.activeTools = [];
 			this.completedTools = [];
@@ -205,12 +212,13 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	/** Re-send the last user prompt. No-op while a send is in flight. */
 	async retry(): Promise<void> {
 		if (this.isSending || !this.lastUserPrompt) return;
-		await this.send(this.lastUserPrompt, this.lastImages);
+		await this.send(this.lastUserPrompt, this.lastImages, this.lastActivityText);
 	}
 
 	private _handleStreamEvent(event: ChatStreamEvent) {
 		switch (event.type) {
 			case "text_delta":
+				this.activityText = "";
 				this.streamingText += event.delta;
 				this.emit("change", undefined);
 				break;
@@ -259,6 +267,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				this.emit("change", undefined);
 				break;
 			case "question":
+				this.activityText = "";
 				this.pendingQuestion = {
 					questionId: event.questionId,
 					params: event.params,
@@ -266,6 +275,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				this.emit("change", undefined);
 				break;
 			case "done":
+				this.activityText = "";
 				// Final message set with full content
 				if (event.fullText) {
 					this.streamingText = event.fullText;
@@ -303,6 +313,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.isSending = false;
 		this.streamingText = "";
 		this.streamingThinking = "";
+		this.activityText = "";
 		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
@@ -316,6 +327,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.isSending = false;
 		this.streamingText = "";
 		this.streamingThinking = "";
+		this.activityText = "";
 		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];

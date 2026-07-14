@@ -7,6 +7,7 @@ import {
 	deleteNoteItem,
 	fetchNoteContent,
 	fetchRawContent,
+	listNoteAttachments,
 	listNotes,
 	polishNote,
 	saveNoteContent,
@@ -68,9 +69,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	polishTemplateLabel: string | null = null;
 	polishSuggestedTags: string[] = [];
 	private archiveQueue: Promise<unknown> = Promise.resolve();
+	private archiveControllers = new Map<string, AbortController>();
 
 	get isDirty(): boolean {
 		if (!this.selected) return false;
+		if (this.selected.kind === "archived") return false;
 		if (this.selected.kind !== "markdown" && this.selected.contentType === "markdown") {
 			return this.previewContent !== this.savedPreviewContent;
 		}
@@ -269,6 +272,21 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			return;
 		}
 
+		if (note.notebookType === "note") {
+			this.isLoadingContent = true;
+			this.emit("change", undefined);
+			try {
+				this.attachments = await listNoteAttachments(note.rawPath);
+			} catch (error) {
+				this.error = "loadContentFailed";
+				this.errorDetail = errorDetail(error);
+				this.attachments = [];
+			} finally {
+				this.isLoadingContent = false;
+				this.emit("change", undefined);
+			}
+		}
+
 		await this.loadPreview(note.rawPath, note.contentType);
 	}
 
@@ -447,6 +465,8 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		}
 		const rawPath = this.selected.rawPath;
 		if (this.archivingRawPaths.includes(rawPath)) return null;
+		const controller = new AbortController();
+		this.archiveControllers.set(rawPath, controller);
 		const title = this.selected.kind === "markdown" ? this.editorTitle.trim() || this.selected.title : undefined;
 		const tags = this.selected.kind === "markdown" ? [...this.editorTags] : undefined;
 		this.isArchiving = true;
@@ -457,10 +477,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		const run = async (): Promise<string | null> => {
 			this.archivingRawPath = rawPath;
 			this.emit("change", undefined);
+			controller.signal.throwIfAborted();
 			const result = await archiveNote(rawPath, {
 				title,
 				tags,
-			});
+			}, controller.signal);
 			this.notice = "archived";
 			this.listBox = "archived";
 			await this.loadAll();
@@ -475,11 +496,16 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			.catch(() => undefined)
 			.then(run)
 			.catch((error) => {
+				if (controller.signal.aborted) {
+					this.notice = "archiveStopped";
+					return null;
+				}
 				this.error = "archiveFailed";
 				this.errorDetail = errorDetail(error);
 				return null;
 			})
 			.finally(() => {
+				this.archiveControllers.delete(rawPath);
 				this.archivingRawPaths = this.archivingRawPaths.filter((path) => path !== rawPath);
 				this.archivingRawPath = this.archivingRawPaths[0] ?? null;
 				this.isArchiving = this.archivingRawPaths.length > 0;
@@ -491,6 +517,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		} finally {
 			this.emit("change", undefined);
 		}
+	}
+
+	stopArchive(rawPath: string | null = this.archivingRawPath): void {
+		if (!rawPath) return;
+		this.archiveControllers.get(rawPath)?.abort();
 	}
 
 	async deleteSelected(): Promise<boolean> {

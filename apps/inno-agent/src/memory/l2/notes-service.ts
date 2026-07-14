@@ -43,16 +43,30 @@ import {
 } from "./wiki-maintainer.js";
 import { summarizeContent } from "./summarizer.js";
 import { maintainLinkedWikiPages, readSourceKnowledgeRelations } from "./wiki-linker.js";
+import { isSupportedFormat, parseDocument } from "./document-parser.js";
 import { logger } from "../../logger.js";
 import {
 	deleteAttachmentsForNote,
 	listNoteAttachments,
+	updateNoteAttachmentStatus,
 	type NoteAttachmentRecord,
 } from "./note-attachments-service.js";
 
 export type NotebookItemKind = "markdown" | "orphan" | "archived";
 export type NotebookType = "conversation" | "file" | "note";
 export type NotebookItemStatus = NoteStatus | ManifestStatus | "uploaded";
+
+const TEXT_ATTACHMENT_EXTENSIONS = new Set([
+	".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".xml", ".yaml", ".yml",
+	".html", ".css", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".java", ".go",
+	".rs", ".sql", ".sh", ".log",
+]);
+
+function isTextAttachment(attachment: NoteAttachmentRecord): boolean {
+	return attachment.mimeType.startsWith("text/") ||
+		["application/json", "application/xml", "application/javascript", "application/x-yaml"].includes(attachment.mimeType) ||
+		TEXT_ATTACHMENT_EXTENSIONS.has(extname(attachment.fileName).toLowerCase());
+}
 
 export interface NoteSummaryDto {
 	noteId: string;
@@ -297,6 +311,7 @@ export async function archiveL2NotebookItem(
 		selectedScope?: SelectedScope;
 		model?: Model<any>;
 		modelRegistry?: ModelRegistry;
+		signal?: AbortSignal;
 	},
 ): Promise<ArchiveRawResult> {
 	const normalizedPath = rawPath.replace(/\\/g, "/");
@@ -390,6 +405,9 @@ export function saveL2NoteContent(
 ): { rawPath: string; status: NoteStatus } {
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	const { absPath, frontmatter, body: _oldBody } = readNoteFile(l2DataDir, normalizedPath);
+	if (findManifestByRawPath(l2DataDir, normalizedPath)?.status === "indexed") {
+		throw new Error("已归档内容为只读，请先撤回归档");
+	}
 	const wasIndexed = frontmatter.status === "indexed" || Boolean(frontmatter.source_id);
 	const nextStatus: NoteStatus = wasIndexed ? "outdated" : "draft";
 	const now = new Date().toISOString();
@@ -412,8 +430,10 @@ export async function archiveL2Note(
 		tags?: string[];
 		model?: Model<any>;
 		modelRegistry?: ModelRegistry;
+		signal?: AbortSignal;
 	},
 ): Promise<ArchiveRawResult> {
+	options.signal?.throwIfAborted();
 	ensureL2Directories(l2DataDir);
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	if (!normalizedPath.startsWith("raw/notes/")) {
@@ -438,11 +458,49 @@ export async function archiveL2Note(
 	const title = frontmatter.title || extractNoteTitle(body, basename(normalizedPath, ".md"));
 	const tags = options.tags ?? frontmatter.tags;
 	const content = body.trim();
-	if (!content) {
+	const attachments = listNoteAttachments(l2DataDir, normalizedPath);
+	if (!content && attachments.length === 0) {
 		throw new Error("笔记内容为空，无法归档");
 	}
+	const originalAttachmentStatuses = new Map(attachments.map((attachment) => [attachment.id, attachment.status]));
+	let pendingWikiPagePath: string | undefined;
+	try {
+	const attachmentSections: string[] = [];
+	for (const attachment of attachments) {
+		options.signal?.throwIfAborted();
+		updateNoteAttachmentStatus(l2DataDir, attachment.id, "extracting");
+		try {
+			const attachmentPath = join(l2DataDir, attachment.filePath);
+			let extractedContent: string;
+			if (isSupportedFormat(attachmentPath)) {
+				extractedContent = (await parseDocument(attachmentPath)).text.trim();
+			} else if (isTextAttachment(attachment)) {
+				extractedContent = readText(attachmentPath).trim();
+			} else {
+				throw new Error(`不支持的附件格式: ${extname(attachment.fileName) || attachment.mimeType}`);
+			}
+			options.signal?.throwIfAborted();
+			if (!extractedContent) {
+				throw new Error("附件内容为空");
+			}
+			attachmentSections.push([
+				`## 附件：${attachment.fileName}`,
+				"",
+				`> 来源：[${attachment.fileName}](${attachment.filePath})`,
+				"",
+				extractedContent,
+			].join("\n"));
+			updateNoteAttachmentStatus(l2DataDir, attachment.id, "extracted");
+		} catch (error) {
+			if (options.signal?.aborted) throw error;
+			updateNoteAttachmentStatus(l2DataDir, attachment.id, "error");
+			const detail = error instanceof Error ? error.message : String(error);
+			throw new Error(`附件“${attachment.fileName}”内容解析失败: ${detail}`);
+		}
+	}
+	const archiveContent = [content, ...attachmentSections].filter(Boolean).join("\n\n");
 
-	const contentHash = createHash("sha256").update(content).digest("hex").slice(0, 16);
+	const contentHash = createHash("sha256").update(archiveContent).digest("hex").slice(0, 16);
 	const id = frontmatter.source_id ?? `l2src_${randomUUID().slice(0, 8)}`;
 	const maintenanceContext = readMaintenanceContext(l2DataDir);
 
@@ -460,10 +518,19 @@ export async function archiveL2Note(
 		updatedAt: new Date().toISOString(),
 	};
 
-	let summaryBody = content;
+	let summaryBody = archiveContent;
 	if (!existing && options.model && options.modelRegistry) {
-		const summary = await summarizeContent(options.model, options.modelRegistry, title, content);
-		if (summary) summaryBody = summary;
+		const summary = await summarizeContent(options.model, options.modelRegistry, title, archiveContent, options.signal);
+		if (summary) {
+			const attachmentSources = attachments.length > 0
+				? [
+					"## 附件来源",
+					"",
+					...attachments.map((attachment) => `- [${attachment.fileName}](${attachment.filePath})`),
+				].join("\n")
+				: "";
+			summaryBody = [summary, attachmentSources].filter(Boolean).join("\n\n");
+		}
 	}
 
 	const existingSourcePagePath = existing?.primary_wiki_path ?? primaryWikiPath(existing?.wikiPages ?? []);
@@ -471,17 +538,20 @@ export async function archiveL2Note(
 	const wikiPagePath = existing
 		? existingSourcePagePath ?? ""
 		: createSourcePage(l2DataDir, entry, summaryBody, undefined, existingSourcePagePath);
+	if (!existing) pendingWikiPagePath = wikiPagePath;
+	options.signal?.throwIfAborted();
 	const graphReferencePath = wikiPagePath || normalizedPath;
 	const currentRelations = readSourceKnowledgeRelations(l2DataDir, existing?.wikiPages ?? []);
 	const linkMaintenance = await maintainLinkedWikiPages(
 		l2DataDir,
 		entry,
 		graphReferencePath,
-		existing ? content : summaryBody,
+		existing ? archiveContent : summaryBody,
 		options.model,
 		options.modelRegistry,
-		existing ? { currentRelations } : undefined,
+		existing ? { currentRelations, signal: options.signal } : { signal: options.signal },
 	);
+	options.signal?.throwIfAborted();
 	const linkedPages = existing
 		? [...new Set([...existingLinkedPages, ...linkMaintenance.pages])]
 		: linkMaintenance.pages;
@@ -495,6 +565,7 @@ export async function archiveL2Note(
 	} else {
 		appendManifest(l2DataDir, entry);
 	}
+	pendingWikiPagePath = undefined;
 	rebuildIndex(l2DataDir, readManifest(l2DataDir));
 
 	const now = new Date().toISOString();
@@ -507,6 +578,9 @@ export async function archiveL2Note(
 		updated: now,
 	};
 	writeText(absPath, serializeNoteFile(nextFrontmatter, body));
+	for (const attachment of attachments) {
+		updateNoteAttachmentStatus(l2DataDir, attachment.id, "indexed");
+	}
 
 	appendLog(
 		l2DataDir,
@@ -531,6 +605,18 @@ export async function archiveL2Note(
 		wikiPages: entry.wikiPages,
 		status: "indexed",
 	};
+	} catch (error) {
+		if (options.signal?.aborted) {
+			if (pendingWikiPagePath && existsSync(join(l2DataDir, pendingWikiPagePath))) {
+				unlinkSync(join(l2DataDir, pendingWikiPagePath));
+			}
+			for (const attachment of attachments) {
+				const originalStatus = originalAttachmentStatuses.get(attachment.id);
+				if (originalStatus) updateNoteAttachmentStatus(l2DataDir, attachment.id, originalStatus);
+			}
+		}
+		throw error;
+	}
 }
 
 export interface DeleteNotebookItemResult {
@@ -562,10 +648,13 @@ export function saveL2RawMarkdownContent(
 		throw new Error("文件不存在");
 	}
 
+	const entry = findManifestByRawPath(l2DataDir, normalizedPath);
+	if (entry?.status === "indexed") {
+		throw new Error("已归档内容为只读，请先撤回归档");
+	}
 	const nextContent = content.endsWith("\n") ? content : `${content}\n`;
 	writeText(absPath, nextContent);
 
-	const entry = findManifestByRawPath(l2DataDir, normalizedPath);
 	if (!entry) {
 		return { rawPath: normalizedPath, status: "uploaded" };
 	}

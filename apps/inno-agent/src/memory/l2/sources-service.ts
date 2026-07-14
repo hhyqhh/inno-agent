@@ -563,8 +563,10 @@ export async function extractL2RawFile(
 		title?: string;
 		tags?: string[];
 		selectedScope?: SelectedScope;
+		signal?: AbortSignal;
 	} = {},
 ): Promise<ExtractRawFileResult> {
+	options.signal?.throwIfAborted();
 	ensureL2Directories(l2DataDir);
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	const sourceType = inferSourceType(normalizedPath);
@@ -589,6 +591,7 @@ export async function extractL2RawFile(
 	try {
 		updateEntryStatus(l2DataDir, entry.id, "extracting", { error_message: null });
 		const parsed = await extractRawContent(l2DataDir, normalizedPath, sourceType);
+		options.signal?.throwIfAborted();
 		if (!parsed.content.trim()) {
 			throw new DocumentParseError("无法从文件中提取有效文本", "EMPTY_RESULT");
 		}
@@ -629,8 +632,10 @@ export async function archiveRawFile(
 		selectedScope?: SelectedScope;
 		model?: Model<any>;
 		modelRegistry?: ModelRegistry;
+		signal?: AbortSignal;
 	},
 ): Promise<ArchiveRawResult> {
+	options.signal?.throwIfAborted();
 	ensureL2Directories(l2DataDir);
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	let entry = findManifestByRawPath(l2DataDir, normalizedPath);
@@ -641,12 +646,14 @@ export async function archiveRawFile(
 	const sourceType = inferSourceType(normalizedPath);
 	const title = options.title?.trim() || defaultTitleFromPath(normalizedPath);
 	const tags = options.tags ?? [];
+	let pendingWikiPagePath: string | undefined;
 	try {
 		if (!entry || !entry.extractedPath || entry.status === "uploaded" || entry.status === "error") {
 			await extractL2RawFile(l2DataDir, normalizedPath, {
 				title,
 				tags,
 				selectedScope: options.selectedScope,
+				signal: options.signal,
 			});
 			entry = findManifestByRawPath(l2DataDir, normalizedPath);
 		} else if (entry.status === "outdated") {
@@ -675,11 +682,13 @@ export async function archiveRawFile(
 		const extractedContent = readText(join(l2DataDir, extractedPath));
 		let summaryBody = `## 摘要\n\n${extractedContent}`;
 		if (options.model && options.modelRegistry) {
-			const summary = await summarizeContent(options.model, options.modelRegistry, title, extractedContent);
+			const summary = await summarizeContent(options.model, options.modelRegistry, title, extractedContent, options.signal);
 			if (summary) summaryBody = summary;
 		}
 
 		const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, extractedPath);
+		pendingWikiPagePath = wikiPagePath;
+		options.signal?.throwIfAborted();
 		const linkMaintenance = await maintainLinkedWikiPages(
 			l2DataDir,
 			entry,
@@ -687,7 +696,9 @@ export async function archiveRawFile(
 			summaryBody,
 			options.model,
 			options.modelRegistry,
+			{ signal: options.signal },
 		);
+		options.signal?.throwIfAborted();
 		const indexedEntry: ManifestEntry = {
 			...entry,
 			title,
@@ -702,6 +713,7 @@ export async function archiveRawFile(
 		};
 
 		updateManifestEntry(l2DataDir, indexedEntry.id, () => indexedEntry);
+		pendingWikiPagePath = undefined;
 		rebuildIndex(l2DataDir, readManifest(l2DataDir));
 		appendLog(
 			l2DataDir,
@@ -729,9 +741,18 @@ export async function archiveRawFile(
 	} catch (err) {
 		const failedEntry = findManifestByRawPath(l2DataDir, normalizedPath);
 		if (failedEntry) {
-			updateEntryStatus(l2DataDir, failedEntry.id, "error", {
-				error_message: err instanceof Error ? err.message : String(err),
-			});
+			if (options.signal?.aborted) {
+				if (pendingWikiPagePath && existsSync(join(l2DataDir, pendingWikiPagePath))) {
+					unlinkSync(join(l2DataDir, pendingWikiPagePath));
+				}
+				updateEntryStatus(l2DataDir, failedEntry.id, failedEntry.extractedPath ? "extracted" : "uploaded", {
+					error_message: null,
+				});
+			} else {
+				updateEntryStatus(l2DataDir, failedEntry.id, "error", {
+					error_message: err instanceof Error ? err.message : String(err),
+				});
+			}
 		}
 		throw err;
 	}

@@ -15,6 +15,7 @@ import {
 	Plus,
 	Save,
 	Sparkles,
+	Square,
 	Trash2,
 	X,
 } from "lucide-react";
@@ -135,7 +136,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 
 	const selected = state.selected;
 	const isMarkdown = selected?.kind === "markdown";
-	const isRawEditableMarkdown = Boolean(selected && selected.kind !== "markdown" && selected.contentType === "markdown");
+	const isRawEditableMarkdown = Boolean(selected && selected.kind === "orphan" && selected.contentType === "markdown");
 	const showRearchive =
 		(selected?.kind === "markdown" || selected?.kind === "archived") && selected.status === "outdated";
 	const isUnarchivedFile =
@@ -206,23 +207,21 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 				{(selected.status === "draft" || selected.kind === "orphan" || isUnarchivedFile) && canArchiveNow ? (
 					<button
 						type="button"
-						className="inline-flex items-center gap-1 rounded-md bg-[var(--inno-accent)] px-3 py-1.5 text-sm text-white hover:opacity-90 disabled:opacity-50"
-						disabled={isSelectedArchiving}
-						onClick={() => void handleArchive()}
+						className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm text-white hover:opacity-90 ${isSelectedArchiving ? "bg-red-600" : "bg-[var(--inno-accent)]"}`}
+						onClick={() => isSelectedArchiving ? notesStore.stopArchive(selected.rawPath) : void handleArchive()}
 					>
-						{isSelectedArchiving ? <LoaderCircle size={14} className="animate-spin" /> : <Archive size={14} />}
-						{isSelectedArchiving ? t("notes.actions.archiving", "归档中...") : t("notes.actions.archive")}
+						{isSelectedArchiving ? <Square size={13} fill="currentColor" /> : <Archive size={14} />}
+						{isSelectedArchiving ? t("notes.actions.stopArchiving") : t("notes.actions.archive")}
 					</button>
 				) : null}
 				{showRearchive ? (
 					<button
 						type="button"
-						className="inline-flex items-center gap-1 rounded-md bg-[var(--inno-accent)] px-3 py-1.5 text-sm text-white hover:opacity-90 disabled:opacity-50"
-						disabled={isSelectedArchiving}
-						onClick={() => void handleArchive()}
+						className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm text-white hover:opacity-90 ${isSelectedArchiving ? "bg-red-600" : "bg-[var(--inno-accent)]"}`}
+						onClick={() => isSelectedArchiving ? notesStore.stopArchive(selected.rawPath) : void handleArchive()}
 					>
-						{isSelectedArchiving ? <LoaderCircle size={14} className="animate-spin" /> : <Archive size={14} />}
-						{isSelectedArchiving ? t("notes.actions.archiving", "归档中...") : t("notes.actions.rearchive")}
+						{isSelectedArchiving ? <Square size={13} fill="currentColor" /> : <Archive size={14} />}
+						{isSelectedArchiving ? t("notes.actions.stopArchiving") : t("notes.actions.rearchive")}
 					</button>
 				) : null}
 				{showOpenWiki ? (
@@ -474,10 +473,13 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					</div>
 				) : null}
 				{state.isArchiving ? (
-					<p className="flex items-center gap-2 border-b border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+					<div className="flex items-center gap-2 border-b border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
 						<LoaderCircle size={13} className="animate-spin" />
-						{t("notes.flash.archiving", "正在归档到 Wiki...")}
-					</p>
+						<span className="flex-1">{t("notes.flash.archiving", "正在归档到 Wiki...")}</span>
+						<button type="button" className="rounded px-2 py-0.5 text-red-600 hover:bg-red-50" onClick={() => notesStore.stopArchive()}>
+							{t("notes.actions.stopArchiving")}
+						</button>
+					</div>
 				) : null}
 				{selected ? <MeetingProgress rawPath={selected.rawPath} /> : null}
 
@@ -549,6 +551,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 									editorKey={`${selected.rawPath}:raw`}
 									value={normalizeMarkdownMath(state.previewContent)}
 									onChange={(value) => notesStore.updatePreviewContent(value)}
+									readOnly={selected.kind === "archived"}
 								/>
 							) : selected.contentType === "pdf" ? (
 								<iframe
@@ -570,6 +573,14 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 								<p className="p-4 text-sm text-[var(--inno-text-muted)]">{t("notes.previewBinaryHint")}</p>
 							)}
 						</div>
+						{selected.notebookType === "note" && !state.isLoadingContent ? (
+							<NoteAttachments
+								attachments={state.attachments}
+								readOnly
+								onUpload={(files) => notesStore.uploadAttachments(files)}
+								onDelete={(attachmentId) => notesStore.deleteAttachment(attachmentId)}
+							/>
+						) : null}
 						{renderBottomActions()}
 					</div>
 				)}

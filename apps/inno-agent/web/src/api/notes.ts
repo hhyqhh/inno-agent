@@ -94,10 +94,12 @@ export async function polishNote(options: {
 export async function archiveNote(
 	rawPath: string,
 	options: { title?: string; tags?: string[] } = {},
+	signal?: AbortSignal,
 ): Promise<ArchiveNoteResult> {
 	return apiFetch<ArchiveNoteResult>("/api/l2/notes/archive", {
 		method: "POST",
 		body: JSON.stringify({ rawPath, ...options }),
+		signal,
 	});
 }
 

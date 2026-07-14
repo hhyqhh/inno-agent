@@ -4208,6 +4208,12 @@ const server = createServer(async (req, res) => {
 		}
 
 		if (method === "POST" && url === "/api/l2/notes/archive") {
+			const archiveController = new AbortController();
+			const abortArchive = () => archiveController.abort();
+			req.once("aborted", abortArchive);
+			res.once("close", () => {
+				if (!res.writableEnded) abortArchive();
+			});
 			const body = (await readBody(req)) as Record<string, unknown>;
 			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
 			const title = typeof body.title === "string" ? body.title.trim() : undefined;
@@ -4232,10 +4238,13 @@ const server = createServer(async (req, res) => {
 					tags,
 					model: session.model,
 					modelRegistry: session.modelRegistry,
+					signal: archiveController.signal,
 				});
+				if (archiveController.signal.aborted || res.destroyed) return;
 				refreshL2TagIndex();
 				json(res, 201, result);
 			} catch (err) {
+				if (archiveController.signal.aborted || res.destroyed) return;
 				logger.warn({ err, rawPath }, "failed to archive note");
 				const message = err instanceof Error ? err.message : "Archive note failed";
 				json(res, 500, { error: message });

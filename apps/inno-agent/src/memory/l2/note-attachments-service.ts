@@ -79,6 +79,26 @@ export function listNoteAttachments(l2DataDir: string, noteRawPath: string): Not
 		.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+export function updateNoteAttachmentStatus(
+	l2DataDir: string,
+	attachmentId: string,
+	status: NoteAttachmentStatus,
+): NoteAttachmentRecord {
+	const records = readAttachmentIndex(l2DataDir);
+	const index = records.findIndex((record) => record.id === attachmentId);
+	if (index < 0) {
+		throw new Error("Attachment not found");
+	}
+	const updated: NoteAttachmentRecord = {
+		...records[index],
+		status,
+		updatedAt: new Date().toISOString(),
+	};
+	records[index] = updated;
+	writeAttachmentIndex(l2DataDir, records);
+	return updated;
+}
+
 export function uploadNoteAttachment(
 	l2DataDir: string,
 	noteRawPath: string,

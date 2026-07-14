@@ -30,6 +30,7 @@ export interface WikiLinkMaintenanceResult {
 export interface WikiLinkMaintenanceOptions {
 	createMissing?: boolean;
 	currentRelations?: string;
+	signal?: AbortSignal;
 }
 
 const LINK_MAINTAIN_PROMPT = `你是一个学习 Wiki 知识库维护助手。
@@ -203,7 +204,9 @@ async function extractLinkedItems(
 	title: string,
 	content: string,
 	currentRelations?: string,
+	signal?: AbortSignal,
 ): Promise<LinkedItem[]> {
+	signal?.throwIfAborted();
 	const fallback = fallbackItems(content);
 	if (!model || !modelRegistry) return fallback;
 
@@ -235,6 +238,7 @@ async function extractLinkedItems(
 				apiKey: auth.apiKey,
 				headers: auth.headers,
 				maxTokens: 4096,
+				signal,
 			},
 		);
 		if (response.stopReason === "error") return fallback;
@@ -245,6 +249,7 @@ async function extractLinkedItems(
 		const extracted = parseLinkedItemsJson(text);
 		return extracted.length > 0 ? extracted : fallback;
 	} catch (err) {
+		if (signal?.aborted) throw err;
 		logger.warn({ err }, "LLM wiki link extraction failed, using fallback");
 		return fallback;
 	}
@@ -458,7 +463,8 @@ export async function maintainLinkedWikiPages(
 	options: WikiLinkMaintenanceOptions = {},
 ): Promise<WikiLinkMaintenanceResult> {
 	const result: WikiLinkMaintenanceResult = { created: [], updated: [], unchanged: [], pages: [] };
-	const items = await extractLinkedItems(model, modelRegistry, entry.title, sourcePageBody, options.currentRelations);
+	const items = await extractLinkedItems(model, modelRegistry, entry.title, sourcePageBody, options.currentRelations, options.signal);
+	options.signal?.throwIfAborted();
 	for (const item of items) {
 		const page = upsertLinkedPage(l2DataDir, item, entry, sourcePagePath, options);
 		if (options.createMissing === false && page.status === "unchanged" && !existsSync(join(l2DataDir, page.path))) {

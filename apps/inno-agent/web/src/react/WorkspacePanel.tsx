@@ -132,7 +132,7 @@ export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChan
 								onClick={() => onTabChange(tab)}
 								title={compact ? label : undefined}
 							>
-								{compact ? <Icon size={13} /> : label}
+								{compact ? <Icon size={13} /> : <><Icon size={13} /><span>{label}</span></>}
 							</button>
 						);
 					})}

@@ -6,7 +6,6 @@ import type { TFunction } from "i18next";
 import { Paperclip, X, Square, RotateCcw, Image, AlertTriangle, Search, Folder, FolderOpen, FolderPlus, Zap, Check, ArrowUp, FileCode2, Sparkles } from "lucide-react";
 import { Spinner } from "./ui/Spinner.js";
 import type { ChatMessage, ChatToolRecord } from "../types/chat.js";
-import { InnoLogoIcon, InnoLogoIconAlt, InnoLogoText } from "./ui/InnoLogo.js";
 import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
@@ -898,34 +897,7 @@ export function ChatCenter() {
 				<div className="inno-chat-grid flex flex-1 min-h-0 justify-center overflow-y-auto px-4">
 					<div className="w-full max-w-2xl pt-[18vh] pb-12">
 						<div className="mb-6 flex flex-col items-center text-center">
-							<button
-								type="button"
-								onClick={toggleMode}
-								disabled={togglingMode}
-								title={simpleMode ? t("mode.currentSimpleClickNormal") : t("mode.currentNormalClickSimple")}
-								aria-label={simpleMode ? t("mode.switchToNormal") : t("mode.switchToSimple")}
-								className="flip-card-scene mb-3 rounded-xl outline-none focus-visible:shadow-[var(--inno-ring)] disabled:cursor-wait"
-							>
-								<motion.div
-									animate={{ rotateY: simpleMode ? 180 : 0 }}
-									transition={{ type: "spring", stiffness: 320, damping: 22 }}
-									className="flip-card flex h-12 w-12 items-center justify-center"
-								>
-									{/* Front — Normal mode */}
-									<span
-										className="flip-card-face absolute inset-0 flex items-center justify-center rounded-xl"
-									>
-										<InnoLogoIcon className="h-[30px] w-[30px]" />
-									</span>
-									{/* Back — Simple mode */}
-									<span
-										className="flip-card-back absolute inset-0 flex items-center justify-center rounded-xl"
-									>
-										<InnoLogoIconAlt className="h-[30px] w-[30px]" />
-									</span>
-								</motion.div>
-							</button>
-							<h2 className="text-lg font-medium text-[var(--inno-text)]">
+							<h2 className="text-[2rem] font-medium text-[var(--inno-text)]">
 								说说你的教学需求，我来落地
 							</h2>
 						</div>
@@ -1260,7 +1232,7 @@ export function ChatCenter() {
 				</div>
 			</div>
 
-			<div className="shrink-0 border-t border-[var(--inno-border)] bg-[var(--inno-surface)] p-3">
+			<div className="shrink-0 bg-[var(--inno-surface)] p-3">
 				<div className="mx-auto max-w-3xl">
 					{renderUploadChips()}
 					{renderInlineImagePreviews()}

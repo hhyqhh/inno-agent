@@ -617,7 +617,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			<>
 			<aside className="inno-sidebar-scope flex h-full min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-sidebar-bg)]">
 				{/* Header: brand + collapse */}
-				<div className="flex items-center justify-between gap-2 px-3 py-2.5">
+				<div className="flex items-center justify-between gap-2 pr-3 ml-[30px] mt-[40px]">
 					<div className="flex min-w-0 items-center gap-2">
 						<button
 							type="button"
@@ -671,8 +671,8 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 				</div>
 
 				{/* Recent conversations — the way back to a generated artifact */}
-				<div className="flex-1 min-h-0 overflow-y-auto px-1.5 py-2 sidebar-scroll">
-					<div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-[var(--inno-text-subtle)]">{t("sidebar.recent")}</div>
+				<div className="flex-1 min-h-0 overflow-y-auto px-2 py-2 sidebar-scroll">
+					<div className="pb-1 text-[11px] font-medium uppercase tracking-wide text-[var(--inno-text-subtle)]">{t("sidebar.recent")}</div>
 					{state.isLoading ? (
 						<div className="flex items-center justify-center py-8">
 							<Spinner size={16} className="text-[var(--inno-border-strong)]" />
@@ -694,7 +694,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 											openSession(session);
 										}
 									}}
-									className={`group/srow relative mb-1 block w-full cursor-pointer rounded-lg border px-2.5 py-2 text-left transition-all duration-150 ${
+									className={`group/srow relative mb-1 block w-full cursor-pointer rounded-lg border px-2 py-2 text-left transition-all duration-150 ${
 										state.currentSessionId === session.id
 											? "border-[var(--inno-border)] bg-[var(--inno-surface-muted)] shadow-sm"
 											: "border-transparent hover:border-[var(--inno-border)] hover:bg-[var(--inno-surface)]"
@@ -776,34 +776,12 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 		<>
 		<aside className="inno-sidebar-scope flex h-full min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-sidebar-bg)]">
 			{/* Header */}
-			<div className="px-3 py-2.5">
+			<div className="pr-3 ml-[30px] mt-[40px]">
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex items-center gap-2 min-w-0">
-						<button
-							type="button"
-							onClick={toggleMode}
-							disabled={togglingMode}
-							title={simpleMode ? t("mode.currentSimpleClickNormal") : t("mode.currentNormalClickSimple")}
-							aria-label={simpleMode ? t("mode.switchToNormal") : t("mode.switchToSimple")}
-							className="flip-card-scene shrink-0 rounded-lg outline-none focus-visible:shadow-[var(--inno-ring)] disabled:cursor-wait"
-						>
-							<motion.div
-								animate={{ rotateY: simpleMode ? 180 : 0 }}
-								transition={{ type: "spring", stiffness: 320, damping: 22 }}
-								className="flip-card h-[30px] w-[30px]"
-							>
-								<span
-									className="flip-card-face absolute inset-0 flex items-center justify-center rounded-lg"
-								>
-									<InnoLogoIcon className="h-[30px] w-[30px]" />
-								</span>
-								<span
-									className="flip-card-back absolute inset-0 flex items-center justify-center rounded-lg"
-								>
-									<InnoLogoIconAlt className="h-[30px] w-[30px]" />
-								</span>
-							</motion.div>
-						</button>
+						<div className="shrink-0 rounded-lg">
+							<InnoLogoIcon className="h-[30px] w-[30px]" />
+						</div>
 						<div className="min-w-0">
 							<h1 className="inno-sidebar-title font-semibold tracking-tight text-[var(--inno-text)]">
 								<InnoLogoText className="h-[30px] w-auto" />{simpleMode ? <span className="ml-1 font-normal text-[var(--inno-accent)]">{t("mode.simpleTag")}</span> : null}
@@ -842,7 +820,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			</div>
 
 			{/* Session list */}
-			<div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-2 sidebar-scroll">
+			<div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2 sidebar-scroll">
 				{state.isLoading ? (
 					<div className="flex items-center justify-center py-8">
 						<Spinner size={16} className="text-[var(--inno-border-strong)]" />

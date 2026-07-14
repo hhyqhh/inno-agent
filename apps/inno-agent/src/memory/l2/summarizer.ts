@@ -49,7 +49,9 @@ export async function summarizeContent(
 	modelRegistry: ModelRegistry,
 	title: string,
 	content: string,
+	signal?: AbortSignal,
 ): Promise<string | null> {
+	signal?.throwIfAborted();
 	const truncated =
 		content.length > MAX_CONTENT_LENGTH
 			? content.slice(0, MAX_CONTENT_LENGTH) + "\n\n...(内容已截断)"
@@ -79,6 +81,7 @@ export async function summarizeContent(
 				apiKey: auth.apiKey,
 				headers: auth.headers,
 				maxTokens: 4096,
+				signal,
 			},
 		);
 
@@ -95,6 +98,7 @@ export async function summarizeContent(
 
 		return text ? normalizeMarkdownForMilkdown(text) : null;
 	} catch (err) {
+		if (signal?.aborted) throw err;
 		logger.warn({ err }, "[L2 summarizer] Failed");
 		return null;
 	}

@@ -68,9 +68,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	polishTemplateLabel: string | null = null;
 	polishSuggestedTags: string[] = [];
 	private archiveQueue: Promise<unknown> = Promise.resolve();
+	private archiveControllers = new Map<string, AbortController>();
 
 	get isDirty(): boolean {
 		if (!this.selected) return false;
+		if (this.selected.kind === "archived") return false;
 		if (this.selected.kind !== "markdown" && this.selected.contentType === "markdown") {
 			return this.previewContent !== this.savedPreviewContent;
 		}
@@ -124,6 +126,23 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			}
 		}
 		return [...byKey.values()].sort((a, b) => b.usageCount - a.usageCount || a.displayName.localeCompare(b.displayName, "zh-CN"));
+	}
+
+	get availableTags(): string[] {
+		const byKey = new Map<string, NotesTagSummary>();
+		for (const note of this.notes) {
+			for (const tag of note.tags) {
+				const displayName = tag.trim();
+				if (!displayName) continue;
+				const key = displayName.toLowerCase();
+				const current = byKey.get(key);
+				if (current) current.usageCount += 1;
+				else byKey.set(key, { displayName, usageCount: 1 });
+			}
+		}
+		return [...byKey.values()]
+			.sort((a, b) => b.usageCount - a.usageCount || a.displayName.localeCompare(b.displayName, "zh-CN"))
+			.map((tag) => tag.displayName);
 	}
 
 	clearMessages() {
@@ -234,6 +253,13 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		}
 	}
 
+	async reloadNoteIfSelected(rawPath: string): Promise<void> {
+		if (this.selected?.rawPath !== rawPath) return;
+		await this.loadAll();
+		const note = this.notes.find((entry) => entry.rawPath === rawPath);
+		if (note && this.selected?.rawPath === rawPath) await this.selectNote(note);
+	}
+
 	async selectNote(note: NoteSummary): Promise<void> {
 		this.selected = note;
 		this.previewContent = "";
@@ -267,6 +293,27 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				this.emit("change", undefined);
 			}
 			return;
+		}
+
+		if (note.notebookType === "note") {
+			this.isLoadingContent = true;
+			this.emit("change", undefined);
+			try {
+				const detail = await fetchNoteContent(note.rawPath);
+				this.attachments = detail.attachments ?? [];
+				this.selected = {
+					...note,
+					meetingId: detail.meetingId,
+					meetingStatus: detail.meetingStatus,
+				};
+			} catch (error) {
+				this.error = "loadContentFailed";
+				this.errorDetail = errorDetail(error);
+				this.attachments = [];
+			} finally {
+				this.isLoadingContent = false;
+				this.emit("change", undefined);
+			}
 		}
 
 		await this.loadPreview(note.rawPath, note.contentType);
@@ -441,12 +488,20 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 
 	async archiveSelected(): Promise<string | null> {
 		if (!this.selected) return null;
+		if (this.selected.kind === "markdown" && !this.editorContent.trim() && this.attachments.length === 0) {
+			this.clearMessages();
+			this.error = "emptyCannotArchive";
+			this.emit("change", undefined);
+			return null;
+		}
 		if (this.selected.kind === "markdown" && this.isDirty) {
 			const saved = await this.saveSelected();
 			if (!saved) return null;
 		}
 		const rawPath = this.selected.rawPath;
 		if (this.archivingRawPaths.includes(rawPath)) return null;
+		const controller = new AbortController();
+		this.archiveControllers.set(rawPath, controller);
 		const title = this.selected.kind === "markdown" ? this.editorTitle.trim() || this.selected.title : undefined;
 		const tags = this.selected.kind === "markdown" ? [...this.editorTags] : undefined;
 		this.isArchiving = true;
@@ -457,10 +512,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		const run = async (): Promise<string | null> => {
 			this.archivingRawPath = rawPath;
 			this.emit("change", undefined);
+			controller.signal.throwIfAborted();
 			const result = await archiveNote(rawPath, {
 				title,
 				tags,
-			});
+			}, controller.signal);
 			this.notice = "archived";
 			this.listBox = "archived";
 			await this.loadAll();
@@ -475,11 +531,16 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			.catch(() => undefined)
 			.then(run)
 			.catch((error) => {
+				if (controller.signal.aborted) {
+					this.notice = "archiveStopped";
+					return null;
+				}
 				this.error = "archiveFailed";
 				this.errorDetail = errorDetail(error);
 				return null;
 			})
 			.finally(() => {
+				this.archiveControllers.delete(rawPath);
 				this.archivingRawPaths = this.archivingRawPaths.filter((path) => path !== rawPath);
 				this.archivingRawPath = this.archivingRawPaths[0] ?? null;
 				this.isArchiving = this.archivingRawPaths.length > 0;
@@ -491,6 +552,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		} finally {
 			this.emit("change", undefined);
 		}
+	}
+
+	stopArchive(rawPath: string | null = this.archivingRawPath): void {
+		if (!rawPath) return;
+		this.archiveControllers.get(rawPath)?.abort();
 	}
 
 	async deleteSelected(): Promise<boolean> {

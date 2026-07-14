@@ -17,6 +17,7 @@ import { createL2Tools } from "../memory/l2/l2-tools.js";
 import { L3Memory, createL3Tools, formatRecallForPrompt } from "../memory/l3/l3-tools.js";
 import { createPracticeTools } from "./practice-tools.js";
 import { createDocumentTools } from "./document-tools.js";
+import { createNoteTools } from "./note-tools.js";
 import { INNO_SYSTEM_PROMPT } from "./system-prompt.js";
 import { syncProvidersForSubagents } from "./provider-sync.js";
 import { questionBridge } from "./question-bridge.js";
@@ -199,6 +200,9 @@ export function createInnoExtension(
 		// 4. Register L2 Wiki memory tools (gated on config.memory.l2Enabled)
 		const l2Tools = createL2Tools(paths.l2DataDir, isL2Enabled);
 		for (const tool of l2Tools) {
+			pi.registerTool(tool);
+		}
+		for (const tool of createNoteTools(paths.l2DataDir, paths.codeDir, isL2Enabled)) {
 			pi.registerTool(tool);
 		}
 

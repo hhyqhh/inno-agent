@@ -15,9 +15,9 @@ export function ModeSwitch({ simpleMode }: ModeSwitchProps) {
 	const [showCard, setShowCard] = useState(false);
 
 	return (
-		<div className="relative mt-2 px-2">
+		<div className="relative px-2">
 			{/* Pill - always visible, click to toggle */}
-			<div className="cursor-pointer w-full" onClick={() => setShowCard(!showCard)}>
+			<div className="cursor-pointer mx-auto" style={{ width: "310px" }} onClick={() => setShowCard(!showCard)}>
 				<div dangerouslySetInnerHTML={{ __html: simpleMode ? CHAT_PILL : AGENT_PILL }} />
 			</div>
 

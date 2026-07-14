@@ -333,7 +333,7 @@ function PresetPicker({
 						value={query}
 						onChange={(e) => onQueryChange(e.target.value)}
 						placeholder={t("presets.searchPlaceholder")}
-						className="min-w-0 flex-1 bg-transparent text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:outline-none"
+						className="min-w-0 flex-1 bg-transparent text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:outline-none preset-search-input"
 					/>
 					{query ? (
 						<button
@@ -408,6 +408,12 @@ export function ChatCenter() {
 	// typing before/after the token. On send, the token is replaced by the
 	// real text.
 	const [pasteBlock, setPasteBlock] = useState<{ text: string; lineCount: number } | null>(null);
+	const [inputEmpty, setInputEmpty] = useState(true);
+
+	// Recompute inputEmpty when uploads / inlineImages change (e.g. attachments removed)
+	useEffect(() => {
+		setInputEmpty((inputRef.current?.value ?? "").trim() === "" && uploads.length === 0 && inlineImages.length === 0);
+	}, [uploads.length, inlineImages.length]);
 
 	// Inline workspace chooser state (welcome screen only). Seeded from the
 	// user's last choice (P3) so a new chat resumes the workspace they were in
@@ -542,6 +548,7 @@ export function ChatCenter() {
 	const handleInput = useCallback(() => {
 		const el = inputRef.current;
 		if (!el) return;
+		setInputEmpty(el.value.trim() === "" && inlineImages.length === 0 && uploads.length === 0);
 		const maxHeight = 200;
 		el.style.height = "auto";
 		const h = Math.min(el.scrollHeight, maxHeight);
@@ -550,7 +557,7 @@ export function ChatCenter() {
 		// never show a horizontal scrollbar (long lines wrap).
 		el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
 		el.style.overflowX = "hidden";
-	}, []);
+	}, [inlineImages.length, uploads.length]);
 
 	const buildSessionInput = useCallback((): CreateSessionInput | { __error: string } => {
 		// Simple Mode: no workspace chooser. Direct chat always goes to a temp
@@ -622,6 +629,7 @@ export function ChatCenter() {
 				inputRef.current.style.overflowY = "hidden";
 			}
 			setPasteBlock(null);
+			setInputEmpty(true);
 		};
 
 		if (isWelcome) {
@@ -837,7 +845,7 @@ export function ChatCenter() {
 			<textarea
 				ref={inputRef}
 				id="chat-input"
-				className="min-h-[36px] max-h-[200px] w-full resize-none overflow-hidden rounded-md border-0 bg-transparent px-2 py-2 text-sm leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
+				className="min-h-[36px] max-h-[200px] w-full resize-none overflow-hidden rounded-md border-0 bg-transparent px-2 py-2 text-xs leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
 				placeholder={placeholder}
 				rows={1}
 				onKeyDown={handleKeyDown}
@@ -857,7 +865,7 @@ export function ChatCenter() {
 				<div className="flex items-center gap-1">
 					{chat.isSending ? (
 						<button
-							className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--inno-danger)] text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
+							className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#BBBDFF] text-white shadow-xs transition-all hover:bg-[color-mix(in_srgb,#BBBDFF_90%,black)] active:scale-[0.97]"
 							title={t("chat.stopGeneration")}
 							onClick={handleStop}
 						>
@@ -876,9 +884,9 @@ export function ChatCenter() {
 								</button>
 							) : null}
 							<button
-								className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${isUploading ? "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]" : "inno-primary-button"}`}
+								className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--inno-accent)] text-white shadow-xs transition-all hover:bg-[color-mix(in_srgb,var(--inno-accent)_90%,black)] disabled:cursor-not-allowed disabled:opacity-50"
 								title={t("chat.send")}
-								disabled={isUploading}
+								disabled={isUploading || inputEmpty}
 								onClick={handleSend}
 							>
 								<ArrowUp size={16} />

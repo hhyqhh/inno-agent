@@ -85,7 +85,8 @@ summary:focus-visible {
 	box-shadow: var(--inno-ring);
 }
 
-#chat-input:focus-visible {
+#chat-input:focus-visible,
+.preset-search-input:focus-visible {
 	box-shadow: none;
 }
 
@@ -616,6 +617,15 @@ inno-workspace-panel textarea {
 	user-select: none;
 }
 
+/* Session cards: completely disable focus outlines */
+.group\/card:focus,
+.group\/card:focus-visible,
+.group\/srow:focus,
+.group\/srow:focus-visible {
+	outline: none !important;
+	box-shadow: none !important;
+}
+
 /* InnoSpark theme: inspired by agent.aiecnu.net's public chat UI. */
 :root[data-theme="innospark"] body {
 	background: var(--inno-background);
@@ -653,8 +663,8 @@ inno-workspace-panel textarea {
 	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), border-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out), transform var(--inno-dur-fast) var(--inno-ease-out);
 }
 
-:root[data-theme="innospark"] .inno-sidebar-scope [role="button"]:hover,
-:root[data-theme="innospark"] .inno-sidebar-scope button:hover:not(:disabled):not(.inno-channel-filter-chip):not(.inno-primary-button):not(.inno-primary-icon-button) {
+:root[data-theme="innospark"] .inno-sidebar-scope [role="button"]:hover:not(.group\/card):not(.group\/srow):not(.inno-sidebar-meta),
+:root[data-theme="innospark"] .inno-sidebar-scope button:hover:not(:disabled):not(.inno-channel-filter-chip):not(.inno-primary-button):not(.inno-primary-icon-button):not(.group\/card):not(.group\/srow):not(.inno-sidebar-meta) {
 	background: rgba(255, 255, 255, 0.86);
 	box-shadow: 0 1px 2px rgba(85, 90, 255, 0.05);
 }

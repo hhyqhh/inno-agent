@@ -124,7 +124,7 @@ function GroupHeader({
 		if (badgeRef.current) onOpenMenu(badgeRef.current);
 	}, [onOpenMenu]);
 	return (
-		<div className={`group/wsh sticky top-0 z-10 flex w-full items-center gap-1.5 px-2 py-1.5 ${active ? "bg-[var(--inno-surface-muted)]" : "bg-[var(--inno-sidebar-bg)]"}`}>
+		<div className={`group/wsh sticky top-0 z-10 flex w-full items-center gap-1.5 ${active ? "bg-[var(--inno-surface-muted)]" : "bg-[var(--inno-sidebar-bg)]"}`}>
 			<button
 				className="shrink-0 text-[var(--inno-text-subtle)] transition-colors hover:text-[var(--inno-text-muted)]"
 				title={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
@@ -133,7 +133,7 @@ function GroupHeader({
 				{collapsed ? <Folder size={12} /> : <FolderOpen size={12} />}
 			</button>
 			<button
-				className="inno-sidebar-meta flex min-w-0 flex-1 items-center gap-1.5 font-semibold uppercase text-[var(--inno-text-subtle)] transition-colors hover:text-[var(--inno-text-muted)]"
+				className="inno-sidebar-meta flex min-w-0 flex-1 items-center gap-1.5 font-semibold uppercase text-[var(--inno-text-subtle)] transition-colors hover:text-[var(--inno-text-muted)] focus:outline-none focus-visible:outline-none"
 				title={group.canCreate ? t("sidebar.loadWorkspace") : undefined}
 				onClick={onSelect}
 			>
@@ -275,13 +275,14 @@ function SessionCard({
 	const { t } = useTranslation();
 	return (
 		<div
-			className={`group/card relative mb-1 w-full cursor-pointer rounded-lg border px-2.5 py-2 text-left transition-all duration-150 ${
+			className={`group/card relative mb-0 w-full cursor-pointer rounded-lg border border-transparent pl-[15px] pr-1.5 py-1 text-left transition-all duration-150 ${
 				active
 					? "border-[var(--inno-border)] bg-[var(--inno-surface-muted)] shadow-sm"
-					: "border-transparent hover:border-[var(--inno-border)] hover:bg-[var(--inno-surface)]"
+					: ""
 			}`}
 			role="button"
 			tabIndex={0}
+			onMouseDown={(e) => e.preventDefault()}
 			onClick={onOpen}
 			onKeyDown={(e) => {
 				if (e.key === "Enter" || e.key === " ") {
@@ -615,7 +616,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 	if (simpleMode) {
 		return (
 			<>
-			<aside className="inno-sidebar-scope flex h-full min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-sidebar-bg)]">
+			<aside className="inno-sidebar-scope flex h-full min-h-0 flex-col border-r border-[var(--inno-border)] bg-[var(--inno-sidebar-bg)]">
 				{/* Header: brand + collapse */}
 				<div className="flex items-center justify-between gap-2 pr-3 ml-[30px] mt-[40px]">
 					<div className="flex min-w-0 items-center gap-2">
@@ -657,21 +658,24 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 					</button>
 				</div>
 
-			<ModeSwitch simpleMode={simpleMode} />
+			<div className="mt-[20px]">
+				<ModeSwitch simpleMode={simpleMode} />
+			</div>
 
-				{/* New chat button (simple mode) */}
-				<div className="p-2">
+			{/* New chat button (simple mode) */}
+				<div className="mt-[20px]">
 					<button
 						className="flex w-full items-center justify-center overflow-hidden rounded-xl transition-opacity hover:opacity-90"
 						onClick={newChat}
+						onMouseDown={(e) => e.preventDefault()}
 						title={t("sidebar.newChat")}
 					>
 						<NewChatSimple className="h-10 w-full" />
 					</button>
 				</div>
 
-				{/* Recent conversations — the way back to a generated artifact */}
-				<div className="flex-1 min-h-0 overflow-y-auto px-2 py-2 sidebar-scroll">
+				{/* Recent conversations */}
+				<div className="w-[310px] flex-1 min-h-0 overflow-y-auto sidebar-scroll mx-auto mt-[20px] px-0">
 					<div className="pb-1 text-[11px] font-medium uppercase tracking-wide text-[var(--inno-text-subtle)]">{t("sidebar.recent")}</div>
 					{state.isLoading ? (
 						<div className="flex items-center justify-center py-8">
@@ -687,6 +691,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 									key={session.id}
 									role="button"
 									tabIndex={0}
+									onMouseDown={(e) => e.preventDefault()}
 									onClick={() => openSession(session)}
 									onKeyDown={(e) => {
 										if (e.key === "Enter" || e.key === " ") {
@@ -694,26 +699,24 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 											openSession(session);
 										}
 									}}
-									className={`group/srow relative mb-1 block w-full cursor-pointer rounded-lg border px-2 py-2 text-left transition-all duration-150 ${
+									className={`group/srow relative mb-1 block w-full cursor-pointer rounded-lg border border-transparent py-2 pl-[3px] -ml-[3px] text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-none focus:outline-none focus:ring-0 focus:shadow-none ${
 										state.currentSessionId === session.id
 											? "border-[var(--inno-border)] bg-[var(--inno-surface-muted)] shadow-sm"
-											: "border-transparent hover:border-[var(--inno-border)] hover:bg-[var(--inno-surface)]"
+											: ""
 									}`}
 								>
-									<div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-										<div className="inno-sidebar-title min-w-0 truncate font-medium text-[var(--inno-text)]">{session.name}</div>
-										<button
-											className="rounded p-0.5 text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)] group-hover/srow:opacity-100"
-											title={t("sidebar.deleteConversation")}
-											onClick={(e) => { e.stopPropagation(); handleDelete(session); }}
-										>
-											<Trash2 size={12} />
-										</button>
-									</div>
+									<div className="inno-sidebar-title min-w-0 truncate pr-5 font-medium text-[var(--inno-text)]">{session.name}</div>
+									<button
+										className="absolute right-0 top-0 rounded p-0.5 text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)] group-hover/srow:opacity-100"
+										title={t("sidebar.deleteConversation")}
+										onClick={(e) => { e.stopPropagation(); handleDelete(session); }}
+									>
+										<Trash2 size={12} />
+									</button>
 									<div className="mt-1 flex items-center gap-1.5">
 										{ws ? (
 											<span
-												className="inline-flex max-w-[140px] items-center gap-1 rounded bg-[var(--inno-surface-muted)] px-1.5 py-px text-[9px] font-medium leading-none text-[var(--inno-text-muted)]"
+												className="inline-flex max-w-[140px] items-center gap-1 rounded bg-[var(--inno-surface-muted)] py-px text-[9px] font-medium leading-none text-[var(--inno-text-muted)]"
 												title={t("sidebar.workspaceLabel", { name: ws.name })}
 											>
 												<FolderKanban size={12} className="shrink-0" />
@@ -729,10 +732,10 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 				</div>
 
 				{/* Footer: search bar */}
-				<div className="px-2 pt-1.5 pb-20">
+				<div className="shrink-0 bg-[var(--inno-sidebar-bg)] px-2 pt-1.5 pb-20 flex justify-center">
 					<div className="relative">
 						{showSearch ? (
-							<div className="relative flex-1">
+							<div className="relative w-[304px]">
 								<Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)]" />
 								<input
 									className="inno-sidebar-text w-full rounded-full border-none bg-white py-3 pl-8 pr-8 text-[13px] outline-none placeholder:text-[var(--inno-text-subtle)] focus-visible:ring-2 focus-visible:ring-[#555AFF]/30"
@@ -755,7 +758,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 							<div className="relative">
 								<Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555AFF]/60 pointer-events-none" />
 								<button
-									className="inno-sidebar-text w-full rounded-full border-none bg-white py-3 pl-8 pr-3 text-left text-[13px] text-[var(--inno-text-subtle)] transition-colors hover:bg-gray-50"
+									className="inno-sidebar-text w-[304px] rounded-full border-none bg-white py-3 pl-8 pr-3 text-left text-[13px] text-[var(--inno-text-subtle)] transition-colors hover:bg-gray-50"
 									onClick={() => setShowSearch(true)}
 								>
 									{t("sidebar.searchPlaceholder")}
@@ -774,7 +777,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 
 	return (
 		<>
-		<aside className="inno-sidebar-scope flex h-full min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-sidebar-bg)]">
+		<aside className="inno-sidebar-scope flex h-full min-h-0 flex-col border-r border-[var(--inno-border)] bg-[var(--inno-sidebar-bg)]">
 			{/* Header */}
 			<div className="pr-3 ml-[30px] mt-[40px]">
 				<div className="flex items-center justify-between gap-2">
@@ -806,13 +809,16 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 					</div>
 				</div>
 			</div>
-			<ModeSwitch simpleMode={simpleMode} />
+			<div className="mt-[20px]">
+				<ModeSwitch simpleMode={simpleMode} />
+			</div>
 
 			{/* New chat button (normal mode) */}
-			<div className="p-2">
+			<div className="mt-[20px]">
 				<button
 					className="flex w-full items-center justify-center overflow-hidden rounded-xl transition-opacity hover:opacity-90"
 					onClick={newChat}
+					onMouseDown={(e) => e.preventDefault()}
 					title={t("sidebar.newChat")}
 				>
 					<NewChatNormal className="h-10 w-full" />
@@ -820,7 +826,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			</div>
 
 			{/* Session list */}
-			<div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2 sidebar-scroll">
+			<div className="w-[310px] flex-1 min-h-0 overflow-y-auto sidebar-scroll mx-auto mt-[20px] px-0">
 				{state.isLoading ? (
 					<div className="flex items-center justify-center py-8">
 						<Spinner size={16} className="text-[var(--inno-border-strong)]" />
@@ -833,7 +839,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 					groups.map((group) => {
 						const isGroupCollapsed = collapsedGroups.has(group.id);
 						return (
-							<div key={group.id} className="mt-0.5">
+							<div key={group.id} className="mt-3">
 								<GroupHeader
 									group={group}
 									collapsed={isGroupCollapsed}
@@ -890,10 +896,10 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			</div>
 
 			{/* Footer: search bar */}
-			<div className="px-2 pt-1.5 pb-20">
+			<div className="shrink-0 bg-[var(--inno-sidebar-bg)] px-2 pt-1.5 pb-20 flex justify-center">
 				<div className="relative">
 					{showSearch ? (
-						<div className="relative flex-1">
+						<div className="relative w-[304px]">
 							<Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--inno-text-subtle)]" />
 							<input
 								className="inno-sidebar-text w-full rounded-full border-none bg-white py-3 pl-8 pr-8 text-[13px] outline-none placeholder:text-[var(--inno-text-subtle)] focus-visible:ring-2 focus-visible:ring-[#555AFF]/30"
@@ -916,7 +922,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 						<div className="relative">
 							<Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555AFF]/60 pointer-events-none" />
 							<button
-								className="inno-sidebar-text w-full rounded-full border-none bg-white py-3 pl-8 pr-3 text-left text-[13px] text-[var(--inno-text-subtle)] transition-colors hover:bg-gray-50"
+								className="inno-sidebar-text w-[304px] rounded-full border-none bg-white py-3 pl-8 pr-3 text-left text-[13px] text-[var(--inno-text-subtle)] transition-colors hover:bg-gray-50"
 								onClick={() => setShowSearch(true)}
 							>
 								{t("sidebar.searchPlaceholder")}

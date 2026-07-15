@@ -1,26 +1,13 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { randomUUID, createHash } from "node:crypto";
-import { join, isAbsolute, resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
-import type { ManifestEntry, RawSourceType } from "./types.js";
-import { saveRaw, saveRawFile } from "./raw-store.js";
-import { convertToExtracted } from "./source-converter.js";
-import { appendManifest, readManifest, findManifestByHash } from "./manifest-store.js";
-import {
-	createSourcePage,
-	rebuildIndex,
-	appendLog,
-	ensureL2Directories,
-	readMaintenanceContext,
-} from "./wiki-maintainer.js";
+import type { RawSourceType } from "./types.js";
+import { appendLog, ensureL2Directories } from "./wiki-maintainer.js";
 import { queryWiki } from "./wiki-query.js";
-import { summarizeContent } from "./summarizer.js";
-import { maintainLinkedWikiPages } from "./wiki-linker.js";
-import { readText } from "../../storage/file-store.js";
-import { parseDocument, DocumentParseError } from "./document-parser.js";
-import { addL2SourceRelation, regenerateL2Source, removeL2SourceRelation } from "./sources-service.js";
+import { DocumentParseError } from "./document-parser.js";
+import { ingestL2Source, regenerateL2Source } from "./sources-service.js";
 import { logger } from "../../logger.js";
 
 /**
@@ -40,161 +27,82 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 		label: "归档到 L2 Wiki",
 		description:
 			"将学习资料归档到 L2 Wiki 知识库。只有用户明确说「归档」「保存到知识库」「帮我记下来」「加入知识库」等表达长期保存意图时才调用；不要因内容有价值或用户仅要求学习/总结就主动调用。" +
-			"支持文本(text)、Markdown(markdown)、对话片段(conversation)、PDF(pdf)、Word 文档(word)、图片(image)。" +
+			"支持文本(text)、Markdown(markdown)、PDF(pdf)、Word 文档(word)、图片(image)。" +
 			"文本类内容传 content 参数；文件类内容传 filePath 参数。",
 		parameters: Type.Object({
 			title: Type.String({ description: "资料标题" }),
 			content: Type.Optional(Type.String({ description: "要归档的文本内容（与 filePath 二选一）" })),
 			filePath: Type.Optional(Type.String({ description: "要归档的文件路径（PDF/Word/Image），与 content 二选一" })),
-			sourceType: StringEnum(["text", "markdown", "conversation", "pdf", "word", "image"] as const, {
-				description: "资料类型：text（纯文本）、markdown、conversation（对话片段）、pdf、word、image",
+			sourceType: StringEnum(["text", "markdown", "pdf", "word", "image"] as const, {
+				description: "资料类型：text（纯文本）、markdown、pdf、word、image",
 			}),
 			tags: Type.Optional(Type.Array(Type.String(), { description: "标签列表，如 ['python', 'async']" })),
 			origin: Type.Optional(
-				StringEnum(["user_upload", "conversation", "web", "research", "agent_inferred"] as const, {
+				StringEnum(["user_upload", "web", "research", "agent_inferred"] as const, {
 					description: "来源类型，默认根据 sourceType 自动推断",
 				}),
 			),
 			url: Type.Optional(Type.String({ description: "来源 URL（网页、论文链接等）" })),
-			sessionId: Type.Optional(Type.String({ description: "关联的会话 ID" })),
 			force: Type.Optional(Type.Boolean({ description: "为 true 时跳过重复检查，强制归档" })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			if (isEnabled && !isEnabled()) return l2DisabledResult();
-			ensureL2Directories(l2DataDir);
-			const maintenanceContext = readMaintenanceContext(l2DataDir);
-
 			const sourceType = params.sourceType as RawSourceType;
 			const isFileType = sourceType === "pdf" || sourceType === "word" || sourceType === "image";
-
-			// Resolve content: either from params.content or by parsing a file
-			let content: string;
-			let rawPath: string;
-
-			if (isFileType && params.filePath) {
-				// File-based: parse with LiteParse
-				const workspaceDir = process.env.INNO_WORKSPACE_DIR || process.cwd();
-				const resolvedPath = isAbsolute(params.filePath)
-					? params.filePath
-					: resolve(workspaceDir, params.filePath);
-
-				let parsed;
-				try {
-					parsed = await parseDocument(resolvedPath);
-				} catch (err) {
-					logger.warn({ err, filePath: resolvedPath }, "l2_archive: failed to parse document");
-					const msg = err instanceof DocumentParseError ? err.message : String(err);
-					return {
-						content: [{ type: "text" as const, text: `文件解析失败: ${msg}` }],
-						details: { error: err instanceof DocumentParseError ? err.code : "parse_error" },
-					};
-				}
-
-				content = parsed.text;
-				// Copy original file to raw storage
-				rawPath = saveRawFile(l2DataDir, params.title, resolvedPath, sourceType);
-			} else if (params.content) {
-				// Text-based: use content directly
-				content = params.content;
-				rawPath = saveRaw(l2DataDir, params.title, content, sourceType, params.url);
-			} else {
+			if ((isFileType && !params.filePath) || (!isFileType && params.content === undefined)) {
 				return {
 					content: [{ type: "text" as const, text: "参数错误：必须提供 content（文本内容）或 filePath（文件路径）。" }],
 					details: { error: "missing_content" },
 				};
 			}
 
-			const contentHash = createHash("sha256").update(content).digest("hex").slice(0, 16);
-
-			// Dedup: check if same content already archived
-			if (!params.force) {
-				const existing = findManifestByHash(l2DataDir, contentHash);
-				if (existing) {
+			const workspaceDir = process.env.INNO_WORKSPACE_DIR || process.cwd();
+			const filePath = params.filePath
+				? (isAbsolute(params.filePath) ? params.filePath : resolve(workspaceDir, params.filePath))
+				: undefined;
+			let result;
+			try {
+				result = await ingestL2Source(l2DataDir, {
+					title: params.title,
+					sourceType,
+					content: params.content,
+					filePath,
+					tags: params.tags,
+					origin: params.origin,
+					url: params.url,
+					force: params.force,
+					model: ctx.model,
+					modelRegistry: ctx.modelRegistry,
+					signal: _signal,
+				});
+			} catch (err) {
+				if (err instanceof DocumentParseError) {
+					logger.warn({ err, filePath }, "l2_archive: failed to parse document");
 					return {
-						content: [
-							{
-								type: "text" as const,
-								text:
-									`该内容已归档，无需重复保存。\n\n` +
-									`- ID: ${existing.id}\n` +
-									`- 标题: ${existing.title}\n` +
-									`- Wiki 页面: ${existing.wikiPages.join(", ") || "无"}\n\n` +
-									`如需强制归档，请设置 force: true。`,
-							},
-						],
-						details: { id: existing.id, duplicate: true },
+						content: [{ type: "text" as const, text: `文件解析失败: ${err.message}` }],
+						details: { error: err.code },
 					};
 				}
+				throw err;
 			}
 
-			const id = `l2src_${randomUUID().slice(0, 8)}`;
-			const tags = params.tags ?? [];
-
-			// Convert to extracted markdown
-			const extractedPath = convertToExtracted(l2DataDir, params.title, content, sourceType);
-
-			// Build manifest entry
-			const inferredOrigin = sourceType === "conversation" ? "conversation" : "user_upload";
-			const entry: ManifestEntry = {
-				id,
-				title: params.title,
-				sourceType,
-				rawPath,
-				extractedPath,
-				wikiPages: [],
-				tags,
-				contentHash,
-				status: "extracted",
-				source: {
-					origin: (params.origin ?? inferredOrigin) as ManifestEntry["source"]["origin"],
-					...(params.url && { url: params.url }),
-					...(params.sessionId && { sessionId: params.sessionId }),
-				},
-				createdAt: new Date().toISOString(),
-				updatedAt: new Date().toISOString(),
-			};
-
-			// Create wiki source page (with LLM summary)
-			const extractedContent = readText(join(l2DataDir, extractedPath));
-			let summaryBody = `## 摘要\n\n${extractedContent}`;
-			if (ctx.model) {
-				const summary = await summarizeContent(ctx.model, ctx.modelRegistry, params.title, extractedContent);
-				if (summary) summaryBody = summary;
+			if (result.duplicate) {
+				const existing = result.existing;
+				return {
+					content: [{
+						type: "text" as const,
+						text:
+							`该内容已归档，无需重复保存。\n\n` +
+							`- ID: ${existing.id}\n` +
+							`- 标题: ${existing.title}\n` +
+							`- Wiki 页面: ${existing.wikiPages.join(", ") || "无"}\n\n` +
+							`如需强制归档，请设置 force: true。`,
+					}],
+					details: { id: existing.id, duplicate: true },
+				};
 			}
-			const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, extractedPath);
-			const linkMaintenance = await maintainLinkedWikiPages(
-				l2DataDir,
-				entry,
-				wikiPagePath,
-				summaryBody,
-				ctx.model,
-				ctx.modelRegistry,
-			);
-			entry.wikiPages = [wikiPagePath, ...linkMaintenance.pages];
-			entry.status = "indexed";
 
-			// Write manifest
-			appendManifest(l2DataDir, entry);
-
-			// Rebuild index
-			const allEntries = readManifest(l2DataDir);
-			rebuildIndex(l2DataDir, allEntries);
-
-			// Append log
-			appendLog(
-				l2DataDir,
-				"ingest",
-				params.title,
-				[
-					`- ID: ${id}`,
-					`- 类型: ${sourceType}`,
-					`- 原始文件: ${rawPath}`,
-					`- 提取文本: ${extractedPath}`,
-					`- Source 页面: ${wikiPagePath}`,
-					`- concepts/entities: 新建 ${linkMaintenance.created.length}, 更新 ${linkMaintenance.updated.length}, 不变 ${linkMaintenance.unchanged.length}`,
-					`- 维护前上下文: schema ${maintenanceContext.schema.length} chars, index ${maintenanceContext.index.length} chars, recent log ${maintenanceContext.recentLog.length} chars`,
-				].join("\n"),
-			);
+			const linkedPages = result.wikiPages.filter((path) => path !== result.wikiPagePath);
 
 			return {
 				content: [
@@ -202,16 +110,21 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 						type: "text" as const,
 						text:
 							`资料已归档到 L2 Wiki。\n\n` +
-							`- ID: ${id}\n` +
+							`- ID: ${result.sourceId}\n` +
 							`- 标题: ${params.title}\n` +
-							`- 原始文件: ${rawPath}\n` +
-							`- Wiki 页面: ${wikiPagePath}\n` +
-							`- 自动维护: 新建 ${linkMaintenance.created.length} 个概念/实体页，更新 ${linkMaintenance.updated.length} 个\n` +
-							`- 标签: ${tags.join(", ") || "无"}\n\n` +
+							`- 原始文件: ${result.rawPath}\n` +
+							`- Wiki 页面: ${result.wikiPagePath}\n` +
+							`- 关联知识页: ${linkedPages.length}\n` +
+							`- 标签: ${(params.tags ?? []).join(", ") || "无"}\n\n` +
 							`Wiki 索引已更新。`,
 					},
 				],
-				details: { id, rawPath, wikiPagePath, linkedPages: linkMaintenance.pages },
+				details: {
+					id: result.sourceId,
+					rawPath: result.rawPath,
+					wikiPagePath: result.wikiPagePath,
+					linkedPages,
+				},
 			};
 		},
 	});
@@ -285,86 +198,5 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 		},
 	});
 
-	const addRelationTool = defineTool({
-		name: "l2_add_relation",
-		label: "Add L2 knowledge relation",
-		description:
-			"Deterministically add a concept/entity relation to an existing L2 source. " +
-			"Use this when the user explicitly asks to add, attach, link, or associate a specific knowledge point with an existing material/source. " +
-			"This updates the source-summary, the concept/entity page, and the manifest. It keeps the original raw material and SourceID and must not create a new material.",
-		parameters: Type.Object({
-			sourceId: Type.String({ description: "Existing L2 source id, for example l2src_xxxxxxxx." }),
-			title: Type.String({ description: "Knowledge point title to add, for example KMP 算法 or Segment Tree." }),
-			type: StringEnum(["concept", "entity"] as const, {
-				description: "Use concept for methods/ideas/skills, entity for concrete named projects/people/organizations/products.",
-			}),
-			description: Type.Optional(Type.String({ description: "Optional sentence explaining why this relation belongs to the source." })),
-		}),
-		async execute(_toolCallId, params) {
-			if (isEnabled && !isEnabled()) return l2DisabledResult() as any;
-			ensureL2Directories(l2DataDir);
-			const result = addL2SourceRelation(l2DataDir, params.sourceId, {
-				title: params.title,
-				type: params.type as "concept" | "entity",
-				description: params.description,
-			});
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text:
-							`Added knowledge relation to existing L2 source without creating a new material.\n\n` +
-							`- ID: ${result.sourceId}\n` +
-							`- Source summary: ${result.sourcePagePath}\n` +
-							`- Relation: ${result.relationTitle} (${result.relationType})\n` +
-							`- Relation page: ${result.relationPagePath}`,
-					},
-				],
-				details: result,
-			};
-		},
-	});
-
-	const removeRelationTool = defineTool({
-		name: "l2_remove_relation",
-		label: "Remove L2 knowledge relation",
-		description:
-			"Deterministically disconnect a concept/entity relation from an existing L2 source. " +
-			"Use this when the user explicitly asks to remove, detach, unlink, or disconnect a specific knowledge point from an existing material/source. " +
-			"This keeps the original raw material and SourceID. By default it does not delete the concept/entity page; set deleteOrphanPage only when the user explicitly wants orphan relation pages removed.",
-		parameters: Type.Object({
-			sourceId: Type.String({ description: "Existing L2 source id, for example l2src_xxxxxxxx." }),
-			title: Type.String({ description: "Knowledge point title to disconnect, for example KMP 算法 or Segment Tree." }),
-			type: StringEnum(["concept", "entity"] as const, {
-				description: "Use concept for methods/ideas/skills, entity for concrete named projects/people/organizations/products.",
-			}),
-			deleteOrphanPage: Type.Optional(Type.Boolean({ default: false, description: "Delete the relation page only if it becomes orphaned after disconnecting this source." })),
-		}),
-		async execute(_toolCallId, params) {
-			if (isEnabled && !isEnabled()) return l2DisabledResult() as any;
-			ensureL2Directories(l2DataDir);
-			const result = removeL2SourceRelation(l2DataDir, params.sourceId, {
-				title: params.title,
-				type: params.type as "concept" | "entity",
-				deleteOrphanPage: params.deleteOrphanPage ?? false,
-			});
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text:
-							`Removed knowledge relation from existing L2 source without deleting the material.\n\n` +
-							`- ID: ${result.sourceId}\n` +
-							`- Source summary: ${result.sourcePagePath}\n` +
-							`- Relation: ${result.relationTitle} (${result.relationType})\n` +
-							`- Relation page: ${result.relationPagePath}\n` +
-							`- Deleted orphan page: ${result.deletedOrphanPage ? "yes" : "no"}`,
-					},
-				],
-				details: result,
-			};
-		},
-	});
-
-	return [archiveTool, queryTool, regenerateTool, addRelationTool, removeRelationTool];
+	return [archiveTool, queryTool, regenerateTool];
 }

@@ -52,9 +52,8 @@ import {
 	syncManifestTagsForWikiPage,
 	updateWikiPageTags,
 	wikiPathsForTag,
-	type WikiPageTagSource,
 } from "./memory/l2/tag-index.js";
-import { archiveConversation } from "./memory/l2/conversation-archive-service.js";
+import type { WikiPageTagSource } from "./memory/l2/types.js";
 import { extractL2RawFile, listL2Sources, readRawTextPreview, regenerateL2Source } from "./memory/l2/sources-service.js";
 import {
 	archiveL2NotebookItem,
@@ -74,6 +73,7 @@ import {
 } from "./memory/l2/note-attachments-service.js";
 import { listNoteTemplates } from "./memory/l2/note-templates.js";
 import { normalizeMarkdownForMilkdown } from "./memory/l2/markdown-normalizer.js";
+import { uniqueUploadName } from "./memory/l2/l2-utils.js";
 import { loadProfile, saveProfile } from "./memory/learner/profile-store.js";
 import type { LearnerProfile, LearningGoal, KnowledgeState, Misconception, LearnerPreferences } from "./memory/learner/types.js";
 import { randomUUID } from "node:crypto";
@@ -736,40 +736,6 @@ function imagesFromContent(content: unknown): Array<{ previewUrl: string; mimeTy
 		}
 	}
 	return result;
-}
-
-function sanitizeUploadName(name: string): string {
-	const cleaned = name
-		.replace(/[/\\?%*:|"<>]/g, "-")
-		.replace(/\s+/g, " ")
-		.trim();
-	return cleaned || "upload";
-}
-
-function uploadExtension(fileName: string, mimeType: string): string {
-	const ext = extname(fileName);
-	if (ext) return ext;
-	if (mimeType === "application/pdf") return ".pdf";
-	if (mimeType.includes("wordprocessingml")) return ".docx";
-	if (mimeType.includes("spreadsheetml")) return ".xlsx";
-	if (mimeType.includes("presentationml")) return ".pptx";
-	if (mimeType === "text/markdown") return ".md";
-	if (mimeType.startsWith("image/")) return `.${mimeType.slice("image/".length).replace("jpeg", "jpg")}`;
-	if (mimeType.startsWith("text/")) return ".txt";
-	return ".bin";
-}
-
-function uniqueUploadName(dir: string, fileName: string, mimeType: string): string {
-	const safeName = sanitizeUploadName(fileName);
-	const ext = uploadExtension(safeName, mimeType);
-	const base = basename(safeName, ext).slice(0, 120) || "upload";
-	let candidate = `${base}${ext}`;
-	let index = 1;
-	while (existsSync(join(dir, candidate))) {
-		index += 1;
-		candidate = `${base} (${index})${ext}`;
-	}
-	return candidate;
 }
 
 function slugifySkillName(value: string): string {
@@ -3907,64 +3873,6 @@ const server = createServer(async (req, res) => {
 			} catch (err) {
 				logger.warn({ err }, "failed to upload note file");
 				const message = err instanceof Error ? err.message : "Upload failed";
-				json(res, 500, { error: message });
-			}
-			return;
-		}
-
-		if (method === "POST" && url === "/api/l2/conversations/archive") {
-			const body = (await readBody(req)) as Record<string, unknown>;
-			const sessionId = (
-				typeof body.SessionID === "string" ? body.SessionID :
-					typeof body.sessionId === "string" ? body.sessionId : ""
-			).trim();
-			const title = (
-				typeof body.Title === "string" ? body.Title :
-					typeof body.title === "string" ? body.title : ""
-			).trim();
-			const rawMessageIds = Array.isArray(body.MessageIDs)
-				? body.MessageIDs
-				: Array.isArray(body.messageIds)
-					? body.messageIds
-					: undefined;
-			const messageIds = rawMessageIds?.filter((id): id is string => typeof id === "string" && id.trim().length > 0);
-			const rawTags = Array.isArray(body.Tags) ? body.Tags : Array.isArray(body.tags) ? body.tags : undefined;
-			const tags = rawTags?.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0);
-			if (!sessionId) {
-				json(res, 400, { error: "Missing sessionId" });
-				return;
-			}
-			const sessionPath = sessionFileFromId(join(dataDir, "sessions"), sessionId);
-			if (!sessionPath || !existsSync(sessionPath)) {
-				json(res, 404, { error: "Session not found" });
-				return;
-			}
-			const parsed = parseSessionFile(sessionPath);
-			if (!parsed) {
-				json(res, 422, { error: "Unable to parse session" });
-				return;
-			}
-			try {
-				const runtimeSession = getSession();
-				const result = await archiveConversation(l2DataDir, {
-					sessionId,
-					title: title || parsed.summary.name,
-					tags,
-					messageIds,
-					messages: parsed.messages.map((message) => ({
-						id: message.id,
-						role: message.role,
-						content: message.content,
-						timestamp: message.timestamp,
-					})),
-					model: runtimeSession.model,
-					modelRegistry: runtimeSession.modelRegistry,
-				});
-				refreshL2TagIndex();
-				json(res, 201, result);
-			} catch (err) {
-				logger.warn({ err, sessionId }, "failed to archive conversation");
-				const message = err instanceof Error ? err.message : "Archive conversation failed";
 				json(res, 500, { error: message });
 			}
 			return;

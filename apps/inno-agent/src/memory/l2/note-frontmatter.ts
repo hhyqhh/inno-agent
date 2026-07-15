@@ -1,18 +1,5 @@
-export type NoteStatus = "draft" | "indexed" | "outdated" | "error";
-export type MeetingStatus = "connecting" | "recording" | "paused" | "finishing" | "summarizing" | "completed" | "no_speech" | "failed" | "interrupted";
-
-export interface NoteFrontmatter {
-	note_id: string;
-	title: string;
-	tags: string[];
-	record_date: string;
-	status: NoteStatus;
-	meeting_id?: string;
-	meeting_status?: MeetingStatus;
-	source_id?: string;
-	created: string;
-	updated: string;
-}
+import type { MeetingStatus, NoteFrontmatter, NoteStatus } from "./types.js";
+import { quoteYamlScalar, splitTagText } from "./l2-utils.js";
 
 const FRONTMATTER_PATTERN = /^(?:\uFEFF)?---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 
@@ -38,10 +25,7 @@ function parseTagList(value: string): string[] {
 			.map((tag) => parseScalar(tag.trim()))
 			.filter(Boolean);
 	}
-	return trimmed
-		.split(/[\s,\uFF0C;\uFF1B\u3001|]+/)
-		.map((tag) => tag.trim())
-		.filter(Boolean);
+	return splitTagText(trimmed);
 }
 
 export function getTodayRecordDate(): string {
@@ -144,36 +128,29 @@ export function parseNoteFrontmatter(content: string): { frontmatter: NoteFrontm
 	};
 }
 
-function yamlQuote(value: string): string {
-	if (/[:\[\]{},#&*!|>'"%@`\n]/.test(value) || value.trim() !== value || value === "") {
-		return JSON.stringify(value);
-	}
-	return value;
-}
-
 export function serializeNoteFile(frontmatter: NoteFrontmatter, body: string): string {
 	const lines = [
 		"---",
-		`note_id: ${yamlQuote(frontmatter.note_id)}`,
-		`title: ${yamlQuote(frontmatter.title)}`,
+		`note_id: ${quoteYamlScalar(frontmatter.note_id)}`,
+		`title: ${quoteYamlScalar(frontmatter.title)}`,
 	];
 	if (frontmatter.tags.length > 0) {
 		lines.push("tags:");
 		for (const tag of frontmatter.tags) {
-			lines.push(`  - ${yamlQuote(tag)}`);
+			lines.push(`  - ${quoteYamlScalar(tag)}`);
 		}
 	} else {
 		lines.push("tags: []");
 	}
-	lines.push(`record_date: ${yamlQuote(frontmatter.record_date)}`);
+	lines.push(`record_date: ${quoteYamlScalar(frontmatter.record_date)}`);
 	lines.push(`status: ${frontmatter.status}`);
-	if (frontmatter.meeting_id) lines.push(`meeting_id: ${yamlQuote(frontmatter.meeting_id)}`);
+	if (frontmatter.meeting_id) lines.push(`meeting_id: ${quoteYamlScalar(frontmatter.meeting_id)}`);
 	if (frontmatter.meeting_status) lines.push(`meeting_status: ${frontmatter.meeting_status}`);
 	if (frontmatter.source_id) {
-		lines.push(`source_id: ${yamlQuote(frontmatter.source_id)}`);
+		lines.push(`source_id: ${quoteYamlScalar(frontmatter.source_id)}`);
 	}
-	lines.push(`created: ${yamlQuote(frontmatter.created)}`);
-	lines.push(`updated: ${yamlQuote(frontmatter.updated)}`);
+	lines.push(`created: ${quoteYamlScalar(frontmatter.created)}`);
+	lines.push(`updated: ${quoteYamlScalar(frontmatter.updated)}`);
 	lines.push("---");
 	const trimmedBody = body.replace(/^\n/, "");
 	return `${lines.join("\n")}\n${trimmedBody}`;

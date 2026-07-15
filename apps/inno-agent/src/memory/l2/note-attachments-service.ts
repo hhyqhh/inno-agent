@@ -1,24 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { join } from "node:path";
 
 import { readJson, writeJson, readText } from "../../storage/file-store.js";
 import { parseNoteFrontmatter } from "./note-frontmatter.js";
-
-export type NoteAttachmentStatus = "uploaded" | "extracting" | "extracted" | "indexed" | "error";
-
-export interface NoteAttachmentRecord {
-	id: string;
-	noteRawPath: string;
-	noteId: string;
-	fileName: string;
-	mimeType: string;
-	size: number;
-	filePath: string;
-	status: NoteAttachmentStatus;
-	createdAt: string;
-	updatedAt: string;
-}
+import type { NoteAttachmentRecord, NoteAttachmentStatus } from "./types.js";
+import { uniqueUploadName } from "./l2-utils.js";
 
 const INDEX_FILE = "note-attachments.json";
 
@@ -36,40 +23,6 @@ function writeAttachmentIndex(l2DataDir: string, records: NoteAttachmentRecord[]
 
 function normalizeNoteRawPath(rawPath: string): string {
 	return rawPath.replace(/\\/g, "/");
-}
-
-function sanitizeAttachmentName(name: string): string {
-	const cleaned = name
-		.replace(/[/\\?%*:|"<>]/g, "-")
-		.replace(/\s+/g, " ")
-		.trim();
-	return cleaned || "attachment";
-}
-
-function attachmentExtension(fileName: string, mimeType: string): string {
-	const ext = extname(fileName);
-	if (ext) return ext;
-	if (mimeType === "application/pdf") return ".pdf";
-	if (mimeType.includes("wordprocessingml")) return ".docx";
-	if (mimeType.includes("spreadsheetml")) return ".xlsx";
-	if (mimeType.includes("presentationml")) return ".pptx";
-	if (mimeType === "text/markdown") return ".md";
-	if (mimeType.startsWith("image/")) return `.${mimeType.slice("image/".length).replace("jpeg", "jpg")}`;
-	if (mimeType.startsWith("text/")) return ".txt";
-	return ".bin";
-}
-
-function uniqueAttachmentName(dir: string, fileName: string, mimeType: string): string {
-	const safeName = sanitizeAttachmentName(fileName);
-	const ext = attachmentExtension(safeName, mimeType);
-	const base = basename(safeName, ext).slice(0, 120) || "attachment";
-	let candidate = `${base}${ext}`;
-	let index = 1;
-	while (existsSync(join(dir, candidate))) {
-		index += 1;
-		candidate = `${base} (${index})${ext}`;
-	}
-	return candidate;
 }
 
 export function listNoteAttachments(l2DataDir: string, noteRawPath: string): NoteAttachmentRecord[] {
@@ -116,7 +69,7 @@ export function uploadNoteAttachment(
 	const attachmentId = `att_${randomUUID().slice(0, 8)}`;
 	const attachmentDir = join(l2DataDir, "raw", "notes", "attachments", frontmatter.note_id);
 	mkdirSync(attachmentDir, { recursive: true });
-	const storedName = uniqueAttachmentName(attachmentDir, options.fileName, options.mimeType);
+	const storedName = uniqueUploadName(attachmentDir, options.fileName, options.mimeType, "attachment");
 	const absPath = join(attachmentDir, storedName);
 	const data = Buffer.from(options.dataBase64, "base64");
 	writeFileSync(absPath, data);

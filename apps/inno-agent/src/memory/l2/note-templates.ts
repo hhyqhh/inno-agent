@@ -1,17 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-
-export interface NoteTemplateDefinition {
-	id: string;
-	label: string;
-	labelEn: string;
-	description: string;
-	descriptionEn: string;
-	tags: string[];
-	body: string;
-	defaultTitle: string;
-	hidden: boolean;
-}
+import type { NoteTemplateDefinition } from "./types.js";
+import { splitTagText } from "./l2-utils.js";
 
 function readAttribute(lines: string[], keys: string[]): string {
 	for (const line of lines) {
@@ -23,11 +13,7 @@ function readAttribute(lines: string[], keys: string[]): string {
 }
 
 function parseTagList(value: string): string[] {
-	if (!value.trim()) return [];
-	return value
-		.split(/[\s,\uFF0C;\uFF1B\u3001|]+/)
-		.map((tag) => tag.trim())
-		.filter(Boolean);
+	return splitTagText(value);
 }
 
 function extractFirstHeading(body: string): string | null {

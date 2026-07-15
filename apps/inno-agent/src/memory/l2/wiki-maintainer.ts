@@ -4,6 +4,7 @@ import { ensureDir, writeText, readText, appendText, fileExists } from "../../st
 import type { WikiPageFrontmatter, WikiPageType, ManifestEntry } from "./types.js";
 import { logger } from "../../logger.js";
 import { normalizeMarkdownForMilkdown } from "./markdown-normalizer.js";
+import { normalizeTagList, quoteYamlScalar, slugifyTitle } from "./l2-utils.js";
 
 const L2_SCHEMA_VERSION = "1.0";
 
@@ -25,24 +26,15 @@ const TYPE_DIR_MAP: Record<WikiPageType, string> = {
 // Frontmatter serialization — values are JSON-quoted to avoid YAML ambiguity
 // ============================================================================
 
-/** Quote a scalar for safe YAML output. */
-function yamlQuote(v: string): string {
-	// If value contains characters that could cause YAML parsing issues, quote it
-	if (/[:\[\]{},#&*!|>'"%@`\n]/.test(v) || v.trim() !== v || v === "") {
-		return JSON.stringify(v);
-	}
-	return v;
-}
-
 export function serializeFrontmatter(fm: WikiPageFrontmatter): string {
 	const lines = [
 		"---",
-		`title: ${yamlQuote(fm.title)}`,
+		`title: ${quoteYamlScalar(fm.title)}`,
 		`created: ${fm.created || fm.updated}`,
 		`type: ${fm.type}`,
-		`tags: [${fm.tags.map((t) => yamlQuote(t)).join(", ")}]`,
+		`tags: [${fm.tags.map((t) => quoteYamlScalar(t)).join(", ")}]`,
 		"sources:",
-		...fm.sources.map((s) => `  - ${yamlQuote(s)}`),
+		...fm.sources.map((s) => `  - ${quoteYamlScalar(s)}`),
 		"source_ids:",
 		...fm.source_ids.map((id) => `  - ${id}`),
 		`updated: ${fm.updated}`,
@@ -50,7 +42,7 @@ export function serializeFrontmatter(fm: WikiPageFrontmatter): string {
 		`confidence: ${fm.confidence}`,
 		...(fm.contested !== undefined ? [`contested: ${fm.contested ? "true" : "false"}`] : []),
 		...(fm.contradictions && fm.contradictions.length > 0
-			? ["contradictions:", ...fm.contradictions.map((id) => `  - ${yamlQuote(id)}`)]
+			? ["contradictions:", ...fm.contradictions.map((id) => `  - ${quoteYamlScalar(id)}`)]
 			: []),
 		"---",
 	];
@@ -277,11 +269,7 @@ export function readMaintenanceContext(l2DataDir: string): { schema: string; ind
 // ============================================================================
 
 function sourcePageFilename(title: string, id: string): string {
-	const slug = title
-		.toLowerCase()
-		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.slice(0, 50);
+	const slug = slugifyTitle(title, 50, "source");
 	return `${slug}-${id.slice(-6)}.md`;
 }
 
@@ -308,7 +296,7 @@ export function createSourcePage(
 		title: entry.title,
 		created: new Date().toISOString().slice(0, 10),
 		type: "source-summary",
-		tags: mergeUniqueTags(["source-summary"], entry.tags),
+		tags: normalizeTagList(["source-summary", ...entry.tags]),
 		sources: [entry.rawPath],
 		source_ids: [entry.id],
 		updated: new Date().toISOString().slice(0, 10),
@@ -431,22 +419,6 @@ export function ensureL2Directories(l2DataDir: string): void {
 		ensureDir(join(l2DataDir, dir));
 	}
 	ensureNavigationFiles(l2DataDir);
-}
-
-function mergeUniqueTags(...tagGroups: string[][]): string[] {
-	const seen = new Set<string>();
-	const tags: string[] = [];
-	for (const group of tagGroups) {
-		for (const rawTag of group) {
-			for (const tag of rawTag.split(/[\s,\uFF0C;\uFF1B\u3001|]+/)) {
-			const trimmed = tag.trim();
-			if (!trimmed || seen.has(trimmed)) continue;
-			seen.add(trimmed);
-			tags.push(trimmed);
-			}
-		}
-	}
-	return tags;
 }
 
 function listWikiPagesForIndex(

@@ -19,9 +19,6 @@ import {
 	parseNoteFrontmatter,
 	recordDateFromIso,
 	serializeNoteFile,
-	type NoteFrontmatter,
-	type NoteStatus,
-	type MeetingStatus,
 } from "./note-frontmatter.js";
 import { resolveNoteTemplateContent } from "./note-templates.js";
 import {
@@ -29,9 +26,23 @@ import {
 	inferNotebookType,
 	primaryWikiPath,
 	scanOrphans,
-	type ArchiveRawResult,
 } from "./sources-service.js";
-import type { ManifestEntry, ManifestStatus, RawSourceType, SelectedScope } from "./types.js";
+import type {
+	ArchiveRawResult,
+	DeleteNotebookItemResult,
+	ManifestEntry,
+	MeetingStatus,
+	NoteAttachmentRecord,
+	NoteContentDto,
+	NoteFrontmatter,
+	NoteStatus,
+	NoteSummaryDto,
+	NotesListResponse,
+	NotebookType,
+	SaveRawMarkdownResult,
+	SelectedScope,
+	UnarchiveResult,
+} from "./types.js";
 import {
 	appendLog,
 	createSourcePage,
@@ -45,16 +56,13 @@ import { summarizeContent } from "./summarizer.js";
 import { maintainLinkedWikiPages, readSourceKnowledgeRelations } from "./wiki-linker.js";
 import { isSupportedFormat, parseDocument } from "./document-parser.js";
 import { logger } from "../../logger.js";
+import { slugifyTitle, uniqueUploadName } from "./l2-utils.js";
+import { detachSourceFromWikiPage } from "./wiki-source-references.js";
 import {
 	deleteAttachmentsForNote,
 	listNoteAttachments,
 	updateNoteAttachmentStatus,
-	type NoteAttachmentRecord,
 } from "./note-attachments-service.js";
-
-export type NotebookItemKind = "markdown" | "orphan" | "archived";
-export type NotebookType = "conversation" | "file" | "note";
-export type NotebookItemStatus = NoteStatus | ManifestStatus | "uploaded";
 
 const TEXT_ATTACHMENT_EXTENSIONS = new Set([
 	".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".xml", ".yaml", ".yml",
@@ -68,87 +76,8 @@ function isTextAttachment(attachment: NoteAttachmentRecord): boolean {
 		TEXT_ATTACHMENT_EXTENSIONS.has(extname(attachment.fileName).toLowerCase());
 }
 
-export interface NoteSummaryDto {
-	noteId: string;
-	rawPath: string;
-	title: string;
-	tags: string[];
-	notebookType: NotebookType;
-	contentType: RawSourceType;
-	status: NotebookItemStatus;
-	kind: NotebookItemKind;
-	wikiPagePath?: string;
-	wikiPages?: string[];
-	origin?: ManifestEntry["source"]["origin"];
-	extractedPath?: string;
-	size?: number;
-	createdAt: string;
-	updatedAt: string;
-	meetingId?: string;
-	meetingStatus?: MeetingStatus;
-}
-
-export interface NoteContentDto {
-	rawPath: string;
-	noteId: string;
-	title: string;
-	tags: string[];
-	recordDate: string;
-	status: NoteStatus;
-	sourceId?: string;
-	content: string;
-	attachments: NoteAttachmentRecord[];
-	createdAt: string;
-	updatedAt: string;
-	meetingId?: string;
-	meetingStatus?: MeetingStatus;
-}
-
-export interface NotesListResponse {
-	notes: NoteSummaryDto[];
-}
-
 function noteFileName(title: string, noteId: string): string {
-	const slug = title
-		.toLowerCase()
-		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.slice(0, 40);
-	return `${slug || "note"}-${noteId.slice(-8)}.md`;
-}
-
-function sanitizeUploadName(name: string): string {
-	const cleaned = name
-		.replace(/[/\\?%*:|"<>]/g, "-")
-		.replace(/\s+/g, " ")
-		.trim();
-	return cleaned || "upload";
-}
-
-function uploadExtension(fileName: string, mimeType: string): string {
-	const ext = extname(fileName);
-	if (ext) return ext;
-	if (mimeType === "application/pdf") return ".pdf";
-	if (mimeType.includes("wordprocessingml")) return ".docx";
-	if (mimeType.includes("spreadsheetml")) return ".xlsx";
-	if (mimeType.includes("presentationml")) return ".pptx";
-	if (mimeType === "text/markdown") return ".md";
-	if (mimeType.startsWith("image/")) return `.${mimeType.slice("image/".length).replace("jpeg", "jpg")}`;
-	if (mimeType.startsWith("text/")) return ".txt";
-	return ".bin";
-}
-
-function uniqueUploadName(dir: string, fileName: string, mimeType: string): string {
-	const safeName = sanitizeUploadName(fileName);
-	const ext = uploadExtension(safeName, mimeType);
-	const base = basename(safeName, ext).slice(0, 120) || "upload";
-	let candidate = `${base}${ext}`;
-	let index = 1;
-	while (existsSync(join(dir, candidate))) {
-		index += 1;
-		candidate = `${base} (${index})${ext}`;
-	}
-	return candidate;
+	return `${slugifyTitle(title, 40, "note")}-${noteId.slice(-8)}.md`;
 }
 
 function readNoteFile(l2DataDir: string, rawPath: string): { absPath: string; frontmatter: NoteFrontmatter; body: string } {
@@ -287,7 +216,7 @@ export function uploadL2NoteFile(
 	ensureL2Directories(l2DataDir);
 	const dir = join(l2DataDir, "raw", "uploads");
 	mkdirSync(dir, { recursive: true });
-	const outputName = uniqueUploadName(dir, options.fileName, options.mimeType);
+	const outputName = uniqueUploadName(dir, options.fileName, options.mimeType, "upload");
 	const outputPath = join(dir, outputName);
 	const data = Buffer.from(options.dataBase64, "base64");
 	writeFileSync(outputPath, data);
@@ -619,16 +548,6 @@ export async function archiveL2Note(
 	}
 }
 
-export interface DeleteNotebookItemResult {
-	rawPath: string;
-	title: string;
-}
-
-export interface SaveRawMarkdownResult {
-	rawPath: string;
-	status: ManifestStatus | "uploaded";
-}
-
 export function saveL2RawMarkdownContent(
 	l2DataDir: string,
 	rawPath: string,
@@ -736,66 +655,6 @@ export function deleteL2NotebookItem(l2DataDir: string, rawPath: string): Delete
 	return { rawPath: normalizedPath, title };
 }
 
-export interface UnarchiveResult {
-	rawPath: string;
-	title: string;
-	removedWikiPages: string[];
-	status: "draft" | "uploaded";
-}
-
-/**
- * Remove a source's reference (source_id + source paths) from a linked wiki
- * page. If the page was extracted solely from this source (its `source_ids`
- * becomes empty), the whole page is deleted — the knowledge point came from
- * nowhere else, so unarchiving must take it back too. Pages that aggregate
- * other sources are kept with just this reference detached.
- */
-function detachSourceFromWikiPage(
-	l2DataDir: string,
-	wikiPath: string,
-	sourceId: string,
-	rawPath: string,
-	sourcePagePath: string | undefined,
-): "deleted" | "kept" | "unchanged" {
-	const absPath = join(l2DataDir, wikiPath);
-	if (!existsSync(absPath)) return "unchanged";
-	try {
-		const { frontmatter, body } = parseFrontmatter(readText(absPath));
-		if (!frontmatter) return "unchanged";
-
-		const referencesSource = frontmatter.source_ids.includes(sourceId);
-		const nextSourceIds = frontmatter.source_ids.filter((id) => id !== sourceId);
-		if (referencesSource && nextSourceIds.length === 0) {
-			unlinkSync(absPath);
-			return "deleted";
-		}
-
-		const nextSources = frontmatter.sources.filter((s) => s !== rawPath && s !== sourcePagePath);
-		let nextBody = body;
-		if (sourcePagePath) {
-			nextBody = body
-				.split("\n")
-				.filter((line) => !(line.trim().startsWith("-") && line.includes(sourcePagePath)))
-				.join("\n");
-		}
-		if (
-			!referencesSource &&
-			nextSources.length === frontmatter.sources.length &&
-			nextBody === body
-		) {
-			return "unchanged";
-		}
-		frontmatter.source_ids = nextSourceIds;
-		frontmatter.sources = nextSources;
-		frontmatter.updated = new Date().toISOString().slice(0, 10);
-		writeText(absPath, `${serializeFrontmatter(frontmatter)}\n${nextBody.replace(/^\n/, "")}`);
-		return "kept";
-	} catch (err) {
-		logger.warn({ err, wikiPath }, "failed to detach source from wiki page");
-		return "unchanged";
-	}
-}
-
 function wikiPathExists(l2DataDir: string, wikiPath: string): boolean {
 	const normalized = wikiPath.replace(/\\/g, "/");
 	return existsSync(join(l2DataDir, normalized));
@@ -858,7 +717,11 @@ export function unarchiveL2NotebookItem(l2DataDir: string, rawPath: string): Una
 				removedWikiPages.push(wikiPath);
 			}
 		} else {
-			const outcome = detachSourceFromWikiPage(l2DataDir, wikiPath, entry.id, normalizedPath, sourcePage);
+			const outcome = detachSourceFromWikiPage(l2DataDir, wikiPath, {
+				sourceId: entry.id,
+				rawPath: normalizedPath,
+				sourcePagePath: sourcePage,
+			});
 			if (outcome === "deleted") removedWikiPages.push(wikiPath);
 		}
 	}

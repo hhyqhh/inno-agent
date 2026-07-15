@@ -16,7 +16,7 @@ import {
 	removeWikiPathFromManifest,
 	updateManifestEntry,
 } from "./manifest-store.js";
-import { saveRaw, saveRawFile } from "./raw-store.js";
+import { saveRawFile } from "./raw-store.js";
 import { normalizeTagList, slugifyTitle } from "./l2-utils.js";
 import { detachSourceFromWikiPage } from "./wiki-source-references.js";
 import {
@@ -34,7 +34,6 @@ import type {
 	AddSourceRelationResult,
 	ArchiveRawResult,
 	ExtractRawFileResult,
-	IngestL2SourceResult,
 	ManifestEntry,
 	ManifestStatus,
 	OrphanRawFileDto,
@@ -42,6 +41,7 @@ import type {
 	RegenerateSourceResult,
 	RemoveSourceRelationResult,
 	SelectedScope,
+	StageL2FileResult,
 	SourceSummaryDto,
 	SourcesListResponse,
 	WikiPageType,
@@ -501,46 +501,27 @@ export async function extractL2RawFile(
 }
 
 /**
- * Ingest and archive a new L2 source through the same stateful pipeline used by
- * uploaded notebook files. Tool adapters should delegate here instead of
- * creating manifest and wiki records themselves.
+ * Copy a binary source into the Notebook and register it as uploaded.
+ * This deliberately stops before extraction and archiving so new knowledge
+ * always has a reviewable pending state.
  */
-export async function ingestL2Source(
+export async function stageL2File(
 	l2DataDir: string,
 	options: {
 		title: string;
-		sourceType: RawSourceType;
-		content?: string;
-		filePath?: string;
+		sourceType: Extract<RawSourceType, "pdf" | "word" | "image">;
+		filePath: string;
 		tags?: string[];
 		origin?: ManifestEntry["source"]["origin"];
 		url?: string;
 		force?: boolean;
-		model?: Model<any>;
-		modelRegistry?: ModelRegistry;
 		signal?: AbortSignal;
 	},
-): Promise<IngestL2SourceResult> {
+): Promise<StageL2FileResult> {
 	options.signal?.throwIfAborted();
 	ensureL2Directories(l2DataDir);
-
-	const isFileType = options.sourceType === "pdf" || options.sourceType === "word" || options.sourceType === "image";
-	let content: string;
-	let pageCount: number | undefined;
-	if (isFileType) {
-		if (!options.filePath) {
-			throw new Error("filePath is required for PDF, Word, and image sources.");
-		}
-		const parsed = await parseDocument(options.filePath);
-		content = parsed.text;
-		pageCount = parsed.pageCount;
-	} else {
-		if (options.content === undefined) {
-			throw new Error("content is required for text sources.");
-		}
-		content = options.content;
-	}
-
+	const parsed = await parseDocument(options.filePath);
+	const content = parsed.text;
 	if (!content.trim()) {
 		throw new DocumentParseError("无法从资料中提取有效文本", "EMPTY_RESULT");
 	}
@@ -550,27 +531,25 @@ export async function ingestL2Source(
 		if (existing) return { duplicate: true, existing };
 	}
 
-	const rawPath = isFileType
-		? saveRawFile(l2DataDir, options.title, options.filePath!, options.sourceType)
-		: saveRaw(l2DataDir, options.title, content, options.sourceType, options.url);
-
-	await extractL2RawFile(l2DataDir, rawPath, {
-		title: options.title,
-		tags: options.tags,
-		extractedContent: content,
-		extractedPageCount: pageCount,
-		origin: options.origin,
-		url: options.url,
-		signal: options.signal,
-	});
-	const archived = await archiveRawFile(l2DataDir, rawPath, {
-		title: options.title,
-		tags: options.tags,
-		model: options.model,
-		modelRegistry: options.modelRegistry,
-		signal: options.signal,
-	});
-	return { duplicate: false, ...archived };
+	const rawPath = saveRawFile(l2DataDir, options.title, options.filePath, options.sourceType).replace(/\\/g, "/");
+	const entry = createUploadedEntry(
+		rawPath,
+		options.sourceType,
+		options.title,
+		options.tags,
+		undefined,
+		options.origin,
+		options.url,
+	);
+	entry.contentHash = contentHash;
+	appendManifest(l2DataDir, entry);
+	return {
+		duplicate: false,
+		sourceId: entry.id,
+		title: entry.title,
+		rawPath,
+		status: "uploaded",
+	};
 }
 
 export async function archiveRawFile(

@@ -348,7 +348,10 @@ export const chatStore = new ChatStoreImpl();
  * so the workspace tabs reflect agent-side writes in real time.
  */
 function mutatesWiki(toolName: string): boolean {
-	return toolName === "l2_archive" || toolName === "l2_link_pages" || toolName.startsWith("wiki_");
+	return toolName === "l2_save_draft"
+		|| toolName === "l2_archive_draft"
+		|| toolName === "l2_link_pages"
+		|| toolName.startsWith("wiki_");
 }
 
 /**

@@ -198,11 +198,11 @@ export function createInnoExtension(
 		}
 
 		// 4. Register L2 Wiki memory tools (gated on config.memory.l2Enabled)
-		const l2Tools = createL2Tools(paths.l2DataDir, isL2Enabled);
+		const l2Tools = createL2Tools(paths.l2DataDir, paths.codeDir, isL2Enabled);
 		for (const tool of l2Tools) {
 			pi.registerTool(tool);
 		}
-		for (const tool of createNoteTools(paths.l2DataDir, paths.codeDir, isL2Enabled)) {
+		for (const tool of createNoteTools(paths.l2DataDir, paths.codeDir, isL2Enabled, deps?.getCurrentSessionId)) {
 			pi.registerTool(tool);
 		}
 

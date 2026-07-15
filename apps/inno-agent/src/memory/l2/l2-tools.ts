@@ -7,7 +7,8 @@ import type { RawSourceType } from "./types.js";
 import { appendLog, ensureL2Directories } from "./wiki-maintainer.js";
 import { queryWiki } from "./wiki-query.js";
 import { DocumentParseError } from "./document-parser.js";
-import { ingestL2Source, regenerateL2Source } from "./sources-service.js";
+import { stageL2File, regenerateL2Source } from "./sources-service.js";
+import { archiveL2NotebookItem, createL2Note } from "./notes-service.js";
 import { logger } from "../../logger.js";
 
 /**
@@ -15,24 +16,24 @@ import { logger } from "../../logger.js";
  * When `isEnabled` is provided and returns false, the archive/query tools
  * short-circuit to a disabled notice without touching the knowledge base.
  */
-export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): ToolDefinition[] {
+export function createL2Tools(l2DataDir: string, codeDir: string, isEnabled?: () => boolean): ToolDefinition[] {
 	const l2DisabledResult = () => ({
 		content: [{ type: "text" as const, text: "L2 Wiki 知识库已在设置中关闭，当前不归档也不检索知识库内容。" }],
-		details: { disabled: true },
+		details: { disabled: true } as Record<string, unknown>,
 	});
 
-	// ---- Tool 1: l2_archive ----
-	const archiveTool = defineTool({
-		name: "l2_archive",
-		label: "归档到 L2 Wiki",
+	// ---- Tool 1: l2_save_draft ----
+	const saveDraftTool = defineTool({
+		name: "l2_save_draft",
+		label: "保存为 L2 草稿",
 		description:
-			"将学习资料归档到 L2 Wiki 知识库。只有用户明确说「归档」「保存到知识库」「帮我记下来」「加入知识库」等表达长期保存意图时才调用；不要因内容有价值或用户仅要求学习/总结就主动调用。" +
+			"将用户明确要求加入知识库的学习资料先保存到 Notebook 草稿区，不生成 Wiki 页面。新增知识必须先调用本工具，不得跳过草稿直接归档。" +
 			"支持文本(text)、Markdown(markdown)、PDF(pdf)、Word 文档(word)、图片(image)。" +
 			"文本类内容传 content 参数；文件类内容传 filePath 参数。",
 		parameters: Type.Object({
 			title: Type.String({ description: "资料标题" }),
-			content: Type.Optional(Type.String({ description: "要归档的文本内容（与 filePath 二选一）" })),
-			filePath: Type.Optional(Type.String({ description: "要归档的文件路径（PDF/Word/Image），与 content 二选一" })),
+			content: Type.Optional(Type.String({ description: "要保存为草稿的文本内容（与 filePath 二选一）" })),
+			filePath: Type.Optional(Type.String({ description: "要保存到待处理区的文件路径（PDF/Word/Image），与 content 二选一" })),
 			sourceType: StringEnum(["text", "markdown", "pdf", "word", "image"] as const, {
 				description: "资料类型：text（纯文本）、markdown、pdf、word、image",
 			}),
@@ -43,9 +44,9 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 				}),
 			),
 			url: Type.Optional(Type.String({ description: "来源 URL（网页、论文链接等）" })),
-			force: Type.Optional(Type.Boolean({ description: "为 true 时跳过重复检查，强制归档" })),
+			force: Type.Optional(Type.Boolean({ description: "文件为 true 时跳过重复检查，强制创建待处理副本" })),
 		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, _signal) {
 			if (isEnabled && !isEnabled()) return l2DisabledResult();
 			const sourceType = params.sourceType as RawSourceType;
 			const isFileType = sourceType === "pdf" || sourceType === "word" || sourceType === "image";
@@ -56,28 +57,46 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 				};
 			}
 
+			if (!isFileType) {
+				const note = createL2Note(l2DataDir, codeDir, {
+					title: params.title,
+					tags: params.tags,
+					content: params.content,
+				});
+				return {
+					content: [{
+						type: "text" as const,
+						text:
+							"资料已保存为 Notebook 草稿，尚未归档到 Wiki。\n\n" +
+							"- ID: " + note.noteId + "\n" +
+							"- 标题: " + note.title + "\n" +
+							"- 草稿路径: " + note.rawPath + "\n" +
+							"- 状态: " + note.status + "\n\n" +
+							"请先审阅或编辑；只有再次明确要求归档该草稿时才会生成 Wiki 页面。",
+					}],
+					details: { id: note.noteId, rawPath: note.rawPath, status: note.status },
+				};
+			}
+
 			const workspaceDir = process.env.INNO_WORKSPACE_DIR || process.cwd();
-			const filePath = params.filePath
-				? (isAbsolute(params.filePath) ? params.filePath : resolve(workspaceDir, params.filePath))
-				: undefined;
+			const filePath = isAbsolute(params.filePath!)
+				? params.filePath!
+				: resolve(workspaceDir, params.filePath!);
 			let result;
 			try {
-				result = await ingestL2Source(l2DataDir, {
+				result = await stageL2File(l2DataDir, {
 					title: params.title,
-					sourceType,
-					content: params.content,
+					sourceType: sourceType as Extract<RawSourceType, "pdf" | "word" | "image">,
 					filePath,
 					tags: params.tags,
 					origin: params.origin,
 					url: params.url,
 					force: params.force,
-					model: ctx.model,
-					modelRegistry: ctx.modelRegistry,
 					signal: _signal,
 				});
 			} catch (err) {
 				if (err instanceof DocumentParseError) {
-					logger.warn({ err, filePath }, "l2_archive: failed to parse document");
+					logger.warn({ err, filePath }, "l2_save_draft: failed to parse document");
 					return {
 						content: [{ type: "text" as const, text: `文件解析失败: ${err.message}` }],
 						details: { error: err.code },
@@ -92,44 +111,74 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 					content: [{
 						type: "text" as const,
 						text:
-							`该内容已归档，无需重复保存。\n\n` +
+							`该文件内容已存在，无需重复保存。\n\n` +
 							`- ID: ${existing.id}\n` +
 							`- 标题: ${existing.title}\n` +
-							`- Wiki 页面: ${existing.wikiPages.join(", ") || "无"}\n\n` +
-							`如需强制归档，请设置 force: true。`,
+							`- 状态: ${existing.status}\n` +
+							`- 路径: ${existing.rawPath}\n\n` +
+							`如需创建待处理副本，请设置 force: true。`,
 					}],
 					details: { id: existing.id, duplicate: true },
 				};
 			}
 
-			const linkedPages = result.wikiPages.filter((path) => path !== result.wikiPagePath);
-
 			return {
-				content: [
-					{
-						type: "text" as const,
-						text:
-							`资料已归档到 L2 Wiki。\n\n` +
-							`- ID: ${result.sourceId}\n` +
-							`- 标题: ${params.title}\n` +
-							`- 原始文件: ${result.rawPath}\n` +
-							`- Wiki 页面: ${result.wikiPagePath}\n` +
-							`- 关联知识页: ${linkedPages.length}\n` +
-							`- 标签: ${(params.tags ?? []).join(", ") || "无"}\n\n` +
-							`Wiki 索引已更新。`,
-					},
-				],
+				content: [{
+					type: "text" as const,
+					text:
+						`文件已保存到 Notebook 待处理区，尚未归档到 Wiki。\n\n` +
+						`- ID: ${result.sourceId}\n` +
+						`- 标题: ${result.title}\n` +
+						`- 文件路径: ${result.rawPath}\n` +
+						`- 状态: ${result.status}\n\n` +
+						`只有再次明确要求归档该文件时才会生成 Wiki 页面。`,
+				}],
 				details: {
 					id: result.sourceId,
 					rawPath: result.rawPath,
-					wikiPagePath: result.wikiPagePath,
-					linkedPages,
+					status: result.status,
 				},
 			};
 		},
 	});
 
-	// ---- Tool 2: l2_query ----
+	// ---- Tool 2: l2_archive_draft ----
+	const archiveDraftTool = defineTool({
+		name: "l2_archive_draft",
+		label: "归档 L2 草稿",
+		description:
+			"将 Notebook 中已经存在的草稿或待处理文件归档为 L2 Wiki 页面。" +
+			"只有用户在草稿已创建后，再次明确要求归档该草稿时才调用；rawPath 必须来自 l2_save_draft 或 Notebook。",
+		parameters: Type.Object({
+			rawPath: Type.String({ description: "Notebook 草稿或待处理文件的相对路径，例如 raw/notes/xxx.md" }),
+			title: Type.Optional(Type.String({ description: "归档标题；省略时使用草稿标题" })),
+			tags: Type.Optional(Type.Array(Type.String(), { description: "归档标签；省略时使用草稿标签" })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (isEnabled && !isEnabled()) return l2DisabledResult();
+			const result = await archiveL2NotebookItem(l2DataDir, params.rawPath, {
+				title: params.title,
+				tags: params.tags,
+				model: ctx.model,
+				modelRegistry: ctx.modelRegistry,
+				signal: _signal,
+			});
+			return {
+				content: [{
+					type: "text" as const,
+					text:
+						`草稿已归档到 L2 Wiki。\n\n` +
+						`- ID: ${result.sourceId}\n` +
+						`- 标题: ${result.title}\n` +
+						`- 原始内容: ${result.rawPath}\n` +
+						`- Wiki 页面: ${result.wikiPagePath}`,
+				}],
+				details: result,
+			};
+		},
+	});
+
+	// ---- Tool 3: l2_query ----
 	const queryTool = defineTool({
 		name: "l2_query",
 		label: "查询 L2 Wiki",
@@ -198,5 +247,5 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 		},
 	});
 
-	return [archiveTool, queryTool, regenerateTool];
+	return [saveDraftTool, archiveDraftTool, queryTool, regenerateTool];
 }

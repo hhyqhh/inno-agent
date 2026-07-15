@@ -29,6 +29,7 @@ import {
 } from "./sources-service.js";
 import type {
 	ArchiveRawResult,
+	ConversationCaptureMode,
 	DeleteNotebookItemResult,
 	ManifestEntry,
 	MeetingStatus,
@@ -114,6 +115,8 @@ function noteSummaryFromFile(l2DataDir: string, rawPath: string): NoteSummaryDto
 			updatedAt: frontmatter.updated || frontmatter.created || statSync(join(l2DataDir, rawPath)).mtime.toISOString(),
 			meetingId: frontmatter.meeting_id,
 			meetingStatus: frontmatter.meeting_status,
+			sourceSessionId: frontmatter.source_session_id,
+			captureMode: frontmatter.capture_mode,
 		};
 	} catch (err) {
 		logger.warn({ err, rawPath }, "failed to read note file");
@@ -135,6 +138,8 @@ function manifestToNoteSummary(entry: ManifestEntry): NoteSummaryDto {
 		wikiPagePath: primaryWikiPath(entry.wikiPages),
 		wikiPages: entry.wikiPages,
 		origin: entry.source.origin,
+		sourceSessionId: entry.source.sessionId,
+		captureMode: entry.capture_mode,
 		extractedPath: entry.extractedPath,
 		createdAt: entry.createdAt,
 		updatedAt: entry.updatedAt,
@@ -275,6 +280,8 @@ export function readNoteContent(l2DataDir: string, rawPath: string): NoteContent
 		updatedAt: frontmatter.updated,
 		meetingId: frontmatter.meeting_id,
 		meetingStatus: frontmatter.meeting_status,
+		sourceSessionId: frontmatter.source_session_id,
+		captureMode: frontmatter.capture_mode,
 	};
 }
 
@@ -306,6 +313,8 @@ export function createL2Note(
 		templateId?: string;
 		tags?: string[];
 		content?: string;
+		sourceSessionId?: string;
+		captureMode?: ConversationCaptureMode;
 	},
 ): { rawPath: string; status: NoteStatus; noteId: string; title: string } {
 	ensureL2Directories(l2DataDir);
@@ -320,6 +329,8 @@ export function createL2Note(
 		tags,
 		record_date: getTodayRecordDate(),
 		status: "draft",
+		source_session_id: options.sourceSessionId,
+		capture_mode: options.captureMode,
 		created: now,
 		updated: now,
 	};
@@ -442,7 +453,10 @@ export async function archiveL2Note(
 		tags,
 		contentHash,
 		status: "extracted",
-		source: { origin: "user_upload" },
+		capture_mode: frontmatter.capture_mode,
+		source: frontmatter.source_session_id
+			? { origin: "conversation", sessionId: frontmatter.source_session_id }
+			: { origin: "user_upload" },
 		createdAt: frontmatter.created || new Date().toISOString(),
 		updatedAt: new Date().toISOString(),
 	};

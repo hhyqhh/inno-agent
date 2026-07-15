@@ -43,6 +43,7 @@ export interface ManifestEntry {
 	error_message?: string | null;
 	archived_at?: string | null;
 	message_ids?: string[];
+	capture_mode?: ConversationCaptureMode;
 	source: {
 		origin: "user_upload" | "conversation" | "web" | "research" | "agent_inferred";
 		url?: string;
@@ -96,6 +97,7 @@ export interface ParsedDocumentResult {
 // ============================================================================
 
 export type NoteStatus = "draft" | "indexed" | "outdated" | "error";
+export type ConversationCaptureMode = "transcript" | "summary";
 
 export type MeetingStatus =
 	| "connecting"
@@ -116,6 +118,8 @@ export interface NoteFrontmatter {
 	status: NoteStatus;
 	meeting_id?: string;
 	meeting_status?: MeetingStatus;
+	source_session_id?: string;
+	capture_mode?: ConversationCaptureMode;
 	source_id?: string;
 	created: string;
 	updated: string;
@@ -170,6 +174,8 @@ export interface NoteSummaryDto {
 	updatedAt: string;
 	meetingId?: string;
 	meetingStatus?: MeetingStatus;
+	sourceSessionId?: string;
+	captureMode?: ConversationCaptureMode;
 }
 
 export interface NoteContentDto {
@@ -186,6 +192,8 @@ export interface NoteContentDto {
 	updatedAt: string;
 	meetingId?: string;
 	meetingStatus?: MeetingStatus;
+	sourceSessionId?: string;
+	captureMode?: ConversationCaptureMode;
 }
 
 export interface NotesListResponse {
@@ -257,9 +265,15 @@ export interface ArchiveRawResult {
 	status: "indexed";
 }
 
-export type IngestL2SourceResult =
+export type StageL2FileResult =
 	| { duplicate: true; existing: ManifestEntry }
-	| ({ duplicate: false } & ArchiveRawResult);
+	| {
+		duplicate: false;
+		sourceId: string;
+		title: string;
+		rawPath: string;
+		status: "uploaded";
+	};
 
 export interface ExtractRawFileResult {
 	sourceId: string;

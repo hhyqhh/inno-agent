@@ -32,7 +32,7 @@ export interface InnoMemoryConfig {
 	 */
 	l1Enabled: boolean;
 	/**
-	 * When true (default), L2 Wiki memory is active: the `l2_archive` /
+	 * When true (default), L2 Wiki memory is active: the `l2_save_draft`, `l2_archive_draft` /
 	 * `l2_query` tools can write and read the knowledge base. When false, those
 	 * tools become no-ops that report L2 is disabled.
 	 */

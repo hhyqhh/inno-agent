@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
-import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search } from "lucide-react";
+import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search, BookOpen } from "lucide-react";
 import type { ChatMessage, ChatToolRecord } from "../types/chat.js";
 import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
@@ -11,6 +11,7 @@ import { workspacesStore } from "../stores/workspaces-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { appStore } from "../stores/app-store.js";
+import { notesStore } from "../stores/notes-store.js";
 import type { CreateSessionInput } from "../api/sessions.js";
 import { listRemotePresets } from "../api/presets.js";
 import type { PresetMeta } from "../types/presets.js";
@@ -113,6 +114,9 @@ function visibleToolDetails(tool: ChatToolRecord): string {
 	if (tool.toolName === "note_read") {
 		return tool.isError ? "读取笔记失败" : "笔记内容已安全传递给 Agent";
 	}
+	if (tool.toolName === "note_read_many") {
+		return tool.isError ? "批量读取笔记失败" : "选中的笔记内容已安全传递给 Agent";
+	}
 	if (tool.toolName === "note_polish") {
 		return tool.isError ? "笔记润色保存失败" : "笔记已完成润色并保存";
 	}
@@ -149,6 +153,16 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 						</div>
 					) : null}
 					{lightboxSrc ? <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} /> : null}
+					{message.noteReferences?.length ? (
+						<div className="mb-2 flex flex-wrap justify-end gap-1">
+							{message.noteReferences.map((note) => (
+								<span key={note.rawPath} className="inline-flex max-w-[220px] items-center gap-1 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-0.5 text-[10px] text-[var(--inno-text-muted)]" title={note.title}>
+									<BookOpen size={10} className="shrink-0" />
+									<span className="truncate">{note.title}</span>
+								</span>
+							))}
+						</div>
+					) : null}
 					{visibleContent}
 				</div>
 			</motion.div>
@@ -416,6 +430,7 @@ export function ChatCenter() {
 	// pre-seeded by the useEffect below when the welcome screen's "existing"
 	// workspace picker selects one.
 	const activeWorkspaceId = useStoreSnapshot(workspaceStore, () => workspaceStore.activeWorkspaceId);
+	const selectedNotes = useStoreSnapshot(notesStore, () => notesStore.aiContextNotes);
 
 	// Workspace preselected from the sidebar ("+ 新建对话" on a group), if any.
 	const preselectedWs = useMemo(
@@ -560,6 +575,7 @@ export function ChatCenter() {
 		const imagesToSend = inlineImages.length > 0
 			? inlineImages.map(({ data, mimeType }) => ({ data, mimeType }))
 			: undefined;
+		const noteReferences = selectedNotes.map((note) => ({ rawPath: note.rawPath, title: note.title }));
 
 		const resetComposer = () => {
 			if (inputRef.current) {
@@ -585,7 +601,7 @@ export function ChatCenter() {
 			void (async () => {
 				try {
 					await sessionsStore.createSessionWith(wsInput);
-					void chatStore.send(messageContent, imagesToSend);
+					void chatStore.send(messageContent, imagesToSend, undefined, noteReferences);
 				} catch (err) {
 					setWsError(err instanceof Error ? err.message : "创建会话失败");
 				}
@@ -596,8 +612,8 @@ export function ChatCenter() {
 		resetComposer();
 		setUploads([]);
 		setInlineImages([]);
-		void chatStore.send(messageContent, imagesToSend);
-	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, pasteBlock]);
+		void chatStore.send(messageContent, imagesToSend, undefined, noteReferences);
+	}, [isWelcome, buildSessionInput, uploads, inlineImages, selectedNotes, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, pasteBlock]);
 
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		// Don't fire Send while the user is composing with an IME (e.g. picking
@@ -758,6 +774,30 @@ export function ChatCenter() {
 		) : null
 	);
 
+	const renderNoteReferences = () => (
+		selectedNotes.length > 0 ? (
+			<div className="mb-2 rounded-md border border-blue-100 bg-[var(--inno-accent-soft)] px-2.5 py-2">
+				<div className="mb-1.5 flex items-center gap-2 text-xs text-[var(--inno-text-muted)]">
+					<BookOpen size={13} className="shrink-0 text-[var(--inno-accent)]" />
+					<span>{t("notes.context.referencing", { count: selectedNotes.length })}</span>
+					<button type="button" className="ml-auto text-[11px] text-[var(--inno-accent)] hover:underline" onClick={() => notesStore.clearAiContext()}>
+						{t("notes.context.clearAll")}
+					</button>
+				</div>
+				<div className="flex flex-wrap gap-1.5">
+					{selectedNotes.map((note) => (
+						<span key={note.rawPath} className="inline-flex max-w-[240px] items-center gap-1 rounded-full border border-blue-100 bg-[var(--inno-surface)] px-2 py-0.5 text-xs text-[var(--inno-text-muted)]" title={note.title}>
+							<span className="truncate">{note.title}</span>
+							<button type="button" className="shrink-0 rounded-full hover:text-[var(--inno-text)]" onClick={() => notesStore.removeAiContext(note.rawPath)} aria-label={t("notes.context.remove", { title: note.title })}>
+								<X size={11} />
+							</button>
+						</span>
+					))}
+				</div>
+			</div>
+		) : null
+	);
+
 	const renderQuestionHint = () => (
 		chat.pendingQuestion ? (
 			<div className="mb-2 flex items-center gap-2 rounded-md border border-[var(--inno-border)] bg-[var(--inno-accent-soft)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)]">
@@ -885,6 +925,7 @@ export function ChatCenter() {
 
 						{renderUploadChips()}
 						{renderInlineImagePreviews()}
+						{renderNoteReferences()}
 						{renderQuestionHint()}
 						{renderComposer("有什么想学习或实践的?发送消息开始…")}
 
@@ -1089,6 +1130,7 @@ export function ChatCenter() {
 				<div className="mx-auto max-w-3xl">
 					{renderUploadChips()}
 					{renderInlineImagePreviews()}
+					{renderNoteReferences()}
 					{renderQuestionHint()}
 					{renderComposer("Type a message...")}
 				</div>

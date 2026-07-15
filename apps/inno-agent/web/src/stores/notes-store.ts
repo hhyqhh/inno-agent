@@ -33,7 +33,9 @@ function errorDetail(error: unknown): string | null {
 }
 
 class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
+	readonly aiContextLimit = 20;
 	notes: NoteSummary[] = [];
+	aiContextRawPaths = new Set<string>();
 	selected: NoteSummary | null = null;
 	editorContent = "";
 	editorTitle = "";
@@ -145,6 +147,39 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			.map((tag) => tag.displayName);
 	}
 
+	get aiContextNotes(): NoteSummary[] {
+		return [...this.aiContextRawPaths]
+			.map((rawPath) => this.notes.find((note) => note.rawPath === rawPath))
+			.filter((note): note is NoteSummary => Boolean(note));
+	}
+
+	canUseAsAiContext(note: NoteSummary): boolean {
+		return !["pdf", "word", "image"].includes(note.contentType) || Boolean(note.extractedPath);
+	}
+
+	toggleAiContext(note: NoteSummary): void {
+		if (!this.canUseAsAiContext(note)) return;
+		const next = new Set(this.aiContextRawPaths);
+		if (next.has(note.rawPath)) next.delete(note.rawPath);
+		else if (next.size < this.aiContextLimit) next.add(note.rawPath);
+		this.aiContextRawPaths = next;
+		this.emit("change", undefined);
+	}
+
+	removeAiContext(rawPath: string): void {
+		if (!this.aiContextRawPaths.has(rawPath)) return;
+		const next = new Set(this.aiContextRawPaths);
+		next.delete(rawPath);
+		this.aiContextRawPaths = next;
+		this.emit("change", undefined);
+	}
+
+	clearAiContext(): void {
+		if (this.aiContextRawPaths.size === 0) return;
+		this.aiContextRawPaths = new Set();
+		this.emit("change", undefined);
+	}
+
 	clearMessages() {
 		this.error = null;
 		this.errorDetail = null;
@@ -239,6 +274,8 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		try {
 			const data = await listNotes();
 			this.notes = data.notes;
+			const availablePaths = new Set(this.notes.map((note) => note.rawPath));
+			this.aiContextRawPaths = new Set([...this.aiContextRawPaths].filter((rawPath) => availablePaths.has(rawPath)));
 			if (this.selected) {
 				const updated = this.notes.find((note) => note.rawPath === this.selected?.rawPath);
 				this.selected = updated ?? null;

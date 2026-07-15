@@ -1,7 +1,7 @@
 import { EventEmitter } from "./event-emitter.js";
 import { streamChat, abortChat, streamSessionEvents } from "../api/chat.js";
 import type { InlineImage } from "../api/chat.js";
-import type { ChatMessage, ChatStreamEvent, ChatToolRecord, PendingQuestion, QuestionnaireResult } from "../types/chat.js";
+import type { ChatMessage, ChatNoteReference, ChatStreamEvent, ChatToolRecord, PendingQuestion, QuestionnaireResult } from "../types/chat.js";
 import { notebookStore } from "./notebook-store.js";
 
 interface ChatStoreEvents {
@@ -25,6 +25,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	lastUserPrompt: string | null = null;
 	/** Images from the last send, kept so users can Retry. */
 	lastImages: InlineImage[] | undefined = undefined;
+	private lastNoteReferences: ChatNoteReference[] | undefined = undefined;
 	private lastActivityText: string | undefined = undefined;
 	/** Pending question from agent's ask_user_question tool */
 	pendingQuestion: PendingQuestion | null = null;
@@ -32,7 +33,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	private detachMode = false;
 	private wikiInvalidated = false;
 
-	async send(prompt: string, images?: InlineImage[], activityText?: string): Promise<void> {
+	async send(prompt: string, images?: InlineImage[], activityText?: string, noteReferences?: ChatNoteReference[]): Promise<void> {
 		if ((!prompt.trim() && !images?.length) || this.isSending) return;
 		this.detachMode = false;
 
@@ -43,6 +44,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 
 		this.lastUserPrompt = prompt;
 		this.lastImages = images;
+		this.lastNoteReferences = noteReferences?.length ? noteReferences.map((note) => ({ ...note })) : undefined;
 		this.lastActivityText = activityText;
 		this.messages = [...this.messages, {
 			role: "user",
@@ -52,6 +54,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				previewUrl: `data:${mimeType};base64,${data}`,
 				mimeType,
 			})),
+			noteReferences: this.lastNoteReferences,
 		}];
 		this.isSending = true;
 		this.streamingText = "";
@@ -66,7 +69,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.emit("change", undefined);
 
 		try {
-			for await (const event of streamChat(prompt, targetSessionId, controller.signal, images)) {
+			for await (const event of streamChat(prompt, targetSessionId, controller.signal, images, this.lastNoteReferences)) {
 				this._handleStreamEvent(event);
 			}
 			const aborted = controller.signal.aborted;
@@ -212,7 +215,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	/** Re-send the last user prompt. No-op while a send is in flight. */
 	async retry(): Promise<void> {
 		if (this.isSending || !this.lastUserPrompt) return;
-		await this.send(this.lastUserPrompt, this.lastImages, this.lastActivityText);
+		await this.send(this.lastUserPrompt, this.lastImages, this.lastActivityText, this.lastNoteReferences);
 	}
 
 	private _handleStreamEvent(event: ChatStreamEvent) {

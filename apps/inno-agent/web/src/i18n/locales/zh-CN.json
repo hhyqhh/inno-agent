@@ -135,6 +135,17 @@
 		}
 	},
 	"notes": {
+		"context": {
+			"add": "添加到 AI 引用",
+			"unavailable": "请先归档并提取该文件后再引用",
+			"selected": "已选择 {{count}} / {{limit}} 篇",
+			"clear": "清除",
+			"clearAll": "清除全部",
+			"useInChat": "在对话中总结",
+			"referencing": "正在引用 {{count}} 篇笔记",
+			"remove": "移除 {{title}}",
+			"defaultPrompt": "请总结我勾选的内容，提炼核心观点和行动项，并标明信息来源。"
+		},
 		"meeting": {
 			"start": "会议录音",
 			"stop": "结束录音",

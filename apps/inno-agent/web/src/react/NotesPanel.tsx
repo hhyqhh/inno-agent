@@ -13,14 +13,12 @@ import {
 	FileUp,
 	LoaderCircle,
 	MessageSquareText,
-	Plus,
 	Save,
 	Sparkles,
 	Square,
 	Trash2,
 	X,
 } from "lucide-react";
-import { getVisibleNoteTemplates } from "../lib/build-note-from-template.js";
 import { l2RawFileUrl } from "../api/notes.js";
 import { notesStore } from "../stores/notes-store.js";
 import type { NoteSummary } from "../types/notes.js";
@@ -32,6 +30,10 @@ import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { appStore } from "../stores/app-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
+import { noteTemplateStore } from "../stores/note-template-store.js";
+import { TemplateEditor } from "./note-templates/TemplateEditor.js";
+import { TemplateMenu } from "./note-templates/TemplateMenu.js";
+import { TemplateSidebar } from "./note-templates/TemplateSidebar.js";
 
 interface NotesPanelProps {
 	viewSelector?: ReactNode;
@@ -70,10 +72,9 @@ function rememberNotePolishSession(rawPath: string, sessionId: string): void {
 
 export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 	const { t } = useTranslation();
-	const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+	const [panelMode, setPanelMode] = useState<"notes" | "templates">("notes");
 	const [tagsOpen, setTagsOpen] = useState(false);
 	const [isConversationalPolishing, setIsConversationalPolishing] = useState(false);
-	const templateMenuRef = useRef<HTMLDivElement>(null);
 	const panelRef = useRef<HTMLDivElement>(null);
 	const uploadRef = useRef<HTMLInputElement>(null);
 	const state = useStoreSnapshot(notesStore, () => ({
@@ -147,19 +148,6 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 		window.addEventListener("keydown", handleSaveShortcut);
 		return () => window.removeEventListener("keydown", handleSaveShortcut);
 	}, []);
-
-	useEffect(() => {
-		if (!templateMenuOpen) return;
-		const handlePointerDown = (event: PointerEvent) => {
-			const target = event.target;
-			if (!(target instanceof Node) || templateMenuRef.current?.contains(target)) return;
-			setTemplateMenuOpen(false);
-		};
-		document.addEventListener("pointerdown", handlePointerDown, true);
-		return () => document.removeEventListener("pointerdown", handlePointerDown, true);
-	}, [templateMenuOpen]);
-
-	const templates = getVisibleNoteTemplates();
 
 	async function handleConversationalPolish(): Promise<void> {
 		const note = notesStore.selected;
@@ -369,6 +357,30 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 		);
 	}
 
+	function openTemplateManager(create = false): void {
+		setPanelMode("templates");
+		void noteTemplateStore.load().then(() => {
+			if (create) noteTemplateStore.startCreate();
+			else if (!noteTemplateStore.selectedId && noteTemplateStore.templates.length > 0) {
+				noteTemplateStore.select(noteTemplateStore.templates[0].id);
+			}
+		});
+	}
+
+	function closeTemplateManager(): void {
+		if (noteTemplateStore.isDirty && !window.confirm(t("notes.templates.discardConfirm", "当前模板尚未保存，是否放弃修改？"))) return;
+		setPanelMode("notes");
+	}
+
+	if (panelMode === "templates") {
+		return (
+			<div ref={panelRef} className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)]">
+				<TemplateSidebar viewSelector={viewSelector} onBack={closeTemplateManager} />
+				<TemplateEditor />
+			</div>
+		);
+	}
+
 	return (
 		<div ref={panelRef} className="inno-notes-panel-shell h-full min-h-0">
 			<div className="inno-notes-panel grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)]">
@@ -383,46 +395,13 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 						onChange={(e) => notesStore.setSearchQuery(e.target.value)}
 					/>
 					<div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5">
-						<div className="relative flex min-w-0" ref={templateMenuRef}>
-							<button
-								type="button"
-								className="inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-l-md border border-[var(--inno-border)] px-2.5 text-xs font-medium hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
-								disabled={state.isCreating}
-								onClick={() => void notesStore.createFromTemplate("blank")}
-							>
-								{state.isCreating ? <LoaderCircle size={13} className="animate-spin" /> : <Plus size={13} />}
-								<span className="truncate">{t("notes.actions.createDraft")}</span>
-							</button>
-							<button
-								type="button"
-								className="inline-flex h-8 w-7 shrink-0 items-center justify-center rounded-r-md border border-l-0 border-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
-								disabled={state.isCreating}
-								onClick={() => setTemplateMenuOpen((open) => !open)}
-								title={t("notes.actions.templates")}
-							>
-								<ChevronDown size={13} />
-							</button>
-							{templateMenuOpen ? (
-								<div className="absolute left-0 top-full z-20 mt-1 max-h-64 w-64 overflow-y-auto rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] py-1 shadow-lg">
-									{templates.map((template) => (
-										<button
-											key={template.id}
-											type="button"
-											className="w-full px-3 py-2 text-left hover:bg-[var(--inno-surface-muted)]"
-											onClick={() => {
-												setTemplateMenuOpen(false);
-												void notesStore.createFromTemplate(template.id);
-											}}
-										>
-											<div className="text-sm font-medium">{template.label}</div>
-											{template.description ? (
-												<div className="text-xs text-[var(--inno-text-muted)]">{template.description}</div>
-											) : null}
-										</button>
-									))}
-								</div>
-							) : null}
-						</div>
+						<TemplateMenu
+							isCreating={state.isCreating}
+							onCreateBlank={() => void notesStore.createFromTemplate("blank")}
+							onUseTemplate={(id) => void notesStore.createFromTemplate(id)}
+							onCreateTemplate={() => openTemplateManager(true)}
+							onManageTemplates={() => openTemplateManager(false)}
+						/>
 						<button
 							type="button"
 							className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-[var(--inno-border)] px-2.5 text-xs font-medium text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"

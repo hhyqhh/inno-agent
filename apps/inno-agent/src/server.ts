@@ -71,7 +71,15 @@ import {
 	listNoteAttachments,
 	uploadNoteAttachment,
 } from "./memory/l2/note-attachments-service.js";
-import { listNoteTemplates } from "./memory/l2/note-templates.js";
+import {
+	createCustomNoteTemplate,
+	deleteCustomNoteTemplate,
+	duplicateNoteTemplate,
+	getNoteTemplate,
+	listNoteTemplates,
+	updateCustomNoteTemplate,
+} from "./memory/l2/note-templates.js";
+import type { NoteTemplateInput } from "./memory/l2/types.js";
 import { normalizeMarkdownForMilkdown } from "./memory/l2/markdown-normalizer.js";
 import { uniqueUploadName } from "./memory/l2/l2-utils.js";
 import { loadProfile, saveProfile } from "./memory/learner/profile-store.js";
@@ -3901,10 +3909,69 @@ const server = createServer(async (req, res) => {
 
 		if (method === "GET" && url === "/api/l2/notes/templates") {
 			try {
-				json(res, 200, { templates: listNoteTemplates(paths.codeDir) });
+				json(res, 200, { templates: listNoteTemplates(paths.codeDir, paths.dataDir) });
 			} catch (err) {
 				logger.warn({ err }, "failed to list note templates");
 				json(res, 500, { error: "Failed to list templates" });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/notes/templates") {
+			try {
+				const body = (await readBody(req)) as NoteTemplateInput;
+				json(res, 201, createCustomNoteTemplate(paths.codeDir, paths.dataDir, body));
+			} catch (err) {
+				const message = err instanceof Error ? err.message : "Failed to create template";
+				json(res, message.includes("已存在") ? 409 : 400, { error: message });
+			}
+			return;
+		}
+
+		const templateRoute = new URL(url, "http://localhost").pathname.match(/^\/api\/l2\/notes\/templates\/([^/]+)$/);
+		if (templateRoute && method === "GET") {
+			const id = decodeURIComponent(templateRoute[1]);
+			const template = getNoteTemplate(paths.codeDir, paths.dataDir, id);
+			json(res, template ? 200 : 404, template ?? { error: "模板不存在" });
+			return;
+		}
+
+		if (templateRoute && method === "PUT") {
+			const id = decodeURIComponent(templateRoute[1]);
+			try {
+				const body = (await readBody(req)) as NoteTemplateInput;
+				json(res, 200, updateCustomNoteTemplate(paths.codeDir, paths.dataDir, id, body));
+			} catch (err) {
+				const message = err instanceof Error ? err.message : "Failed to update template";
+				const status = message.includes("不存在") ? 404 : message.includes("内置") ? 403 : 400;
+				json(res, status, { error: message });
+			}
+			return;
+		}
+
+		if (templateRoute && method === "DELETE") {
+			const id = decodeURIComponent(templateRoute[1]);
+			try {
+				deleteCustomNoteTemplate(paths.codeDir, paths.dataDir, id);
+				json(res, 200, { ok: true, id });
+			} catch (err) {
+				const message = err instanceof Error ? err.message : "Failed to delete template";
+				json(res, message.includes("不存在") ? 404 : message.includes("内置") ? 403 : 400, { error: message });
+			}
+			return;
+		}
+
+		const duplicateTemplateRoute = new URL(url, "http://localhost").pathname.match(/^\/api\/l2\/notes\/templates\/([^/]+)\/duplicate$/);
+		if (duplicateTemplateRoute && method === "POST") {
+			const id = decodeURIComponent(duplicateTemplateRoute[1]);
+			try {
+				const body = (await readBody(req)) as Record<string, unknown>;
+				const newId = typeof body.id === "string" ? body.id : "";
+				json(res, 201, duplicateNoteTemplate(paths.codeDir, paths.dataDir, id, newId));
+			} catch (err) {
+				const message = err instanceof Error ? err.message : "Failed to duplicate template";
+				const status = message.includes("不存在") ? 404 : message.includes("已存在") ? 409 : 400;
+				json(res, status, { error: message });
 			}
 			return;
 		}
@@ -3984,7 +4051,7 @@ const server = createServer(async (req, res) => {
 			}
 
 			try {
-				const templates = listNoteTemplates(paths.codeDir)
+				const templates = listNoteTemplates(paths.codeDir, paths.dataDir)
 					.filter((template) => !template.hidden && template.id !== "blank");
 				const existingTagByCanonical = new Map<string, string>();
 				const rememberExistingTag = (tag: string) => {

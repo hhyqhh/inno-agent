@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
@@ -318,7 +318,7 @@ export function createL2Note(
 	},
 ): { rawPath: string; status: NoteStatus; noteId: string; title: string } {
 	ensureL2Directories(l2DataDir);
-	const { title, tags, body } = resolveNoteTemplateContent(codeDir, options);
+	const { title, tags, body } = resolveNoteTemplateContent(codeDir, dirname(l2DataDir), options);
 	const noteId = `note_${randomUUID().slice(0, 8)}`;
 	const now = new Date().toISOString();
 	const fileName = noteFileName(title, noteId);

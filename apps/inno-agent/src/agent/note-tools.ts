@@ -1,7 +1,7 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { join, posix } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { createL2Note, listL2Notes, readNoteContent, saveL2NoteContent } from "../memory/l2/notes-service.js";
 import { listNoteTemplates } from "../memory/l2/note-templates.js";
 import { normalizeTagList } from "../memory/l2/l2-utils.js";
@@ -127,7 +127,7 @@ export function createNoteTools(
 			try {
 				const rawPath = normalizeNotePath(params.rawPath as string);
 				const note = readNoteContent(l2DataDir, rawPath);
-				const polishTemplates = listNoteTemplates(codeDir)
+				const polishTemplates = listNoteTemplates(codeDir, dirname(l2DataDir))
 					.filter((template) => !template.hidden && template.id !== "blank")
 					.map(({ id, label, description, body }) => ({ id, label, description, body }));
 				return {

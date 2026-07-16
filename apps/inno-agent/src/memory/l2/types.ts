@@ -147,9 +147,27 @@ export interface NoteTemplateDefinition {
 	description: string;
 	descriptionEn: string;
 	tags: string[];
+	tagsEn: string[];
 	body: string;
 	defaultTitle: string;
+	defaultTitleEn: string;
 	hidden: boolean;
+	source: "system" | "custom";
+	editable: boolean;
+}
+
+export interface NoteTemplateInput {
+	id: string;
+	label: string;
+	labelEn?: string;
+	description?: string;
+	descriptionEn?: string;
+	tags?: string[];
+	tagsEn?: string[];
+	body: string;
+	defaultTitle?: string;
+	defaultTitleEn?: string;
+	hidden?: boolean;
 }
 
 export type NotebookItemKind = "markdown" | "orphan" | "archived";

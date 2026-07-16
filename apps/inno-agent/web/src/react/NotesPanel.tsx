@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { MilkdownEditor } from "./notebook/MilkdownEditor.js";
 import { NoteAttachments } from "./notebook/NoteAttachments.js";
@@ -34,6 +34,7 @@ import { appStore } from "../stores/app-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
 
 interface NotesPanelProps {
+	viewSelector?: ReactNode;
 	onOpenWiki?(wikiPath: string): void;
 }
 
@@ -67,7 +68,7 @@ function rememberNotePolishSession(rawPath: string, sessionId: string): void {
 	window.localStorage.setItem(NOTE_POLISH_SESSIONS_KEY, JSON.stringify(sessions));
 }
 
-export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
+export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 	const { t } = useTranslation();
 	const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
 	const [tagsOpen, setTagsOpen] = useState(false);
@@ -370,9 +371,10 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 
 	return (
 		<div ref={panelRef} className="inno-notes-panel-shell h-full min-h-0">
-			<div className="inno-notes-panel grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] gap-3 p-3">
-				<aside className="inno-notes-panel-list flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
-				<div className="space-y-2 border-b border-[var(--inno-border)] p-2">
+			<div className="inno-notes-panel grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)]">
+				<aside className="inno-notes-panel-list flex min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-workspace-chrome)]">
+				<div className="space-y-2 border-b border-[var(--inno-border)] p-3">
+					{viewSelector}
 					<input
 						type="text"
 						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -443,24 +445,24 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 							e.target.value = "";
 						}}
 					/>
-					<div className="inline-flex w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-0.5 text-xs">
+					<div className="flex w-full border-b border-[var(--inno-border)] text-xs">
 						<button
 							type="button"
-							className={`flex-1 rounded px-2 py-1 ${state.listBox === "drafts" ? "bg-[var(--inno-surface)] shadow text-[var(--inno-text)]" : "text-[var(--inno-text-muted)]"}`}
+							className={`flex-1 border-b-2 px-2 py-1.5 transition-colors ${state.listBox === "drafts" ? "border-[var(--inno-accent)] font-medium text-[var(--inno-accent)]" : "border-transparent text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"}`}
 							onClick={() => notesStore.setListBox("drafts")}
 						>
 							{t("notes.tabs.drafts", { count: state.draftCount })}
 						</button>
 						<button
 							type="button"
-							className={`flex-1 rounded px-2 py-1 ${state.listBox === "archived" ? "bg-[var(--inno-surface)] shadow text-[var(--inno-text)]" : "text-[var(--inno-text-muted)]"}`}
+							className={`flex-1 border-b-2 px-2 py-1.5 transition-colors ${state.listBox === "archived" ? "border-[var(--inno-accent)] font-medium text-[var(--inno-accent)]" : "border-transparent text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"}`}
 							onClick={() => notesStore.setListBox("archived")}
 						>
 							{t("notes.tabs.archived", { count: state.archivedCount })}
 						</button>
 					</div>
 					{state.filterTag || visibleTagSummaries.length > 0 ? (
-					<div className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-2">
+					<div className="bg-[var(--inno-surface-muted)]/70 px-1 py-1.5">
 						<div className="flex items-center justify-between gap-2">
 							<button
 								type="button"
@@ -523,7 +525,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						return (
 							<div
 								key={`${note.kind}:${note.noteId}:${note.rawPath}`}
-								className={`border-b border-[var(--inno-border)] text-sm ${isSelected ? "bg-[var(--inno-accent-soft)]" : "hover:bg-[var(--inno-surface-muted)]"}`}
+								className={`border-b border-l-2 border-[var(--inno-border)] text-sm transition-colors ${isSelected ? "border-l-[var(--inno-accent)] bg-[var(--inno-accent-soft)]" : "border-l-transparent hover:bg-[var(--inno-surface-muted)]"}`}
 							>
 								<div className="flex items-start">
 									<label className={`flex h-9 w-9 shrink-0 items-center justify-center ${canUseAsAiContext ? "cursor-pointer" : "cursor-not-allowed opacity-40"}`} title={canUseAsAiContext ? t("notes.context.add") : t("notes.context.unavailable")}>
@@ -577,7 +579,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 				) : null}
 			</aside>
 
-				<section className="inno-notes-panel-detail flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+				<section className="inno-notes-panel-detail flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-surface)]">
 				{state.notice ? (
 					<p className="border-b border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
 						{t(`notes.flash.${state.notice}`, {

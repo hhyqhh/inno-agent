@@ -4,6 +4,7 @@ import { ensureDir, writeText } from "../../storage/file-store.js";
 import type { RawSourceType } from "./types.js";
 import { logger } from "../../logger.js";
 import { normalizeMarkdownForMilkdown } from "./markdown-normalizer.js";
+import { slugifyTitle } from "./l2-utils.js";
 
 /**
  * Convert raw content to extracted markdown and save to data/l2/extracted/.
@@ -18,11 +19,7 @@ export function convertToExtracted(
 	const markdown = convertContent(content, sourceType);
 	const dir = join(l2DataDir, "extracted");
 	ensureDir(dir);
-	const slug = title
-		.toLowerCase()
-		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.slice(0, 50);
+	const slug = slugifyTitle(title, 50, "source");
 	const filename = `${slug}-${randomUUID().slice(0, 6)}.md`;
 	writeText(join(dir, filename), markdown);
 	return join("extracted", filename);

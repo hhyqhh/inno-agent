@@ -135,6 +135,17 @@
 		}
 	},
 	"notes": {
+		"context": {
+			"add": "Add to AI references",
+			"unavailable": "Archive and extract this file before referencing it",
+			"selected": "{{count}} / {{limit}} selected",
+			"clear": "Clear",
+			"clearAll": "Clear all",
+			"useInChat": "Summarize in chat",
+			"referencing": "Referencing {{count}} notes",
+			"remove": "Remove {{title}}",
+			"defaultPrompt": "Summarize the selected content, extract the key ideas and action items, and identify the sources."
+		},
 		"meeting": {
 			"start": "Record meeting",
 			"stop": "Stop recording",

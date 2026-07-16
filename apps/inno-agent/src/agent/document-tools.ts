@@ -1,7 +1,7 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { resolve, isAbsolute } from "node:path";
-import { parseDocument, screenshotDocument, DocumentParseError } from "../memory/l2/document-parser.js";
+import { parseDocument, DocumentParseError } from "../memory/l2/document-parser.js";
 import { logger } from "../logger.js";
 
 /**
@@ -22,17 +22,11 @@ export function createDocumentTools(): ToolDefinition[] {
 					description: "为 true 时返回每页的文本，默认只返回合并后的全文",
 				}),
 			),
-			includeScreenshots: Type.Optional(
-				Type.Boolean({
-					description: "为 true 时返回每页的 PNG 截图（仅 PDF 支持），默认 false",
-				}),
-			),
 		}),
 		async execute(_toolCallId, params) {
 			const typed = params as {
 				filePath: string;
 				includePageDetails?: boolean;
-				includeScreenshots?: boolean;
 			};
 
 			// Resolve path relative to workspace
@@ -74,29 +68,9 @@ export function createDocumentTools(): ToolDefinition[] {
 				}
 			}
 
-			const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [
+			const content: Array<{ type: "text"; text: string }> = [
 				{ type: "text", text: lines.join("\n") },
 			];
-
-			// Screenshots
-			if (typed.includeScreenshots) {
-				try {
-					const screenshots = await screenshotDocument(resolvedPath);
-					for (const shot of screenshots) {
-						content.push({
-							type: "image",
-							data: shot.imageBuffer.toString("base64"),
-							mimeType: "image/png",
-						});
-					}
-				} catch (err) {
-					logger.warn({ err }, "document screenshot generation failed");
-					content.push({
-						type: "text",
-						text: "\n[截图生成失败，可能不支持该文件格式的截图]",
-					});
-				}
-			}
 
 			return {
 				content,

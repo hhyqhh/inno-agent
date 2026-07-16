@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
-import type { LiteParse, ParseResult, ScreenshotResult } from "@llamaindex/liteparse";
+import type { LiteParse, ParseResult } from "@llamaindex/liteparse";
+import type { ParsedDocumentResult } from "./types.js";
 
 // ============================================================================
 // LiteParse Wrapper - Lazy-loaded document parsing
@@ -23,12 +24,6 @@ const SUPPORTED_EXTENSIONS = new Set([
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".tif"]);
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100MB
-
-export interface ParsedDocumentResult {
-	text: string;
-	pageCount: number;
-	pages: Array<{ pageNumber: number; text: string }>;
-}
 
 export class DocumentParseError extends Error {
 	constructor(
@@ -251,25 +246,6 @@ export async function parseDocument(filePath: string): Promise<ParsedDocumentRes
 			text: p.text,
 		})),
 	};
-}
-
-/**
- * Generate PNG screenshots of document pages.
- */
-export async function screenshotDocument(filePath: string, pageNumbers?: number[]): Promise<ScreenshotResult[]> {
-	const resolved = resolve(filePath);
-	validateFile(resolved);
-
-	const parser = await getParser();
-
-	try {
-		return await parser.screenshot(resolved, pageNumbers, true);
-	} catch (err) {
-		throw new DocumentParseError(
-			`截图生成失败: ${err instanceof Error ? err.message : String(err)}`,
-			"PARSE_ERROR",
-		);
-	}
 }
 
 /** Check if a file extension is supported for parsing. */

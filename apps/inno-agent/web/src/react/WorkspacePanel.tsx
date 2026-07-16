@@ -6,7 +6,7 @@ import type { RightPanelTab, WorkspaceMode } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { WorkspaceBrowser } from "./WorkspaceBrowser.js";
-import { KnowledgePanel } from "./KnowledgePanel.js";
+import { KnowledgePanel, type KnowledgeView } from "./KnowledgePanel.js";
 import { JobsPanel } from "./JobsPanel.js";
 import { LearnerProfilePanel } from "./LearnerProfilePanel.js";
 import { SkillsPanel } from "./SkillsPanel.js";
@@ -32,10 +32,14 @@ const TAB_ICONS: Record<RightPanelTab, React.ReactNode> = {
 	settings: <Settings size={13} />,
 };
 
-function WorkspaceContent({ activeTab }: { activeTab: RightPanelTab }) {
+function WorkspaceContent({ activeTab, knowledgeView, onKnowledgeViewChange }: {
+	activeTab: RightPanelTab;
+	knowledgeView: KnowledgeView;
+	onKnowledgeViewChange(view: KnowledgeView): void;
+}) {
 	switch (activeTab) {
 		case "notebook":
-			return <KnowledgePanel />;
+			return <KnowledgePanel view={knowledgeView} onViewChange={onKnowledgeViewChange} />;
 		case "preview":
 			return <WorkspaceBrowser />;
 		case "profile":
@@ -52,6 +56,7 @@ function WorkspaceContent({ activeTab }: { activeTab: RightPanelTab }) {
 export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChange, onWidthChange }: WorkspacePanelProps) {
 	const { t } = useTranslation();
 	const [isResizing, setIsResizing] = useState(false);
+	const [knowledgeView, setKnowledgeView] = useState<KnowledgeView>("notebook");
 
 	// In Simple Mode, hide the advanced tabs: notebook (L2 wiki), profile (L1),
 	// jobs (scheduled tasks) and skills — leaving just preview + settings.
@@ -172,7 +177,11 @@ export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChan
 						exit={{ opacity: 0, y: -6 }}
 						transition={{ duration: 0.18, ease: "easeOut" }}
 					>
-						<WorkspaceContent activeTab={activeTab} />
+						<WorkspaceContent
+							activeTab={activeTab}
+							knowledgeView={knowledgeView}
+							onKnowledgeViewChange={setKnowledgeView}
+						/>
 					</motion.div>
 				</AnimatePresence>
 			</div>

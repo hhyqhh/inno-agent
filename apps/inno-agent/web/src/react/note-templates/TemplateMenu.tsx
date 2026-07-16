@@ -17,7 +17,7 @@ export function TemplateMenu({ isCreating, onCreateBlank, onUseTemplate, onCreat
 	const [open, setOpen] = useState(false);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const state = useStoreSnapshot(noteTemplateStore, () => ({
-		templates: noteTemplateStore.templates.filter((template) => !template.hidden && template.id !== "blank"),
+		templates: noteTemplateStore.templates.filter((template) => template.id !== "blank" && (template.source === "custom" || !template.hidden)),
 		isLoading: noteTemplateStore.isLoading,
 	}));
 

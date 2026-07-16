@@ -31,14 +31,16 @@ function loadTemplateFile(dir: string, fileName: string, source: "system" | "cus
 	const id = basename(fileName, ".md");
 	const heading = extractFirstHeading(body);
 	const label = readAttribute(metaLines, ["label"]) || heading || id;
-	const labelEn = readAttribute(metaLines, ["labelEn", "label_en"]) || label;
+	const labelEn = source === "custom" ? label : readAttribute(metaLines, ["labelEn", "label_en"]) || label;
 	const description = readAttribute(metaLines, ["description", "desc"]);
 	const descriptionEn = readAttribute(metaLines, ["descriptionEn", "description_en"]) || description;
 	const tags = splitTagText(readAttribute(metaLines, ["tags", "tag"]));
 	const tagsEn = splitTagText(readAttribute(metaLines, ["tagsEn", "tags_en", "tagEn"]));
-	const defaultTitle = readAttribute(metaLines, ["title"]) || heading || label;
-	const defaultTitleEn = readAttribute(metaLines, ["titleEn", "title_en"]) || defaultTitle;
-	const hidden = readAttribute(metaLines, ["hidden"]).toLowerCase() === "true";
+	const defaultTitle = source === "custom" ? label : readAttribute(metaLines, ["title"]) || heading || label;
+	const defaultTitleEn = source === "custom" ? label : readAttribute(metaLines, ["titleEn", "title_en"]) || defaultTitle;
+	// Custom templates are always available. Keep the metadata flag only for
+	// special built-in entries such as the blank template.
+	const hidden = source === "system" && readAttribute(metaLines, ["hidden"]).toLowerCase() === "true";
 
 	return {
 		id, label, labelEn, description, descriptionEn, tags,
@@ -83,15 +85,15 @@ function normalizeInput(input: NoteTemplateInput): Required<NoteTemplateInput> {
 	return {
 		id,
 		label,
-		labelEn: cleanMeta(input.labelEn, "英文名称") || label,
+		labelEn: label,
 		description: cleanMeta(input.description, "描述"),
 		descriptionEn: cleanMeta(input.descriptionEn, "英文描述"),
 		tags,
 		tagsEn,
 		body,
-		defaultTitle: cleanMeta(input.defaultTitle, "默认标题") || label,
-		defaultTitleEn: cleanMeta(input.defaultTitleEn, "英文默认标题") || cleanMeta(input.defaultTitle, "默认标题") || label,
-		hidden: input.hidden === true,
+		defaultTitle: label,
+		defaultTitleEn: label,
+		hidden: false,
 	};
 }
 

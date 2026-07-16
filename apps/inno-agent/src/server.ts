@@ -4052,7 +4052,7 @@ const server = createServer(async (req, res) => {
 
 			try {
 				const templates = listNoteTemplates(paths.codeDir, paths.dataDir)
-					.filter((template) => !template.hidden && template.id !== "blank");
+					.filter((template) => template.id !== "blank" && (template.source === "custom" || !template.hidden));
 				const existingTagByCanonical = new Map<string, string>();
 				const rememberExistingTag = (tag: string) => {
 					const displayName = tag.trim();

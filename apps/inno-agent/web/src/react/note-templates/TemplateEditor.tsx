@@ -9,10 +9,6 @@ function splitTags(value: string): string[] {
 	return value.split(/[,，\s]+/).map((tag) => tag.trim()).filter(Boolean);
 }
 
-function slugify(value: string): string {
-	return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
-}
-
 function normalizeMarkdown(value: string): string {
 	return value.replace(/\r\n/g, "\n").trimEnd();
 }
@@ -43,10 +39,7 @@ export function TemplateEditor() {
 	}
 
 	const updateLabel = (label: string) => {
-		const patch: { label: string; id?: string; defaultTitle?: string } = { label };
-		if (state.isNew && !state.draft?.id) patch.id = slugify(label);
-		if (state.isNew && !state.draft?.defaultTitle) patch.defaultTitle = label;
-		noteTemplateStore.updateDraft(patch);
+		noteTemplateStore.updateDraft({ label, labelEn: label, defaultTitle: label, defaultTitleEn: label });
 	};
 
 	return (
@@ -64,17 +57,9 @@ export function TemplateEditor() {
 			<div className="min-h-0 flex-1 overflow-y-auto">
 				<div className="mx-auto max-w-[760px] space-y-5 px-5 py-5">
 					{!editable ? <div className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-2 text-xs text-[var(--inno-text-muted)]">{t("notes.templates.readOnlyHint", "该模板随应用发布，不能直接修改。复制后即可编辑。")}</div> : null}
-					<div className="grid gap-4 sm:grid-cols-2">
-						<label className="space-y-1.5 text-xs text-[var(--inno-text-muted)]">{t("notes.templates.name", "模板名称")}<input className={inputClass} value={state.draft.label} readOnly={!editable} onChange={(event) => updateLabel(event.target.value)} /></label>
-						<label className="space-y-1.5 text-xs text-[var(--inno-text-muted)]">{t("notes.templates.id", "模板 ID")}<input className={inputClass} value={state.draft.id} readOnly={!state.isNew} onChange={(event) => noteTemplateStore.updateDraft({ id: slugify(event.target.value) })} /></label>
-						<label className="space-y-1.5 text-xs text-[var(--inno-text-muted)]">{t("notes.templates.nameEn", "英文名称")}<input className={inputClass} value={state.draft.labelEn} readOnly={!editable} onChange={(event) => noteTemplateStore.updateDraft({ labelEn: event.target.value })} /></label>
-						<label className="space-y-1.5 text-xs text-[var(--inno-text-muted)]">{t("notes.templates.defaultTitle", "默认标题")}<input className={inputClass} value={state.draft.defaultTitle} readOnly={!editable} onChange={(event) => noteTemplateStore.updateDraft({ defaultTitle: event.target.value })} /></label>
-					</div>
+					<label className="block space-y-1.5 text-xs text-[var(--inno-text-muted)]">{t("notes.templates.name", "模板名称")}<input className={inputClass} value={state.draft.label} readOnly={!editable} onChange={(event) => updateLabel(event.target.value)} /></label>
 					<label className="block space-y-1.5 text-xs text-[var(--inno-text-muted)]">{t("notes.templates.description", "描述")}<textarea className="min-h-20 w-full resize-y rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm text-[var(--inno-text)] outline-none focus:border-[var(--inno-accent)] focus:ring-2 focus:ring-[var(--inno-accent-soft)]" value={state.draft.description} readOnly={!editable} onChange={(event) => noteTemplateStore.updateDraft({ description: event.target.value })} /></label>
-					<div className="grid items-end gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
-						<label className="space-y-1.5 text-xs text-[var(--inno-text-muted)]">{t("notes.templates.tags", "默认标签")}<input key={`${state.selected?.id ?? "new"}:${tagsText}`} className={inputClass} defaultValue={tagsText} readOnly={!editable} onBlur={(event) => noteTemplateStore.updateDraft({ tags: splitTags(event.target.value) })} placeholder={t("notes.templates.tagsHint", "使用逗号或空格分隔")} /></label>
-						<label className="flex h-9 items-center gap-2 text-xs text-[var(--inno-text-muted)]"><input type="checkbox" className="h-4 w-4 accent-[var(--inno-accent)]" checked={!state.draft.hidden} disabled={!editable} onChange={(event) => noteTemplateStore.updateDraft({ hidden: !event.target.checked })} />{t("notes.templates.showInMenu", "在创建菜单中显示")}</label>
-					</div>
+					<label className="block space-y-1.5 text-xs text-[var(--inno-text-muted)]">{t("notes.templates.tags", "默认标签")}<input key={`${state.selected?.id ?? "new"}:${tagsText}`} className={inputClass} defaultValue={tagsText} readOnly={!editable} onBlur={(event) => noteTemplateStore.updateDraft({ tags: splitTags(event.target.value) })} placeholder={t("notes.templates.tagsHint", "使用逗号或空格分隔")} /></label>
 					<div>
 						<div className="mb-2 flex items-center justify-between gap-3">
 							<h3 className="text-xs font-medium text-[var(--inno-text-muted)]">{t("notes.templates.markdown", "Markdown 正文")}</h3>

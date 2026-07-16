@@ -128,7 +128,7 @@ export function createNoteTools(
 				const rawPath = normalizeNotePath(params.rawPath as string);
 				const note = readNoteContent(l2DataDir, rawPath);
 				const polishTemplates = listNoteTemplates(codeDir, dirname(l2DataDir))
-					.filter((template) => !template.hidden && template.id !== "blank")
+					.filter((template) => template.id !== "blank" && (template.source === "custom" || !template.hidden))
 					.map(({ id, label, description, body }) => ({ id, label, description, body }));
 				return {
 					content: [{ type: "text" as const, text: JSON.stringify({ note, polishTemplates }, null, 2) }],

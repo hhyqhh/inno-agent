@@ -5,18 +5,19 @@ type LegacyTemplate = Partial<NoteTemplate> & Pick<NoteTemplate, "id" | "label">
 
 function normalizeTemplate(template: LegacyTemplate): NoteTemplate {
 	const source = template.source === "custom" ? "custom" : "system";
+	const customLabel = template.label;
 	return {
 		id: template.id,
 		label: template.label,
-		labelEn: template.labelEn ?? template.label,
+		labelEn: source === "custom" ? customLabel : template.labelEn ?? template.label,
 		description: template.description ?? "",
 		descriptionEn: template.descriptionEn ?? template.description ?? "",
 		tags: template.tags ?? [],
 		tagsEn: template.tagsEn ?? template.tags ?? [],
 		body: template.body ?? "",
-		defaultTitle: template.defaultTitle ?? template.label,
-		defaultTitleEn: template.defaultTitleEn ?? template.defaultTitle ?? template.labelEn ?? template.label,
-		hidden: template.hidden === true,
+		defaultTitle: source === "custom" ? customLabel : template.defaultTitle ?? template.label,
+		defaultTitleEn: source === "custom" ? customLabel : template.defaultTitleEn ?? template.defaultTitle ?? template.labelEn ?? template.label,
+		hidden: source === "system" && template.hidden === true,
 		source,
 		editable: template.editable ?? source === "custom",
 	};

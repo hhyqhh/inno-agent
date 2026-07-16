@@ -22,7 +22,6 @@ export function TemplateSidebar({ viewSelector, onBack }: { viewSelector?: React
 				<button key={template.id} type="button" className={`flex w-full items-center gap-2 border-l-2 px-3 py-2 text-left text-sm transition-colors ${state.selectedId === template.id ? "border-l-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-l-transparent text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]"}`} onClick={() => noteTemplateStore.select(template.id)}>
 					<LayoutTemplate size={14} className="shrink-0" />
 					<span className="min-w-0 flex-1 truncate">{template.label}</span>
-					{template.hidden ? <span className="text-[9px] text-[var(--inno-text-subtle)]">{t("notes.templates.hidden", "隐藏")}</span> : null}
 				</button>
 			))}
 		</div>

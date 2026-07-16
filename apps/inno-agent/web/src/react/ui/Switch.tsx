@@ -7,7 +7,7 @@ interface SwitchProps {
 }
 
 /**
- * Controlled toggle switch. Routes through --inno-* theme vars so all 4 themes
+ * Controlled toggle switch. Routes through --inno-* theme vars so the innospark theme
  * render correctly (the old inline version used a hardcoded slate color for OFF).
  * Press feedback uses scale(0.97) + custom ease-out per Emil's principles.
  */

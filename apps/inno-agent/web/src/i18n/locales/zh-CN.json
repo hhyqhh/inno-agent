@@ -439,13 +439,6 @@
 			"zh-CN": "中文",
 			"en": "English"
 		},
-		"theme": "主题",
-		"themeOptions": {
-			"light": "浅色",
-			"warm": "暖色",
-			"ocean": "海洋",
-			"innospark": "启创"
-		},
 		"channels": {
 			"title": "消息渠道",
 			"feishu": {

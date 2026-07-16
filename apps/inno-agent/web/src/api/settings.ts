@@ -97,13 +97,6 @@ export async function saveContentHubSettings(payload: ContentHubPayload): Promis
 	});
 }
 
-export async function saveThemeSettings(theme: string): Promise<InnoSettings> {
-	return apiFetch<InnoSettings>("/api/settings/theme", {
-		method: "PUT",
-		body: JSON.stringify({ theme }),
-	});
-}
-
 export async function feishuQrRegister(): Promise<{ deviceCode: string; qrUrl: string; expiresIn: number; interval: number }> {
 	return apiFetch<{ deviceCode: string; qrUrl: string; expiresIn: number; interval: number }>("/api/channels/feishu/qr-register", {
 		method: "POST",

@@ -4061,21 +4061,6 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
-		// PUT /api/settings/theme — persist UI theme preference
-		if (method === "PUT" && url === "/api/settings/theme") {
-			const body = (await readBody(req)) as Record<string, unknown>;
-			const theme = typeof body.theme === "string" ? body.theme.trim() : "";
-			const ALLOWED_THEMES = ["light", "warm", "ocean", "innospark"];
-			if (!ALLOWED_THEMES.includes(theme)) {
-				json(res, 400, { error: `Invalid theme. Allowed: ${ALLOWED_THEMES.join(", ")}` });
-				return;
-			}
-			config.ui = { theme };
-			config = saveConfig(paths.configPath, config);
-			json(res, 200, buildSafeSettings());
-			return;
-		}
-
 		// --- Chat API ---
 		if (method === "POST" && url === "/api/chat") {
 			const body = (await readBody(req)) as Record<string, unknown>;

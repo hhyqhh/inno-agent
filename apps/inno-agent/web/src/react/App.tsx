@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { appStore, type RightPanelTab, type WorkspaceMode } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
-import { themeStore, type ThemeId } from "../stores/theme-store.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { ChatCenter } from "./ChatCenter.js";
 import { SessionSidebar } from "./SessionSidebar.js";
@@ -23,16 +22,6 @@ export function App() {
 	// available app-wide before the user ever opens the Settings panel.
 	useEffect(() => {
 		void settingsStore.load();
-		// After settings load, sync theme from backend if it differs from local.
-		// localStorage is the instant source (FOWT prevention); backend keeps
-		// theme consistent across devices.
-		const unsubscribe = settingsStore.on("change", () => {
-			const remote = settingsStore.settings?.ui?.theme as ThemeId | undefined;
-			if (remote && remote !== themeStore.current) {
-				themeStore.apply(remote);
-			}
-		});
-		return unsubscribe;
 	}, []);
 
 	// Track whether user manually toggled the sidebar so we don't fight them

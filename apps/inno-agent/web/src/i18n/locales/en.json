@@ -439,13 +439,6 @@
 			"zh-CN": "中文",
 			"en": "English"
 		},
-		"theme": "Theme",
-		"themeOptions": {
-			"light": "Light",
-			"warm": "Warm",
-			"ocean": "Ocean",
-			"innospark": "InnoSpark"
-		},
 		"channels": {
 			"title": "Channels",
 			"feishu": {

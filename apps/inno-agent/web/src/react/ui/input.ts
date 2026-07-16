@@ -1,6 +1,6 @@
 /**
  * Shared input className — routes border/bg/text/focus through --inno-* theme
- * vars so inputs render correctly under all 4 themes. Focus ring uses
+ * vars so inputs render correctly under the innospark theme. Focus ring uses
  * --inno-ring (a box-shadow) via `shadow-` not `ring-`, and `focus-visible:`
  * so it doesn't fire on mouse click.
  */

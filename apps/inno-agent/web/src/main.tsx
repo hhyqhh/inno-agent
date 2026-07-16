@@ -1,6 +1,5 @@
 import "./app.css";
 import "./i18n/index.js";
-import "./stores/theme-store.js";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

@@ -1,20 +1,9 @@
 <!doctype html>
-<html lang="zh-CN" class="h-full">
+<html lang="zh-CN" class="h-full" data-theme="innospark">
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>Inno Agent</title>
-		<script>
-			// Apply theme before first paint to prevent flash of wrong theme (FOWT).
-			(function () {
-				try {
-					var t = localStorage.getItem("inno.theme") || "light";
-					var valid = ["light", "warm", "ocean", "innospark"];
-					if (valid.indexOf(t) === -1) t = "light";
-					document.documentElement.setAttribute("data-theme", t);
-				} catch (e) {}
-			})();
-		</script>
 	</head>
 	<body class="h-full m-0 bg-background text-foreground">
 		<div id="root" class="h-full"></div>

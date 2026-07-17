@@ -213,8 +213,17 @@
 			"cancel": "Cancel"
 		},
 		"download": "Download",
+		"unarchiveDialogTitle": "Unarchive note",
 		"unarchiveConfirm": "Unarchive \"{{title}}\"? Its Wiki summary page and knowledge points extracted only from it will be deleted, and the item moves back to drafts.",
+		"deleteDialogTitle": "Delete note",
 		"deleteConfirm": "Delete \"{{title}}\"? This cannot be undone.",
+		"templates": {
+			"discardDialogTitle": "Discard template changes",
+			"discardConfirm": "This template has unsaved changes. Discard them?",
+			"discardChanges": "Discard changes",
+			"deleteDialogTitle": "Delete template",
+			"deleteConfirm": "Delete template \"{{title}}\"? This cannot be undone."
+		},
 		"previewBinaryHint": "Binary file — download or archive to view the Wiki summary.",
 		"itemType": {
 			"markdown": "Note",

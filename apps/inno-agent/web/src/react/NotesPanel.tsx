@@ -34,6 +34,7 @@ import { noteTemplateStore } from "../stores/note-template-store.js";
 import { TemplateEditor } from "./note-templates/TemplateEditor.js";
 import { TemplateMenu } from "./note-templates/TemplateMenu.js";
 import { TemplateSidebar } from "./note-templates/TemplateSidebar.js";
+import { ConfirmDialog } from "./ConfirmDialog.js";
 
 interface NotesPanelProps {
 	viewSelector?: ReactNode;
@@ -75,6 +76,9 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 	const [panelMode, setPanelMode] = useState<"notes" | "templates">("notes");
 	const [tagsOpen, setTagsOpen] = useState(false);
 	const [isConversationalPolishing, setIsConversationalPolishing] = useState(false);
+	const [notePendingDeletion, setNotePendingDeletion] = useState<NoteSummary | null>(null);
+	const [notePendingUnarchive, setNotePendingUnarchive] = useState<NoteSummary | null>(null);
+	const [showDiscardTemplateChanges, setShowDiscardTemplateChanges] = useState(false);
 	const panelRef = useRef<HTMLDivElement>(null);
 	const uploadRef = useRef<HTMLInputElement>(null);
 	const state = useStoreSnapshot(notesStore, () => ({
@@ -207,21 +211,31 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 		if (wikiPath && onOpenWiki) onOpenWiki(wikiPath);
 	}, [onOpenWiki]);
 
-	const handleDelete = useCallback(async () => {
-		const selected = notesStore.selected;
-		if (!selected) return;
-		const confirmed = typeof window === "undefined" ? true : window.confirm(t("notes.deleteConfirm", { title: selected.title }));
-		if (!confirmed) return;
-		await notesStore.deleteSelected();
-	}, [t]);
+	const handleDelete = useCallback(() => {
+		if (notesStore.selected) setNotePendingDeletion(notesStore.selected);
+	}, []);
 
-	const handleUnarchive = useCallback(async () => {
-		const selected = notesStore.selected;
-		if (!selected) return;
-		const confirmed = typeof window === "undefined" ? true : window.confirm(t("notes.unarchiveConfirm", { title: selected.title }));
-		if (!confirmed) return;
-		await notesStore.unarchiveSelected();
-	}, [t]);
+	const confirmDelete = useCallback(async () => {
+		if (!notePendingDeletion || notesStore.selected?.rawPath !== notePendingDeletion.rawPath) {
+			setNotePendingDeletion(null);
+			return;
+		}
+		const deleted = await notesStore.deleteSelected();
+		if (deleted) setNotePendingDeletion(null);
+	}, [notePendingDeletion]);
+
+	const handleUnarchive = useCallback(() => {
+		if (notesStore.selected) setNotePendingUnarchive(notesStore.selected);
+	}, []);
+
+	const confirmUnarchive = useCallback(async () => {
+		if (!notePendingUnarchive || notesStore.selected?.rawPath !== notePendingUnarchive.rawPath) {
+			setNotePendingUnarchive(null);
+			return;
+		}
+		const unarchived = await notesStore.unarchiveSelected();
+		if (unarchived) setNotePendingUnarchive(null);
+	}, [notePendingUnarchive]);
 
 	const selected = state.selected;
 	const isMarkdown = selected?.kind === "markdown";
@@ -336,7 +350,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 						type="button"
 						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
 						disabled={state.isArchiving || isSelectedArchiving}
-						onClick={() => void handleUnarchive()}
+						onClick={handleUnarchive}
 					>
 						<ArchiveRestore size={14} />
 						{t("notes.actions.unarchive")}
@@ -347,7 +361,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 						type="button"
 						className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
 						disabled={state.isDeleting || isSelectedArchiving}
-						onClick={() => void handleDelete()}
+						onClick={handleDelete}
 					>
 						<Trash2 size={14} />
 						{t("notes.actions.delete")}
@@ -368,7 +382,15 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 	}
 
 	function closeTemplateManager(): void {
-		if (noteTemplateStore.isDirty && !window.confirm(t("notes.templates.discardConfirm", "当前模板尚未保存，是否放弃修改？"))) return;
+		if (noteTemplateStore.isDirty) {
+			setShowDiscardTemplateChanges(true);
+			return;
+		}
+		setPanelMode("notes");
+	}
+
+	function discardTemplateChanges(): void {
+		setShowDiscardTemplateChanges(false);
 		setPanelMode("notes");
 	}
 
@@ -377,6 +399,15 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 			<div ref={panelRef} className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)]">
 				<TemplateSidebar viewSelector={viewSelector} onBack={closeTemplateManager} />
 				<TemplateEditor />
+				<ConfirmDialog
+					open={showDiscardTemplateChanges}
+					title={t("notes.templates.discardDialogTitle")}
+					description={t("notes.templates.discardConfirm")}
+					confirmLabel={t("notes.templates.discardChanges")}
+					cancelLabel={t("common.cancel")}
+					onConfirm={discardTemplateChanges}
+					onCancel={() => setShowDiscardTemplateChanges(false)}
+				/>
 			</div>
 		);
 	}
@@ -696,6 +727,26 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 				)}
 				</section>
 			</div>
+			<ConfirmDialog
+				open={notePendingDeletion !== null}
+				title={t("notes.deleteDialogTitle")}
+				description={t("notes.deleteConfirm", { title: notePendingDeletion?.title ?? "" })}
+				confirmLabel={t("common.delete")}
+				cancelLabel={t("common.cancel")}
+				busy={state.isDeleting}
+				onConfirm={() => void confirmDelete()}
+				onCancel={() => setNotePendingDeletion(null)}
+			/>
+			<ConfirmDialog
+				open={notePendingUnarchive !== null}
+				title={t("notes.unarchiveDialogTitle")}
+				description={t("notes.unarchiveConfirm", { title: notePendingUnarchive?.title ?? "" })}
+				confirmLabel={t("notes.actions.unarchive")}
+				cancelLabel={t("common.cancel")}
+				busy={state.isArchiving}
+				onConfirm={() => void confirmUnarchive()}
+				onCancel={() => setNotePendingUnarchive(null)}
+			/>
 		</div>
 	);
 }

@@ -213,8 +213,17 @@
 			"cancel": "取消"
 		},
 		"download": "下载",
+		"unarchiveDialogTitle": "撤回归档",
 		"unarchiveConfirm": "撤回归档「{{title}}」？将删除其生成的 Wiki 摘要页面和仅由它提取的知识点，内容退回草稿箱。",
+		"deleteDialogTitle": "删除笔记",
 		"deleteConfirm": "删除「{{title}}」？此操作不可撤回。",
+		"templates": {
+			"discardDialogTitle": "放弃模板修改",
+			"discardConfirm": "当前模板尚未保存，是否放弃修改？",
+			"discardChanges": "放弃修改",
+			"deleteDialogTitle": "删除模板",
+			"deleteConfirm": "删除模板「{{title}}」？此操作不可撤回。"
+		},
 		"previewBinaryHint": "该文件为二进制格式，请下载或归档后查看 Wiki 摘要。",
 		"itemType": {
 			"markdown": "笔记",

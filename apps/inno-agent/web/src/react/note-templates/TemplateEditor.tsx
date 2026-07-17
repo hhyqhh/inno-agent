@@ -4,6 +4,7 @@ import { Copy, Eye, FileEdit, LoaderCircle, Save, Trash2 } from "lucide-react";
 import { noteTemplateStore } from "../../stores/note-template-store.js";
 import { useStoreSnapshot } from "../hooks.js";
 import { MilkdownEditor } from "../notebook/MilkdownEditor.js";
+import { ConfirmDialog } from "../ConfirmDialog.js";
 
 function splitTags(value: string): string[] {
 	return value.split(/[,，\s]+/).map((tag) => tag.trim()).filter(Boolean);
@@ -18,6 +19,7 @@ const inputClass = "h-9 w-full rounded-md border border-[var(--inno-border)] bg-
 export function TemplateEditor() {
 	const { t } = useTranslation();
 	const [preview, setPreview] = useState(false);
+	const [templatePendingDeletion, setTemplatePendingDeletion] = useState<{ id: string; label: string } | null>(null);
 	const acceptInitialEditorSyncRef = useRef(true);
 	const state = useStoreSnapshot(noteTemplateStore, () => ({
 		selected: noteTemplateStore.selected,
@@ -42,6 +44,12 @@ export function TemplateEditor() {
 		noteTemplateStore.updateDraft({ label, labelEn: label, defaultTitle: label, defaultTitleEn: label });
 	};
 
+	const confirmDelete = async () => {
+		if (!templatePendingDeletion) return;
+		const deleted = await noteTemplateStore.remove(templatePendingDeletion.id);
+		if (deleted) setTemplatePendingDeletion(null);
+	};
+
 	return (
 		<section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-surface)]">
 			<header className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--inno-border)] px-4">
@@ -50,7 +58,7 @@ export function TemplateEditor() {
 					{!state.isNew && state.selected ? <p className="text-[10px] text-[var(--inno-text-subtle)]">{state.selected.source === "system" ? t("notes.templates.builtIn", "内置模板") : t("notes.templates.custom", "自定义模板")}</p> : null}
 				</div>
 				{!editable && state.selected ? <button type="button" className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--inno-accent)] px-3 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50" disabled={state.isSaving} onClick={() => void noteTemplateStore.duplicate(state.selected!.id)}><Copy size={13} />{t("notes.templates.copy", "复制为自定义模板")}</button> : null}
-				{editable && !state.isNew && state.selected ? <button type="button" className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50" disabled={state.isSaving} onClick={() => { if (window.confirm(t("notes.templates.deleteConfirm", "确定删除这个模板吗？"))) void noteTemplateStore.remove(state.selected!.id); }}><Trash2 size={13} />{t("common.delete", "删除")}</button> : null}
+				{editable && !state.isNew && state.selected ? <button type="button" className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50" disabled={state.isSaving} onClick={() => setTemplatePendingDeletion({ id: state.selected!.id, label: state.selected!.label })}><Trash2 size={13} />{t("common.delete", "删除")}</button> : null}
 				{editable ? <button type="button" className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--inno-accent)] px-3 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50" disabled={state.isSaving || !state.isDirty || !state.draft.id || !state.draft.label || !state.draft.body.trim()} onClick={() => void noteTemplateStore.save()}>{state.isSaving ? <LoaderCircle size={13} className="animate-spin" /> : <Save size={13} />}{state.isNew ? t("common.create", "创建") : t("common.save", "保存")}</button> : null}
 			</header>
 			{state.error ? <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700">{state.error}</div> : null}
@@ -93,6 +101,16 @@ export function TemplateEditor() {
 					</div>
 				</div>
 			</div>
+			<ConfirmDialog
+				open={templatePendingDeletion !== null}
+				title={t("notes.templates.deleteDialogTitle")}
+				description={t("notes.templates.deleteConfirm", { title: templatePendingDeletion?.label ?? "" })}
+				confirmLabel={t("common.delete")}
+				cancelLabel={t("common.cancel")}
+				busy={state.isSaving}
+				onConfirm={() => void confirmDelete()}
+				onCancel={() => setTemplatePendingDeletion(null)}
+			/>
 		</section>
 	);
 }

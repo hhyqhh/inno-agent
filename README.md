@@ -295,3 +295,21 @@ Join the WeChat user group to ask questions, share use cases, and follow updates
 [MIT](./LICENSE).
 
 This project depends on the Pi SDK (`@earendil-works/pi-*` packages by Mario Zechner), which is also MIT-licensed and consumed via npm.
+
+---
+
+## Citation
+
+If you use Inno Agent in your research, please cite it as follows:
+
+```bibtex
+@misc{hao2026innoagent,
+  author       = {Hao Hao, Ye Lu, Ruotong Yang, Yongheng Guo and Aimin Zhou},
+  title        = {Inno Agent: An Open-Source Personal Learning Agent with Layered Memory, Educational Post-Training, and Local Deployment},
+  year         = {2026},
+  publisher    = {GitHub},
+  journal      = {GitHub repository},
+  howpublished = {\url{https://github.com/hhyqhh/inno-agent}},
+  note         = {Accessed: 2026-07-17}
+}
+```

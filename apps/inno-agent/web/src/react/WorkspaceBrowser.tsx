@@ -23,6 +23,7 @@ import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { settingsStore } from "../stores/settings-store.js";
+import { appStore } from "../stores/app-store.js";
 import { getSessionWorkspace } from "../api/workspaces.js";
 import { TerminalDrawer } from "./terminal/TerminalDrawer.js";
 import { RunButton } from "./terminal/RunButton.js";
@@ -41,6 +42,9 @@ const DocxPreview = lazy(() => import("./office/DocxPreview.js"));
 const XlsxPreview = lazy(() => import("./office/XlsxPreview.js"));
 
 const MAX_STREAMING_MARKDOWN_FORMAT_CHARS = 160_000;
+const TREE_PANE_WIDTH = 260;
+const CONTENT_REVEAL_WIDTH = TREE_PANE_WIDTH + 150;
+const DEFAULT_PREVIEW_PANEL_WIDTH = 560;
 
 function streamingMarkdownInterval(contentLength: number): number {
 	if (contentLength < 40_000) return 240;
@@ -682,6 +686,13 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 				if (isDir) node.toggle();
 				else {
 					node.select();
+					workspaceStore.clearStreamingPreview();
+					if (appStore.workspaceWidth < CONTENT_REVEAL_WIDTH) {
+						appStore.setWorkspaceWidth(DEFAULT_PREVIEW_PANEL_WIDTH);
+					}
+					if (appStore.workspaceMode === "quarter") {
+						appStore.setWorkspaceMode("half");
+					}
 					void workspaceStore.selectFile(node.data.path);
 				}
 			}}
@@ -829,8 +840,6 @@ export function WorkspaceBrowser() {
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	// The file tree pane keeps a fixed width; the content preview pane appears
 	// only once the panel is dragged wide enough to fit it beside the tree.
-	const TREE_PANE_WIDTH = 260;
-	const CONTENT_REVEAL_WIDTH = TREE_PANE_WIDTH + 150;
 	const showContent = sidebarOpen ? panelWidth >= CONTENT_REVEAL_WIDTH : true;
 
 	// Measure the panel width to decide whether the content pane fits.

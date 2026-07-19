@@ -510,6 +510,9 @@
 	},
 	"chat": {
 		"welcomePlaceholder": "有什么想学习或实践的?发送消息开始…",
+		"loadingSession": "正在加载会话…",
+		"emptySessionTitle": "此会话暂无消息",
+		"emptySessionHint": "在下方输入消息，开始新的对话。",
 		"uploadFiles": "上传文件到工作区",
 		"uploadHint": "请先选择已有工作区或开始对话后再上传文件",
 		"attachImage": "添加图片",

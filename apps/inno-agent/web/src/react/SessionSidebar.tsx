@@ -11,6 +11,7 @@ import {
 	Trash2,
 	Archive,
 	ArchiveRestore,
+	Download,
 	ChevronRight,
 	Search,
 	X,
@@ -23,6 +24,7 @@ import { workspacesStore } from "../stores/workspaces-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import type { WorkspaceMeta } from "../api/workspaces.js";
+import { triggerDownload } from "../api/workspace.js";
 import type { SessionChannel, SessionMeta } from "../api/sessions.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { Spinner } from "./ui/Spinner.js";
@@ -256,6 +258,7 @@ function SessionCard({
 	onGenerate,
 	onArchive,
 	onDelete,
+	onExport,
 }: {
 	session: SessionMeta;
 	active: boolean;
@@ -271,6 +274,7 @@ function SessionCard({
 	onGenerate: () => void;
 	onArchive: () => void;
 	onDelete: () => void;
+	onExport: () => void;
 }) {
 	const { t } = useTranslation();
 	return (
@@ -354,6 +358,13 @@ function SessionCard({
 						onClick={(e) => { e.stopPropagation(); onStartEdit(); }}
 					>
 						<Pencil size={12} />
+					</button>
+					<button
+						className="rounded p-0.5 text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+						title={t("sessions.export", "导出为 Markdown")}
+						onClick={(e) => { e.stopPropagation(); onExport(); }}
+					>
+						<Download size={12} />
 					</button>
 					<button
 						className="rounded p-0.5 text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
@@ -568,6 +579,13 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 		} else {
 			void sessionsStore.archiveSession(session.id);
 		}
+	}, []);
+
+	const handleExport = useCallback((session: SessionMeta) => {
+		// Hits the backend export endpoint, which streams a `text/markdown`
+		// attachment built from the session's merged messages. The browser
+		// follows the Content-Disposition header to name the file.
+		triggerDownload(`/api/sessions/${encodeURIComponent(session.id)}/export.md`);
 	}, []);
 
 	const handleDelete = useCallback((session: SessionMeta) => {
@@ -922,6 +940,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 													onGenerate={() => generateName(session)}
 													onArchive={() => handleArchive(session)}
 													onDelete={() => handleDelete(session)}
+													onExport={() => handleExport(session)}
 												/>
 											))}
 										</motion.div>

@@ -1865,38 +1865,49 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 			const entry = JSON.parse(line) as Record<string, unknown>;
 			const timestamp = typeof entry.timestamp === "string" ? entry.timestamp : "";
 			if (!createdAt && timestamp) createdAt = timestamp;
-			const entryText = line.toLowerCase();
-			// Detect channel from entry content
+			// Detect channel ONLY from structured JSON fields written by the system
+			// (message.channel / message.source / message.api / message.model).
+			// We intentionally do NOT substring-match the raw line for natural-language
+			// keywords like "飞书" / "scheduled" — those appear in ordinary user/assistant
+			// text and would falsely tag a web session as a feishu/scheduler session.
+			// Verified on unmodified code: a learner asking "飞书的英文名?" (user text)
+			// or a reply that merely mentions "飞书" (assistant text) both got mislabeled
+			// as channel=feishu even though origin stayed web. The authoritative channel
+			// record lives in channels.json (via recordCurrentSessionChannel); this
+			// detection is only a best-effort hint for legacy sessions that predate it.
 			let entryChannel: SessionChannel | undefined;
-			if (entryText.includes('"channel":"feishu"') || entryText.includes("飞书") || entryText.includes("附件已下载到")) {
+			const msgObj = entry.type === "message" && entry.message && typeof entry.message === "object"
+				? entry.message as Record<string, unknown>
+				: undefined;
+			const channelField = typeof msgObj?.channel === "string" ? (msgObj.channel as string) : "";
+			const sourceField = typeof msgObj?.source === "string" ? (msgObj.source as string) : "";
+			const apiField = typeof msgObj?.api === "string" ? (msgObj.api as string) : "";
+			const modelField = typeof msgObj?.model === "string" ? (msgObj.model as string) : "";
+			if (channelField === "feishu") {
 				channels.add("feishu");
 				entryChannel = "feishu";
 			}
-			if (entryText.includes('"channel":"wechat"') || entryText.includes('"channel":"wecom"')) {
+			if (channelField === "wechat" || channelField === "wecom") {
 				channels.add("wechat");
 				entryChannel = entryChannel ?? "wechat";
 			}
-			if (entryText.includes('"channel":"qq"')) {
+			if (channelField === "qq") {
 				channels.add("qq");
 				entryChannel = entryChannel ?? "qq";
 			}
-			if (entryText.includes('"source":"web"') || entryText.includes('"channel":"web"')) {
+			if (sourceField === "web" || channelField === "web") {
 				channels.add("web");
 				entryChannel = entryChannel ?? "web";
 			}
-			if (entryText.includes('"tasktype"') || entryText.includes("scheduled")) {
-				channels.add("scheduler");
-				entryChannel = entryChannel ?? "scheduler";
-			}
-			// Check for scheduler-authored assistant messages
-			if (entryText.includes('"api":"inno-background"') || entryText.includes('"model":"scheduler"')) {
+			// Scheduler-authored assistant messages carry a synthetic api/model marker.
+			if (apiField === "inno-background" || modelField === "scheduler") {
 				channels.add("scheduler");
 				entryChannel = entryChannel ?? "scheduler";
 			}
 
-			if (entry.type !== "message" || !entry.message || typeof entry.message !== "object") continue;
+			if (!msgObj) continue;
 			if (timestamp) lastMessageAt = timestamp;
-			const message = entry.message as Record<string, unknown>;
+			const message = msgObj;
 			const role = message.role;
 			const ts = timestamp ? Date.parse(timestamp) : Date.now();
 

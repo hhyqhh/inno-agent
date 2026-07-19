@@ -77,7 +77,7 @@ export async function summarizeContent(
 		);
 
 		if (response.stopReason === "error") {
-			logger.error({ errorMessage: response.errorMessage }, `[L2 summarizer] LLM error ?? "unknown"}`);
+			logger.error({ errorMessage: response.errorMessage }, `[L2 summarizer] LLM error: ${response.errorMessage ?? "unknown"}`);
 			return null;
 		}
 

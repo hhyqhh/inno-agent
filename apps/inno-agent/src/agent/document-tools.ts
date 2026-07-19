@@ -1,5 +1,6 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { existsSync } from "node:fs";
 import { resolve, isAbsolute } from "node:path";
 import { parseDocument, screenshotDocument, DocumentParseError } from "../memory/l2/document-parser.js";
 import { logger } from "../logger.js";
@@ -40,6 +41,14 @@ export function createDocumentTools(): ToolDefinition[] {
 			const resolvedPath = isAbsolute(typed.filePath)
 				? typed.filePath
 				: resolve(workspaceDir, typed.filePath);
+
+			// Check file existence before attempting parse
+			if (!existsSync(resolvedPath)) {
+				return {
+					content: [{ type: "text" as const, text: `文件不存在: ${typed.filePath}` }],
+					details: { error: "file_not_found", filePath: resolvedPath, pageCount: 0, textLength: 0 },
+				};
+			}
 
 			// Parse document
 			let parsed;

@@ -2,7 +2,6 @@ import { join } from "node:path";
 import { readJson, writeJson, appendJsonl, readJsonl } from "../../storage/file-store.js";
 import { type LearnerProfile, type LearningEvent, createDefaultProfile } from "./types.js";
 import { applyLearningEventToProfile } from "./auto-profile.js";
-import { refreshContextCache } from "./context-cache.js";
 
 const PROFILE_FILE = "profile.json";
 const EVENTS_FILE = "events.jsonl";
@@ -40,7 +39,6 @@ export function recordEventAndUpdateProfile(dataDir: string, event: LearningEven
 	const profile = loadProfile(dataDir);
 	if (applyLearningEventToProfile(profile, event)) {
 		saveProfile(dataDir, profile);
-		refreshContextCache(dataDir, profile, loadEvents(dataDir).slice(-8));
 	}
 	return profile;
 }

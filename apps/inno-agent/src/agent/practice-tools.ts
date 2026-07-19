@@ -1,7 +1,7 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, relative, resolve } from "node:path";
 import type { WorkspaceRegistry } from "../workspace/workspace-registry.js";
 import { logger } from "../logger.js";
 
@@ -106,10 +106,6 @@ export function createPracticeTools(deps: PracticeToolDeps): ToolDefinition[] {
 			};
 		},
 	});
-
-	// Ensure dir helper not strictly required since mkdirSync covers it, but kept for clarity.
-	void existsSync;
-	void join;
 
 	return [createPracticeLab];
 }

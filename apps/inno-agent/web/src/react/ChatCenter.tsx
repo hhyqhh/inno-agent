@@ -396,6 +396,7 @@ function PresetPicker({
 export function ChatCenter() {
 	const { t } = useTranslation();
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
+	const draftRef = useRef("");
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const imageInputRef = useRef<HTMLInputElement | null>(null);
 	const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -538,6 +539,7 @@ export function ChatCenter() {
 	const handleInput = useCallback(() => {
 		const el = inputRef.current;
 		if (!el) return;
+		draftRef.current = el.value;
 		const maxHeight = 200;
 		el.style.height = "auto";
 		const h = Math.min(el.scrollHeight, maxHeight);
@@ -612,6 +614,7 @@ export function ChatCenter() {
 			: undefined;
 
 		const resetComposer = () => {
+			draftRef.current = "";
 			if (inputRef.current) {
 				inputRef.current.value = "";
 				inputRef.current.style.height = "auto";
@@ -839,6 +842,7 @@ export function ChatCenter() {
 			<textarea
 				ref={inputRef}
 				id="chat-input"
+				defaultValue={draftRef.current}
 				className="min-h-[36px] max-h-[200px] flex-1 resize-none overflow-hidden rounded-md border-0 bg-transparent px-2 py-2 text-sm leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
 				placeholder={placeholder}
 				rows={1}
@@ -1003,7 +1007,17 @@ export function ChatCenter() {
 					{chat.isLoadingHistory && chat.messages.length === 0 ? (
 						<div className="flex h-full flex-col items-center justify-center pt-20 text-[var(--inno-text-muted)]">
 							<Spinner size={20} className="mb-3 text-[var(--inno-border-strong)]" />
-							<p className="text-sm">Loading session…</p>
+							<p className="text-sm">{t("chat.loadingSession")}</p>
+						</div>
+					) : null}
+
+					{!chat.isLoadingHistory && chat.messages.length === 0 && !chat.isSending ? (
+						<div className="flex flex-col items-center justify-center pt-20 text-center text-[var(--inno-text-muted)]">
+							<div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]">
+								<Sparkles size={18} />
+							</div>
+							<p className="text-sm font-medium text-[var(--inno-text)]">{t("chat.emptySessionTitle")}</p>
+							<p className="mt-1 text-xs">{t("chat.emptySessionHint")}</p>
 						</div>
 					) : null}
 

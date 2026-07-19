@@ -27,11 +27,21 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
 /**
  * Shared SSE body-reading loop. Yields parsed JSON objects from `data:` lines.
  * When the signal is aborted the generator returns normally.
+ *
+ * Connection hygiene: when the caller aborts (e.g. via detach()), we
+ * proactively cancel the reader via an abort listener so the underlying TCP
+ * connection is released immediately, rather than waiting for the pending
+ * reader.read() to reject on the next chunk. Without this, rapidly switching
+ * sessions can accumulate stale SSE connections that exhaust Chromium's
+ * 6-connection-per-origin pool, causing all subsequent fetch() calls to hang.
  */
 async function* readSSEStream<T>(res: Response, signal?: AbortSignal): AsyncGenerator<T> {
 	const reader = res.body!.getReader();
 	const decoder = new TextDecoder();
 	let buffer = "";
+
+	const onAbort = () => { void reader.cancel().catch(() => {}); };
+	signal?.addEventListener("abort", onAbort);
 
 	try {
 		while (true) {
@@ -59,6 +69,7 @@ async function* readSSEStream<T>(res: Response, signal?: AbortSignal): AsyncGene
 			}
 		}
 	} finally {
+		signal?.removeEventListener("abort", onAbort);
 		try {
 			await reader.cancel();
 		} catch {
@@ -105,7 +116,13 @@ export async function* streamSSEGet<T>(url: string, signal?: AbortSignal): Async
 		if (signal?.aborted) return;
 		throw err;
 	}
-	if (res.status === 404) return;
+	if (res.status === 404) {
+		// Consume the body so the connection is returned to the pool immediately
+		// rather than lingering until GC. A 404 here is expected (no active
+		// backend stream for this session) but the response still holds a socket.
+		void res.body?.cancel().catch(() => {});
+		return;
+	}
 	if (!res.ok) {
 		const errBody = await res.json().catch(() => ({}));
 		throw new ApiError(res.status, (errBody as Record<string, string>).error || res.statusText);

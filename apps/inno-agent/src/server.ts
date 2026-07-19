@@ -1842,7 +1842,7 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 		const messages: SessionMessageSummary[] = [];
 		const channels = new Set<SessionChannel>();
 		let createdAt = "";
-		let updatedAt = "";
+		let lastMessageAt = "";
 
 		// Aggregator for the in-progress assistant turn. PI splits one assistant
 		// turn into multiple JSONL entries (thinking + toolCalls + toolResults
@@ -1865,7 +1865,6 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 			const entry = JSON.parse(line) as Record<string, unknown>;
 			const timestamp = typeof entry.timestamp === "string" ? entry.timestamp : "";
 			if (!createdAt && timestamp) createdAt = timestamp;
-			if (timestamp) updatedAt = timestamp;
 			const entryText = line.toLowerCase();
 			// Detect channel from entry content
 			let entryChannel: SessionChannel | undefined;
@@ -1896,6 +1895,7 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 			}
 
 			if (entry.type !== "message" || !entry.message || typeof entry.message !== "object") continue;
+			if (timestamp) lastMessageAt = timestamp;
 			const message = entry.message as Record<string, unknown>;
 			const role = message.role;
 			const ts = timestamp ? Date.parse(timestamp) : Date.now();
@@ -1980,7 +1980,7 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 				id: basename(filePath),
 				name,
 				createdAt: createdAt || fallbackTime,
-				updatedAt: updatedAt || fallbackTime,
+				updatedAt: lastMessageAt || createdAt || fallbackTime,
 				messageCount: filtered.length,
 				preview,
 				channels: channels.size > 0 ? Array.from(channels) : [],
@@ -2727,6 +2727,7 @@ const server = createServer(async (req, res) => {
 			const channelMetadata = readSessionChannelMetadata();
 			const topicMetadata = readSessionTopicMetadata();
 			const archiveMetadata = readJson<Record<string, boolean>>(sessionArchiveMetadataPath(), {});
+			const currentSessionId = getCurrentSessionId();
 			const sessions = existsSync(sessionDir)
 				? readdirSync(sessionDir)
 						.filter((file) => file.endsWith(".jsonl"))
@@ -2736,6 +2737,7 @@ const server = createServer(async (req, res) => {
 						.map((summary) => bindCliSessionWorkspace(summary))
 						.map((summary) => withRecordedTopic(summary, topicMetadata))
 						.map((summary) => ({ ...summary, archived: archiveMetadata[summary.id] === true }))
+						.filter((summary) => summary.messageCount > 0 || (summary.id === currentSessionId && summary.origin === "web"))
 						.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
 				: [];
 			json(res, 200, sessions);
@@ -2857,6 +2859,10 @@ const server = createServer(async (req, res) => {
 		if (method === "POST" && url === "/api/sessions") {
 			const body = await readBody(req).catch(() => ({})) as Record<string, unknown>;
 			const id = await createNewSession();
+			// This endpoint is exclusively the Web UI's session-creation path.
+			// Record the origin immediately so Simple Mode includes the new empty
+			// session before the first assistant response has finished streaming.
+			recordCurrentSessionChannel("web", id, { setOriginIfEmpty: true });
 
 			// Determine target workspace. The UI chooser always sends an explicit
 			// choice (new/existing); temp is only a safety fallback. A presetId
@@ -3673,7 +3679,9 @@ const server = createServer(async (req, res) => {
 			try {
 				const remote = await listRemotePresets(getContentSource(), forceRefresh);
 				if (remote.length > 0) {
-					json(res, 200, remote);
+					const merged = new Map(listPresets(paths).map((preset) => [preset.id, preset]));
+					for (const preset of remote) merged.set(preset.id, preset);
+					json(res, 200, Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name)));
 				} else {
 					json(res, 200, listPresets(paths));
 				}

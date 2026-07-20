@@ -543,7 +543,9 @@
 	"question": {
 		"typeSomething": "Type something…",
 		"chatAboutThis": "Chat about this",
-		"submit": "Submit"
+		"submit": "Submit",
+		"submitNext": "Next",
+		"optionSelectedHint": "Option selected; deselect to enter custom text"
 	},
 	"sidebar": {
 		"expand": "Expand",

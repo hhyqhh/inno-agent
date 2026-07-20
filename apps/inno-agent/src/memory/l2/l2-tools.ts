@@ -68,20 +68,20 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 
 			// Resolve content: either from params.content or by parsing a file
 			let content: string;
-			let rawPath: string;
+			let resolvedFilePath: string | undefined;
 
 			if (isFileType && params.filePath) {
 				// File-based: parse with LiteParse
 				const workspaceDir = process.env.INNO_WORKSPACE_DIR || process.cwd();
-				const resolvedPath = isAbsolute(params.filePath)
+				resolvedFilePath = isAbsolute(params.filePath)
 					? params.filePath
 					: resolve(workspaceDir, params.filePath);
 
 				let parsed;
 				try {
-					parsed = await parseDocument(resolvedPath);
+					parsed = await parseDocument(resolvedFilePath);
 				} catch (err) {
-					logger.warn({ err, filePath: resolvedPath }, "l2_archive: failed to parse document");
+					logger.warn({ err, filePath: resolvedFilePath }, "l2_archive: failed to parse document");
 					const msg = err instanceof DocumentParseError ? err.message : String(err);
 					return {
 						content: [{ type: "text" as const, text: `文件解析失败: ${msg}` }],
@@ -90,12 +90,9 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 				}
 
 				content = parsed.text;
-				// Copy original file to raw storage
-				rawPath = saveRawFile(l2DataDir, params.title, resolvedPath, sourceType);
 			} else if (params.content) {
 				// Text-based: use content directly
 				content = params.content;
-				rawPath = saveRaw(l2DataDir, params.title, content, sourceType, params.url);
 			} else {
 				return {
 					content: [{ type: "text" as const, text: "参数错误：必须提供 content（文本内容）或 filePath（文件路径）。" }],
@@ -125,6 +122,10 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 					};
 				}
 			}
+
+			const rawPath = resolvedFilePath
+				? saveRawFile(l2DataDir, params.title, resolvedFilePath, sourceType)
+				: saveRaw(l2DataDir, params.title, content, sourceType, params.url);
 
 			const id = `l2src_${randomUUID().slice(0, 8)}`;
 			const tags = params.tags ?? [];

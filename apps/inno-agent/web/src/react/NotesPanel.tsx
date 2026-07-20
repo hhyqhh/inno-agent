@@ -3,14 +3,18 @@ import { useTranslation } from "react-i18next";
 import { MilkdownEditor } from "./notebook/MilkdownEditor.js";
 import { NoteAttachments } from "./notebook/NoteAttachments.js";
 import { NoteProperties } from "./notebook/NoteProperties.js";
+import { PolishDiffPanel } from "./notebook/PolishDiffDialog.js";
+import { VersionHistoryDialog } from "./notebook/VersionHistoryDialog.js";
 import {
 	Archive,
 	ArchiveRestore,
+	CheckCircle2,
 	ChevronDown,
 	Download,
 	ExternalLink,
 	FileText,
 	FileUp,
+	History,
 	LoaderCircle,
 	MessageSquareText,
 	Save,
@@ -26,15 +30,14 @@ import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { MeetingProgress, MeetingRecorder } from "./meetings/MeetingRecorder.js";
 import { meetingStore } from "../stores/meeting-store.js";
-import { chatStore } from "../stores/chat-store.js";
-import { sessionsStore } from "../stores/sessions-store.js";
-import { appStore } from "../stores/app-store.js";
-import { workspaceStore } from "../stores/workspace-store.js";
 import { noteTemplateStore } from "../stores/note-template-store.js";
 import { TemplateEditor } from "./note-templates/TemplateEditor.js";
 import { TemplateMenu } from "./note-templates/TemplateMenu.js";
 import { TemplateSidebar } from "./note-templates/TemplateSidebar.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
+import { chatStore } from "../stores/chat-store.js";
+import { appStore } from "../stores/app-store.js";
+import { sessionsStore } from "../stores/sessions-store.js";
 
 interface NotesPanelProps {
 	viewSelector?: ReactNode;
@@ -52,7 +55,7 @@ function rawFileName(rawPath: string): string {
 	return rawPath.split(/[\\/]/).pop() || rawPath;
 }
 
-const NOTE_POLISH_SESSIONS_KEY = "inno.notePolishSessions";
+const NOTE_POLISH_SESSIONS_KEY = "inno.notePolishSessions.v2";
 
 function readNotePolishSessions(): Record<string, string> {
 	if (typeof window === "undefined") return {};
@@ -75,10 +78,11 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 	const { t } = useTranslation();
 	const [panelMode, setPanelMode] = useState<"notes" | "templates">("notes");
 	const [tagsOpen, setTagsOpen] = useState(false);
-	const [isConversationalPolishing, setIsConversationalPolishing] = useState(false);
 	const [notePendingDeletion, setNotePendingDeletion] = useState<NoteSummary | null>(null);
 	const [notePendingUnarchive, setNotePendingUnarchive] = useState<NoteSummary | null>(null);
 	const [showDiscardTemplateChanges, setShowDiscardTemplateChanges] = useState(false);
+	const [showHistory, setShowHistory] = useState(false);
+	const [isChoosingPolishTemplate, setIsChoosingPolishTemplate] = useState(false);
 	const panelRef = useRef<HTMLDivElement>(null);
 	const uploadRef = useRef<HTMLInputElement>(null);
 	const state = useStoreSnapshot(notesStore, () => ({
@@ -117,11 +121,12 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 		notice: notesStore.notice,
 		polishTemplateLabel: notesStore.polishTemplateLabel,
 		polishSuggestedTags: notesStore.polishSuggestedTags,
+		polishPreview: notesStore.polishPreview,
 		error: notesStore.error,
 		errorDetail: notesStore.errorDetail,
 	}));
 	const meetingState = useStoreSnapshot(meetingStore, () => meetingStore.state);
-	const chatIsSending = useStoreSnapshot(chatStore, () => chatStore.isSending);
+	const chatState = useStoreSnapshot(chatStore, () => ({ isSending: chatStore.isSending }));
 
 	const focusChatWithSummaryPrompt = useCallback(() => {
 		const input = document.getElementById("chat-input") as HTMLTextAreaElement | null;
@@ -153,48 +158,38 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 		return () => window.removeEventListener("keydown", handleSaveShortcut);
 	}, []);
 
-	async function handleConversationalPolish(): Promise<void> {
-		const note = notesStore.selected;
-		if (!note || note.kind !== "markdown" || chatStore.isSending || isConversationalPolishing) return;
-		setIsConversationalPolishing(true);
-		try {
-			if (!(await notesStore.saveSelected())) return;
-			if (appStore.workspaceMode === "full") {
-				if (appStore.workspaceWidth > 640) appStore.setWorkspaceWidth(560);
-				appStore.setWorkspaceMode("half");
-			}
-			const noteTitle = notesStore.editorTitle.trim() || note.title;
-			const mappedSessionId = readNotePolishSessions()[note.rawPath];
-			let openedMappedSession = false;
-			if (mappedSessionId) {
-				await sessionsStore.refresh();
-				if (sessionsStore.sessions.some((session) => session.id === mappedSessionId)) {
-					if (sessionsStore.currentSessionId !== mappedSessionId) {
-						await sessionsStore.openSession(mappedSessionId);
-					}
-					openedMappedSession = true;
-				}
-			}
-			if (!openedMappedSession) {
-				const workspaceId = sessionsStore.preselectedWorkspaceId ?? workspaceStore.activeWorkspaceId;
-				await sessionsStore.createSessionWith(workspaceId ? { workspaceId } : {});
-				const sessionId = sessionsStore.currentSessionId;
-				if (!sessionId) throw new Error("Failed to create note polish session");
-				rememberNotePolishSession(note.rawPath, sessionId);
-				await sessionsStore.renameSession(sessionId, `AI 润色：${noteTitle}`);
-			}
-			const prompt = `对“${noteTitle}”笔记进行 AI 润色。\n\n` +
-				`<inno-internal-context>\nnote_raw_path: ${note.rawPath}\n</inno-internal-context>`;
-			await chatStore.send(
-				prompt,
-				undefined,
-				t("notes.actions.polishingNote", { title: noteTitle }),
-			);
-			await notesStore.reloadNoteIfSelected(note.rawPath);
-		} finally {
-			setIsConversationalPolishing(false);
-		}
-	}
+	useEffect(() => {
+		if (!state.isDirty || state.isSaving || state.isLoadingContent || !state.selected) return;
+		if (state.archivingRawPaths.includes(state.selected.rawPath)) return;
+		const timer = window.setTimeout(() => {
+			void notesStore.saveSelected({ announce: false });
+		}, 1200);
+		return () => window.clearTimeout(timer);
+	}, [
+		state.archivingRawPaths,
+		state.editorContent,
+		state.editorRecordDate,
+		state.editorTags,
+		state.editorTitle,
+		state.isDirty,
+		state.isLoadingContent,
+		state.isSaving,
+		state.previewContent,
+		state.selected,
+	]);
+
+	useEffect(() => {
+		const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+			if (!notesStore.isDirty) return;
+			event.preventDefault();
+			event.returnValue = "";
+		};
+		window.addEventListener("beforeunload", handleBeforeUnload);
+		return () => {
+			window.removeEventListener("beforeunload", handleBeforeUnload);
+			if (notesStore.isDirty) void notesStore.flushSelected();
+		};
+	}, []);
 
 	async function handleUploadedFiles(files: FileList): Promise<void> {
 		if (["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(meetingState)) return;
@@ -210,6 +205,86 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 		const wikiPath = await notesStore.archiveSelected();
 		if (wikiPath && onOpenWiki) onOpenWiki(wikiPath);
 	}, [onOpenWiki]);
+
+	const handlePolish = useCallback(async () => {
+		const note = notesStore.selected;
+		if (!note || notesStore.isPolishing || chatStore.isSending || isChoosingPolishTemplate) return;
+		if (appStore.workspaceMode === "full") appStore.setWorkspaceMode("half");
+		appStore.setWorkspaceWidth(560);
+		setIsChoosingPolishTemplate(true);
+		const noteTitle = notesStore.editorTitle.trim() || note.title;
+		const mappedSessionId = readNotePolishSessions()[note.rawPath];
+		let openedMappedSession = false;
+		if (mappedSessionId) {
+			await sessionsStore.refresh();
+			if (sessionsStore.sessions.some((session) => session.id === mappedSessionId)) {
+				if (sessionsStore.currentSessionId !== mappedSessionId) await sessionsStore.openSession(mappedSessionId);
+				openedMappedSession = true;
+			}
+		}
+		if (!openedMappedSession) {
+			await sessionsStore.createSessionWith({
+				newWorkspace: { name: `AI 润色：${noteTitle}`, isTemp: false },
+			});
+			const sessionId = sessionsStore.currentSessionId;
+			if (!sessionId) {
+				setIsChoosingPolishTemplate(false);
+				return;
+			}
+			rememberNotePolishSession(note.rawPath, sessionId);
+			await sessionsStore.renameSession(sessionId, `AI 润色：${noteTitle}`);
+		}
+		await chatStore.appendWorkflowMessage("user", t("notes.polishChat.request", { title: noteTitle }));
+		await chatStore.appendWorkflowMessage("assistant", t("notes.polishChat.analyzingTemplate"));
+		const analysis = await notesStore.analyzeSelectedPolish();
+		if (!analysis) {
+			setIsChoosingPolishTemplate(false);
+			await chatStore.appendWorkflowMessage("assistant", t(notesStore.polishWasStopped ? "notes.polishChat.stopped" : "notes.polishChat.failed"));
+			return;
+		}
+		if (!analysis.needsConfirmation) {
+			await chatStore.appendWorkflowMessage(
+				"assistant",
+				analysis.templateLabel
+					? t("notes.polishChat.detectedTemplate", { template: analysis.templateLabel })
+					: t("notes.polishChat.detectedNoTemplate"),
+			);
+			setIsChoosingPolishTemplate(false);
+			const generated = await notesStore.polishSelected(analysis.templateId ?? "none", analysis.suggestedTags);
+			await chatStore.appendWorkflowMessage("assistant", t(generated ? "notes.polishChat.ready" : notesStore.polishWasStopped ? "notes.polishChat.stopped" : "notes.polishChat.failed"));
+			return;
+		}
+
+		await noteTemplateStore.load();
+		const templates = noteTemplateStore.templates
+			.filter((template) => template.id !== "blank" && !template.hidden)
+			.sort((left, right) => Number(right.id === analysis.templateId) - Number(left.id === analysis.templateId));
+		await chatStore.appendWorkflowQuestion(
+			analysis.templateLabel
+				? t("notes.polishChat.askTemplateWithSuggestion", { template: analysis.templateLabel })
+				: t("notes.polishChat.askTemplate"),
+			[
+				{ value: "none", label: t("notes.polishChat.noTemplate"), description: t("notes.polishChat.noTemplateDescription") },
+				...templates.map((template) => ({
+					value: template.id,
+					label: template.label,
+					description: template.description,
+				})),
+			],
+			async (templateId) => {
+				setIsChoosingPolishTemplate(false);
+				if (notesStore.selected?.rawPath !== note.rawPath) {
+					await chatStore.appendWorkflowMessage("assistant", t("notes.polishChat.noteChanged"));
+					return;
+				}
+				const generated = await notesStore.polishSelected(templateId, analysis.suggestedTags);
+				await chatStore.appendWorkflowMessage(
+					"assistant",
+					t(generated ? "notes.polishChat.ready" : notesStore.polishWasStopped ? "notes.polishChat.stopped" : "notes.polishChat.failed"),
+				);
+			},
+		);
+	}, [isChoosingPolishTemplate, t]);
 
 	const handleDelete = useCallback(() => {
 		if (notesStore.selected) setNotePendingDeletion(notesStore.selected);
@@ -261,6 +336,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 		selected &&
 		(selected.kind === "orphan" || (selected.kind === "markdown" && selected.status === "draft"));
 	const canSave = Boolean(selected && (isMarkdown || isRawEditableMarkdown));
+	const canViewHistory = Boolean(selected?.notebookType === "note" && selected.contentType === "markdown");
 	const canPolish = Boolean(
 		selected?.kind === "markdown" &&
 		selected.meetingStatus !== "recording" &&
@@ -279,6 +355,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 		if (!selected) return null;
 		const hasActions =
 			canSave ||
+			canViewHistory ||
 			showDownload ||
 			(canArchiveNow && (selected.status === "draft" || selected.kind === "orphan" || isUnarchivedFile)) ||
 			showRearchive ||
@@ -289,6 +366,18 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 		return (
 			<div className="flex flex-wrap items-center gap-2 border-t border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2.5">
 				{canSave ? (
+					<span className={`inline-flex items-center gap-1 text-xs ${state.error === "saveFailed" ? "text-red-600" : state.isDirty ? "text-amber-700" : "text-emerald-700"}`}>
+						{state.isSaving ? <LoaderCircle size={13} className="animate-spin" /> : !state.isDirty ? <CheckCircle2 size={13} /> : null}
+						{state.isSaving
+							? t("notes.saveStatus.saving")
+							: state.error === "saveFailed"
+								? t("notes.saveStatus.failed")
+								: state.isDirty
+									? t("notes.saveStatus.unsaved")
+									: t("notes.saveStatus.saved")}
+					</span>
+				) : null}
+				{canSave ? (
 					<button
 						type="button"
 						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
@@ -297,6 +386,16 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 					>
 						<Save size={14} />
 						{t("notes.actions.save")}
+					</button>
+				) : null}
+				{canViewHistory ? (
+					<button
+						type="button"
+						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm hover:bg-[var(--inno-surface-muted)]"
+						onClick={() => void notesStore.flushSelected().then((saved) => saved && setShowHistory(true))}
+					>
+						<History size={14} />
+						{t("notes.history.title")}
 					</button>
 				) : null}
 				{showDownload ? (
@@ -322,7 +421,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 						{isSelectedArchiving ? t("notes.actions.stopArchiving") : t("notes.actions.archive")}
 					</button>
 				) : null}
-				{isEmptyNoteForArchive ? (
+					{isEmptyNoteForArchive ? (
 					<span className="text-xs text-amber-700">{t("notes.flash.emptyCannotArchive")}</span>
 				) : null}
 				{showRearchive ? (
@@ -371,9 +470,10 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 		);
 	}
 
-	function openTemplateManager(create = false): void {
+	async function openTemplateManager(create = false): Promise<void> {
+		if (!(await notesStore.flushSelected())) return;
 		setPanelMode("templates");
-		void noteTemplateStore.load().then(() => {
+		await noteTemplateStore.load().then(() => {
 			if (create) noteTemplateStore.startCreate();
 			else if (!noteTemplateStore.selectedId && noteTemplateStore.templates.length > 0) {
 				noteTemplateStore.select(noteTemplateStore.templates[0].id);
@@ -430,8 +530,8 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 							isCreating={state.isCreating}
 							onCreateBlank={() => void notesStore.createFromTemplate("blank")}
 							onUseTemplate={(id) => void notesStore.createFromTemplate(id)}
-							onCreateTemplate={() => openTemplateManager(true)}
-							onManageTemplates={() => openTemplateManager(false)}
+							onCreateTemplate={() => void openTemplateManager(true)}
+							onManageTemplates={() => void openTemplateManager(false)}
 						/>
 						<button
 							type="button"
@@ -530,7 +630,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 						const canUseAsAiContext = notesStore.canUseAsAiContext(note);
 						const isThisNoteArchiving = state.archivingRawPaths.includes(note.rawPath);
 						const statusLabel = isThisNoteArchiving
-							? t("notes.status.archiving", "归档中")
+							? t("notes.status.archiving")
 							: t(`notes.status.${note.status}`, note.status);
 						return (
 							<div
@@ -550,7 +650,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 									<button
 									type="button"
 									className="min-w-0 flex-1 py-2 pr-3 text-left"
-									onClick={() => void notesStore.selectNote(note)}
+									onClick={() => void notesStore.selectNoteSafely(note)}
 								>
 									<div className="flex items-center gap-1 truncate font-medium">
 										<FileText size={13} className="shrink-0 text-[var(--inno-text-muted)]" />
@@ -610,7 +710,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 				{state.isArchiving ? (
 					<div className="flex items-center gap-2 border-b border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
 						<LoaderCircle size={13} className="animate-spin" />
-						<span className="flex-1">{t("notes.flash.archiving", "正在归档到 Wiki...")}</span>
+						<span className="flex-1">{t("notes.flash.archiving")}</span>
 						<button type="button" className="rounded px-2 py-0.5 text-red-600 hover:bg-red-50" onClick={() => notesStore.stopArchive()}>
 							{t("notes.actions.stopArchiving")}
 						</button>
@@ -627,6 +727,12 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 						<div className="inno-milkdown-editor-shell min-h-0 flex-1 overflow-hidden">
 							{state.isLoadingContent ? (
 								<p className="p-4 text-sm text-[var(--inno-text-muted)]">{t("common.loading")}</p>
+							) : state.polishPreview ? (
+								<PolishDiffPanel
+									preview={state.polishPreview}
+									onApply={() => notesStore.applyPolishPreview()}
+									onDiscard={() => notesStore.discardPolishPreview()}
+								/>
 							) : (
 								<>
 									<NoteProperties
@@ -651,12 +757,12 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 													<button
 														type="button"
 														className="top-bar-item inno-milkdown-polish-button"
-													disabled={isConversationalPolishing || chatIsSending || state.isLoadingContent || !state.editorContent.trim() || isSelectedArchiving}
-													onClick={() => void handleConversationalPolish()}
-													title={isConversationalPolishing ? t("notes.actions.polishing") : t("notes.actions.polish")}
-													aria-label={isConversationalPolishing ? t("notes.actions.polishing") : t("notes.actions.polish")}
-												>
-													{isConversationalPolishing ? <LoaderCircle size={17} className="animate-spin" /> : <Sparkles size={17} />}
+											disabled={state.isPolishing || isChoosingPolishTemplate || chatState.isSending || state.isLoadingContent || !state.editorContent.trim() || isSelectedArchiving}
+											onClick={() => void handlePolish()}
+											title={state.isPolishing || isChoosingPolishTemplate ? t("notes.actions.polishing") : t("notes.actions.polish")}
+											aria-label={state.isPolishing || isChoosingPolishTemplate ? t("notes.actions.polishing") : t("notes.actions.polish")}
+										>
+											{state.isPolishing || isChoosingPolishTemplate ? <LoaderCircle size={17} className="animate-spin" /> : <Sparkles size={17} />}
 													</button>
 												) : null}
 											</>
@@ -747,6 +853,15 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 				onConfirm={() => void confirmUnarchive()}
 				onCancel={() => setNotePendingUnarchive(null)}
 			/>
+			{selected ? (
+				<VersionHistoryDialog
+					open={showHistory}
+					rawPath={selected.rawPath}
+					canRestore={selected.kind === "markdown"}
+					onClose={() => setShowHistory(false)}
+					onRestored={() => notesStore.reloadNoteIfSelected(selected.rawPath)}
+				/>
+			) : null}
 		</div>
 	);
 }

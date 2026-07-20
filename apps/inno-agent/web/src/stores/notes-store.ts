@@ -2,6 +2,7 @@ import { EventEmitter } from "./event-emitter.js";
 import { getTodayRecordDate } from "../lib/note-frontmatter.js";
 import {
 	archiveNote,
+	analyzeNotePolish,
 	createNote,
 	deleteNoteAttachment,
 	deleteNoteItem,
@@ -15,7 +16,7 @@ import {
 	uploadNoteAttachment,
 	uploadNoteFile,
 } from "../api/notes.js";
-import type { NoteAttachment, NoteContent, NoteListBox, NoteSummary } from "../types/notes.js";
+import type { NoteAttachment, NoteContent, NoteListBox, NoteSummary, PolishAnalysisResult } from "../types/notes.js";
 
 interface NotesStoreEvents {
 	change: void;
@@ -24,6 +25,20 @@ interface NotesStoreEvents {
 export interface NotesTagSummary {
 	displayName: string;
 	usageCount: number;
+}
+
+export interface SaveNoteOptions {
+	announce?: boolean;
+	reason?: "autosave" | "manual";
+}
+
+export interface PolishPreview {
+	rawPath: string;
+	originalContent: string;
+	polishedContent: string;
+	originalTags: string[];
+	suggestedTags: string[];
+	templateLabel: string | null;
 }
 
 function errorDetail(error: unknown): string | null {
@@ -69,8 +84,12 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	notice: string | null = null;
 	polishTemplateLabel: string | null = null;
 	polishSuggestedTags: string[] = [];
+	polishPreview: PolishPreview | null = null;
+	polishWasStopped = false;
 	private archiveQueue: Promise<unknown> = Promise.resolve();
 	private archiveControllers = new Map<string, AbortController>();
+	private activeSave: Promise<boolean> | null = null;
+	private polishController: AbortController | null = null;
 
 	get isDirty(): boolean {
 		if (!this.selected) return false;
@@ -299,6 +318,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 
 	async selectNote(note: NoteSummary): Promise<void> {
 		this.selected = note;
+		this.polishPreview = null;
 		this.previewContent = "";
 		this.savedPreviewContent = "";
 		this.attachments = [];
@@ -356,7 +376,15 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		await this.loadPreview(note.rawPath, note.contentType);
 	}
 
+	async selectNoteSafely(note: NoteSummary): Promise<boolean> {
+		if (this.selected?.rawPath === note.rawPath) return true;
+		if (!(await this.flushSelected())) return false;
+		await this.selectNote(note);
+		return true;
+	}
+
 	async createFromTemplate(templateId: string): Promise<void> {
+		if (!(await this.flushSelected())) return;
 		this.isCreating = true;
 		this.clearMessages();
 		this.emit("change", undefined);
@@ -440,55 +468,95 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		}
 	}
 
-	async saveSelected(): Promise<boolean> {
+	async flushSelected(): Promise<boolean> {
+		if (this.activeSave) {
+			const saved = await this.activeSave;
+			if (!saved) return false;
+		}
+		return this.isDirty ? this.saveSelected({ announce: false }) : true;
+	}
+
+	async saveSelected(options: SaveNoteOptions = {}): Promise<boolean> {
+		if (this.activeSave) {
+			const saved = await this.activeSave;
+			if (!saved || !this.isDirty) return saved;
+		}
 		if (!this.selected || !this.isDirty) return true;
+
+		const selectedPath = this.selected.rawPath;
+		const selectedTitle = this.selected.title;
+		const isRawMarkdown = this.selected.kind !== "markdown" && this.selected.contentType === "markdown";
+		const snapshot = isRawMarkdown
+			? { kind: "raw" as const, content: this.previewContent }
+			: {
+				kind: "note" as const,
+				title: this.editorTitle.trim() || selectedTitle,
+				tags: [...this.editorTags],
+				recordDate: this.editorRecordDate,
+				content: this.editorContent,
+			};
+
 		this.isSaving = true;
 		this.clearMessages();
 		this.emit("change", undefined);
-		try {
-			if (this.selected.kind !== "markdown" && this.selected.contentType === "markdown") {
-				const result = await saveRawMarkdownContent({
-					rawPath: this.selected.rawPath,
-					content: this.previewContent,
-				});
-				this.savedPreviewContent = this.previewContent;
-				this.notice = "saved";
-				await this.loadAll();
-				this.selected = this.notes.find((note) => note.rawPath === result.rawPath) ?? this.selected;
-				return true;
-			}
 
-			const result = await saveNoteContent({
-				rawPath: this.selected.rawPath,
-				title: this.editorTitle.trim() || this.selected.title,
-				tags: this.editorTags,
-				recordDate: this.editorRecordDate,
-				content: this.editorContent,
-			});
-			this.savedTitle = this.editorTitle.trim() || this.selected.title;
-			this.savedTags = [...this.editorTags];
-			this.savedRecordDate = this.editorRecordDate;
-			this.savedContent = this.editorContent;
-			this.notice = "saved";
-			await this.loadAll();
-			if (this.selected) {
-				this.selected = this.notes.find((note) => note.rawPath === result.rawPath) ?? this.selected;
+		const operation = (async (): Promise<boolean> => {
+			try {
+				const result = snapshot.kind === "raw"
+					? await saveRawMarkdownContent({ rawPath: selectedPath, content: snapshot.content })
+					: await saveNoteContent({
+						rawPath: selectedPath,
+						title: snapshot.title,
+						tags: snapshot.tags,
+						recordDate: snapshot.recordDate,
+						content: snapshot.content,
+						saveReason: options.reason ?? (options.announce === false ? "autosave" : "manual"),
+					});
+
+				if (this.selected?.rawPath === selectedPath) {
+					if (snapshot.kind === "raw") {
+						this.savedPreviewContent = snapshot.content;
+					} else {
+						this.savedTitle = snapshot.title;
+						this.savedTags = [...snapshot.tags];
+						this.savedRecordDate = snapshot.recordDate;
+						this.savedContent = snapshot.content;
+					}
+				}
+
+				await this.loadAll();
+				if (this.selected?.rawPath === selectedPath) {
+					this.selected = this.notes.find((note) => note.rawPath === result.rawPath) ?? this.selected;
+				}
+				if (options.announce !== false) this.notice = "saved";
+				return true;
+			} catch (error) {
+				this.error = "saveFailed";
+				this.errorDetail = errorDetail(error);
+				return false;
 			}
-			return true;
-		} catch (error) {
-			this.error = "saveFailed";
-			this.errorDetail = errorDetail(error);
-			return false;
+		})();
+
+		this.activeSave = operation;
+		try {
+			return await operation;
 		} finally {
+			if (this.activeSave === operation) this.activeSave = null;
 			this.isSaving = false;
 			this.emit("change", undefined);
 		}
 	}
 
-	async polishSelected(): Promise<void> {
-		if (!this.selected || this.selected.kind !== "markdown" || !this.editorContent.trim() || this.isPolishing) return;
+	async polishSelected(templateId?: string, suggestedTags?: string[]): Promise<boolean> {
+		if (!this.selected || this.selected.kind !== "markdown" || !this.editorContent.trim() || this.isPolishing) return false;
 		const rawPath = this.selected.rawPath;
+		const originalContent = this.editorContent;
+		const originalTags = [...this.editorTags];
+		const controller = new AbortController();
+		this.polishController = controller;
+		this.polishWasStopped = false;
 		this.isPolishing = true;
+		this.polishPreview = null;
 		this.clearMessages();
 		this.emit("change", undefined);
 		try {
@@ -496,31 +564,116 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				rawPath,
 				title: this.editorTitle.trim() || this.selected.title,
 				tags: [...this.editorTags],
-				content: this.editorContent,
-			});
-			if (this.selected?.rawPath !== rawPath) return;
-			this.editorContent = result.content;
-			this.polishTemplateLabel = result.templateLabel;
-			const tagsByKey = new Map(this.editorTags.map((tag) => [tag.trim().replace(/\s+/g, " ").toLowerCase(), tag.trim()]));
-			for (const tag of result.suggestedTags) {
-				const trimmed = tag.trim();
-				const key = trimmed.replace(/\s+/g, " ").toLowerCase();
-				if (key && !tagsByKey.has(key)) tagsByKey.set(key, trimmed);
+				content: originalContent,
+				templateId,
+				suggestedTags,
+			}, controller.signal);
+			if (this.selected?.rawPath !== rawPath) return false;
+			if (this.editorContent !== originalContent) {
+				this.error = "polishSourceChanged";
+				return false;
 			}
-			this.editorTags = [...tagsByKey.values()].slice(0, 12);
-			this.polishSuggestedTags = result.suggestedTags;
-			this.notice = result.suggestedTags.length > 0
-				? (result.templateLabel ? "polishedWithTemplateAndTags" : "polishedWithTags")
-				: (result.templateLabel ? "polishedWithTemplate" : "polished");
+			this.polishPreview = {
+				rawPath,
+				originalContent,
+				polishedContent: result.content,
+				originalTags,
+				suggestedTags: result.suggestedTags,
+				templateLabel: result.templateLabel,
+			};
+			return true;
 		} catch (error) {
+			if (controller.signal.aborted) {
+				this.polishWasStopped = true;
+				return false;
+			}
 			if (this.selected?.rawPath === rawPath) {
 				this.error = "polishFailed";
 				this.errorDetail = errorDetail(error);
 			}
+			return false;
 		} finally {
+			if (this.polishController === controller) this.polishController = null;
 			this.isPolishing = false;
 			this.emit("change", undefined);
 		}
+	}
+
+	async analyzeSelectedPolish(): Promise<PolishAnalysisResult | null> {
+		if (!this.selected || this.selected.kind !== "markdown" || !this.editorContent.trim() || this.isPolishing) return null;
+		const rawPath = this.selected.rawPath;
+		const originalContent = this.editorContent;
+		const controller = new AbortController();
+		this.polishController = controller;
+		this.polishWasStopped = false;
+		this.isPolishing = true;
+		this.clearMessages();
+		this.emit("change", undefined);
+		try {
+			const result = await analyzeNotePolish({
+				rawPath,
+				title: this.editorTitle.trim() || this.selected.title,
+				tags: [...this.editorTags],
+				content: originalContent,
+			}, controller.signal);
+			if (this.selected?.rawPath !== rawPath || this.editorContent !== originalContent) {
+				this.error = "polishSourceChanged";
+				return null;
+			}
+			return result;
+		} catch (error) {
+			if (controller.signal.aborted) {
+				this.polishWasStopped = true;
+				return null;
+			}
+			if (this.selected?.rawPath === rawPath) {
+				this.error = "polishFailed";
+				this.errorDetail = errorDetail(error);
+			}
+			return null;
+		} finally {
+			if (this.polishController === controller) this.polishController = null;
+			this.isPolishing = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	stopPolish(): void {
+		if (!this.polishController) return;
+		this.polishWasStopped = true;
+		this.polishController.abort();
+	}
+
+	applyPolishPreview(): void {
+		const preview = this.polishPreview;
+		if (!preview || this.selected?.rawPath !== preview.rawPath) return;
+		if (this.editorContent !== preview.originalContent) {
+			this.polishPreview = null;
+			this.error = "polishSourceChanged";
+			this.emit("change", undefined);
+			return;
+		}
+		this.editorContent = preview.polishedContent;
+		this.polishTemplateLabel = preview.templateLabel;
+		const tagsByKey = new Map(preview.originalTags.map((tag) => [tag.trim().replace(/\s+/g, " ").toLowerCase(), tag.trim()]));
+		for (const tag of preview.suggestedTags) {
+			const trimmed = tag.trim();
+			const key = trimmed.replace(/\s+/g, " ").toLowerCase();
+			if (key && !tagsByKey.has(key)) tagsByKey.set(key, trimmed);
+		}
+		this.editorTags = [...tagsByKey.values()].slice(0, 12);
+		this.polishSuggestedTags = preview.suggestedTags;
+		this.notice = preview.suggestedTags.length > 0
+			? (preview.templateLabel ? "polishedWithTemplateAndTags" : "polishedWithTags")
+			: (preview.templateLabel ? "polishedWithTemplate" : "polished");
+		this.polishPreview = null;
+		this.emit("change", undefined);
+	}
+
+	discardPolishPreview(): void {
+		if (!this.polishPreview) return;
+		this.polishPreview = null;
+		this.emit("change", undefined);
 	}
 
 	async archiveSelected(): Promise<string | null> {

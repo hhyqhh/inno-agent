@@ -327,6 +327,16 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				}
 				this.emit("change", undefined);
 				break;
+			case "session_topic": {
+				// Auto-generated topic arrives after `done` (non-blocking). Update
+				// the sidebar name immediately without a refetch.
+				if (event.sessionId && event.topic) {
+					void import("./sessions-store.js").then((m) => {
+						m.sessionsStore.applyGeneratedTopic(event.sessionId!, event.topic!);
+					});
+				}
+				break;
+			}
 		}
 	}
 

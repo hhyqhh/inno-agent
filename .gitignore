@@ -28,3 +28,4 @@ build/icon.iconset/
 
 # Docs (local only)
 apps/inno-agent/docs/
+.zcode/

@@ -27,6 +27,13 @@ let _runtime: AgentSessionRuntime | null = null;
 let _queue: Promise<void> = Promise.resolve();
 let _workspaceDir = "";
 let _currentCwd = "";
+/**
+ * The SDK's session file is normally available through AgentSession, but a
+ * prompt can start while the runtime is replacing a session. Keep the
+ * explicitly targeted file visible to extension tools for the duration of
+ * that prompt so question persistence never depends on that timing window.
+ */
+let _activePromptSessionId: string | null = null;
 let _config: InnoConfig | null = null;
 let _configHolder: ConfigHolder | null = null;
 let _cwdResolver: ((sessionPath: string) => string | null) | null = null;
@@ -57,6 +64,17 @@ function resolveCwdFor(sessionPath: string | null | undefined): string {
 	return _workspaceDir;
 }
 
+function beginPromptSession(sessionPath?: string): () => void {
+	const previous = _activePromptSessionId;
+	const candidate = sessionPath ?? _runtime?.session.sessionFile;
+	if (candidate) {
+		_activePromptSessionId = basename(resolve(candidate));
+	}
+	return () => {
+		_activePromptSessionId = previous;
+	};
+}
+
 async function switchToSession(sessionPath: string, opts?: { force?: boolean }): Promise<void> {
 	if (!_runtime) throw new Error("Session not initialized");
 	const target = resolve(sessionPath);
@@ -73,6 +91,44 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 	const run = _queue.then(task, task);
 	_queue = run.then(() => undefined, () => undefined);
 	return run;
+}
+
+/**
+ * Enqueue a task with a timeout. If the shared prompt queue is still busy
+ * (e.g. a prompt is blocked waiting on an unanswered question card), the
+ * task resolves early with `fallback` instead of blocking indefinitely.
+ *
+ * Used by session-switch operations so that navigating between sessions
+ * doesn't stall behind a long-running prompt. The switch is not lost —
+ * it is retried lazily by the next prompt's own switchToSession call.
+ */
+function enqueueWithTimeout<T>(task: () => Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+	return new Promise<T>((resolve) => {
+		let settled = false;
+		const timer = setTimeout(() => {
+			if (!settled) {
+				settled = true;
+				resolve(fallback);
+			}
+		}, timeoutMs);
+		const run = _queue.then(async () => {
+			try {
+				const result = await task();
+				if (!settled) {
+					settled = true;
+					resolve(result);
+				}
+			} catch (err) {
+				if (!settled) {
+					settled = true;
+					resolve(fallback);
+				}
+			} finally {
+				clearTimeout(timer);
+			}
+		});
+		_queue = run.then(() => undefined, () => undefined);
+	});
 }
 
 /**
@@ -347,6 +403,7 @@ export async function abortCurrentPrompt(): Promise<void> {
  * Return current runtime session id.
  */
 export function getCurrentSessionId(): string {
+	if (_activePromptSessionId) return _activePromptSessionId;
 	const sessionFile = getSession().sessionFile;
 	return sessionFile ? basename(sessionFile) : "";
 }
@@ -521,9 +578,20 @@ export async function reloadResources(): Promise<void> {
  */
 export async function switchSessionFile(sessionPath: string): Promise<void> {
 	if (!_runtime) throw new Error("Session not initialized. Call initSession() first.");
-	await enqueue(async () => {
-		await switchToSession(sessionPath);
-	});
+	// Session switching is a lightweight operation (change session file path +
+	// cwd). It must NOT block behind a long-running prompt — especially one
+	// that is stuck waiting on an unanswered question card, which holds the
+	// shared queue indefinitely. If the queue is busy for more than a short
+	// timeout, bail out: the next prompt will re-switch to the correct session
+	// via its own switchToSession call.
+	const done = await enqueueWithTimeout<boolean>(
+		async () => { await switchToSession(sessionPath); return true; },
+		500,
+		false,
+	);
+	if (!done) {
+		logger.warn({ sessionPath }, "switchSessionFile timed out waiting for the prompt queue");
+	}
 }
 
 /**
@@ -623,11 +691,13 @@ export async function runPrompt(prompt: string, images?: ImageContent[]): Promis
 		}
 	});
 
+	const restorePromptSession = beginPromptSession();
 	try {
 		await session.prompt(prompt, images?.length ? { images } : undefined);
 	} finally {
 		unsubscribe();
 		obsUnsub();
+		restorePromptSession();
 	}
 
 	if (streamError) {
@@ -787,11 +857,13 @@ export function runPromptStreaming(
 				}
 			}
 		});
+		const restorePromptSession = beginPromptSession();
 		try {
 			await session.prompt(prompt, images?.length ? { images } : undefined);
 		} finally {
 			unsubscribe();
 			obsUnsub();
+			restorePromptSession();
 		}
 
 		if (streamError) {
@@ -862,11 +934,13 @@ export function runPromptStreamingInSession(
 				}
 			}
 		});
+		const restorePromptSession = beginPromptSession(sessionPath);
 		try {
 			await session.prompt(prompt, images?.length ? { images } : undefined);
 		} finally {
 			unsubscribe();
 			obsUnsub();
+			restorePromptSession();
 		}
 
 		if (streamError) {

@@ -5,9 +5,10 @@ import "source-map-support/register.js";
 import { createServer, type IncomingMessage as HttpReq, type ServerResponse } from "node:http";
 import { spawnSync, execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, deleteModel, normalizeContentHubConfig, type InnoConfig, type InnoContentHubConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
 import { installFetchLogger } from "./utils/fetch-logger.js";
@@ -1496,27 +1497,59 @@ function workspaceSkillNode(root: string, skillName: string): { name: string; pa
 	};
 }
 
-function readWorkspaceTree(rootDir: string, dir: string, depth = 0): WorkspaceTreeNode[] {
-	if (depth > 4) return [];
-	return readdirSync(dir, { withFileTypes: true })
+// Deep enough to cover nested output conventions (e.g. skill runs that nest
+// <skill>/<slug>/<timestamp>/<artifact>/<file>), while still bounded so a
+// pathological tree cannot hang the request.
+const WORKSPACE_TREE_MAX_DEPTH = 8;
+
+function readWorkspaceTree(rootDir: string, dir: string, depth = 0, seen: ReadonlySet<string> = new Set()): WorkspaceTreeNode[] {
+	if (depth > WORKSPACE_TREE_MAX_DEPTH) return [];
+	let entries: Dirent<string>[];
+	try {
+		entries = readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+	return entries
 		.filter((entry) => !WORKSPACE_IGNORES.has(entry.name))
 		.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name, "zh-CN"))
 		.slice(0, 200)
-		.map((entry) => {
+		.map((entry): WorkspaceTreeNode | null => {
 			const fullPath = join(dir, entry.name);
-			const stat = statSync(fullPath);
+			// statSync follows symlinks, so a directory symlink (e.g. a `latest`
+			// pointer) resolves to its target type. A broken symlink throws here
+			// and is skipped instead of crashing the whole tree with a 500.
+			let stat: ReturnType<typeof statSync>;
+			try {
+				stat = statSync(fullPath);
+			} catch {
+				return null;
+			}
+			const isDir = stat.isDirectory();
 			const node: WorkspaceTreeNode = {
 				name: entry.name,
 				path: workspaceRelativePath(rootDir, fullPath),
-				type: entry.isDirectory() ? "directory" : "file",
+				type: isDir ? "directory" : "file",
 				size: stat.size,
 				updatedAt: stat.mtime.toISOString(),
 			};
-			if (entry.isDirectory()) {
-				node.children = readWorkspaceTree(rootDir, fullPath, depth + 1);
+			if (isDir) {
+				// Resolve the real path to (a) keep symlink traversal inside the
+				// workspace root and (b) guard against symlink cycles.
+				let real: string;
+				try {
+					real = realpathSync(fullPath);
+				} catch {
+					real = fullPath;
+				}
+				const withinRoot = real === rootDir || real.startsWith(rootDir + sep);
+				node.children = withinRoot && !seen.has(real)
+					? readWorkspaceTree(rootDir, fullPath, depth + 1, new Set([...seen, real]))
+					: [];
 			}
 			return node;
-		});
+		})
+		.filter((node): node is WorkspaceTreeNode => node !== null);
 }
 
 function contentTypeForWorkspaceFile(filePath: string): string {
@@ -2618,25 +2651,49 @@ const server = createServer(async (req, res) => {
 				json(res, 404, { error: "Skill not found" });
 				return;
 			}
-			function readSkillTree(dir: string, depth = 0): WorkspaceTreeNode[] {
-				if (depth > 4) return [];
-				return readdirSync(dir, { withFileTypes: true })
+			function readSkillTree(dir: string, depth = 0, seen: ReadonlySet<string> = new Set()): WorkspaceTreeNode[] {
+				if (depth > WORKSPACE_TREE_MAX_DEPTH) return [];
+				let entries: Dirent<string>[];
+				try {
+					entries = readdirSync(dir, { withFileTypes: true });
+				} catch {
+					return [];
+				}
+				return entries
 					.filter((e) => !e.name.startsWith(".") && e.name !== "__MACOSX" && e.name !== "node_modules")
 					.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name, "zh-CN"))
 					.slice(0, 200)
-					.map((entry) => {
+					.map((entry): WorkspaceTreeNode | null => {
 						const fullPath = join(dir, entry.name);
-						const st = statSync(fullPath);
+						let st: ReturnType<typeof statSync>;
+						try {
+							st = statSync(fullPath);
+						} catch {
+							return null;
+						}
+						const isDir = st.isDirectory();
 						const node: WorkspaceTreeNode = {
 							name: entry.name,
 							path: relative(skillDir, fullPath),
-							type: entry.isDirectory() ? "directory" : "file",
+							type: isDir ? "directory" : "file",
 							size: st.size,
 							updatedAt: st.mtime.toISOString(),
 						};
-						if (entry.isDirectory()) node.children = readSkillTree(fullPath, depth + 1);
+						if (isDir) {
+							let real: string;
+							try {
+								real = realpathSync(fullPath);
+							} catch {
+								real = fullPath;
+							}
+							const withinRoot = real === skillDir || real.startsWith(skillDir + sep);
+							node.children = withinRoot && !seen.has(real)
+								? readSkillTree(fullPath, depth + 1, new Set([...seen, real]))
+								: [];
+						}
 						return node;
-					});
+					})
+					.filter((node): node is WorkspaceTreeNode => node !== null);
 			}
 			const st = statSync(skillDir);
 			json(res, 200, {

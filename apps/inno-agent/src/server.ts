@@ -1509,8 +1509,23 @@ function workspaceSkillNode(root: string, skillName: string): { name: string; pa
 // pathological tree cannot hang the request.
 const WORKSPACE_TREE_MAX_DEPTH = 8;
 
+/**
+ * Canonicalize a tree root for containment checks. The root itself may
+ * contain symlink components (e.g. macOS /tmp → /private/tmp); children's
+ * realpaths never match a non-canonical root, which would silently render
+ * every directory empty.
+ */
+function canonicalTreeRoot(dir: string): string {
+	try {
+		return realpathSync(dir);
+	} catch {
+		return dir;
+	}
+}
+
 function readWorkspaceTree(rootDir: string, dir: string, depth = 0, seen: ReadonlySet<string> = new Set()): WorkspaceTreeNode[] {
 	if (depth > WORKSPACE_TREE_MAX_DEPTH) return [];
+	const realRoot = canonicalTreeRoot(rootDir);
 	let entries: Dirent<string>[];
 	try {
 		entries = readdirSync(dir, { withFileTypes: true });
@@ -1549,7 +1564,7 @@ function readWorkspaceTree(rootDir: string, dir: string, depth = 0, seen: Readon
 				} catch {
 					real = fullPath;
 				}
-				const withinRoot = real === rootDir || real.startsWith(rootDir + sep);
+				const withinRoot = real === realRoot || real.startsWith(realRoot + sep);
 				node.children = withinRoot && !seen.has(real)
 					? readWorkspaceTree(rootDir, fullPath, depth + 1, new Set([...seen, real]))
 					: [];
@@ -2658,6 +2673,7 @@ const server = createServer(async (req, res) => {
 				json(res, 404, { error: "Skill not found" });
 				return;
 			}
+			const skillRootReal = canonicalTreeRoot(skillDir);
 			function readSkillTree(dir: string, depth = 0, seen: ReadonlySet<string> = new Set()): WorkspaceTreeNode[] {
 				if (depth > WORKSPACE_TREE_MAX_DEPTH) return [];
 				let entries: Dirent<string>[];
@@ -2693,7 +2709,7 @@ const server = createServer(async (req, res) => {
 							} catch {
 								real = fullPath;
 							}
-							const withinRoot = real === skillDir || real.startsWith(skillDir + sep);
+							const withinRoot = real === skillRootReal || real.startsWith(skillRootReal + sep);
 							node.children = withinRoot && !seen.has(real)
 								? readSkillTree(fullPath, depth + 1, new Set([...seen, real]))
 								: [];

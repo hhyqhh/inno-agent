@@ -241,7 +241,8 @@
 			"error": "Error",
 			"uploaded": "Uploaded",
 			"pending": "Pending",
-			"extracted": "Extracted"
+			"extracted": "Extracted",
+			"archiving": "Archiving"
 		},
 		"actions": {
 			"createDraft": "New draft",
@@ -250,6 +251,7 @@
 			"save": "Save",
 			"polish": "Polish with AI",
 			"polishing": "AI is analyzing and polishing…",
+			"stopPolishing": "Stop AI polish",
 			"polishingNote": "Polishing “{{title}}” with AI…",
 			"archive": "Archive to Wiki",
 			"stopArchiving": "Stop archiving",
@@ -258,6 +260,51 @@
 			"delete": "Delete",
 			"openWiki": "Open Wiki summary",
 			"viewNote": "View original note"
+		},
+		"saveStatus": {
+			"unsaved": "Unsaved changes",
+			"saving": "Autosaving…",
+			"saved": "Autosaved",
+			"failed": "Autosave failed"
+		},
+		"polishDiff": {
+			"title": "AI polish diff preview",
+			"summary": "+{{additions}} lines · −{{deletions}} lines",
+			"template": "Template: {{template}}",
+			"tags": "Suggested tags: {{tags}}",
+			"apply": "Apply changes",
+			"discard": "Discard polish"
+		},
+		"polishChat": {
+			"request": "Polish the note “{{title}}” with AI. Generate a proposed edit first and do not overwrite the original.",
+			"analyzingTemplate": "I’ll first infer the best template from the note. I’ll ask you only if the match is uncertain.",
+			"detectedTemplate": "This note clearly fits the “{{template}}” template. I’ll use it to generate the polish proposal.",
+			"detectedNoTemplate": "This note does not need a fixed template. I’ll preserve its current structure while polishing it.",
+			"askTemplate": "I can’t confidently determine the right template from the content. Which one would you like to use?",
+			"askTemplateWithSuggestion": "The template match is uncertain; “{{template}}” is the closest fit. Please confirm which template to use:",
+			"autoTemplate": "Choose intelligently (Recommended)",
+			"autoTemplateDescription": "Let AI choose the structure that best fits the note",
+			"noTemplate": "No fixed template",
+			"noTemplateDescription": "Keep the current structure and improve only wording and formatting",
+			"ready": "The polish proposal is ready and its diff is shown on the right. The original note will not change until you apply it.",
+			"failed": "No polish proposal was generated. The error is shown in the notebook panel on the right; adjust the note or model settings and try again.",
+			"noteChanged": "The active note changed, so this polish request was cancelled. Start again from the note you want to polish.",
+			"stopped": "AI polish was stopped. The original note was not changed."
+		},
+		"history": {
+			"title": "Version history",
+			"empty": "No saved versions yet",
+			"characters": "characters",
+			"restore": "Restore this version",
+			"restoreTitle": "Restore version",
+			"restoreConfirm": "The current content will remain in version history before the selected version is restored.",
+			"unarchiveToRestore": "Unarchive the note before restoring a version.",
+			"reason": {
+				"created": "Created",
+				"autosave": "Autosave",
+				"manual": "Manual save",
+				"restore": "Restored"
+			}
 		},
 		"flash": {
 			"created": "Draft created — it won't enter the knowledge graph yet",
@@ -270,6 +317,7 @@
 			"archived": "Archived",
 			"archiveStopped": "Archiving stopped",
 			"unarchived": "Unarchived — moved back to drafts",
+			"archiving": "Archiving to Wiki…",
 			"deleted": "Deleted",
 			"uploaded": "Upload succeeded",
 			"loadFailed": "Failed to load notes",
@@ -277,6 +325,7 @@
 			"createFailed": "Failed to create note",
 			"saveFailed": "Save failed",
 			"polishFailed": "AI polish failed; check the active text model and try again",
+			"polishSourceChanged": "The note changed while AI was polishing it. Run AI polish again.",
 			"archiveFailed": "Archive failed",
 			"emptyCannotArchive": "A note with no content or attachments cannot be archived",
 			"unarchiveFailed": "Unarchive failed",

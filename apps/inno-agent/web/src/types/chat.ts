@@ -15,6 +15,20 @@ export interface ChatMessage {
 	noteReferences?: ChatNoteReference[];
 	/** Backend/model error surfaced for this turn (e.g. HTTP 413 over-long context). */
 	error?: string;
+	/** Local interactive question emitted by an in-app AI workflow. */
+	workflowQuestion?: ChatWorkflowQuestion;
+}
+
+export interface ChatWorkflowChoice {
+	value: string;
+	label: string;
+	description?: string;
+}
+
+export interface ChatWorkflowQuestion {
+	id: string;
+	choices: ChatWorkflowChoice[];
+	selectedValue?: string;
 }
 
 export interface ChatToolRecord {

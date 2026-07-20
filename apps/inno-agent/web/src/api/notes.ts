@@ -6,9 +6,12 @@ import type {
 	NoteAttachment,
 	NoteContent,
 	NotesListResponse,
+	PolishAnalysisResult,
 	PolishNoteResult,
 	SaveNoteResult,
 	SaveRawMarkdownResult,
+	NoteVersion,
+	NoteVersionSummary,
 	UnarchiveNoteResult,
 	UploadNoteAttachmentResult,
 	UploadNoteFileResult,
@@ -72,6 +75,7 @@ export async function saveNoteContent(options: {
 	tags?: string[];
 	recordDate?: string;
 	content: string;
+	saveReason?: "autosave" | "manual" | "restore";
 }): Promise<SaveNoteResult> {
 	return apiFetch<SaveNoteResult>("/api/l2/notes/content", {
 		method: "PUT",
@@ -84,10 +88,13 @@ export async function polishNote(options: {
 	title: string;
 	tags: string[];
 	content: string;
-}): Promise<PolishNoteResult> {
+	templateId?: string;
+	suggestedTags?: string[];
+}, signal?: AbortSignal): Promise<PolishNoteResult> {
 	return apiFetch<PolishNoteResult>("/api/l2/notes/polish", {
 		method: "POST",
 		body: JSON.stringify(options),
+		signal,
 	});
 }
 
@@ -103,9 +110,42 @@ export async function archiveNote(
 	});
 }
 
+export async function analyzeNotePolish(options: {
+	rawPath: string;
+	title: string;
+	tags: string[];
+	content: string;
+}, signal?: AbortSignal): Promise<PolishAnalysisResult> {
+	return apiFetch<PolishAnalysisResult>("/api/l2/notes/polish", {
+		method: "POST",
+		body: JSON.stringify({ ...options, analyzeOnly: true }),
+		signal,
+	});
+}
+
 export async function deleteNoteItem(rawPath: string): Promise<DeleteNoteItemResult> {
 	return apiFetch<DeleteNoteItemResult>(`/api/l2/notes?path=${encodeURIComponent(rawPath)}`, {
 		method: "DELETE",
+	});
+}
+
+export async function listNoteVersions(rawPath: string): Promise<NoteVersionSummary[]> {
+	const data = await apiFetch<{ versions: NoteVersionSummary[] }>(
+		`/api/l2/notes/versions?path=${encodeURIComponent(rawPath)}`,
+	);
+	return data.versions;
+}
+
+export async function fetchNoteVersion(rawPath: string, versionId: string): Promise<NoteVersion> {
+	return apiFetch<NoteVersion>(
+		`/api/l2/notes/version?path=${encodeURIComponent(rawPath)}&versionId=${encodeURIComponent(versionId)}`,
+	);
+}
+
+export async function restoreNoteVersion(rawPath: string, versionId: string): Promise<SaveNoteResult> {
+	return apiFetch<SaveNoteResult>("/api/l2/notes/versions/restore", {
+		method: "POST",
+		body: JSON.stringify({ rawPath, versionId }),
 	});
 }
 

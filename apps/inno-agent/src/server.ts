@@ -14,6 +14,7 @@ import { installFetchLogger } from "./utils/fetch-logger.js";
 import { ensureDir, readJson, readText, writeJson, writeText } from "./storage/file-store.js";
 import {
 	createNewSession,
+	appendWorkflowSessionMessage,
 	getCurrentSessionId,
 	getAvailableModels,
 	getLoadedSkills,
@@ -59,8 +60,11 @@ import {
 	archiveL2NotebookItem,
 	createL2Note,
 	deleteL2NotebookItem,
+	listL2NoteVersions,
 	listL2Notes,
 	readNoteContent,
+	readL2NoteVersion,
+	restoreL2NoteVersion,
 	saveL2NoteContent,
 	saveL2RawMarkdownContent,
 	unarchiveL2NotebookItem,
@@ -3917,6 +3921,25 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		const workflowMessageMatch = matchRoute("POST", method, url, "/api/sessions/:id/workflow-message");
+		if (workflowMessageMatch) {
+			const id = decodeURIComponent(workflowMessageMatch.id);
+			if (getCurrentSessionId() !== id) {
+				json(res, 409, { error: "Session is not active" });
+				return;
+			}
+			const body = await readBody(req) as Record<string, unknown>;
+			const role = body.role === "user" || body.role === "assistant" ? body.role : null;
+			const content = typeof body.content === "string" ? body.content.trim() : "";
+			if (!role || !content) {
+				json(res, 400, { error: "Missing workflow message role or content" });
+				return;
+			}
+			await appendWorkflowSessionMessage(role, content, id);
+			json(res, 201, { saved: true });
+			return;
+		}
+
 		if (method === "POST" && url === "/api/l2/notes/templates") {
 			try {
 				const body = (await readBody(req)) as NoteTemplateInput;
@@ -4033,12 +4056,23 @@ const server = createServer(async (req, res) => {
 		}
 
 		if (method === "POST" && url === "/api/l2/notes/polish") {
+			const requestController = new AbortController();
+			req.once("aborted", () => requestController.abort());
+			res.once("close", () => {
+				if (!res.writableEnded) requestController.abort();
+			});
 			const body = (await readBody(req)) as Record<string, unknown>;
 			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim().replace(/\\/g, "/") : "";
 			const title = typeof body.title === "string" ? body.title.trim() : "";
 			const content = typeof body.content === "string" ? body.content.trim() : "";
 			const tags = Array.isArray(body.tags)
 				? body.tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+				: [];
+			const requestedTemplateId = typeof body.templateId === "string" ? body.templateId.trim() : undefined;
+			const analyzeOnly = body.analyzeOnly === true;
+			const hasPrecomputedTags = Array.isArray(body.suggestedTags);
+			const precomputedTags = hasPrecomputedTags
+				? (body.suggestedTags as unknown[]).filter((tag): tag is string => typeof tag === "string")
 				: [];
 			if (!rawPath || !title || !content) {
 				json(res, 400, { error: "Missing rawPath, title, or content" });
@@ -4080,17 +4114,22 @@ const server = createServer(async (req, res) => {
 					`可选模板：\n${templateCatalog}\n\n` +
 					`用户已有标签库：${existingTagLibrary.join("、") || "无"}\n` +
 					`标签要求：简洁、具体、便于长期检索；必须优先从用户已有标签库中选择含义相同或适合的标签，并原样返回该标签；仅在标签库确实没有合适标签时创建新标签；不要使用“笔记”“内容”“总结”等过泛标签。\n` +
-					`只输出 JSON，不要解释：{"templateId":"模板ID或none","tags":["标签1","标签2"]}`;
+					`confidence 表示模板判断的确信程度，范围为 0 到 1；仅在笔记用途和结构都明显符合时给出 0.75 以上。` +
+					`只输出 JSON，不要解释：{"templateId":"模板ID或none","confidence":0.0,"tags":["标签1","标签2"]}`;
 				// Reasoning models count hidden reasoning against maxTokens. Leave enough
 				// room for them to finish reasoning and still emit the requested JSON.
-				const classification = await completePromptOnce(classifyPrompt, 2048, 60_000);
-				let selectedTemplateId = "none";
-				let suggestedTags: string[] = [];
-				try {
+				const classification = hasPrecomputedTags ? null : await completePromptOnce(classifyPrompt, 2048, 60_000, requestController.signal);
+				let selectedTemplateId = requestedTemplateId ?? "none";
+				let templateConfidence = 0;
+				let suggestedTags: string[] = [...precomputedTags];
+				if (classification !== null) try {
 					const jsonStart = classification.indexOf("{");
 					const jsonEnd = classification.lastIndexOf("}");
 					const parsedClassification = JSON.parse(classification.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>;
 					if (typeof parsedClassification.templateId === "string") selectedTemplateId = parsedClassification.templateId.trim();
+					if (typeof parsedClassification.confidence === "number" && Number.isFinite(parsedClassification.confidence)) {
+						templateConfidence = Math.max(0, Math.min(1, parsedClassification.confidence));
+					}
 					if (Array.isArray(parsedClassification.tags)) {
 						const seen = new Set<string>();
 						suggestedTags = parsedClassification.tags
@@ -4115,7 +4154,26 @@ const server = createServer(async (req, res) => {
 				}
 				suggestedTags = [...reconciledTags.values()].slice(0, 6);
 				const selectionTokens = selectedTemplateId.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
-				const matchedTemplate = templates.find((template) => selectionTokens.includes(template.id.toLowerCase()));
+				const matchedTemplate = requestedTemplateId === "none"
+					? undefined
+					: requestedTemplateId && requestedTemplateId !== "auto"
+						? templates.find((template) => template.id === requestedTemplateId)
+						: templates.find((template) => selectionTokens.includes(template.id.toLowerCase()));
+				if (requestedTemplateId && requestedTemplateId !== "auto" && requestedTemplateId !== "none" && !matchedTemplate) {
+					json(res, 400, { error: "Selected note template was not found" });
+					return;
+				}
+				if (analyzeOnly) {
+					const recognizedSelection = selectedTemplateId.toLowerCase() === "none" || Boolean(matchedTemplate);
+					json(res, 200, {
+						templateId: matchedTemplate?.id ?? null,
+						templateLabel: matchedTemplate?.label ?? null,
+						confidence: templateConfidence,
+						needsConfirmation: !recognizedSelection || templateConfidence < 0.75,
+						suggestedTags,
+					});
+					return;
+				}
 				logger.info({ rawPath, templateId: matchedTemplate?.id ?? null, suggestedTags, existingTagCount: existingTagByCanonical.size }, "note polish analysis completed");
 				const structureInstruction = matchedTemplate
 					? `请按照“${matchedTemplate.label}”模板的章节与组织方式润色。模板如下：\n---\n${matchedTemplate.body}\n---`
@@ -4128,7 +4186,7 @@ const server = createServer(async (req, res) => {
 					`4. 使用当前笔记标题“${title}”作为一级标题，不要输出 YAML frontmatter。\n` +
 					`5. 只输出润色后的 Markdown 正文，不要解释，不要使用代码围栏包裹全文。\n\n` +
 					`原始笔记：\n---\n${sourceExcerpt}\n---`;
-				const polished = await completePromptOnce(polishPrompt, 8192, 120_000);
+				const polished = await completePromptOnce(polishPrompt, 8192, 120_000, requestController.signal);
 				if (!polished.trim()) {
 					json(res, 502, { error: "Text model did not return polished content" });
 					return;
@@ -4153,6 +4211,7 @@ const server = createServer(async (req, res) => {
 			const content = body.content;
 			const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === "string") : undefined;
 			const recordDate = typeof body.recordDate === "string" ? body.recordDate.trim() : undefined;
+			const saveReason = body.saveReason === "autosave" || body.saveReason === "restore" ? body.saveReason : "manual";
 			if (!rawPath || !title || typeof content !== "string") {
 				json(res, 400, { error: "Missing rawPath, title, or content" });
 				return;
@@ -4167,12 +4226,63 @@ const server = createServer(async (req, res) => {
 				return;
 			}
 			try {
-				const result = saveL2NoteContent(l2DataDir, rawPath, { title, tags, recordDate, content });
+				const result = saveL2NoteContent(l2DataDir, rawPath, { title, tags, recordDate, content, saveReason });
 				json(res, 200, result);
 			} catch (err) {
 				logger.warn({ err, rawPath }, "failed to save note");
 				const message = err instanceof Error ? err.message : "Save note failed";
 				json(res, 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "GET" && url.startsWith("/api/l2/notes/versions?")) {
+			const rawPath = new URL(url, "http://localhost").searchParams.get("path") ?? "";
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath || !rawPath.replace(/\\/g, "/").startsWith("raw/notes/") || !existsSync(fullPath)) {
+				json(res, 404, { error: "Note not found" });
+				return;
+			}
+			try {
+				json(res, 200, { versions: listL2NoteVersions(l2DataDir, rawPath) });
+			} catch (err) {
+				json(res, 500, { error: err instanceof Error ? err.message : "Failed to list versions" });
+			}
+			return;
+		}
+
+		if (method === "GET" && url.startsWith("/api/l2/notes/version?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const rawPath = params.get("path") ?? "";
+			const versionId = params.get("versionId") ?? "";
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath || !versionId || !rawPath.replace(/\\/g, "/").startsWith("raw/notes/") || !existsSync(fullPath)) {
+				json(res, 404, { error: "Note or version not found" });
+				return;
+			}
+			try {
+				json(res, 200, readL2NoteVersion(l2DataDir, rawPath, versionId));
+			} catch (err) {
+				const message = err instanceof Error ? err.message : "Failed to read version";
+				json(res, message.includes("not found") ? 404 : 500, { error: message });
+			}
+			return;
+		}
+
+		if (method === "POST" && url === "/api/l2/notes/versions/restore") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
+			const versionId = typeof body.versionId === "string" ? body.versionId.trim() : "";
+			const fullPath = safeL2RawPath(l2DataDir, rawPath);
+			if (!fullPath || !versionId || !rawPath.replace(/\\/g, "/").startsWith("raw/notes/") || !existsSync(fullPath)) {
+				json(res, 404, { error: "Note or version not found" });
+				return;
+			}
+			try {
+				json(res, 200, restoreL2NoteVersion(l2DataDir, rawPath, versionId));
+			} catch (err) {
+				const message = err instanceof Error ? err.message : "Failed to restore version";
+				json(res, message.includes("not found") ? 404 : 500, { error: message });
 			}
 			return;
 		}

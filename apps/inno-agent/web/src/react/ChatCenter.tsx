@@ -202,6 +202,27 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 					</details>
 				) : null}
 				<markdown-artifact content={normalizeMarkdownMath(message.content)} />
+				{message.workflowQuestion ? (
+					<div className="mt-3 flex flex-wrap gap-2">
+						{message.workflowQuestion.choices.map((choice) => {
+							const selected = message.workflowQuestion?.selectedValue === choice.value;
+							const answered = Boolean(message.workflowQuestion?.selectedValue);
+							return (
+								<button
+									key={choice.value}
+									type="button"
+									disabled={answered}
+									title={choice.description}
+									className={`rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${selected ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] bg-[var(--inno-surface)] hover:border-[var(--inno-accent)] hover:bg-[var(--inno-accent-soft)]"} disabled:cursor-default disabled:opacity-60`}
+									onClick={() => void chatStore.answerWorkflowQuestion(message.workflowQuestion!.id, choice.value)}
+								>
+									<span className="block font-medium">{choice.label}</span>
+									{choice.description ? <span className="mt-0.5 block max-w-56 text-[10px] text-[var(--inno-text-muted)]">{choice.description}</span> : null}
+								</button>
+							);
+						})}
+					</div>
+				) : null}
 				{message.error ? (
 					<div className={message.content.trim() ? "mt-2" : ""}>
 						<ErrorBlock error={message.error} />
@@ -417,10 +438,6 @@ export function ChatCenter() {
 	const sessions = useStoreSnapshot(sessionsStore, () => ({
 		currentSessionId: sessionsStore.currentSessionId,
 		preselectedWorkspaceId: sessionsStore.preselectedWorkspaceId,
-		// Single source of truth for the welcome-vs-session view (see store).
-		// Depends on chatStore too, but ChatCenter subscribes to chatStore via
-		// the `chat` snapshot above, so this re-evaluates on chat changes.
-		isWelcome: sessionsStore.isWelcomeView,
 	}));
 	const workspaces = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
@@ -430,7 +447,10 @@ export function ChatCenter() {
 	// pre-seeded by the useEffect below when the welcome screen's "existing"
 	// workspace picker selects one.
 	const activeWorkspaceId = useStoreSnapshot(workspaceStore, () => workspaceStore.activeWorkspaceId);
-	const selectedNotes = useStoreSnapshot(notesStore, () => notesStore.aiContextNotes);
+	const noteState = useStoreSnapshot(notesStore, () => ({
+		selectedNotes: notesStore.aiContextNotes,
+		isPolishing: notesStore.isPolishing,
+	}));
 
 	// Workspace preselected from the sidebar ("+ 新建对话" on a group), if any.
 	const preselectedWs = useMemo(
@@ -449,8 +469,11 @@ export function ChatCenter() {
 		[workspaces.list],
 	);
 
-	// Welcome state: derived once in the sessions store (single source of truth).
-	const isWelcome = sessions.isWelcome;
+	// This getter also depends on chatStore. ChatCenter re-renders for chat
+	// changes through the snapshot above, so read it live instead of caching it
+	// in the sessions-only snapshot. Otherwise workflow messages can be present
+	// while the center incorrectly remains on the welcome screen.
+	const isWelcome = sessionsStore.isWelcomeView;
 
 	useEffect(() => {
 		if (isWelcome && workspaces.list.length === 0) {
@@ -566,7 +589,7 @@ export function ChatCenter() {
 			return s.replace(/«[^»]*»/g, pasteBlock.text);
 		};
 		const input = expandPaste(rawValue).trim();
-		if ((!input && uploads.length === 0 && inlineImages.length === 0) || chat.isSending || isUploading) return;
+		if ((!input && uploads.length === 0 && inlineImages.length === 0) || chat.isSending || noteState.isPolishing || isUploading) return;
 
 		const uploadNote = uploads.length > 0
 			? `\n\n[已上传到工作区]\n${uploads.map((file) => `- ${file.fileName}: ${file.path}`).join("\n")}`
@@ -575,7 +598,7 @@ export function ChatCenter() {
 		const imagesToSend = inlineImages.length > 0
 			? inlineImages.map(({ data, mimeType }) => ({ data, mimeType }))
 			: undefined;
-		const noteReferences = selectedNotes.map((note) => ({ rawPath: note.rawPath, title: note.title }));
+		const noteReferences = noteState.selectedNotes.map((note) => ({ rawPath: note.rawPath, title: note.title }));
 
 		const resetComposer = () => {
 			if (inputRef.current) {
@@ -613,7 +636,7 @@ export function ChatCenter() {
 		setUploads([]);
 		setInlineImages([]);
 		void chatStore.send(messageContent, imagesToSend, undefined, noteReferences);
-	}, [isWelcome, buildSessionInput, uploads, inlineImages, selectedNotes, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, pasteBlock]);
+	}, [isWelcome, buildSessionInput, uploads, inlineImages, noteState, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, pasteBlock]);
 
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		// Don't fire Send while the user is composing with an IME (e.g. picking
@@ -775,17 +798,17 @@ export function ChatCenter() {
 	);
 
 	const renderNoteReferences = () => (
-		selectedNotes.length > 0 ? (
+		noteState.selectedNotes.length > 0 ? (
 			<div className="mb-2 rounded-md border border-blue-100 bg-[var(--inno-accent-soft)] px-2.5 py-2">
 				<div className="mb-1.5 flex items-center gap-2 text-xs text-[var(--inno-text-muted)]">
 					<BookOpen size={13} className="shrink-0 text-[var(--inno-accent)]" />
-					<span>{t("notes.context.referencing", { count: selectedNotes.length })}</span>
+					<span>{t("notes.context.referencing", { count: noteState.selectedNotes.length })}</span>
 					<button type="button" className="ml-auto text-[11px] text-[var(--inno-accent)] hover:underline" onClick={() => notesStore.clearAiContext()}>
 						{t("notes.context.clearAll")}
 					</button>
 				</div>
 				<div className="flex flex-wrap gap-1.5">
-					{selectedNotes.map((note) => (
+					{noteState.selectedNotes.map((note) => (
 						<span key={note.rawPath} className="inline-flex max-w-[240px] items-center gap-1 rounded-full border border-blue-100 bg-[var(--inno-surface)] px-2 py-0.5 text-xs text-[var(--inno-text-muted)]" title={note.title}>
 							<span className="truncate">{note.title}</span>
 							<button type="button" className="shrink-0 rounded-full hover:text-[var(--inno-text)]" onClick={() => notesStore.removeAiContext(note.rawPath)} aria-label={t("notes.context.remove", { title: note.title })}>
@@ -845,13 +868,22 @@ export function ChatCenter() {
 				>
 					<Square size={16} />
 				</button>
+			) : noteState.isPolishing ? (
+				<button
+					type="button"
+					className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-red-600 text-white transition-colors hover:bg-red-700"
+					title={t("notes.actions.stopPolishing")}
+					onClick={() => notesStore.stopPolish()}
+				>
+					<Square size={16} />
+				</button>
 			) : (
 				<>
 					{chat.lastUserPrompt ? (
 						<button
 							className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50"
 							title="Retry last message"
-							disabled={isUploading}
+							disabled={noteState.isPolishing || isUploading}
 							onClick={handleRetry}
 						>
 							<RotateCcw size={16} />

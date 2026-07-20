@@ -37,6 +37,9 @@ import type {
 	NoteContentDto,
 	NoteFrontmatter,
 	NoteStatus,
+	NoteVersionDto,
+	NoteVersionReason,
+	NoteVersionSummaryDto,
 	NoteSummaryDto,
 	NotesListResponse,
 	NotebookType,
@@ -64,6 +67,7 @@ import {
 	listNoteAttachments,
 	updateNoteAttachmentStatus,
 } from "./note-attachments-service.js";
+import { deleteNoteHistory, listNoteVersions, readNoteVersion, recordNoteVersion } from "./note-history-service.js";
 
 const TEXT_ATTACHMENT_EXTENSIONS = new Set([
 	".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".xml", ".yaml", ".yml",
@@ -335,22 +339,46 @@ export function createL2Note(
 		updated: now,
 	};
 	writeText(join(l2DataDir, rawPath), serializeNoteFile(frontmatter, body));
+	recordNoteVersion(l2DataDir, {
+		noteId,
+		title,
+		tags,
+		recordDate: frontmatter.record_date,
+		content: body,
+		reason: "created",
+	});
 	return { rawPath, status: "draft", noteId, title };
 }
 
 export function saveL2NoteContent(
 	l2DataDir: string,
 	rawPath: string,
-	options: { title: string; tags?: string[]; recordDate?: string; content: string },
+	options: {
+		title: string;
+		tags?: string[];
+		recordDate?: string;
+		content: string;
+		saveReason?: Exclude<NoteVersionReason, "created">;
+	},
 ): { rawPath: string; status: NoteStatus } {
 	const normalizedPath = rawPath.replace(/\\/g, "/");
-	const { absPath, frontmatter, body: _oldBody } = readNoteFile(l2DataDir, normalizedPath);
+	const { absPath, frontmatter, body: oldBody } = readNoteFile(l2DataDir, normalizedPath);
 	if (findManifestByRawPath(l2DataDir, normalizedPath)?.status === "indexed") {
 		throw new Error("已归档内容为只读，请先撤回归档");
 	}
 	const wasIndexed = frontmatter.status === "indexed" || Boolean(frontmatter.source_id);
 	const nextStatus: NoteStatus = wasIndexed ? "outdated" : "draft";
 	const now = new Date().toISOString();
+	if (listNoteVersions(l2DataDir, frontmatter.note_id).length === 0) {
+		recordNoteVersion(l2DataDir, {
+			noteId: frontmatter.note_id,
+			title: frontmatter.title,
+			tags: frontmatter.tags,
+			recordDate: frontmatter.record_date || recordDateFromIso(frontmatter.created),
+			content: oldBody,
+			reason: "created",
+		});
+	}
 	const nextFrontmatter: NoteFrontmatter = {
 		...frontmatter,
 		title: options.title.trim() || frontmatter.title,
@@ -360,7 +388,42 @@ export function saveL2NoteContent(
 		updated: now,
 	};
 	writeText(absPath, serializeNoteFile(nextFrontmatter, options.content));
+	recordNoteVersion(l2DataDir, {
+		noteId: nextFrontmatter.note_id,
+		title: nextFrontmatter.title,
+		tags: nextFrontmatter.tags,
+		recordDate: nextFrontmatter.record_date,
+		content: options.content,
+		reason: options.saveReason ?? "manual",
+	});
 	return { rawPath: normalizedPath, status: nextStatus };
+}
+
+export function listL2NoteVersions(l2DataDir: string, rawPath: string): NoteVersionSummaryDto[] {
+	const { frontmatter } = readNoteFile(l2DataDir, rawPath.replace(/\\/g, "/"));
+	return listNoteVersions(l2DataDir, frontmatter.note_id);
+}
+
+export function readL2NoteVersion(l2DataDir: string, rawPath: string, versionId: string): NoteVersionDto {
+	const { frontmatter } = readNoteFile(l2DataDir, rawPath.replace(/\\/g, "/"));
+	return readNoteVersion(l2DataDir, frontmatter.note_id, versionId);
+}
+
+export function restoreL2NoteVersion(
+	l2DataDir: string,
+	rawPath: string,
+	versionId: string,
+): { rawPath: string; status: NoteStatus; versionId: string } {
+	const normalizedPath = rawPath.replace(/\\/g, "/");
+	const version = readL2NoteVersion(l2DataDir, normalizedPath, versionId);
+	const result = saveL2NoteContent(l2DataDir, normalizedPath, {
+		title: version.title,
+		tags: version.tags,
+		recordDate: version.recordDate,
+		content: version.content,
+		saveReason: "restore",
+	});
+	return { ...result, versionId };
 }
 
 export async function archiveL2Note(
@@ -613,13 +676,7 @@ export function saveL2RawMarkdownContent(
 	return { rawPath: normalizedPath, status: "outdated" };
 }
 
-/**
- * Permanently delete a notebook item.
- *
- * If the item has already been archived, first undo the archive so generated
- * wiki pages, concept/entity source references, manifest rows, and indexes are
- * cleaned up before the raw file is removed.
- */
+/** Permanently delete a notebook item and its private note data. */
 export function deleteL2NotebookItem(l2DataDir: string, rawPath: string): DeleteNotebookItemResult {
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	if (!normalizedPath.startsWith("raw/")) {
@@ -633,38 +690,27 @@ export function deleteL2NotebookItem(l2DataDir: string, rawPath: string): Delete
 	}
 	const absPath = join(l2DataDir, normalizedPath);
 	if (!existsSync(absPath)) {
-		if (entry) {
-			appendLog(
-				l2DataDir,
-				"delete",
-				title,
-				[
-					`- 原始文件: ${normalizedPath}`,
-					`- Raw file was already missing after archive cleanup`,
-					`- UI delete from Notes panel`,
-				].join("\n"),
-			);
-			return { rawPath: normalizedPath, title };
-		}
+		if (entry) return { rawPath: normalizedPath, title };
 		throw new Error("文件不存在");
 	}
-
+	let noteId: string | undefined;
 	if (normalizedPath.startsWith("raw/notes/")) {
 		try {
 			const { frontmatter, body } = readNoteFile(l2DataDir, normalizedPath);
 			title = frontmatter.title || extractNoteTitle(body, title);
+			noteId = frontmatter.note_id;
 		} catch (err) {
 			logger.warn({ err, rawPath: normalizedPath }, "failed to read note before delete");
 		}
 		deleteAttachmentsForNote(l2DataDir, normalizedPath);
 	}
-
+	if (noteId) deleteNoteHistory(l2DataDir, noteId);
 	unlinkSync(absPath);
 	appendLog(
 		l2DataDir,
 		"delete",
 		title,
-		[`- 原始文件: ${normalizedPath}`, `- UI delete from Notes panel`].join("\n"),
+		[`- 原始文件: ${normalizedPath}`, `- Permanently deleted from Notes panel`].join("\n"),
 	);
 	return { rawPath: normalizedPath, title };
 }

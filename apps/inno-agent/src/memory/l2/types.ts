@@ -223,6 +223,25 @@ export interface DeleteNotebookItemResult {
 	title: string;
 }
 
+export type NoteVersionReason = "created" | "autosave" | "manual" | "restore";
+
+export interface NoteVersionSummaryDto {
+	versionId: string;
+	noteId: string;
+	createdAt: string;
+	reason: NoteVersionReason;
+	title: string;
+	contentLength: number;
+}
+
+export interface NoteVersionDto extends NoteVersionSummaryDto {
+	tags: string[];
+	recordDate: string;
+	content: string;
+	contentHash: string;
+}
+
+
 export interface SaveRawMarkdownResult {
 	rawPath: string;
 	status: ManifestStatus | "uploaded";

@@ -1,8 +1,9 @@
 import { EventEmitter } from "./event-emitter.js";
 import { streamChat, abortChat, streamSessionEvents } from "../api/chat.js";
 import type { InlineImage } from "../api/chat.js";
-import type { ChatMessage, ChatNoteReference, ChatStreamEvent, ChatToolRecord, PendingQuestion, QuestionnaireResult } from "../types/chat.js";
+import type { ChatMessage, ChatNoteReference, ChatStreamEvent, ChatToolRecord, ChatWorkflowChoice, PendingQuestion, QuestionnaireResult } from "../types/chat.js";
 import { notebookStore } from "./notebook-store.js";
+import { appendSessionWorkflowMessage } from "../api/sessions.js";
 
 interface ChatStoreEvents {
 	change: void;
@@ -32,6 +33,63 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	private abortController: AbortController | null = null;
 	private detachMode = false;
 	private wikiInvalidated = false;
+	private workflowQuestionHandlers = new Map<string, (value: string) => void | Promise<void>>();
+
+	/**
+	 * Add a local message emitted by an in-app AI workflow, such as note polish.
+	 * The workflow owns its model request, while the chat remains the visible
+	 * place where the user can see what was requested and what happened.
+	 */
+	async appendWorkflowMessage(role: "user" | "assistant", content: string): Promise<void> {
+		const trimmed = content.trim();
+		if (!trimmed) return;
+		this.messages = [...this.messages, {
+			role,
+			content: trimmed,
+			timestamp: Date.now(),
+		}];
+		this.emit("change", undefined);
+		const { sessionsStore } = await import("./sessions-store.js");
+		const sessionId = sessionsStore.currentSessionId;
+		if (sessionId) {
+			await appendSessionWorkflowMessage(sessionId, role, trimmed);
+			void sessionsStore.refresh();
+		}
+	}
+
+	async appendWorkflowQuestion(content: string, choices: ChatWorkflowChoice[], onSelect: (value: string) => void | Promise<void>): Promise<void> {
+		const trimmed = content.trim();
+		if (!trimmed || choices.length === 0) return;
+		const id = `workflow-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+		this.workflowQuestionHandlers.set(id, onSelect);
+		this.messages = [...this.messages, {
+			role: "assistant",
+			content: trimmed,
+			timestamp: Date.now(),
+			workflowQuestion: { id, choices },
+		}];
+		this.emit("change", undefined);
+		const { sessionsStore } = await import("./sessions-store.js");
+		const sessionId = sessionsStore.currentSessionId;
+		if (sessionId) {
+			await appendSessionWorkflowMessage(sessionId, "assistant", trimmed);
+			void sessionsStore.refresh();
+		}
+	}
+
+	async answerWorkflowQuestion(id: string, value: string): Promise<void> {
+		const message = this.messages.find((item) => item.workflowQuestion?.id === id);
+		const question = message?.workflowQuestion;
+		const choice = question?.choices.find((item) => item.value === value);
+		const handler = this.workflowQuestionHandlers.get(id);
+		if (!question || question.selectedValue || !choice || !handler) return;
+		this.messages = this.messages.map((item) => item.workflowQuestion?.id === id
+			? { ...item, workflowQuestion: { ...item.workflowQuestion, selectedValue: value } }
+			: item);
+		this.workflowQuestionHandlers.delete(id);
+		await this.appendWorkflowMessage("user", choice.label);
+		await handler(value);
+	}
 
 	async send(prompt: string, images?: InlineImage[], activityText?: string, noteReferences?: ChatNoteReference[]): Promise<void> {
 		if ((!prompt.trim() && !images?.length) || this.isSending) return;

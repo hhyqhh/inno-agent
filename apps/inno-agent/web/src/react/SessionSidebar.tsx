@@ -1054,21 +1054,25 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 				{/* Channel filters + workspace ordering — hidden in Simple Mode. */}
 				{!simpleMode && (
 					<div className="relative flex items-center gap-1">
-						{state.availableChannels.length > 1 ? orderedChannels.map((ch) => (
-							<button
-								key={ch}
-								className={`inno-channel-filter-chip inno-sidebar-meta rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(ch, state.channelFilter === ch)}`}
-								onClick={() => sessionsStore.setChannelFilter(state.channelFilter === ch ? null : ch)}
-							>
-								{channelLabel(ch)}
-							</button>
-						)) : null}
-						{state.availableChannels.length > 1 ? <button
-							className={`inno-channel-filter-chip inno-sidebar-meta rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(null, state.channelFilter === null)}`}
-							onClick={() => sessionsStore.setChannelFilter(null)}
-						>
-							{t("sidebar.all")}
-						</button> : null}
+						{state.availableChannels.length > 1 ? (
+							<div className="chip-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+								<button
+									className={`inno-channel-filter-chip inno-sidebar-meta shrink-0 whitespace-nowrap rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(null, state.channelFilter === null)}`}
+									onClick={() => sessionsStore.setChannelFilter(null)}
+								>
+									{t("sidebar.all")}
+								</button>
+								{orderedChannels.map((ch) => (
+									<button
+										key={ch}
+										className={`inno-channel-filter-chip inno-sidebar-meta shrink-0 whitespace-nowrap rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(ch, state.channelFilter === ch)}`}
+										onClick={() => sessionsStore.setChannelFilter(state.channelFilter === ch ? null : ch)}
+									>
+										{channelLabel(ch)}
+									</button>
+								))}
+							</div>
+						) : null}
 						<div className="ml-auto flex shrink-0 items-center gap-1">
 							{isCustomSorting ? (
 								<>
@@ -1081,7 +1085,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 									</button>
 									<button
 										type="button"
-										className="inno-sidebar-meta rounded-md bg-[var(--inno-accent)] px-1.5 py-0.5 font-medium text-white transition-opacity hover:opacity-90"
+										className="inno-primary-button inno-sidebar-meta rounded-md px-1.5 py-0.5 font-medium"
 										onClick={finishCustomSort}
 									>
 										{t("common.done")}

@@ -420,6 +420,16 @@ export function ChatCenter() {
 
 	// Simple Mode surfaces preset workspaces for one-click start.
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
+	// Whether the currently selected model accepts image input. Drives the
+	// paste/upload gate so users on text-only custom providers don't get
+	// silently-dropped images. Unknown/missing model → keep allowed (legacy).
+	const currentModelSupportsImages = useStoreSnapshot(settingsStore, () => {
+		const s = settingsStore.settings;
+		if (!s) return true;
+		const list = s.availableModels ?? s.configuredModels ?? [];
+		const m = list.find((x) => x.provider === s.defaultProvider && x.id === s.defaultModel);
+		return m ? m.input.includes("image") : true;
+	});
 	const [presets, setPresets] = useState<PresetMeta[]>([]);
 	const [openingPresetId, setOpeningPresetId] = useState<string | null>(null);
 	const [togglingMode, setTogglingMode] = useState(false);
@@ -612,7 +622,7 @@ export function ChatCenter() {
 			? `\n\n${t("chat.uploadedToWorkspace")}\n${uploads.map((file) => `- ${file.fileName}: ${file.path}`).join("\n")}`
 			: "";
 		const messageContent = `${input}${uploadNote}` || (inlineImages.length > 0 ? t("chat.describeImage") : "");
-		const imagesToSend = inlineImages.length > 0
+		const imagesToSend = (inlineImages.length > 0 && currentModelSupportsImages)
 			? inlineImages.map(({ data, mimeType }) => ({ data, mimeType }))
 			: undefined;
 
@@ -653,7 +663,7 @@ export function ChatCenter() {
 		setUploads([]);
 		setInlineImages([]);
 		void chatStore.send(messageContent, imagesToSend);
-	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, pasteBlock, t]);
+	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, pasteBlock, currentModelSupportsImages, t]);
 
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		// Don't fire Send while the user is composing with an IME (e.g. picking
@@ -695,6 +705,7 @@ export function ChatCenter() {
 		const imageItems = Array.from(e.clipboardData.items).filter((item) => item.type.startsWith("image/"));
 		if (imageItems.length > 0) {
 			e.preventDefault();
+			if (!currentModelSupportsImages) return; // text-only model: drop silently
 			const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
 			addImageFiles(files);
 			return;
@@ -730,14 +741,15 @@ export function ChatCenter() {
 				});
 			}
 		}
-	}, [addImageFiles, t]);
+	}, [addImageFiles, currentModelSupportsImages, t]);
 
 	const handleImageFiles = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+		if (!currentModelSupportsImages) return; // text-only model: ignore picker
 		const files = Array.from(event.target.files ?? []).filter((f) => f.type.startsWith("image/"));
 		if (files.length === 0) return;
 		addImageFiles(files);
 		if (event.target) event.target.value = "";
-	}, [addImageFiles]);
+	}, [addImageFiles, currentModelSupportsImages]);
 
 	const removeInlineImage = useCallback((index: number) => {
 		setInlineImages((prev) => prev.filter((_, i) => i !== index));
@@ -839,7 +851,7 @@ export function ChatCenter() {
 			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={activeWorkspaceId ? t("chat.uploadFiles") : t("chat.uploadHint")} disabled={chat.isSending || isUploading || !activeWorkspaceId} onClick={() => fileInputRef.current?.click()}>
 				{isUploading ? <Spinner size={16} /> : <Paperclip size={16} />}
 			</button>
-			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={t("chat.attachImage")} disabled={chat.isSending} onClick={() => imageInputRef.current?.click()}>
+			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={currentModelSupportsImages ? t("chat.attachImage") : t("chat.imageNotSupported")} disabled={chat.isSending || !currentModelSupportsImages} onClick={() => imageInputRef.current?.click()}>
 				<Image size={16} />
 			</button>
 			<textarea

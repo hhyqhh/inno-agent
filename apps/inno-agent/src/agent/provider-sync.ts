@@ -31,6 +31,7 @@ interface PiModelsJson {
 			id: string;
 			name?: string;
 			reasoning?: boolean;
+			input?: Array<"text" | "image">;
 			contextWindow?: number;
 			maxTokens?: number;
 		}>;
@@ -78,6 +79,7 @@ export function syncProvidersForSubagents(config: InnoConfig): void {
 				id: m.id,
 				name: m.name,
 				reasoning: m.reasoning,
+				input: m.input,
 				contextWindow: m.contextWindow,
 				maxTokens: m.maxTokens,
 			})),

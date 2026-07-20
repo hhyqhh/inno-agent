@@ -15,19 +15,27 @@ import {
 	ensureL2Directories,
 	readMaintenanceContext,
 } from "./wiki-maintainer.js";
-import { queryWiki } from "./wiki-query.js";
+import { queryWikiHybrid } from "./wiki-query.js";
 import { summarizeContent } from "./summarizer.js";
 import { maintainLinkedWikiPages } from "./wiki-linker.js";
 import { readText } from "../../storage/file-store.js";
 import { parseDocument, DocumentParseError } from "./document-parser.js";
+import { getL2Memory, type L2Memory } from "./l2-memory.js";
+import { regenerateOverview } from "./overview.js";
 import { logger } from "../../logger.js";
 
 /**
  * Create L2 Wiki memory tools for the Inno Agent.
  * When `isEnabled` is provided and returns false, the archive/query tools
  * short-circuit to a disabled notice without touching the knowledge base.
+ * `l2Memory` keeps the retrieval index in sync; defaults to the per-dir
+ * singleton so callers that don't pass one still get index maintenance.
  */
-export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): ToolDefinition[] {
+export function createL2Tools(
+	l2DataDir: string,
+	isEnabled?: () => boolean,
+	l2Memory: L2Memory = getL2Memory(l2DataDir),
+): ToolDefinition[] {
 	const l2DisabledResult = () => ({
 		content: [{ type: "text" as const, text: "L2 Wiki 知识库已在设置中关闭，当前不归档也不检索知识库内容。" }],
 		details: { disabled: true },
@@ -180,6 +188,19 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 			const allEntries = readManifest(l2DataDir);
 			rebuildIndex(l2DataDir, allEntries);
 
+			// Keep the retrieval index in sync with the touched pages.
+			for (const wikiPath of entry.wikiPages) {
+				await l2Memory.indexPageByPath(wikiPath);
+			}
+
+			// Regenerate the knowledge-base overview (best-effort; never fails archive).
+			try {
+				const overviewPath = await regenerateOverview(l2DataDir, ctx.model, ctx.modelRegistry);
+				if (overviewPath) await l2Memory.indexPageByPath(overviewPath);
+			} catch (err) {
+				logger.warn({ err }, "l2_archive: overview regeneration failed");
+			}
+
 			// Append log
 			appendLog(
 				l2DataDir,
@@ -191,7 +212,7 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 					`- 原始文件: ${rawPath}`,
 					`- 提取文本: ${extractedPath}`,
 					`- Source 页面: ${wikiPagePath}`,
-					`- concepts/entities: 新建 ${linkMaintenance.created.length}, 更新 ${linkMaintenance.updated.length}, 不变 ${linkMaintenance.unchanged.length}`,
+					`- concepts/entities: 新建 ${linkMaintenance.created.length}, 更新 ${linkMaintenance.updated.length}, 不变 ${linkMaintenance.unchanged.length}, 争议 ${linkMaintenance.contested.length}`,
 					`- 维护前上下文: schema ${maintenanceContext.schema.length} chars, index ${maintenanceContext.index.length} chars, recent log ${maintenanceContext.recentLog.length} chars`,
 				].join("\n"),
 			);
@@ -237,7 +258,7 @@ export function createL2Tools(l2DataDir: string, isEnabled?: () => boolean): Too
 			if (isEnabled && !isEnabled()) return l2DisabledResult();
 			ensureL2Directories(l2DataDir);
 			const query = params.query ?? "";
-			const result = queryWiki(l2DataDir, query);
+			const result = await queryWikiHybrid(l2Memory, query);
 			appendLog(l2DataDir, "query", query, "- L2 query executed through l2_query.");
 			return {
 				content: [{ type: "text" as const, text: result }],

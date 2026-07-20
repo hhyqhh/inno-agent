@@ -289,6 +289,14 @@ inno-workspace-panel textarea {
 	background-clip: padding-box;
 }
 
+/* Horizontal chip rows (sidebar channel filters): scroll without a visible scrollbar. */
+.chip-scroll {
+	scrollbar-width: none;
+}
+.chip-scroll::-webkit-scrollbar {
+	display: none;
+}
+
 /* Office previews: make injected SVG / docx pages fit the preview width. */
 /* pptx: the converter emits <svg width="960" height="540">; override so it
    scales to the slide card instead of overflowing at its intrinsic size. */

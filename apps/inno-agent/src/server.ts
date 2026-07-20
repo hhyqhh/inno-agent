@@ -579,6 +579,9 @@ function buildSafeSettings() {
 				baseUrl: config.ocrApi.baseUrl,
 			}
 			: undefined,
+		embedding: config.embedding
+			? { ...config.embedding, apiKey: maskSecret(config.embedding.apiKey) }
+			: undefined,
 		contentHub: config.contentHub
 			? { ...config.contentHub, token: maskSecret(config.contentHub.token) }
 			: undefined,
@@ -4120,6 +4123,27 @@ const server = createServer(async (req, res) => {
 			}
 			config = saveConfig(paths.configPath, config);
 			syncConfig(config);
+			json(res, 200, buildSafeSettings());
+			return;
+		}
+
+		// --- Embedding settings (optional vector search for L2 wiki) ---
+		if (method === "PUT" && url === "/api/settings/embedding") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const str = (key: string): string => (typeof body[key] === "string" ? (body[key] as string).trim() : "");
+			const baseUrl = str("baseUrl");
+			const model = str("model");
+			// A masked value (e.g. "****abcd") means "keep the existing apiKey".
+			const incomingKey = str("apiKey");
+			const apiKey = incomingKey.startsWith("****") ? (config.embedding?.apiKey ?? "") : incomingKey;
+			// Both baseUrl and model are required to enable; otherwise clear it.
+			config.embedding = baseUrl && model ? { baseUrl, apiKey, model } : undefined;
+			config = saveConfig(paths.configPath, config);
+			syncConfig(config);
+			// Embed existing pages against the new endpoint in the background
+			// (shares the same per-dir L2Memory the agent configured). No-op when
+			// cleared or when the endpoint is unreachable.
+			if (config.embedding) void getL2Memory(l2DataDir).embedBackfill();
 			json(res, 200, buildSafeSettings());
 			return;
 		}

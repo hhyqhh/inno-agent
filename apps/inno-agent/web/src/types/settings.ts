@@ -101,6 +101,11 @@ export interface InnoSettings {
 		token: string; // masked
 	};
 	memory?: { l1Enabled: boolean; l2Enabled: boolean; l3Enabled: boolean };
+	embedding?: {
+		baseUrl: string;
+		apiKey: string; // masked
+		model: string;
+	};
 	simpleMode?: { enabled: boolean };
 	ui?: { theme: string };
 }

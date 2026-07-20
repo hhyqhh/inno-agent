@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Trash2, Pencil, X, ChevronDown, ChevronRight, Plus, QrCode as QrCodeIcon, CheckCircle, Wifi, WifiOff, Database, KeyRound } from "lucide-react";
+import { Trash2, Pencil, X, ChevronDown, ChevronRight, Plus, QrCode as QrCodeIcon, CheckCircle, Wifi, WifiOff, Database, KeyRound, Sparkles } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { getWikiStats } from "../api/wiki.js";
 import { settingsStore } from "../stores/settings-store.js";
@@ -1029,6 +1029,136 @@ function OcrSettings({ settings }: { settings: InnoSettings }) {
 	);
 }
 
+/* ---------- Embedding Settings (optional vector search for L2 wiki) ---------- */
+
+function EmbeddingSettings({ settings }: { settings: InnoSettings }) {
+	const { t } = useTranslation();
+	const embedding = settings.embedding;
+	const [open, setOpen] = useState(false);
+	const [baseUrl, setBaseUrl] = useState("");
+	const [model, setModel] = useState("");
+	const [apiKey, setApiKey] = useState("");
+	const [saving, setSaving] = useState(false);
+	const [saved, setSaved] = useState(false);
+
+	const maskedKey = embedding?.apiKey ?? "";
+	const hasExisting = Boolean(embedding?.baseUrl && embedding?.model);
+	const [keyDirty, setKeyDirty] = useState(false);
+
+	useEffect(() => {
+		setBaseUrl(embedding?.baseUrl ?? "");
+		setModel(embedding?.model ?? "");
+		setApiKey("");
+		setKeyDirty(false);
+		setSaved(false);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [embedding?.baseUrl, embedding?.model, maskedKey]);
+
+	const dirty = keyDirty || baseUrl !== (embedding?.baseUrl ?? "") || model !== (embedding?.model ?? "");
+	const canSave = baseUrl.trim().length > 0 && model.trim().length > 0;
+
+	async function handleSave() {
+		setSaving(true);
+		setSaved(false);
+		try {
+			await settingsStore.saveEmbedding({
+				baseUrl: baseUrl.trim(),
+				model: model.trim(),
+				apiKey: keyDirty ? apiKey.trim() : maskedKey,
+			});
+			setSaved(true);
+			setApiKey("");
+			setKeyDirty(false);
+		} catch {
+			// error surfaced via store
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	async function handleClear() {
+		setSaving(true);
+		setSaved(false);
+		try {
+			await settingsStore.saveEmbedding({ baseUrl: "", model: "", apiKey: "" });
+			setSaved(true);
+			setApiKey("");
+			setKeyDirty(false);
+		} catch {
+			// error surfaced via store
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	return (
+		<div className="min-w-0 rounded-lg bg-[var(--inno-surface)] p-4">
+			<button className="inno-settings-card-toggle flex w-full min-w-0 items-start gap-2 text-left" onClick={() => setOpen((v) => !v)}>
+				<Sparkles size={16} className="mt-0.5 shrink-0 text-[var(--inno-text)]" />
+				<div className="min-w-0 flex-1">
+					<h4 className="break-words text-sm font-medium text-[var(--inno-text)]">{t("settings.embedding.title", "向量检索 (L2 语义检索)")}</h4>
+					<p className="mt-1 max-w-full break-words text-xs leading-relaxed text-[var(--inno-text-muted)]">
+						{t("settings.embedding.desc", "可选。配置任意 OpenAI 兼容的 /v1/embeddings 端点后，L2 知识库检索会在词法基础上叠加语义向量召回。留空则仅用词法+图检索。")}
+					</p>
+					{!open && (
+						<p className="mt-1 break-all text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">
+							{hasExisting ? `${embedding?.model} @ ${embedding?.baseUrl}` : t("settings.embedding.unset", "未配置")}
+						</p>
+					)}
+				</div>
+				<ChevronDown size={14} className={`mt-1 shrink-0 text-[var(--inno-text-subtle)] transition-transform ${open ? "rotate-180" : ""}`} />
+			</button>
+
+			{open ? (
+				<div className="mt-3 grid gap-2.5">
+					<div className="grid min-w-0 gap-2">
+						<input
+							className={inputCls}
+							value={baseUrl}
+							onChange={(e) => { setBaseUrl(e.target.value); setSaved(false); }}
+							placeholder={t("settings.embedding.baseUrlPlaceholder", "https://api.example.com/v1") ?? ""}
+							autoComplete="off"
+						/>
+						<input
+							className={inputCls}
+							value={model}
+							onChange={(e) => { setModel(e.target.value); setSaved(false); }}
+							placeholder={t("settings.embedding.modelPlaceholder", "text-embedding-3-small") ?? ""}
+							autoComplete="off"
+						/>
+						<input
+							className={inputCls}
+							type="password"
+							value={apiKey}
+							onChange={(e) => { setApiKey(e.target.value); setKeyDirty(true); setSaved(false); }}
+							placeholder={maskedKey || (t("settings.embedding.apiKeyPlaceholder", "API Key (可选)") ?? "")}
+							autoComplete="off"
+						/>
+					</div>
+					<div className="flex min-w-0 flex-wrap items-center gap-2">
+						<button
+							disabled={saving || !dirty || !canSave}
+							onClick={() => void handleSave()}
+							className="flex h-8 shrink-0 items-center rounded-md inno-primary-button px-3 text-xs text-white disabled:opacity-50"
+						>
+							{saving ? t("common.loading") : saved ? t("settings.embedding.saved", "已保存") : t("common.save")}
+						</button>
+						{hasExisting && (
+							<button
+								disabled={saving}
+								onClick={() => void handleClear()}
+								className="flex h-8 shrink-0 items-center rounded-md border border-[var(--inno-border)] px-3 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							>
+								{t("settings.embedding.clear", "清除")}
+							</button>
+						)}
+					</div>
+				</div>
+			) : null}
+		</div>
+	);
+}
+
 /* ---------- Memory Settings (L1/L2/L3 layer toggles) ---------- */
 
 type MemoryLayer = "l1Enabled" | "l2Enabled" | "l3Enabled";
@@ -1304,6 +1434,9 @@ export function SettingsPanel() {
 
 						{/* Memory Settings (L3 cross-conversation recall) */}
 						{state.settings && <MemorySettings settings={state.settings} />}
+
+						{/* Embedding (optional vector search for L2 wiki) */}
+						{state.settings && <EmbeddingSettings settings={state.settings} />}
 
 						{/* Content Hub (source for skill library + presets; subsumes the
 						    legacy GitHub token) */}

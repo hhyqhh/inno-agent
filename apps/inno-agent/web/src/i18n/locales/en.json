@@ -411,6 +411,16 @@
 			"saved": "Saved",
 			"clear": "Clear"
 		},
+		"embedding": {
+			"title": "Vector search (L2 semantic retrieval)",
+			"desc": "Optional. Point at any OpenAI-compatible /v1/embeddings endpoint to add semantic vector recall on top of lexical search for the L2 wiki. Leave empty for lexical + graph only.",
+			"unset": "Not configured",
+			"baseUrlPlaceholder": "https://api.example.com/v1",
+			"modelPlaceholder": "text-embedding-3-small",
+			"apiKeyPlaceholder": "API key (optional)",
+			"saved": "Saved",
+			"clear": "Clear"
+		},
 		"form": {
 			"providerId": "Provider id",
 			"baseUrl": "Base URL",

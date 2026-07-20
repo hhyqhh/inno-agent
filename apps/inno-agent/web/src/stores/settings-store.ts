@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveGithubSettings, saveOcrSettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveGithubSettings, saveOcrSettings, saveEmbeddingSettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload, type EmbeddingSettingsPayload } from "../api/settings.js";
 import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
 interface SettingsStoreEvents {
@@ -15,6 +15,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingMemory = false;
 	isSavingGithub = false;
 	isSavingOcr = false;
+	isSavingEmbedding = false;
 	isSavingContentHub = false;
 	isSavingSimpleMode = false;
 	error: string | null = null;
@@ -183,6 +184,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			throw err;
 		} finally {
 			this.isSavingOcr = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveEmbedding(payload: EmbeddingSettingsPayload): Promise<void> {
+		this.isSavingEmbedding = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveEmbeddingSettings(payload);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save embedding settings";
+			this.emit("change", undefined);
+			throw err;
+		} finally {
+			this.isSavingEmbedding = false;
 			this.emit("change", undefined);
 		}
 	}

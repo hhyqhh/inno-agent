@@ -411,6 +411,16 @@
 			"saved": "已保存",
 			"clear": "清除"
 		},
+		"embedding": {
+			"title": "向量检索 (L2 语义检索)",
+			"desc": "可选。配置任意 OpenAI 兼容的 /v1/embeddings 端点后，L2 知识库检索会在词法基础上叠加语义向量召回。留空则仅用词法+图检索。",
+			"unset": "未配置",
+			"baseUrlPlaceholder": "https://api.example.com/v1",
+			"modelPlaceholder": "text-embedding-3-small",
+			"apiKeyPlaceholder": "API Key (可选)",
+			"saved": "已保存",
+			"clear": "清除"
+		},
 		"form": {
 			"providerId": "提供方 ID",
 			"baseUrl": "Base URL",

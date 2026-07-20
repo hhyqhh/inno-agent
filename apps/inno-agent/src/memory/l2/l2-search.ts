@@ -1,6 +1,6 @@
 /**
- * L2 retrieval: lexical (BM25) candidate ranking, then one-hop graph expansion
- * over the wiki link graph.
+ * L2 hybrid retrieval: lexical (BM25) + vector (cosine) fused via Reciprocal
+ * Rank Fusion, then one-hop graph expansion over the wiki link graph.
  *
  * The graph signals mirror llm_wiki's relevance model, scaled down for a
  * personal-size wiki:
@@ -12,24 +12,25 @@
  *
  * Link resolution uses the shared alias index (wiki-links.ts) so retrieval and
  * the graph viz resolve `[[links]]` identically. Everything runs in-memory from
- * the index store; at personal scale (hundreds of short pages) this is cheap
- * and keeps ranking logic out of SQL.
+ * the index store (getAllPages / getEmbeddings); at personal scale (hundreds of
+ * short pages) this is cheap and keeps ranking logic out of SQL.
  */
 
 import { buildAliasIndex, extractOutgoingLinks, pageStem } from "./wiki-links.js";
 import { OVERVIEW_PATH } from "./wiki-graph.js";
+import type { Embedder } from "./embeddings-client.js";
 import type { L2IndexStore, L2PageMeta } from "./l2-index-store.js";
 
-/** Rank-decay constant for turning a lexical rank into a base score. */
-const RANK_DECAY_K = 60;
+const RRF_K = 60;
 const LEX_CANDIDATES = 30;
+const VEC_CANDIDATES = 30;
 const GRAPH_SEEDS = 8;
 const WEIGHT_DIRECT_LINK = 0.5;
 const WEIGHT_SOURCE_OVERLAP = 0.4;
 const WEIGHT_ADAMIC_ADAR = 0.3;
 const WEIGHT_TYPE_AFFINITY = 0.1;
 
-export type L2SearchSignal = "lexical" | "graph";
+export type L2SearchSignal = "lexical" | "vector" | "graph";
 
 export interface L2SearchResult {
 	path: string;
@@ -39,13 +40,22 @@ export interface L2SearchResult {
 	via: L2SearchSignal[];
 }
 
+function cosine(a: Float32Array, b: Float32Array): number {
+	// Both vectors are L2-normalized at store time / query time → dot product.
+	const n = Math.min(a.length, b.length);
+	let dot = 0;
+	for (let i = 0; i < n; i++) dot += a[i] * b[i];
+	return dot;
+}
+
 /**
- * Run the search: BM25 lexical candidates seed a one-hop graph expansion.
+ * Run the hybrid search. `embedder` is optional — when absent (or it fails),
+ * vector recall is skipped and results come from lexical + graph only.
  */
 export async function searchL2(
 	store: L2IndexStore,
 	query: string,
-	opts: { limit?: number } = {},
+	opts: { embedder?: Embedder | null; limit?: number } = {},
 ): Promise<L2SearchResult[]> {
 	const q = query.trim();
 	if (!q) return [];
@@ -70,19 +80,40 @@ export async function searchL2(
 	}
 	const degree = (path: string): number => adj.get(path)?.size ?? 0;
 
-	// ---- 1. lexical candidates → rank-decay base score ----
-	const base = new Map<string, number>();
+	// ---- 1. lexical ----
+	const lex = store.searchLexical(q, LEX_CANDIDATES);
+
+	// ---- 2. vector ----
+	let vec: { path: string; score: number }[] = [];
+	if (opts.embedder) {
+		const qv = await opts.embedder.embed([q]);
+		if (qv.length === 1 && qv[0].length > 0) {
+			const qvec = qv[0];
+			vec = store
+				.getEmbeddings()
+				.map((e) => ({ path: e.path, score: cosine(qvec, e.vec) }))
+				.sort((a, b) => b.score - a.score)
+				.slice(0, VEC_CANDIDATES);
+		}
+	}
+
+	// ---- 3. RRF fusion ----
+	const rrf = new Map<string, number>();
 	const via = new Map<string, Set<L2SearchSignal>>();
 	const addVia = (path: string, sig: L2SearchSignal) =>
 		(via.get(path) ?? via.set(path, new Set()).get(path)!).add(sig);
 
-	store.searchLexical(q, LEX_CANDIDATES).forEach((hit, rank) => {
-		base.set(hit.path, (base.get(hit.path) ?? 0) + 1 / (RANK_DECAY_K + rank));
+	lex.forEach((hit, rank) => {
+		rrf.set(hit.path, (rrf.get(hit.path) ?? 0) + 1 / (RRF_K + rank));
 		addVia(hit.path, "lexical");
 	});
+	vec.forEach((hit, rank) => {
+		rrf.set(hit.path, (rrf.get(hit.path) ?? 0) + 1 / (RRF_K + rank));
+		addVia(hit.path, "vector");
+	});
 
-	// ---- 2. one-hop graph expansion from top lexical seeds ----
-	const seeds = [...base.entries()].sort((a, b) => b[1] - a[1]).slice(0, GRAPH_SEEDS);
+	// ---- 4. one-hop graph expansion from top fused seeds ----
+	const seeds = [...rrf.entries()].sort((a, b) => b[1] - a[1]).slice(0, GRAPH_SEEDS);
 	const graph = new Map<string, number>();
 	const bump = (path: string, amount: number) => {
 		graph.set(path, (graph.get(path) ?? 0) + amount);
@@ -128,12 +159,12 @@ export async function searchL2(
 		}
 	}
 
-	// ---- 3. combine + rank ----
+	// ---- 5. combine + rank ----
 	const finalScore = new Map<string, number>();
-	for (const [path, s] of base) finalScore.set(path, (finalScore.get(path) ?? 0) + s);
+	for (const [path, s] of rrf) finalScore.set(path, (finalScore.get(path) ?? 0) + s);
 	for (const [path, s] of graph) finalScore.set(path, (finalScore.get(path) ?? 0) + s);
 
-	return [...finalScore.entries()]
+	const results: L2SearchResult[] = [...finalScore.entries()]
 		.map(([path, score]) => {
 			const p = byPath.get(path);
 			return {
@@ -147,4 +178,6 @@ export async function searchL2(
 		.filter((r) => byPath.has(r.path))
 		.sort((a, b) => b.score - a.score)
 		.slice(0, limit);
+
+	return results;
 }

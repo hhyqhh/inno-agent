@@ -2,8 +2,8 @@
  * L2 wiki memory holder.
  *
  * Owns the lazily-opened {@link L2IndexStore} singleton for a data dir and keeps
- * the index in sync with the wiki pages on disk. Retrieval (lexical + graph) is
- * layered on in l2-search.ts and exposed via {@link L2Memory.search}.
+ * the index in sync with the wiki pages on disk. Retrieval (lexical + vector +
+ * graph) is layered on in l2-search.ts and exposed via {@link L2Memory.search}.
  *
  * Everything degrades to a no-op when node:sqlite is unavailable so the agent
  * keeps working on older runtimes (the query tool falls back to substring
@@ -20,13 +20,36 @@ import { openL2IndexStore, type L2IndexStore } from "./l2-index-store.js";
 import { indexAllPages, indexPage, removePageFromIndex } from "./l2-indexer.js";
 import { searchL2, type L2SearchResult } from "./l2-search.js";
 import { regenerateOverview, OVERVIEW_PATH } from "./overview.js";
+import type { Embedder } from "./embeddings-client.js";
+
+/** Max chars of (title + body) fed to the embedder per page. */
+const EMBED_MAX_CHARS = 8000;
+
+function embedText(title: string, body: string): string {
+	const t = `${title}\n\n${body}`.trim();
+	return t.length > EMBED_MAX_CHARS ? t.slice(0, EMBED_MAX_CHARS) : t;
+}
 
 export class L2Memory {
 	private store: L2IndexStore | null = null;
 	private opened = false;
 	private backfilled = false;
+	private embedderFactory: (() => Embedder | null) | null = null;
 
 	constructor(private readonly l2DataDir: string) {}
+
+	/**
+	 * Provide a factory that builds the current embedder from config (called by
+	 * the agent extension, which owns the config holder). Vector search is off
+	 * until this is set and the factory returns a non-null embedder.
+	 */
+	setEmbedderFactory(fn: () => Embedder | null): void {
+		this.embedderFactory = fn;
+	}
+
+	getEmbedder(): Embedder | null {
+		return this.embedderFactory ? this.embedderFactory() : null;
+	}
 
 	private async ensureStore(): Promise<L2IndexStore | null> {
 		if (this.opened) return this.store;
@@ -59,6 +82,7 @@ export class L2Memory {
 		} catch (err) {
 			logger.warn({ err }, `[L2] backfill failed: ${err instanceof Error ? err.message : String(err)}`);
 		}
+		await this.embedBackfill();
 
 		// Ensure an overview page exists (deterministic core; an LLM narrative is
 		// added on the next archive, which has a model available).
@@ -69,6 +93,29 @@ export class L2Memory {
 			}
 		} catch (err) {
 			logger.warn({ err }, "[L2] overview bootstrap failed");
+		}
+	}
+
+	/**
+	 * Embed any pages missing a current-hash vector for the active model.
+	 * No-op when no embedder is configured or on any embedding failure.
+	 */
+	async embedBackfill(): Promise<void> {
+		const store = await this.ensureStore();
+		if (!store) return;
+		const embedder = this.getEmbedder();
+		if (!embedder) return;
+		try {
+			const missing = store.getPagesMissingEmbedding(embedder.model);
+			if (missing.length === 0) return;
+			const vecs = await embedder.embed(missing.map((p) => embedText(p.title, p.body)));
+			if (vecs.length !== missing.length) return; // embedding failed → leave as-is
+			for (let i = 0; i < missing.length; i++) {
+				store.upsertEmbedding(missing[i].path, vecs[i].length, vecs[i], embedder.model, missing[i].contentHash);
+			}
+			logger.info(`[L2] embedded ${missing.length} page(s).`);
+		} catch (err) {
+			logger.warn({ err }, `[L2] embed backfill failed: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	}
 
@@ -85,15 +132,15 @@ export class L2Memory {
 	}
 
 	/**
-	 * Search indexed pages (lexical BM25 + graph expansion). Returns null when
-	 * the index store is unavailable, so callers can fall back to the legacy
-	 * substring search.
+	 * Hybrid search over indexed pages (lexical + vector + graph). Returns null
+	 * when the index store is unavailable, so callers can fall back to the
+	 * legacy substring search.
 	 */
 	async search(query: string, limit = 5): Promise<L2SearchResult[] | null> {
 		const store = await this.ensureStore();
 		if (!store) return null;
 		try {
-			return await searchL2(store, query, { limit });
+			return await searchL2(store, query, { embedder: this.getEmbedder(), limit });
 		} catch (err) {
 			logger.warn({ err }, `[L2] search failed: ${err instanceof Error ? err.message : String(err)}`);
 			return null;

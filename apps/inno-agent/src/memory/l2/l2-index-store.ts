@@ -4,7 +4,8 @@
  * A SEPARATE database from L3 (`index.db` here vs L3's `memory.db`): L2 indexes
  * durable wiki *pages* (knowledge), L3 indexes past *conversations* — different
  * corpora, kept isolated. This store provides lexical (FTS5/BM25) retrieval
- * over pages (see l2-search.ts).
+ * over pages and holds an `embeddings` table for optional vector search
+ * (see l2-search.ts).
  *
  * Reuses {@link segmentForFts} from the L3 store so index/query CJK bigram
  * tokenization stays identical across both layers. Degrades to null on
@@ -27,7 +28,7 @@ export interface L2PageDoc {
 	tags: string[];
 	sourceIds: string[];
 	body: string;
-	/** sha256[:16] of the raw page file — detects staleness for incremental reindex. */
+	/** sha256[:16] of the raw page file — detects staleness for re-embedding. */
 	contentHash: string;
 	mtimeMs: number;
 }
@@ -50,6 +51,15 @@ export interface L2LexHit {
 	tags: string[];
 	sourceIds: string[];
 	bm25: number;
+}
+
+/** A stored embedding row. */
+export interface L2EmbeddingRow {
+	path: string;
+	dim: number;
+	vec: Float32Array;
+	model: string;
+	contentHash: string;
 }
 
 // node:sqlite has no stable public type export across Node versions; we keep
@@ -89,6 +99,20 @@ function parseJsonArray(value: unknown): string[] {
 	}
 }
 
+/** Copy a sqlite BLOB (Uint8Array/Buffer) into a fresh Float32Array. */
+function blobToFloat32(v: unknown): Float32Array {
+	if (v instanceof Uint8Array) {
+		const u8 = Uint8Array.from(v); // copy → buffer aligned at offset 0
+		return new Float32Array(u8.buffer, 0, Math.floor(u8.byteLength / 4));
+	}
+	return new Float32Array(0);
+}
+
+/** Serialize a Float32Array to a Buffer for BLOB storage (copy to be safe). */
+function float32ToBlob(vec: Float32Array): Buffer {
+	return Buffer.from(new Uint8Array(vec.buffer, vec.byteOffset, vec.byteLength));
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS pages (
 	path TEXT PRIMARY KEY,
@@ -106,6 +130,17 @@ CREATE TABLE IF NOT EXISTS pages (
 CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
 	tokens,
 	tokenize='unicode61'
+);
+
+-- Optional vector search. content_hash detects staleness; model detects a
+-- provider/model switch that requires re-embedding.
+CREATE TABLE IF NOT EXISTS embeddings (
+	path TEXT PRIMARY KEY,
+	dim INTEGER NOT NULL,
+	vec BLOB NOT NULL,
+	model TEXT NOT NULL,
+	content_hash TEXT NOT NULL,
+	FOREIGN KEY(path) REFERENCES pages(path) ON DELETE CASCADE
 );
 
 -- Tracks how far each page file has been indexed (incremental skip).
@@ -152,11 +187,11 @@ export class L2IndexStore {
 		}
 	}
 
-	/** Insert or replace a page and its FTS row. */
+	/** Insert or replace a page and its FTS row; drop stale embedding on change. */
 	upsertPage(doc: L2PageDoc): void {
 		const existing = this.db
-			.prepare("SELECT rowid FROM pages WHERE path = ?")
-			.get(doc.path) as { rowid?: number } | undefined;
+			.prepare("SELECT rowid, content_hash FROM pages WHERE path = ?")
+			.get(doc.path) as { rowid?: number; content_hash?: string } | undefined;
 
 		const tokens = segmentForFts([doc.title, doc.tags.join(" "), doc.body].join(" "));
 		const tagsJson = JSON.stringify(doc.tags);
@@ -171,6 +206,9 @@ export class L2IndexStore {
 				.run(doc.title, doc.type, tagsJson, idsJson, doc.body, doc.contentHash, doc.mtimeMs, now, doc.path);
 			this.db.prepare("DELETE FROM pages_fts WHERE rowid = ?").run(existing.rowid);
 			this.db.prepare("INSERT INTO pages_fts(rowid, tokens) VALUES (?, ?)").run(existing.rowid, tokens);
+			if (existing.content_hash !== doc.contentHash) {
+				this.db.prepare("DELETE FROM embeddings WHERE path = ?").run(doc.path);
+			}
 			return;
 		}
 
@@ -196,7 +234,7 @@ export class L2IndexStore {
 		}
 	}
 
-	/** Remove a page, its FTS row, and index state. */
+	/** Remove a page, its FTS row, its embedding (via cascade), and index state. */
 	deletePage(path: string): void {
 		const row = this.db.prepare("SELECT rowid FROM pages WHERE path = ?").get(path) as
 			| { rowid?: number }
@@ -206,7 +244,7 @@ export class L2IndexStore {
 			if (row && typeof row.rowid === "number") {
 				this.db.prepare("DELETE FROM pages_fts WHERE rowid = ?").run(row.rowid);
 			}
-			this.db.prepare("DELETE FROM pages WHERE path = ?").run(path);
+			this.db.prepare("DELETE FROM pages WHERE path = ?").run(path); // cascade → embeddings
 			this.db.prepare("DELETE FROM index_state WHERE path = ?").run(path);
 			this.db.exec("COMMIT");
 		} catch (err) {
@@ -257,6 +295,46 @@ export class L2IndexStore {
 			tags: parseJsonArray(r.tags),
 			sourceIds: parseJsonArray(r.source_ids),
 			body: String(r.body),
+		}));
+	}
+
+	/** All stored embeddings (in-memory cosine at personal scale). */
+	getEmbeddings(): L2EmbeddingRow[] {
+		const rows = this.db.prepare("SELECT path, dim, vec, model, content_hash FROM embeddings").all();
+		return rows.map((r) => ({
+			path: String(r.path),
+			dim: Number(r.dim),
+			vec: blobToFloat32(r.vec),
+			model: String(r.model),
+			contentHash: String(r.content_hash),
+		}));
+	}
+
+	upsertEmbedding(path: string, dim: number, vec: Float32Array, model: string, contentHash: string): void {
+		this.db
+			.prepare(
+				`INSERT INTO embeddings(path, dim, vec, model, content_hash) VALUES (?, ?, ?, ?, ?)
+				 ON CONFLICT(path) DO UPDATE SET
+				   dim = excluded.dim, vec = excluded.vec, model = excluded.model, content_hash = excluded.content_hash`,
+			)
+			.run(path, dim, float32ToBlob(vec), model, contentHash);
+	}
+
+	/** Pages that need (re)embedding for the given model: missing, stale, or wrong model. */
+	getPagesMissingEmbedding(model: string): { path: string; title: string; body: string; contentHash: string }[] {
+		const rows = this.db
+			.prepare(
+				`SELECT p.path AS path, p.title AS title, p.body AS body, p.content_hash AS content_hash
+				 FROM pages p
+				 LEFT JOIN embeddings e ON e.path = p.path
+				 WHERE e.path IS NULL OR e.content_hash != p.content_hash OR e.model != ?`,
+			)
+			.all(model);
+		return rows.map((r) => ({
+			path: String(r.path),
+			title: String(r.title),
+			body: String(r.body),
+			contentHash: String(r.content_hash),
 		}));
 	}
 

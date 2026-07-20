@@ -15,6 +15,7 @@ import { createSchedulerTools } from "../scheduler/scheduler-tools.js";
 import { createChannelTools } from "../channels/channel-tools.js";
 import { createL2Tools } from "../memory/l2/l2-tools.js";
 import { getL2Memory } from "../memory/l2/l2-memory.js";
+import { createEmbedder } from "../memory/l2/embeddings-client.js";
 import { L3Memory, createL3Tools, formatRecallForPrompt } from "../memory/l3/l3-tools.js";
 import { createPracticeTools } from "./practice-tools.js";
 import { createDocumentTools } from "./document-tools.js";
@@ -224,6 +225,7 @@ export function createInnoExtension(
 
 		// 4. Register L2 Wiki memory tools (gated on config.memory.l2Enabled)
 		const l2Memory = getL2Memory(paths.l2DataDir);
+		l2Memory.setEmbedderFactory(() => createEmbedder(configHolder.current.embedding));
 		const l2Tools = createL2Tools(paths.l2DataDir, isL2Enabled, l2Memory);
 		for (const tool of l2Tools) {
 			pi.registerTool(tool);

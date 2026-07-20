@@ -188,10 +188,11 @@ export function createL2Tools(
 			const allEntries = readManifest(l2DataDir);
 			rebuildIndex(l2DataDir, allEntries);
 
-			// Keep the retrieval index in sync with the touched pages.
+			// Keep the retrieval index in sync; embed new/changed pages (no-op without endpoint).
 			for (const wikiPath of entry.wikiPages) {
 				await l2Memory.indexPageByPath(wikiPath);
 			}
+			await l2Memory.embedBackfill();
 
 			// Regenerate the knowledge-base overview (best-effort; never fails archive).
 			try {

@@ -79,6 +79,19 @@ export async function saveOcrSettings(payload: OcrSettingsPayload): Promise<Inno
 	});
 }
 
+export interface EmbeddingSettingsPayload {
+	baseUrl: string;
+	apiKey: string;
+	model: string;
+}
+
+export async function saveEmbeddingSettings(payload: EmbeddingSettingsPayload): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>("/api/settings/embedding", {
+		method: "PUT",
+		body: JSON.stringify(payload),
+	});
+}
+
 export interface ContentHubPayload {
 	type: "github" | "bundle";
 	owner?: string;

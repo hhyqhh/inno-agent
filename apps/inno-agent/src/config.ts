@@ -50,6 +50,20 @@ export interface InnoMemoryConfig {
 }
 
 /**
+ * Optional embedding endpoint for L2 wiki vector search. When set (both
+ * `baseUrl` and `model` present), L2 retrieval adds semantic vector recall
+ * fused with lexical BM25; when absent, L2 falls back to lexical + graph only.
+ * Any OpenAI-compatible `/v1/embeddings` endpoint works.
+ */
+export interface InnoEmbeddingConfig {
+	baseUrl: string;
+	apiKey: string;
+	model: string;
+	/** Optional expected vector dimension (informational). */
+	dim?: number;
+}
+
+/**
  * Simple Mode. A global, opt-in switch (default OFF) that turns Inno into a
  * streamlined, ready-to-use experience: it force-locks the L1/L2/L3 memory
  * layers OFF at runtime (without overwriting the user's memory preferences, so
@@ -149,6 +163,8 @@ export interface InnoConfig {
 	contentHub?: InnoContentHubConfig;
 	subagents?: InnoSubagentsConfig;
 	memory?: InnoMemoryConfig;
+	/** Optional embedding endpoint enabling L2 wiki vector search. */
+	embedding?: InnoEmbeddingConfig;
 	simpleMode?: InnoSimpleModeConfig;
 	ui?: {
 		theme: string;
@@ -238,6 +254,24 @@ export function normalizeSimpleModeConfig(simpleMode: Partial<InnoSimpleModeConf
 }
 
 /**
+ * Normalize the optional embedding config. Returns undefined (= vector search
+ * disabled) unless both `baseUrl` and `model` are present.
+ */
+export function normalizeEmbeddingConfig(
+	embedding: Partial<InnoEmbeddingConfig> | undefined,
+): InnoEmbeddingConfig | undefined {
+	const baseUrl = embedding?.baseUrl?.trim() ?? "";
+	const model = embedding?.model?.trim() ?? "";
+	if (!baseUrl || !model) return undefined;
+	return {
+		baseUrl,
+		apiKey: embedding?.apiKey?.trim() ?? "",
+		model,
+		...(typeof embedding?.dim === "number" && embedding.dim > 0 ? { dim: embedding.dim } : {}),
+	};
+}
+
+/**
  * Normalize the Content Hub config, filling missing fields from the built-in
  * public-hub defaults. `legacyGithubToken` lets us migrate the older
  * `config.github.token` (which only fed the skill library) into the hub token
@@ -298,6 +332,7 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		contentHub: normalizeContentHubConfig(config.contentHub, config.github?.token),
 		subagents: config.subagents,
 		memory: normalizeMemoryConfig(config.memory),
+		embedding: normalizeEmbeddingConfig(config.embedding),
 		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
 		ui: config.ui,
 		ocrApi: config.ocrApi,

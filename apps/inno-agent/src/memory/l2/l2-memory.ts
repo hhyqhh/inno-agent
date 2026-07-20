@@ -47,8 +47,14 @@ export class L2Memory {
 		return this.l2DataDir;
 	}
 
-	/** One-time backfill of all existing wiki pages (cheap: skips unchanged files). */
-	async backfill(): Promise<void> {
+	/**
+	 * One-time backfill of all existing wiki pages (cheap: skips unchanged
+	 * files). Index sync always runs — even when L2 is disabled — so the
+	 * layer can be re-enabled without a backfill gap (same philosophy as L3).
+	 * `generateOverview` gates the visible side effect (bootstrapping
+	 * `wiki/analysis/overview.md`); pass false when L2 is disabled.
+	 */
+	async backfill(options: { generateOverview?: boolean } = {}): Promise<void> {
 		if (this.backfilled) return;
 		const store = await this.ensureStore();
 		if (!store) return;
@@ -59,6 +65,8 @@ export class L2Memory {
 		} catch (err) {
 			logger.warn({ err }, `[L2] backfill failed: ${err instanceof Error ? err.message : String(err)}`);
 		}
+
+		if (options.generateOverview === false) return;
 
 		// Ensure an overview page exists (deterministic core; an LLM narrative is
 		// added on the next archive, which has a model available).

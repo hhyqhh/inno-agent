@@ -1,7 +1,14 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
+import { parse as parseYaml, Document as YamlDocument } from "yaml";
 import { ensureDir, writeText, readText, appendText, fileExists } from "../../storage/file-store.js";
-import type { WikiPageFrontmatter, WikiPageType, ManifestEntry } from "./types.js";
+import type {
+	WikiPageFrontmatter,
+	WikiPageType,
+	WikiPageStatus,
+	ConfidenceLevel,
+	ManifestEntry,
+} from "./types.js";
 import { logger } from "../../logger.js";
 
 const L2_SCHEMA_VERSION = "1.0";
@@ -21,109 +28,77 @@ const TYPE_DIR_MAP: Record<WikiPageType, string> = {
 };
 
 // ============================================================================
-// Frontmatter serialization — values are JSON-quoted to avoid YAML ambiguity
+// Frontmatter serialization — backed by the `yaml` library
 // ============================================================================
 
-/** Quote a scalar for safe YAML output. */
-function yamlQuote(v: string): string {
-	// If value contains characters that could cause YAML parsing issues, quote it
-	if (/[:\[\]{},#&*!|>'"%@`\n]/.test(v) || v.trim() !== v || v === "") {
-		return JSON.stringify(v);
-	}
-	return v;
-}
-
+/**
+ * Serialize wiki frontmatter to a `---`-delimited YAML block. Keys are emitted
+ * in the historical on-disk order and `tags` is kept as an inline flow sequence
+ * so pages touched by an update produce minimal diffs.
+ */
 export function serializeFrontmatter(fm: WikiPageFrontmatter): string {
-	const lines = [
-		"---",
-		`title: ${yamlQuote(fm.title)}`,
-		`created: ${fm.created || fm.updated}`,
-		`type: ${fm.type}`,
-		`tags: [${fm.tags.map((t) => yamlQuote(t)).join(", ")}]`,
-		"sources:",
-		...fm.sources.map((s) => `  - ${yamlQuote(s)}`),
-		"source_ids:",
-		...fm.source_ids.map((id) => `  - ${id}`),
-		`updated: ${fm.updated}`,
-		`status: ${fm.status}`,
-		`confidence: ${fm.confidence}`,
-		...(fm.contested !== undefined ? [`contested: ${fm.contested ? "true" : "false"}`] : []),
-		...(fm.contradictions && fm.contradictions.length > 0
-			? ["contradictions:", ...fm.contradictions.map((id) => `  - ${yamlQuote(id)}`)]
-			: []),
-		"---",
-	];
-	return lines.join("\n");
+	const obj: Record<string, unknown> = {
+		title: fm.title,
+		created: fm.created || fm.updated,
+		type: fm.type,
+		tags: fm.tags,
+		sources: fm.sources,
+		source_ids: fm.source_ids,
+		updated: fm.updated,
+		status: fm.status,
+		confidence: fm.confidence,
+	};
+	if (fm.contested !== undefined) obj.contested = fm.contested;
+	if (fm.contradictions && fm.contradictions.length > 0) obj.contradictions = fm.contradictions;
+
+	const doc = new YamlDocument(obj);
+	const tagsNode = doc.get("tags", true) as { flow?: boolean } | undefined;
+	if (tagsNode && typeof tagsNode === "object") tagsNode.flow = true;
+
+	// The yaml lib pads flow collections (`[ a, b ]`); strip the inner padding
+	// to match the legacy `[a, b]` format and minimize diffs.
+	const yamlBody = doc.toString({ lineWidth: 0 }).replace(/^tags: \[ (.*) \]$/m, "tags: [$1]");
+	return `---\n${yamlBody}---`;
 }
 
 export function parseFrontmatter(content: string): { frontmatter: WikiPageFrontmatter | null; body: string } {
 	const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
 	if (!match) return { frontmatter: null, body: content };
 
-	const yamlBlock = match[1];
 	const body = match[2];
-	const fm: Record<string, unknown> = {};
-	let currentKey = "";
-	let currentArray: string[] = [];
-
-	for (const line of yamlBlock.split("\n")) {
-		const kvMatch = line.match(/^(\w+):\s*(.*)$/);
-		if (kvMatch) {
-			if (currentKey && currentArray.length > 0) {
-				fm[currentKey] = currentArray;
-				currentArray = [];
-			}
-			currentKey = kvMatch[1];
-			const value = kvMatch[2].trim();
-			if (value.startsWith("[") && value.endsWith("]")) {
-				fm[currentKey] = value
-					.slice(1, -1)
-					.split(",")
-					.map((s) => s.trim())
-					.filter(Boolean);
-				currentKey = "";
-			} else if (value === "") {
-				// Array items follow
-			} else {
-				fm[currentKey] = value;
-				currentKey = "";
-			}
-		} else {
-			const itemMatch = line.match(/^\s+-\s+(.+)$/);
-			if (itemMatch) {
-				currentArray.push(itemMatch[1]);
-			}
-		}
-	}
-	if (currentKey && currentArray.length > 0) {
-		fm[currentKey] = currentArray;
+	let raw: Record<string, unknown>;
+	try {
+		const parsed = parseYaml(match[1]) as unknown;
+		raw = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+	} catch (err) {
+		logger.warn({ err }, "failed to parse wiki frontmatter YAML");
+		raw = {};
 	}
 
-	function parseScalar(value: unknown): string {
-		if (typeof value !== "string") return "";
-		if (!value.startsWith("\"")) return value;
-		try {
-			const parsed = JSON.parse(value) as unknown;
-			return typeof parsed === "string" ? parsed : value;
-		} catch (err) {
-			logger.warn({ err, value }, "failed to parse frontmatter scalar");
-			return value;
-		}
-	}
+	const asString = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
+	const asStringArray = (v: unknown): string[] =>
+		Array.isArray(v) ? v.map((x) => asString(x)).filter(Boolean) : [];
+	const contestedRaw = raw.contested;
+	const contested =
+		contestedRaw === true || contestedRaw === "true"
+			? true
+			: contestedRaw === false || contestedRaw === "false"
+				? false
+				: undefined;
 
 	return {
 		frontmatter: {
-			title: parseScalar(fm.title),
-			created: (fm.created as string) ?? (fm.updated as string) ?? "",
-			type: (fm.type as WikiPageType) ?? "source-summary",
-			tags: (fm.tags as string[]) ?? [],
-			sources: (fm.sources as string[]) ?? [],
-			source_ids: (fm.source_ids as string[]) ?? [],
-			updated: (fm.updated as string) ?? "",
-			status: (fm.status as "draft" | "reviewed" | "outdated") ?? "draft",
-			confidence: (fm.confidence as "low" | "medium" | "high") ?? "medium",
-			contested: fm.contested === "true" ? true : fm.contested === "false" ? false : undefined,
-			contradictions: (fm.contradictions as string[]) ?? [],
+			title: asString(raw.title),
+			created: asString(raw.created) || asString(raw.updated),
+			type: (raw.type as WikiPageType) ?? "source-summary",
+			tags: asStringArray(raw.tags),
+			sources: asStringArray(raw.sources),
+			source_ids: asStringArray(raw.source_ids),
+			updated: asString(raw.updated),
+			status: (raw.status as WikiPageStatus) ?? "draft",
+			confidence: (raw.confidence as ConfidenceLevel) ?? "medium",
+			contested,
+			contradictions: asStringArray(raw.contradictions),
 		},
 		body,
 	};

@@ -9,6 +9,8 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, r
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+import { getL2Memory } from "./memory/l2/l2-memory.js";
+import { buildWikiGraph } from "./memory/l2/wiki-graph.js";
 import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, deleteModel, normalizeContentHubConfig, type InnoConfig, type InnoContentHubConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
 import { installFetchLogger } from "./utils/fetch-logger.js";
 import { applyProviderProxyBypass } from "./utils/proxy-bypass.js";
@@ -3048,6 +3050,7 @@ const server = createServer(async (req, res) => {
 				return;
 			}
 			writeText(fullPath, content);
+			await getL2Memory(l2DataDir).indexPageByPath(path);
 			json(res, 200, { path, saved: true });
 			return;
 		}
@@ -3071,6 +3074,7 @@ const server = createServer(async (req, res) => {
 			try {
 				rmSync(fullPath);
 				removeWikiPathFromManifest(l2DataDir, path);
+				await getL2Memory(l2DataDir).removePage(path);
 				json(res, 200, { path, deleted: true });
 			} catch (err) {
 				logger.warn({ err }, "failed to delete wiki page");
@@ -3081,61 +3085,7 @@ const server = createServer(async (req, res) => {
 
 		if (method === "GET" && url === "/api/wiki/graph") {
 			try {
-				const nodes: unknown[] = [];
-				const edges: unknown[] = [];
-				const titleToNodeId = new Map<string, string>();
-				const pendingLinks: { source: string; target: string }[] = [];
-
-				for (const wikiPath of listWikiPagePaths()) {
-					const fullPath = join(l2DataDir, wikiPath);
-					if (!existsSync(fullPath)) continue;
-					const content = readText(fullPath);
-					const { frontmatter, body } = parseFrontmatter(content);
-					if (!frontmatter) continue;
-
-					const nodeId = wikiPath;
-					titleToNodeId.set(frontmatter.title, nodeId);
-					titleToNodeId.set(wikiPath, nodeId);
-					titleToNodeId.set(basename(wikiPath, extname(wikiPath)), nodeId);
-					nodes.push({
-						id: nodeId,
-						title: frontmatter.title,
-						type: frontmatter.type,
-						tags: frontmatter.tags,
-					});
-
-					// Extract [[wiki links]] from body
-					const linkPattern = /\[\[([^\]]+)\]\]/g;
-					let match;
-					while ((match = linkPattern.exec(body)) !== null) {
-						const linkText = match[1].split("|")[0].trim();
-						pendingLinks.push({ source: nodeId, target: linkText });
-					}
-
-					// Shared tag edges
-					for (const tag of frontmatter.tags) {
-						edges.push({ source: nodeId, target: `tag:${tag}`, type: "tag" });
-					}
-				}
-
-				for (const link of pendingLinks) {
-					edges.push({ source: link.source, target: titleToNodeId.get(link.target) ?? link.target, type: "link" });
-				}
-
-				// Add tag and unresolved wiki-link nodes
-				const tagNodes = new Set<string>();
-				for (const edge of edges as { source: string; target: string; type: string }[]) {
-					if (edge.type === "tag" && !tagNodes.has(edge.target)) {
-						tagNodes.add(edge.target);
-						nodes.push({ id: edge.target, title: edge.target.replace("tag:", "#"), type: "tag", tags: [] });
-					}
-					if (edge.type === "link" && !titleToNodeId.has(edge.target)) {
-						titleToNodeId.set(edge.target, edge.target);
-						nodes.push({ id: edge.target, title: edge.target, type: "concept", tags: [] });
-					}
-				}
-
-				json(res, 200, { nodes, edges });
+				json(res, 200, buildWikiGraph(l2DataDir));
 			} catch (err) {
 				logger.warn({ err }, "failed to build wiki graph");
 				json(res, 200, { nodes: [], edges: [] });

@@ -4420,6 +4420,7 @@ const server = createServer(async (req, res) => {
 				return;
 			}
 			try {
+				meetingManager.cancelForDeletedRawPath(rawPath);
 				const result = deleteL2NotebookItem(l2DataDir, rawPath);
 				json(res, 200, result);
 			} catch (err) {

@@ -125,7 +125,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 		error: notesStore.error,
 		errorDetail: notesStore.errorDetail,
 	}));
-	const meetingState = useStoreSnapshot(meetingStore, () => meetingStore.state);
+	const meetingState = useStoreSnapshot(meetingStore, () => ({ state: meetingStore.state, rawPath: meetingStore.rawPath }));
 	const chatState = useStoreSnapshot(chatStore, () => ({ isSending: chatStore.isSending }));
 
 	const focusChatWithSummaryPrompt = useCallback(() => {
@@ -148,7 +148,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 			const target = event.target;
 			if (!(target instanceof Node) || !panelRef.current?.contains(target)) return;
 			const note = notesStore.selected;
-			const editable = note?.kind === "markdown" || (note?.kind === "orphan" && note.contentType === "markdown");
+			const editable = note?.contentType === "markdown" && (note.notebookType === "note" || note.notebookType === "file");
 			if (!editable) return;
 			event.preventDefault();
 			if (notesStore.isSaving || notesStore.archivingRawPaths.includes(note.rawPath) || !notesStore.isDirty) return;
@@ -192,7 +192,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 	}, []);
 
 	async function handleUploadedFiles(files: FileList): Promise<void> {
-		if (["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(meetingState)) return;
+		if (["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(meetingState.state)) return;
 		const audioExtensions = new Set(["wav", "mp3", "m4a", "webm", "ogg", "mp4", "aac", "flac"]);
 		const all = Array.from(files);
 		const audioFiles = all.filter((file) => audioExtensions.has(file.name.split(".").pop()?.toLowerCase() ?? ""));
@@ -287,11 +287,14 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 	}, [isChoosingPolishTemplate, t]);
 
 	const handleDelete = useCallback(() => {
-		if (notesStore.selected) setNotePendingDeletion(notesStore.selected);
+		const note = notesStore.selected;
+		if (!note) return;
+		setNotePendingDeletion(note);
 	}, []);
 
 	const confirmDelete = useCallback(async () => {
-		if (!notePendingDeletion || notesStore.selected?.rawPath !== notePendingDeletion.rawPath) {
+		const selected = notesStore.selected;
+		if (!notePendingDeletion || selected?.rawPath !== notePendingDeletion.rawPath) {
 			setNotePendingDeletion(null);
 			return;
 		}
@@ -313,15 +316,15 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 	}, [notePendingUnarchive]);
 
 	const selected = state.selected;
-	const isMarkdown = selected?.kind === "markdown";
-	const isRawEditableMarkdown = Boolean(selected && selected.kind === "orphan" && selected.contentType === "markdown");
+	const isMarkdownNote = Boolean(selected && selected.notebookType === "note" && selected.contentType === "markdown");
+	const isRawEditableMarkdown = Boolean(selected && selected.notebookType === "file" && selected.contentType === "markdown");
 	const showRearchive =
 		(selected?.kind === "markdown" || selected?.kind === "archived") && selected.status === "outdated";
 	const isUnarchivedFile =
 		selected?.notebookType === "file" &&
 		(selected.status === "uploaded" || selected.status === "extracted" || selected.status === "error");
 	const showOpenWiki = Boolean(selected?.wikiPagePath && onOpenWiki);
-	const showDownload = selected && !isMarkdown;
+	const showDownload = selected && !isMarkdownNote;
 	const canArchiveNow =
 		selected &&
 		(selected.kind === "orphan" ||
@@ -335,16 +338,16 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 	const canDelete =
 		selected &&
 		(selected.kind === "orphan" || (selected.kind === "markdown" && selected.status === "draft"));
-	const canSave = Boolean(selected && (isMarkdown || isRawEditableMarkdown));
+	const canSave = Boolean(selected && (isMarkdownNote || isRawEditableMarkdown));
 	const canViewHistory = Boolean(selected?.notebookType === "note" && selected.contentType === "markdown");
 	const canPolish = Boolean(
-		selected?.kind === "markdown" &&
+		selected && isMarkdownNote &&
 		selected.meetingStatus !== "recording" &&
 		selected.meetingStatus !== "summarizing",
 	);
 	const isSelectedArchiving = Boolean(selected && state.archivingRawPaths.includes(selected.rawPath));
 	const isEmptyNoteForArchive = Boolean(
-		selected?.kind === "markdown" && !state.editorContent.trim() && state.attachments.length === 0,
+		isMarkdownNote && !state.editorContent.trim() && state.attachments.length === 0,
 	);
 	const tagSearchQuery = state.searchQuery.trim().toLowerCase();
 	const visibleTagSummaries = tagSearchQuery
@@ -536,7 +539,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 						<button
 							type="button"
 							className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-[var(--inno-border)] px-2.5 text-xs font-medium text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
-							disabled={state.isUploading || ["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(meetingState)}
+							disabled={state.isUploading || ["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(meetingState.state)}
 							onClick={() => uploadRef.current?.click()}
 							title={t("notes.actions.upload")}
 							aria-label={t("notes.actions.upload")}
@@ -722,7 +725,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 					<div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--inno-text-muted)]">
 						{t("notes.selectHint")}
 					</div>
-				) : isMarkdown ? (
+				) : isMarkdownNote ? (
 					<div className="flex min-h-0 flex-1 flex-col">
 						<div className="inno-milkdown-editor-shell min-h-0 flex-1 overflow-hidden">
 							{state.isLoadingContent ? (
@@ -752,7 +755,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 										onChange={(value) => notesStore.updateEditorContent(value)}
 										toolbarAction={
 											<>
-												<MeetingRecorder toolbar />
+											<MeetingRecorder toolbar rawPath={selected.rawPath} title={state.editorTitle || selected.title} />
 												{canPolish ? (
 													<button
 														type="button"
@@ -787,7 +790,6 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 						<div className="border-b border-[var(--inno-border)] px-4 py-3">
 							<div className="min-w-0">
 								<h3 className="truncate font-medium">{selected.title}</h3>
-								<p className="truncate text-xs text-[var(--inno-text-muted)]">{selected.rawPath}</p>
 							</div>
 						</div>
 						<div className={`min-h-0 flex-1 ${selected.contentType === "markdown" || selected.contentType === "pdf" || selected.contentType === "image" ? "overflow-hidden" : "overflow-auto p-4"}`}>
@@ -798,7 +800,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 									editorKey={`${selected.rawPath}:raw`}
 									value={normalizeMarkdownMath(state.previewContent)}
 									onChange={(value) => notesStore.updatePreviewContent(value)}
-									readOnly={selected.kind === "archived"}
+									readOnly={!isRawEditableMarkdown}
 								/>
 							) : selected.contentType === "pdf" ? (
 								<iframe
@@ -857,7 +859,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 				<VersionHistoryDialog
 					open={showHistory}
 					rawPath={selected.rawPath}
-					canRestore={selected.kind === "markdown"}
+					canRestore={isMarkdownNote}
 					onClose={() => setShowHistory(false)}
 					onRestored={() => notesStore.reloadNoteIfSelected(selected.rawPath)}
 				/>

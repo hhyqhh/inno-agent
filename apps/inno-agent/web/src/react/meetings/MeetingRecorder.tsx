@@ -12,7 +12,7 @@ function formatDuration(seconds: number): string {
 	return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
 }
 
-export function MeetingRecorder({ toolbar = false }: { toolbar?: boolean }) {
+export function MeetingRecorder({ toolbar = false, rawPath = "", title = "" }: { toolbar?: boolean; rawPath?: string; title?: string }) {
 	const { t } = useTranslation();
 	const [setupOpen, setSetupOpen] = useState(false);
 	const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
@@ -119,7 +119,7 @@ export function MeetingRecorder({ toolbar = false }: { toolbar?: boolean }) {
 				) : null}
 			</div>
 			<p className="mt-2 text-[10px] text-[var(--inno-text-subtle)]">麦克风权限：{state.permissionState === "granted" ? "已允许" : state.permissionState === "denied" ? "已拒绝" : "将在开始时请求"}</p>
-			<button className="mt-2.5 w-full rounded-md inno-primary-button px-3 py-1.5 text-xs text-white" onClick={() => { closeSetup(); void meetingStore.start(); }}>开始录音</button>
+			<button className="mt-2.5 w-full rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!rawPath} onClick={() => { closeSetup(); void meetingStore.start(rawPath, title); }}>开始录音</button>
 		</div>,
 		document.body,
 	) : null;
@@ -132,7 +132,7 @@ export function MeetingRecorder({ toolbar = false }: { toolbar?: boolean }) {
 				className={toolbar
 					? "top-bar-item inno-milkdown-meeting-button"
 					: "inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"}
-				disabled={["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(state.status)}
+				disabled={!rawPath || ["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(state.status)}
 				onClick={() => { if (state.status !== "idle") meetingStore.dismiss(); setSetupOpen((open) => !open); setDeviceMenuOpen(false); void meetingStore.refreshDevices(); }}
 				title={t("notes.meeting.start")}
 				aria-label={t("notes.meeting.start")}

@@ -296,17 +296,31 @@ export function saveL2MeetingDraft(
 ): { rawPath: string; status: NoteStatus; meetingStatus: MeetingStatus } {
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	const { absPath, frontmatter } = readNoteFile(l2DataDir, normalizedPath);
+	const manifest = findManifestByRawPath(l2DataDir, normalizedPath);
+	const wasIndexed = frontmatter.status === "indexed" || Boolean(frontmatter.source_id) || manifest?.status === "indexed" || manifest?.status === "outdated";
+	const nextStatus: NoteStatus = wasIndexed ? "outdated" : "draft";
+	const now = new Date().toISOString();
 	const nextFrontmatter: NoteFrontmatter = {
 		...frontmatter,
 		title: options.title?.trim() || frontmatter.title,
 		tags: options.tags ?? frontmatter.tags,
-		status: "draft",
+		status: nextStatus,
 		meeting_id: options.meetingId,
 		meeting_status: options.meetingStatus,
-		updated: new Date().toISOString(),
+		updated: now,
 	};
 	writeText(absPath, serializeNoteFile(nextFrontmatter, options.content));
-	return { rawPath: normalizedPath, status: "draft", meetingStatus: options.meetingStatus };
+	if (manifest) {
+		updateManifestEntry(l2DataDir, manifest.id, (current) => ({
+			...current,
+			title: nextFrontmatter.title,
+			tags: [...nextFrontmatter.tags],
+			contentHash: createHash("sha256").update(options.content).digest("hex").slice(0, 16),
+			status: "outdated",
+			updatedAt: now,
+		}));
+	}
+	return { rawPath: normalizedPath, status: nextStatus, meetingStatus: options.meetingStatus };
 }
 
 export function createL2Note(
@@ -344,7 +358,7 @@ export function createL2Note(
 		title,
 		tags,
 		recordDate: frontmatter.record_date,
-		content: body,
+		content: body.replace(/^<!--\s*inno-meeting:[^:\r\n]+:(?:start|end)\s*-->\r?\n?/gm, ""),
 		reason: "created",
 	});
 	return { rawPath, status: "draft", noteId, title };
@@ -363,10 +377,8 @@ export function saveL2NoteContent(
 ): { rawPath: string; status: NoteStatus } {
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	const { absPath, frontmatter, body: oldBody } = readNoteFile(l2DataDir, normalizedPath);
-	if (findManifestByRawPath(l2DataDir, normalizedPath)?.status === "indexed") {
-		throw new Error("已归档内容为只读，请先撤回归档");
-	}
-	const wasIndexed = frontmatter.status === "indexed" || Boolean(frontmatter.source_id);
+	const manifest = findManifestByRawPath(l2DataDir, normalizedPath);
+	const wasIndexed = frontmatter.status === "indexed" || Boolean(frontmatter.source_id) || manifest?.status === "indexed" || manifest?.status === "outdated";
 	const nextStatus: NoteStatus = wasIndexed ? "outdated" : "draft";
 	const now = new Date().toISOString();
 	if (listNoteVersions(l2DataDir, frontmatter.note_id).length === 0) {
@@ -387,7 +399,18 @@ export function saveL2NoteContent(
 		status: nextStatus,
 		updated: now,
 	};
-	writeText(absPath, serializeNoteFile(nextFrontmatter, options.content));
+	const serializedContent = serializeNoteFile(nextFrontmatter, options.content);
+	writeText(absPath, serializedContent);
+	if (manifest) {
+		updateManifestEntry(l2DataDir, manifest.id, (current) => ({
+			...current,
+			title: nextFrontmatter.title,
+			tags: [...nextFrontmatter.tags],
+			contentHash: createHash("sha256").update(options.content).digest("hex").slice(0, 16),
+			status: "outdated",
+			updatedAt: now,
+		}));
+	}
 	recordNoteVersion(l2DataDir, {
 		noteId: nextFrontmatter.note_id,
 		title: nextFrontmatter.title,
@@ -645,9 +668,6 @@ export function saveL2RawMarkdownContent(
 	}
 
 	const entry = findManifestByRawPath(l2DataDir, normalizedPath);
-	if (entry?.status === "indexed") {
-		throw new Error("已归档内容为只读，请先撤回归档");
-	}
 	const nextContent = content.endsWith("\n") ? content : `${content}\n`;
 	writeText(absPath, nextContent);
 

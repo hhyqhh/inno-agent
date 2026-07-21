@@ -5,7 +5,7 @@ import { basename, extname } from "node:path";
 import type { WebSocket as ClientWebSocket } from "ws";
 import type { InnoMeetingConfig } from "../config.js";
 import { logger } from "../logger.js";
-import { createL2Note, saveL2MeetingDraft } from "../memory/l2/notes-service.js";
+import { createL2Note, readNoteContent, saveL2MeetingDraft } from "../memory/l2/notes-service.js";
 import { DashScopeTranscriptionProvider } from "./providers/dashscope-provider.js";
 import type { TranscriptionProvider, TranscriptionSession } from "./transcription-provider.js";
 import type { MeetingState, TranscriptSegment } from "./types.js";
@@ -73,6 +73,24 @@ function noSpeechBody(title: string): string {
 	return `# ${title}\n\n> 未识别到有效语音，本次录音未生成会议纪要。\n\n## 会议纪要\n\n_请检查麦克风权限、输入设备和录音音量后重试。_\n\n## 完整转写\n\n_尚未识别到有效语音。_\n`;
 }
 
+function mergeMeetingBlock(originalContent: string, meetingId: string, title: string, meetingContent: string, replaceExisting: boolean): string {
+	const startMarker = `<!-- inno-meeting:${meetingId}:start -->`;
+	const endMarker = `<!-- inno-meeting:${meetingId}:end -->`;
+	const sectionBody = meetingContent.replace(/^# [^\n]*\n+/, "").replace(/^## /gm, "### ").trim();
+	const heading = `## 录音记录：${title}`;
+	const block = `${heading}\n\n${sectionBody}`;
+	const start = originalContent.indexOf(startMarker);
+	const end = originalContent.indexOf(endMarker);
+	if (start >= 0 && end >= start) {
+		return `${originalContent.slice(0, start)}${block}${originalContent.slice(end + endMarker.length)}`;
+	}
+	if (replaceExisting) {
+		const sectionStart = originalContent.lastIndexOf(heading);
+		if (sectionStart >= 0) return `${originalContent.slice(0, sectionStart)}${block}\n`;
+	}
+	return `${originalContent.trimEnd()}\n\n${block}\n`;
+}
+
 function summaryPrompt(title: string, sentences: TranscriptSentence[]): string {
 	const transcript = sentences.map((sentence) => `[${formatClock(sentence.beginTime)}] ${sentence.text}`).join("\n");
 	return `你是会议纪要助手。请根据以下逐字稿生成简洁、可核对的中文会议纪要。\n\n会议标题：${title}\n\n逐字稿：\n${transcript.slice(0, 60000)}\n\n只输出 Markdown，必须包含：\n## 核心摘要\n## 主要讨论\n## 决策事项\n## 待办事项\n## 风险与待确认问题\n\n规则：不得虚构发言人、负责人或截止日期；不能确认时写“待确认”；待办使用 Markdown 任务列表；重要结论尽量附上逐字稿时间点。`;
@@ -90,9 +108,7 @@ export class MeetingManager {
 			const message = stale.state === "summarizing" ? "服务重启导致纪要生成中断" : "服务重启导致录音中断";
 			this.artifacts.finalizeAudio(stale.id);
 			this.artifacts.update(stale.id, { state: "interrupted", error: message });
-			saveL2MeetingDraft(this.deps.l2DataDir, stale.rawPath, {
-				meetingId: stale.id, meetingStatus: "interrupted", content: failedBody(stale.title, message, segments),
-			});
+			this.saveMetadataDraft(stale, "interrupted", failedBody(stale.title, message, segments));
 		}
 		for (const job of this.artifacts.listPendingJobs()) {
 			this.artifacts.versionAndClearSegments(job.meetingId);
@@ -115,11 +131,11 @@ export class MeetingManager {
 				}
 				return;
 			}
-			let event: { type?: string; title?: string; meetingId?: string };
-			try { event = JSON.parse(raw.toString()) as { type?: string; title?: string; meetingId?: string }; }
+			let event: { type?: string; title?: string; rawPath?: string; meetingId?: string };
+			try { event = JSON.parse(raw.toString()) as { type?: string; title?: string; rawPath?: string; meetingId?: string }; }
 			catch { send(client, { type: "error", message: "Invalid meeting event" }); return; }
 			if (event.type === "start" && !session) {
-				void this.start(client, event.title).then((created) => { session = created; });
+				void this.start(client, event.rawPath, event.title).then((created) => { session = created; });
 			} else if (event.type === "stop" && session) {
 				this.stop(session);
 			} else if (event.type === "pause" && session) {
@@ -135,7 +151,7 @@ export class MeetingManager {
 		});
 	}
 
-	private async start(client: ClientWebSocket, requestedTitle?: string): Promise<MeetingSession | null> {
+	private async start(client: ClientWebSocket, requestedRawPath?: string, requestedTitle?: string): Promise<MeetingSession | null> {
 		const config = this.deps.getConfig();
 		const apiKey = config?.apiKey || process.env.DASHSCOPE_API_KEY || "";
 		const websocketUrl = config?.websocketUrl || process.env.DASHSCOPE_WEBSOCKET_URL || "";
@@ -143,32 +159,47 @@ export class MeetingManager {
 			send(client, { type: "error", message: "请先在设置中启用并配置阿里云会议转写" });
 			return null;
 		}
-		const now = new Date();
-		const defaultTitle = `会议纪要 ${now.toLocaleString("zh-CN", { hour12: false }).replaceAll("/", "-")}`;
-		const title = requestedTitle?.trim() || defaultTitle;
+		const rawPath = requestedRawPath?.trim().replace(/\\/g, "/") ?? "";
+		if (!rawPath.startsWith("raw/notes/")) {
+			send(client, { type: "error", message: "请先选择一篇可编辑笔记再开始录音" });
+			return null;
+		}
+		let note;
+		try {
+			note = readNoteContent(this.deps.l2DataDir, rawPath);
+		} catch (error) {
+			send(client, { type: "error", message: error instanceof Error ? error.message : "无法读取当前笔记" });
+			return null;
+		}
+		const title = requestedTitle?.trim() || note.title;
 		const id = `meeting_${randomUUID().slice(0, 8)}`;
-		const note = createL2Note(this.deps.l2DataDir, this.deps.codeDir, {
-			title,
-			tags: ["会议纪要"],
-			content: recordingBody(title, []),
-		});
-		saveL2MeetingDraft(this.deps.l2DataDir, note.rawPath, {
-			meetingId: id, meetingStatus: "connecting", title, tags: ["会议纪要"], content: recordingBody(title, []),
-		});
-		send(client, { type: "draft_created", meetingId: id, rawPath: note.rawPath, title, audioAvailable: config.saveAudio });
-		this.artifacts.create({ id, title, rawPath: note.rawPath, state: "connecting", startedAt: Date.now() }, config.saveAudio);
+		if (this.isRawPathActive(rawPath)) {
+			send(client, { type: "error", message: "当前笔记已有正在进行的录音" });
+			return null;
+		}
+		try {
+			this.saveEmbeddedDraft(rawPath, id, title, "connecting", recordingBody(title, []));
+		} catch (error) {
+			send(client, { type: "error", message: error instanceof Error ? error.message : "无法更新当前笔记" });
+			return null;
+		}
+		send(client, { type: "draft_created", meetingId: id, rawPath, title, audioAvailable: config.saveAudio });
+		this.artifacts.create({ id, title, rawPath, state: "connecting", startedAt: Date.now(), embedded: true }, config.saveAudio);
 
 		const provider = this.createProvider(config, apiKey, websocketUrl);
 		let session!: MeetingSession;
 		let transcription: TranscriptionSession;
 		try {
 			transcription = provider.start({ sampleRate: 16000, language: config.language }, {
-			onReady: () => {
-				if (session.state !== "connecting") return;
-				session.state = "recording";
-				saveL2MeetingDraft(this.deps.l2DataDir, session.rawPath, {
-					meetingId: session.id, meetingStatus: "recording", content: recordingBody(session.title, session.sentences),
-				});
+				onReady: () => {
+					if (session.state !== "connecting") return;
+					session.state = "recording";
+					try {
+						this.saveSessionDraft(session, "recording", recordingBody(session.title, session.sentences));
+					} catch (error) {
+						this.handleDraftWriteFailure(session, error);
+						return;
+					}
 				this.artifacts.update(session.id, { state: "recording" });
 				this.send(session, { type: "ready", meetingId: session.id });
 			},
@@ -182,9 +213,12 @@ export class MeetingManager {
 				if (existing >= 0) session.sentences[existing] = finalSentence;
 				else session.sentences.push(finalSentence);
 				this.artifacts.appendSegment(session.id, segment);
-				saveL2MeetingDraft(this.deps.l2DataDir, session.rawPath, {
-					meetingId: session.id, meetingStatus: "recording", content: recordingBody(session.title, session.sentences),
-				});
+					try {
+						this.saveSessionDraft(session, "recording", recordingBody(session.title, session.sentences));
+					} catch (error) {
+						this.handleDraftWriteFailure(session, error);
+						return;
+					}
 				this.send(session, { type: "transcript_final", segment, sentence: finalSentence });
 			},
 			onFinished: () => void this.summarize(session),
@@ -192,14 +226,12 @@ export class MeetingManager {
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "无法启动语音识别";
-			saveL2MeetingDraft(this.deps.l2DataDir, note.rawPath, {
-				meetingId: id, meetingStatus: "failed", content: failedBody(title, message, []),
-			});
-			send(client, { type: "error", message, rawPath: note.rawPath });
+				this.saveEmbeddedDraft(rawPath, id, title, "failed", failedBody(title, message, []));
+			send(client, { type: "error", message, rawPath });
 			return null;
 		}
 		session = {
-			id, title, rawPath: note.rawPath, startedAt: Date.now(), state: "connecting", client,
+			id, title, rawPath, startedAt: Date.now(), state: "connecting", client,
 			transcription, sentences: [], partialText: "", stopping: false, reconnectTimer: null, saveAudio: config.saveAudio,
 		};
 		this.sessions.set(id, session);
@@ -230,7 +262,7 @@ export class MeetingManager {
 		if (session.state !== "recording") return;
 		session.state = "paused";
 		this.artifacts.update(session.id, { state: "paused" });
-		saveL2MeetingDraft(this.deps.l2DataDir, session.rawPath, { meetingId: session.id, meetingStatus: "paused", content: recordingBody(session.title, session.sentences) });
+		this.saveSessionDraft(session, "paused", recordingBody(session.title, session.sentences));
 		this.send(session, { type: "paused" });
 	}
 
@@ -238,7 +270,7 @@ export class MeetingManager {
 		if (session.state !== "paused") return;
 		session.state = "recording";
 		this.artifacts.update(session.id, { state: "recording" });
-		saveL2MeetingDraft(this.deps.l2DataDir, session.rawPath, { meetingId: session.id, meetingStatus: "recording", content: recordingBody(session.title, session.sentences) });
+		this.saveSessionDraft(session, "recording", recordingBody(session.title, session.sentences));
 		this.send(session, { type: "resumed" });
 	}
 
@@ -246,7 +278,7 @@ export class MeetingManager {
 		session.client = null;
 		if (session.state === "recording") {
 			session.state = "paused";
-			saveL2MeetingDraft(this.deps.l2DataDir, session.rawPath, { meetingId: session.id, meetingStatus: "paused", content: recordingBody(session.title, session.sentences) });
+			this.saveSessionDraft(session, "paused", recordingBody(session.title, session.sentences));
 		}
 		this.artifacts.update(session.id, { state: session.state });
 		if (session.reconnectTimer) clearTimeout(session.reconnectTimer);
@@ -275,6 +307,61 @@ export class MeetingManager {
 		return this.artifacts.get(id);
 	}
 
+	private saveEmbeddedDraft(rawPath: string, meetingId: string, title: string, meetingStatus: MeetingState, content: string): void {
+		const current = readNoteContent(this.deps.l2DataDir, rawPath);
+		saveL2MeetingDraft(this.deps.l2DataDir, rawPath, {
+			meetingId,
+			meetingStatus,
+			content: mergeMeetingBlock(current.content, meetingId, title, content, current.meetingId === meetingId),
+		});
+	}
+
+	private saveSessionDraft(session: MeetingSession, meetingStatus: MeetingState, content: string): void {
+		this.saveEmbeddedDraft(session.rawPath, session.id, session.title, meetingStatus, content);
+	}
+
+	private saveMetadataDraft(meeting: MeetingMetadata, meetingStatus: MeetingState, content: string): void {
+		if (meeting.embedded) {
+			this.saveEmbeddedDraft(meeting.rawPath, meeting.id, meeting.title, meetingStatus, content);
+			return;
+		}
+		saveL2MeetingDraft(this.deps.l2DataDir, meeting.rawPath, {
+			meetingId: meeting.id,
+			meetingStatus,
+			content,
+		});
+	}
+
+	isRawPathActive(rawPath: string): boolean {
+		const normalizedPath = rawPath.replace(/\\/g, "/");
+		const hasActiveSession = [...this.sessions.values()].some((session) =>
+			session.rawPath.replace(/\\/g, "/") === normalizedPath &&
+			["connecting", "recording", "paused", "finishing", "summarizing"].includes(session.state));
+		if (hasActiveSession) return true;
+		return this.artifacts.listActive().some((meeting) =>
+			meeting.rawPath.replace(/\\/g, "/") === normalizedPath &&
+			["connecting", "recording", "paused", "finishing", "summarizing"].includes(meeting.state));
+	}
+
+	cancelForDeletedRawPath(rawPath: string): void {
+		const normalizedPath = rawPath.replace(/\\/g, "/");
+		for (const session of this.sessions.values()) {
+			if (session.rawPath.replace(/\\/g, "/") !== normalizedPath) continue;
+			if (session.reconnectTimer) clearTimeout(session.reconnectTimer);
+			session.state = "interrupted";
+			this.artifacts.finalizeAudio(session.id);
+			this.artifacts.update(session.id, { state: "interrupted", error: "笔记已删除，录音已停止" });
+			this.send(session, { type: "note_deleted", rawPath: session.rawPath });
+			session.transcription.cancel();
+			this.sessions.delete(session.id);
+		}
+		for (const meeting of this.artifacts.listActive()) {
+			if (meeting.rawPath.replace(/\\/g, "/") !== normalizedPath) continue;
+			this.artifacts.finalizeAudio(meeting.id);
+			this.artifacts.update(meeting.id, { state: "interrupted", error: "笔记已删除，录音已停止" });
+		}
+	}
+
 	stopMeeting(id: string): boolean {
 		const session = this.sessions.get(id);
 		if (!session) return false;
@@ -288,22 +375,16 @@ export class MeetingManager {
 		const segments = this.artifacts.readSegments(id);
 		if (segments.length === 0) return false;
 		this.artifacts.update(id, { state: "summarizing", error: undefined });
-		saveL2MeetingDraft(this.deps.l2DataDir, metadata.rawPath, {
-			meetingId: id, meetingStatus: "summarizing", content: summarizingBody(metadata.title, segments),
-		});
+		this.saveMetadataDraft(metadata, "summarizing", summarizingBody(metadata.title, segments));
 		try {
 			const summary = await this.deps.summarize(summaryPrompt(metadata.title, segments));
 			if (!summary.trim()) throw new Error("文本模型未返回纪要");
-			saveL2MeetingDraft(this.deps.l2DataDir, metadata.rawPath, {
-				meetingId: id, meetingStatus: "completed", content: completedBody(metadata.title, summary, segments),
-			});
+			this.saveMetadataDraft(metadata, "completed", completedBody(metadata.title, summary, segments));
 			this.artifacts.update(id, { state: "completed", error: undefined });
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "纪要总结失败";
 			this.artifacts.update(id, { state: "failed", error: message });
-			saveL2MeetingDraft(this.deps.l2DataDir, metadata.rawPath, {
-				meetingId: id, meetingStatus: "failed", content: failedBody(metadata.title, message, segments),
-			});
+			this.saveMetadataDraft(metadata, "failed", failedBody(metadata.title, message, segments));
 		}
 		return true;
 	}
@@ -350,9 +431,7 @@ export class MeetingManager {
 				this.artifacts.updateJob(job.id, { status: "failed", error: message });
 				this.artifacts.update(job.meetingId, { state: "failed", error: message });
 				const meeting = this.artifacts.get(job.meetingId);
-				if (meeting) saveL2MeetingDraft(this.deps.l2DataDir, meeting.rawPath, {
-					meetingId: meeting.id, meetingStatus: "failed", content: failedBody(meeting.title, message, this.artifacts.readSegments(meeting.id)),
-				});
+				if (meeting) this.saveMetadataDraft(meeting, "failed", failedBody(meeting.title, message, this.artifacts.readSegments(meeting.id)));
 			}
 		};
 		this.importQueue = this.importQueue.then(run, run);
@@ -373,14 +452,10 @@ export class MeetingManager {
 		if (segments.length === 0) throw new Error("未从音频中识别到有效语音");
 		this.artifacts.updateJob(job.id, { status: "summarizing", progress: 92 });
 		this.artifacts.update(meeting.id, { state: "summarizing" });
-		saveL2MeetingDraft(this.deps.l2DataDir, meeting.rawPath, {
-			meetingId: meeting.id, meetingStatus: "summarizing", content: summarizingBody(meeting.title, segments),
-		});
+		this.saveMetadataDraft(meeting, "summarizing", summarizingBody(meeting.title, segments));
 		const summary = await this.deps.summarize(summaryPrompt(meeting.title, segments));
 		if (!summary.trim()) throw new Error("文本模型未返回纪要");
-		saveL2MeetingDraft(this.deps.l2DataDir, meeting.rawPath, {
-			meetingId: meeting.id, meetingStatus: "completed", content: completedBody(meeting.title, summary, segments),
-		});
+		this.saveMetadataDraft(meeting, "completed", completedBody(meeting.title, summary, segments));
 		this.artifacts.update(meeting.id, { state: "completed", error: undefined });
 		this.artifacts.updateJob(job.id, { status: "completed", progress: 100, error: undefined });
 	}
@@ -449,27 +524,22 @@ export class MeetingManager {
 			session.state = "no_speech";
 			this.artifacts.finalizeAudio(session.id);
 			this.artifacts.update(session.id, { state: "no_speech" });
-			saveL2MeetingDraft(this.deps.l2DataDir, session.rawPath, {
-				meetingId: session.id, meetingStatus: "no_speech", content: noSpeechBody(session.title),
-			});
+			this.saveSessionDraft(session, "no_speech", noSpeechBody(session.title));
 			this.send(session, { type: "no_speech", rawPath: session.rawPath });
 			setTimeout(() => this.sessions.delete(session.id), 60_000);
 			return;
 		}
 		session.state = "summarizing";
 		this.artifacts.update(session.id, { state: "summarizing" });
-		saveL2MeetingDraft(this.deps.l2DataDir, session.rawPath, {
-			meetingId: session.id, meetingStatus: "summarizing", content: summarizingBody(session.title, session.sentences),
-		});
+		this.saveSessionDraft(session, "summarizing", summarizingBody(session.title, session.sentences));
 		this.send(session, { type: "summarizing", rawPath: session.rawPath });
 		try {
 			const summary = await this.deps.summarize(summaryPrompt(session.title, session.sentences));
+			if (!this.sessions.has(session.id)) return;
 			if (!summary.trim()) throw new Error("文本模型未返回纪要");
 			session.state = "completed";
 			this.artifacts.update(session.id, { state: "completed", error: undefined });
-			saveL2MeetingDraft(this.deps.l2DataDir, session.rawPath, {
-				meetingId: session.id, meetingStatus: "completed", content: completedBody(session.title, summary, session.sentences),
-			});
+			this.saveSessionDraft(session, "completed", completedBody(session.title, summary, session.sentences));
 			this.send(session, { type: "completed", rawPath: session.rawPath });
 		} catch (error) {
 			this.fail(session, error instanceof Error ? error.message : "纪要总结失败");
@@ -484,22 +554,33 @@ export class MeetingManager {
 		session.state = "interrupted";
 		this.artifacts.finalizeAudio(session.id);
 		this.artifacts.update(session.id, { state: "interrupted", error: "录音连接已中断" });
-		saveL2MeetingDraft(this.deps.l2DataDir, session.rawPath, {
-			meetingId: session.id, meetingStatus: "interrupted", content: failedBody(session.title, "录音连接已中断", session.sentences),
-		});
+		this.saveSessionDraft(session, "interrupted", failedBody(session.title, "录音连接已中断", session.sentences));
+		session.transcription.cancel();
+		this.sessions.delete(session.id);
+	}
+
+	private handleDraftWriteFailure(session: MeetingSession, error: unknown): void {
+		const message = error instanceof Error ? error.message : String(error);
+		logger.warn({ err: error, meetingId: session.id, rawPath: session.rawPath }, "meeting draft disappeared while transcription was active");
+		session.state = "interrupted";
+		this.artifacts.finalizeAudio(session.id);
+		this.artifacts.update(session.id, { state: "interrupted", error: message });
+		this.send(session, { type: "error", message: "录音笔记已不可用，本次录音已停止", rawPath: session.rawPath });
 		session.transcription.cancel();
 		this.sessions.delete(session.id);
 	}
 
 	private fail(session: MeetingSession, message: string): void {
-		if (session.state === "failed" || session.state === "completed") return;
+		if (session.state === "failed" || session.state === "completed" || session.state === "interrupted") return;
 		session.state = "failed";
 		this.artifacts.finalizeAudio(session.id);
 		this.artifacts.update(session.id, { state: "failed", error: message });
 		logger.warn({ meetingId: session.id, message }, "meeting transcription failed");
-		saveL2MeetingDraft(this.deps.l2DataDir, session.rawPath, {
-			meetingId: session.id, meetingStatus: "failed", content: failedBody(session.title, message, session.sentences),
-		});
+		try {
+			this.saveSessionDraft(session, "failed", failedBody(session.title, message, session.sentences));
+		} catch (error) {
+			logger.warn({ err: error, meetingId: session.id }, "failed to persist meeting failure state");
+		}
 		this.send(session, { type: "error", message, rawPath: session.rawPath });
 		session.transcription.cancel();
 		setTimeout(() => this.sessions.delete(session.id), 60_000);

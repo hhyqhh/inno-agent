@@ -93,17 +93,18 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 
 	get isDirty(): boolean {
 		if (!this.selected) return false;
-		if (this.selected.kind === "archived") return false;
-		if (this.selected.kind !== "markdown" && this.selected.contentType === "markdown") {
+		if (this.selected.notebookType === "note" && this.selected.contentType === "markdown") {
+			return (
+				this.editorContent !== this.savedContent ||
+				this.editorTitle !== this.savedTitle ||
+				this.editorTags.join(",") !== this.savedTags.join(",") ||
+				this.editorRecordDate !== this.savedRecordDate
+			);
+		}
+		if (this.selected.notebookType === "file" && this.selected.contentType === "markdown") {
 			return this.previewContent !== this.savedPreviewContent;
 		}
-		if (this.selected.kind !== "markdown") return false;
-		return (
-			this.editorContent !== this.savedContent ||
-			this.editorTitle !== this.savedTitle ||
-			this.editorTags.join(",") !== this.savedTags.join(",") ||
-			this.editorRecordDate !== this.savedRecordDate
-		);
+		return false;
 	}
 
 	get filteredNotes(): NoteSummary[] {
@@ -325,7 +326,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		this.clearMessages();
 		this.emit("change", undefined);
 
-		if (note.kind === "markdown") {
+		if (note.notebookType === "note" && note.contentType === "markdown") {
 			this.isLoadingContent = true;
 			this.emit("change", undefined);
 			try {
@@ -485,7 +486,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 
 		const selectedPath = this.selected.rawPath;
 		const selectedTitle = this.selected.title;
-		const isRawMarkdown = this.selected.kind !== "markdown" && this.selected.contentType === "markdown";
+		const isRawMarkdown = this.selected.notebookType === "file" && this.selected.contentType === "markdown";
 		const snapshot = isRawMarkdown
 			? { kind: "raw" as const, content: this.previewContent }
 			: {
@@ -548,7 +549,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	}
 
 	async polishSelected(templateId?: string, suggestedTags?: string[]): Promise<boolean> {
-		if (!this.selected || this.selected.kind !== "markdown" || !this.editorContent.trim() || this.isPolishing) return false;
+		if (!this.selected || this.selected.notebookType !== "note" || this.selected.contentType !== "markdown" || !this.editorContent.trim() || this.isPolishing) return false;
 		const rawPath = this.selected.rawPath;
 		const originalContent = this.editorContent;
 		const originalTags = [...this.editorTags];
@@ -600,7 +601,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	}
 
 	async analyzeSelectedPolish(): Promise<PolishAnalysisResult | null> {
-		if (!this.selected || this.selected.kind !== "markdown" || !this.editorContent.trim() || this.isPolishing) return null;
+		if (!this.selected || this.selected.notebookType !== "note" || this.selected.contentType !== "markdown" || !this.editorContent.trim() || this.isPolishing) return null;
 		const rawPath = this.selected.rawPath;
 		const originalContent = this.editorContent;
 		const controller = new AbortController();

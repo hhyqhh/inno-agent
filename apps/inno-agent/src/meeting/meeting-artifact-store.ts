@@ -11,6 +11,7 @@ export interface MeetingMetadata {
 	updatedAt: number;
 	audioPath?: string;
 	error?: string;
+	embedded?: boolean;
 }
 
 export type MeetingImportJobStatus = "queued" | "converting" | "transcribing" | "summarizing" | "completed" | "failed";

@@ -65,18 +65,21 @@ class MeetingStore extends EventEmitter<MeetingStoreEvents> {
 		this.emit("change", undefined);
 	}
 
-	async start(deviceId = this.selectedDeviceId): Promise<void> {
+	async start(rawPath: string, title: string, deviceId = this.selectedDeviceId): Promise<void> {
 		if (this.state !== "idle" && this.state !== "completed" && this.state !== "no_speech" && this.state !== "error") return;
+		if (!rawPath.trim()) return;
+		if (!(await notesStore.flushSelected())) return;
 		this.resetRuntime();
 		this.state = "connecting";
-		this.title = `会议纪要 ${new Date().toLocaleString("zh-CN", { hour12: false })}`;
+		this.rawPath = rawPath;
+		this.title = title.trim() || "录音记录";
 		this.emit("change", undefined);
 		try {
 			this.selectedDeviceId = deviceId;
 			await this.acquireMedia();
 			const socket = createMeetingSocket();
 			this.attachSocket(socket);
-			socket.onopen = () => socket.send(JSON.stringify({ type: "start", title: this.title }));
+			socket.onopen = () => socket.send(JSON.stringify({ type: "start", title: this.title, rawPath }));
 		} catch (error) {
 			this.setError(error instanceof Error ? error.message : "无法访问麦克风");
 		}
@@ -251,6 +254,11 @@ class MeetingStore extends EventEmitter<MeetingStoreEvents> {
 				this.state = "no_speech";
 				await this.refreshDraft();
 				this.socket?.close();
+				this.emit("change", undefined);
+				break;
+			case "note_deleted":
+				this.resetRuntime();
+				this.state = "idle";
 				this.emit("change", undefined);
 				break;
 			case "error":

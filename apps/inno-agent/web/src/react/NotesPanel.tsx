@@ -790,7 +790,6 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 						<div className="border-b border-[var(--inno-border)] px-4 py-3">
 							<div className="min-w-0">
 								<h3 className="truncate font-medium">{selected.title}</h3>
-								<p className="truncate text-xs text-[var(--inno-text-muted)]">{selected.rawPath}</p>
 							</div>
 						</div>
 						<div className={`min-h-0 flex-1 ${selected.contentType === "markdown" || selected.contentType === "pdf" || selected.contentType === "image" ? "overflow-hidden" : "overflow-auto p-4"}`}>

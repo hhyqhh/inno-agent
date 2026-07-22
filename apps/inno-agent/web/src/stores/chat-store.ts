@@ -111,7 +111,41 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				];
 			}
 		} catch (err) {
-			if (!controller.signal.aborted) {
+			if (!controller.signal.aborted && !this.detachMode && targetSessionId) {
+				console.warn("[chat-store] SSE stream disconnected, attempting reconnect...");
+				this.setStreamingActivity("连接中断，正在重连");
+				this.emit("change", undefined);
+				try {
+					await new Promise((r) => setTimeout(r, 1000));
+					const reconnectController = new AbortController();
+					this.abortController = reconnectController;
+					for await (const event of streamSessionEvents(targetSessionId, reconnectController.signal)) {
+						this._handleStreamEvent(event);
+					}
+					this.flushStreamChange();
+					if (!this.detachMode && (this.streamingText || this.streamingError)) {
+						this.messages = [
+							...this.messages,
+							{
+								role: "assistant",
+								content: this.streamingText,
+								timestamp: Date.now(),
+								thinking: this.streamingThinking || undefined,
+								tools: this.completedTools.length > 0 ? this.completedTools : undefined,
+								error: this.streamingError || undefined,
+							},
+						];
+					}
+				} catch (reconnectErr) {
+					if (!this.abortController?.signal.aborted) {
+						const message = reconnectErr instanceof Error ? reconnectErr.message : "Unknown error";
+						this.messages = [
+							...this.messages,
+							{ role: "assistant", content: "", timestamp: Date.now(), error: `Reconnect failed: ${message}` },
+						];
+					}
+				}
+			} else if (!controller.signal.aborted) {
 				const message = err instanceof Error ? err.message : "Unknown error";
 				this.messages = [
 					...this.messages,

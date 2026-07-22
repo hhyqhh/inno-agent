@@ -4330,20 +4330,32 @@ const server = createServer(async (req, res) => {
 				"X-Accel-Buffering": "no",
 			});
 			let ended = false;
+			const eventsHeartbeat = setInterval(() => {
+				if (!ended) {
+					try {
+						res.write(": heartbeat\n\n");
+						logger.debug({ sessionId }, "SSE event replay heartbeat sent");
+					} catch (err) {
+						logger.warn({ sessionId, err }, "SSE event replay heartbeat write failed");
+					}
+				}
+			}, 15_000);
 			const unsub = bc.subscribe((event: unknown) => {
 				if (ended) return;
 				res.write(`data: ${JSON.stringify(event)}\n\n`);
 				if ((event as any).type === "done" || ((event as any).type === "error" && !(event as any).toolCallId)) {
+					clearInterval(eventsHeartbeat);
 					res.write("data: [DONE]\n\n");
 					ended = true;
 					res.end();
 				}
 			});
 			if (bc.closed && !ended) {
+				clearInterval(eventsHeartbeat);
 				res.write("data: [DONE]\n\n");
 				res.end();
 			}
-			req.on("close", unsub);
+			req.on("close", () => { clearInterval(eventsHeartbeat); unsub(); });
 			return;
 		}
 
@@ -4389,8 +4401,21 @@ const server = createServer(async (req, res) => {
 			};
 
 			let aborted = false;
+
+			const heartbeatInterval = setInterval(() => {
+				if (!aborted) {
+					try {
+						res.write(": heartbeat\n\n");
+						logger.debug({ sessionId: capturedSessionId }, "SSE heartbeat sent");
+					} catch (err) {
+						logger.warn({ sessionId: capturedSessionId, err }, "SSE heartbeat write failed");
+					}
+				}
+			}, 15_000);
+
 			req.on("close", () => {
 				aborted = true;
+				clearInterval(heartbeatInterval);
 				questionBridge.setEmitter(null);
 				questionBridge.cancel();
 			});
@@ -4507,6 +4532,7 @@ const server = createServer(async (req, res) => {
 					sseWrite(errorEvent);
 				}
 			} finally {
+				clearInterval(heartbeatInterval);
 				workspaceChangeMonitor?.close();
 				// Always attribute this turn to the web channel — even on abort or
 				// error — so an interrupted first prompt keeps origin "web" instead
@@ -4520,14 +4546,14 @@ const server = createServer(async (req, res) => {
 				// session stays in the sidebar and can be reopened. No-op when an
 				// assistant message already exists (normal/errored turns).
 				persistPendingUserTurn(capturedSessionId);
-				// Keep the broadcaster alive for 60s so reconnecting clients can
-				// replay the full event history, then clean up.
+				// Keep the broadcaster alive for 5 minutes so reconnecting
+				// clients (e.g. after gateway timeout) can replay event history.
 				setTimeout(() => {
 					if (sessionBroadcasters.get(capturedSessionId) === broadcaster) {
 						broadcaster.close();
 						sessionBroadcasters.delete(capturedSessionId);
 					}
-				}, 60_000);
+				}, 300_000);
 			}
 			if (!aborted) {
 				res.write("data: [DONE]\n\n");

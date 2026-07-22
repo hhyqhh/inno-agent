@@ -2,6 +2,8 @@
 	"name": "inno-agent",
 	"version": "0.4.4",
 	"private": true,
+	"description": "Personal learning agent built on PI SDK with three-layer memory system",
+	"author": "Inno Agent Contributors",
 	"type": "module",
 	"workspaces": [
 		"apps/inno-agent",
@@ -62,6 +64,20 @@
 		},
 		"dmg": {
 			"title": "Inno Agent"
+		},
+		"linux": {
+			"icon": "build/icon.png",
+			"category": "Education",
+			"artifactName": "${name}-${version}-${arch}.${ext}",
+			"target": [
+				{
+					"target": "AppImage",
+					"arch": [
+						"arm64",
+						"x64"
+					]
+				}
+			]
 		},
 		"win": {
 			"icon": "build/icon.png",

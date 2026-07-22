@@ -229,6 +229,23 @@ inno-chat-center {
 	box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.45);
 }
 
+/* Current-conversation minimap. It belongs to the chat viewport (not the
+   session sidebar) and only appears when the chat column has enough room for
+   the hover card without crowding the message column. */
+.conversation-stage {
+	container: conversation-stage / inline-size;
+}
+
+.conversation-minimap {
+	display: none;
+}
+
+@container conversation-stage (min-width: 42rem) {
+	.conversation-minimap {
+		display: block;
+	}
+}
+
 /* Workspace panel */
 inno-workspace-panel {
 	display: flex;

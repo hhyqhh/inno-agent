@@ -22,6 +22,7 @@ import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { groupByCategory, matchesQuery } from "../utils/category-grouping.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { QuestionDialog } from "./QuestionDialog.js";
+import { buildConversationTurns, ConversationMinimap } from "./ConversationMinimap.js";
 import "@earendil-works/pi-web-ui";
 
 // Thresholds for collapsing a large paste into a placeholder chip. A paste
@@ -400,6 +401,7 @@ export function ChatCenter() {
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const imageInputRef = useRef<HTMLInputElement | null>(null);
 	const scrollRef = useRef<HTMLDivElement | null>(null);
+	const shouldStickToBottomRef = useRef(true);
 	const [uploads, setUploads] = useState<{ fileName: string; path: string }[]>([]);
 	const [isUploading, setIsUploading] = useState(false);
 	const [inlineImages, setInlineImages] = useState<(InlineImage & { name: string; previewUrl: string })[]>([]);
@@ -495,6 +497,10 @@ export function ChatCenter() {
 
 	// Welcome state: derived once in the sessions store (single source of truth).
 	const isWelcome = sessions.isWelcome;
+	const turnIndexByStartMessage = useMemo(
+		() => new Map(buildConversationTurns(chat.messages).map((turn) => [turn.startMessageIndex, turn.index])),
+		[chat.messages],
+	);
 
 	useEffect(() => {
 		if (isWelcome && workspaces.list.length === 0) {
@@ -543,11 +549,25 @@ export function ChatCenter() {
 	const scrollTextKey = chat.streamingTarget === "workspace" ? chat.streamingTarget : chat.streamingText;
 
 	useEffect(() => {
+		shouldStickToBottomRef.current = true;
+	}, [sessions.currentSessionId]);
+
+	useEffect(() => {
 		requestAnimationFrame(() => {
 			const el = scrollRef.current;
-			if (el) el.scrollTop = el.scrollHeight;
+			if (el && shouldStickToBottomRef.current) el.scrollTop = el.scrollHeight;
 		});
 	}, [chat.messages, scrollTextKey, chat.streamingThinking, chat.activeTools.length, chat.completedTools.length, chat.pendingQuestion]);
+
+	const handleChatScroll = useCallback(() => {
+		const el = scrollRef.current;
+		if (!el) return;
+		shouldStickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+	}, []);
+
+	const pauseAutoScroll = useCallback(() => {
+		shouldStickToBottomRef.current = false;
+	}, []);
 
 	const handleInput = useCallback(() => {
 		const el = inputRef.current;
@@ -617,6 +637,7 @@ export function ChatCenter() {
 		};
 		const input = expandPaste(rawValue).trim();
 		if ((!input && uploads.length === 0 && inlineImages.length === 0) || chat.isSending || isUploading) return;
+		shouldStickToBottomRef.current = true;
 
 		const uploadNote = uploads.length > 0
 			? `\n\n${t("chat.uploadedToWorkspace")}\n${uploads.map((file) => `- ${file.fileName}: ${file.path}`).join("\n")}`
@@ -682,6 +703,7 @@ export function ChatCenter() {
 	}, []);
 
 	const handleRetry = useCallback(() => {
+		shouldStickToBottomRef.current = true;
 		void chatStore.retry();
 	}, []);
 
@@ -1014,11 +1036,13 @@ export function ChatCenter() {
 	/* ── Normal layout: scrollable messages + bottom composer ── */
 	return (
 		<section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-chat-bg)]">
-			<div
-				ref={scrollRef}
-				className="chat-scroll inno-chat-grid flex-1 min-h-0 overflow-y-auto px-4 py-4"
-			>
-				<div className="mx-auto flex min-w-0 max-w-3xl flex-col gap-3">
+			<div className="conversation-stage relative flex-1 min-h-0">
+				<div
+					ref={scrollRef}
+					onScroll={handleChatScroll}
+					className="chat-scroll inno-chat-grid h-full min-h-0 overflow-y-auto px-4 py-4"
+				>
+					<div data-conversation-content className="mx-auto flex min-w-0 max-w-3xl flex-col gap-3">
 					{chat.isLoadingHistory && chat.messages.length === 0 ? (
 						<div className="flex h-full flex-col items-center justify-center pt-20 text-[var(--inno-text-muted)]">
 							<Spinner size={20} className="mb-3 text-[var(--inno-border-strong)]" />
@@ -1039,9 +1063,17 @@ export function ChatCenter() {
 					{(() => {
 						const channels = new Set(chat.messages.map((m) => m.channel).filter(Boolean));
 						const multiChannel = channels.size > 1;
-						return chat.messages.map((message, index) => (
-							<MessageBubble key={`${message.timestamp}-${index}`} message={message} showChannel={multiChannel} />
-						));
+						return chat.messages.map((message, index) => {
+							const turnIndex = turnIndexByStartMessage.get(index);
+							return (
+								<div
+									key={`${message.timestamp}-${index}`}
+									data-conversation-turn={turnIndex}
+								>
+									<MessageBubble message={message} showChannel={multiChannel} />
+								</div>
+							);
+						});
 					})()}
 
 					{chat.isSending && chat.streamingActivity ? (
@@ -1174,7 +1206,13 @@ export function ChatCenter() {
 					{chat.pendingQuestion ? (
 						<QuestionDialog pending={chat.pendingQuestion} />
 					) : null}
+					</div>
 				</div>
+				<ConversationMinimap
+					messages={chat.messages}
+					scrollContainerRef={scrollRef}
+					onNavigateStart={pauseAutoScroll}
+				/>
 			</div>
 
 			<div className="shrink-0 border-t border-[var(--inno-border)] bg-[var(--inno-surface)] p-3">

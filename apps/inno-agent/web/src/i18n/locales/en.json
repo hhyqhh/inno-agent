@@ -540,7 +540,13 @@
 		"longContentCollapsed": "Long content collapsed to keep the page responsive",
 		"expandFullContent": "Expand full content",
 		"collapseFullContent": "Collapse full content",
-		"composerPlaceholder": "Type a message…"
+		"composerPlaceholder": "Type a message…",
+		"minimap": {
+			"navigation": "Current conversation navigation",
+			"jumpToTurn": "Jump to turn {{count}}: {{title}}",
+			"turn": "Turn {{count}}",
+			"emptyTurn": "No text in this turn"
+		}
 	},
 	"question": {
 		"typeSomething": "Type something…",

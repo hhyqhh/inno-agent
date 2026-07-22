@@ -540,7 +540,13 @@
 		"longContentCollapsed": "内容较长，已折叠以保持页面流畅",
 		"expandFullContent": "展开完整内容",
 		"collapseFullContent": "收起完整内容",
-		"composerPlaceholder": "输入消息…"
+		"composerPlaceholder": "输入消息…",
+		"minimap": {
+			"navigation": "当前对话导航",
+			"jumpToTurn": "跳转到第 {{count}} 轮：{{title}}",
+			"turn": "第 {{count}} 轮",
+			"emptyTurn": "此轮暂无文字内容"
+		}
 	},
 	"question": {
 		"typeSomething": "输入自定义答案…",

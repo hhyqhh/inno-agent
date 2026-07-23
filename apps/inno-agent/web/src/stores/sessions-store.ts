@@ -116,6 +116,15 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		}
 	}
 
+	applyGeneratedTopic(id: string, topic: string): void {
+		const name = topic.trim();
+		if (!name) return;
+		this.sessions = this.sessions.map((session) =>
+			session.id === id ? { ...session, name } : session,
+		);
+		this.emit("change", undefined);
+	}
+
 	selectSession(id: string) {
 		this.currentSessionId = id;
 		this.emit("change", undefined);

@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { fetchNoteVersion, listNoteVersions, restoreNoteVersion } from "../../api/notes.js";
 import type { NoteVersion, NoteVersionSummary } from "../../types/notes.js";
 import { normalizeMarkdownMath } from "../../utils/markdown-math.js";
+import { noteImageUrl } from "../../stores/notes-store.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { MilkdownEditor } from "./MilkdownEditor.js";
 
@@ -110,6 +111,7 @@ export function VersionHistoryDialog({
 											editorKey={`note-version:${selected.versionId}`}
 											value={normalizeMarkdownMath(selected.content)}
 											onChange={() => undefined}
+											resolveImageUrl={(url) => noteImageUrl(rawPath, url)}
 											readOnly
 										/>
 									</div>

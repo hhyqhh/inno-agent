@@ -210,7 +210,8 @@
 			"delete": "Delete",
 			"confirmDelete": "Delete?",
 			"confirm": "Confirm",
-			"cancel": "Cancel"
+			"cancel": "Cancel",
+			"temporaryImageWarning": "This note contains a legacy temporary image reference that may no longer work. Remove the image and paste or upload it again."
 		},
 		"download": "Download",
 		"unarchiveDialogTitle": "Unarchive note",

@@ -4315,6 +4315,7 @@ const server = createServer(async (req, res) => {
 			const fileName = typeof body.fileName === "string" ? body.fileName.trim() : "";
 			const mimeType = typeof body.mimeType === "string" ? body.mimeType : "application/octet-stream";
 			const dataBase64 = typeof body.dataBase64 === "string" ? body.dataBase64 : "";
+			const placement = body.placement === "inline" ? "inline" : "attachment";
 			if (!noteRawPath || !fileName || !dataBase64) {
 				json(res, 400, { error: "Missing noteRawPath, fileName, or dataBase64" });
 				return;
@@ -4329,7 +4330,7 @@ const server = createServer(async (req, res) => {
 				return;
 			}
 			try {
-				const attachment = uploadNoteAttachment(l2DataDir, noteRawPath, { fileName, mimeType, dataBase64 });
+				const attachment = uploadNoteAttachment(l2DataDir, noteRawPath, { fileName, mimeType, dataBase64, placement });
 				json(res, 201, {
 					attachmentId: attachment.id,
 					filePath: attachment.filePath,

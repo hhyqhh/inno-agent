@@ -210,7 +210,8 @@
 			"delete": "删除",
 			"confirmDelete": "删除？",
 			"confirm": "确定",
-			"cancel": "取消"
+			"cancel": "取消",
+			"temporaryImageWarning": "此笔记包含旧的临时图片引用，图片可能已失效。请删除该图片并重新粘贴或上传。"
 		},
 		"download": "下载",
 		"unarchiveDialogTitle": "撤回归档",

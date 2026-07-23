@@ -41,6 +41,7 @@ export function NoteAttachments({
 	const uiLanguage = i18n.language.startsWith("zh") ? "zh" : "en";
 	const uploadRef = useRef<HTMLInputElement>(null);
 	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+	const visibleAttachments = attachments.filter((attachment) => attachment.placement !== "inline");
 
 	return (
 		<section className="inno-note-attachments" aria-label={t("notes.attachments.heading")}>
@@ -72,11 +73,11 @@ export function NoteAttachments({
 					</>
 				) : null}
 			</div>
-			{attachments.length === 0 ? (
+			{visibleAttachments.length === 0 ? (
 				<p className="inno-note-attachments-empty">{t("notes.attachments.empty")}</p>
 			) : (
 				<div className="inno-note-attachments-list">
-					{attachments.map((attachment) => (
+					{visibleAttachments.map((attachment) => (
 						<div key={attachment.id} className="inno-note-attachment-row">
 							<span className="inno-note-attachment-icon" aria-hidden="true">
 								{attachment.mimeType.includes("zip") || attachment.fileName.endsWith(".zip") ? (

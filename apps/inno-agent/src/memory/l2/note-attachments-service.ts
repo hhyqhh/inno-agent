@@ -27,8 +27,19 @@ function normalizeNoteRawPath(rawPath: string): string {
 
 export function listNoteAttachments(l2DataDir: string, noteRawPath: string): NoteAttachmentRecord[] {
 	const normalizedPath = normalizeNoteRawPath(noteRawPath);
+	const noteContent = readText(join(l2DataDir, normalizedPath));
 	return readAttachmentIndex(l2DataDir)
 		.filter((record) => normalizeNoteRawPath(record.noteRawPath) === normalizedPath)
+		.map((record) => {
+			if (record.placement === "inline") return record;
+			const relativePath = join("attachments", record.noteId, record.filePath.split(/[\\/]/).pop() ?? "")
+				.replace(/\\/g, "/");
+			const referencedInline =
+				noteContent.includes(relativePath) ||
+				noteContent.includes(record.filePath) ||
+				noteContent.includes(encodeURIComponent(record.filePath));
+			return referencedInline ? { ...record, placement: "inline" as const } : record;
+		})
 		.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
@@ -55,7 +66,7 @@ export function updateNoteAttachmentStatus(
 export function uploadNoteAttachment(
 	l2DataDir: string,
 	noteRawPath: string,
-	options: { fileName: string; mimeType: string; dataBase64: string },
+	options: { fileName: string; mimeType: string; dataBase64: string; placement?: "attachment" | "inline" },
 ): NoteAttachmentRecord {
 	const normalizedPath = normalizeNoteRawPath(noteRawPath);
 	if (!normalizedPath.startsWith("raw/notes/") || !normalizedPath.endsWith(".md")) {
@@ -83,6 +94,7 @@ export function uploadNoteAttachment(
 		mimeType: options.mimeType,
 		size: data.length,
 		filePath: join("raw/notes/attachments", frontmatter.note_id, storedName).replace(/\\/g, "/"),
+		placement: options.placement ?? "attachment",
 		status: "uploaded",
 		createdAt: now,
 		updatedAt: now,

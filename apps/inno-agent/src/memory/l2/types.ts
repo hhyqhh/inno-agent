@@ -126,6 +126,7 @@ export interface NoteFrontmatter {
 }
 
 export type NoteAttachmentStatus = "uploaded" | "extracting" | "extracted" | "indexed" | "error";
+export type NoteAttachmentPlacement = "attachment" | "inline";
 
 export interface NoteAttachmentRecord {
 	id: string;
@@ -135,6 +136,7 @@ export interface NoteAttachmentRecord {
 	mimeType: string;
 	size: number;
 	filePath: string;
+	placement?: NoteAttachmentPlacement;
 	status: NoteAttachmentStatus;
 	createdAt: string;
 	updatedAt: string;

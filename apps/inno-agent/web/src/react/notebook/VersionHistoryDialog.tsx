@@ -5,7 +5,9 @@ import { useTranslation } from "react-i18next";
 
 import { fetchNoteVersion, listNoteVersions, restoreNoteVersion } from "../../api/notes.js";
 import type { NoteVersion, NoteVersionSummary } from "../../types/notes.js";
+import { normalizeMarkdownMath } from "../../utils/markdown-math.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
+import { MilkdownEditor } from "./MilkdownEditor.js";
 
 export function VersionHistoryDialog({
 	open,
@@ -92,10 +94,27 @@ export function VersionHistoryDialog({
 							))}
 							{!loading && versions.length === 0 ? <p className="p-4 text-sm text-[var(--inno-text-muted)]">{t("notes.history.empty")}</p> : null}
 						</aside>
-						<main className="min-w-0 overflow-auto p-4">
-							{loading ? <div className="flex items-center gap-2 text-sm text-[var(--inno-text-muted)]"><LoaderCircle size={15} className="animate-spin" />{t("common.loading")}</div> : null}
-							{error ? <p className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</p> : null}
-							{selected ? <><h3 className="text-lg font-semibold">{selected.title}</h3><div className="mt-2 flex flex-wrap gap-1">{selected.tags.map((tag) => <span key={tag} className="rounded bg-[var(--inno-surface-muted)] px-2 py-0.5 text-xs">#{tag}</span>)}</div><pre className="mt-4 whitespace-pre-wrap break-words font-sans text-sm leading-6">{selected.content}</pre></> : null}
+						<main className="flex min-w-0 flex-col overflow-hidden" data-color-mode="light">
+							{loading ? <div className="flex items-center gap-2 px-4 pt-4 text-sm text-[var(--inno-text-muted)]"><LoaderCircle size={15} className="animate-spin" />{t("common.loading")}</div> : null}
+							{error ? <p className="mx-4 mt-4 rounded bg-red-50 p-2 text-sm text-red-700">{error}</p> : null}
+							{selected ? (
+								<>
+									<div className="border-b border-[var(--inno-border)] px-4 py-3">
+										<h3 className="text-lg font-semibold">{selected.title}</h3>
+										<div className="mt-2 flex flex-wrap gap-1">
+											{selected.tags.map((tag) => <span key={tag} className="rounded bg-[var(--inno-surface-muted)] px-2 py-0.5 text-xs">#{tag}</span>)}
+										</div>
+									</div>
+									<div className="min-h-0 flex-1 overflow-hidden">
+										<MilkdownEditor
+											editorKey={`note-version:${selected.versionId}`}
+											value={normalizeMarkdownMath(selected.content)}
+											onChange={() => undefined}
+											readOnly
+										/>
+									</div>
+								</>
+							) : null}
 						</main>
 					</div>
 					<footer className="flex items-center justify-end border-t border-[var(--inno-border)] px-4 py-3">

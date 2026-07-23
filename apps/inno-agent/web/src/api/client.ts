@@ -10,18 +10,33 @@ export class ApiError extends Error {
 
 const BASE_URL = ""; // Same origin — Vite proxy in dev
 
+/**
+ * Timeout for regular (non-streaming) API calls. Prevents indefinite hangs
+ * when Chromium's per-origin connection pool (6 slots for HTTP/1.1) is
+ * exhausted by lingering SSE connections — the fetch would otherwise queue
+ * forever behind those connections.
+ */
+const API_TIMEOUT_MS = 15_000;
+
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-	const res = await fetch(`${BASE_URL}${path}`, {
-		headers: { "Content-Type": "application/json", ...options?.headers },
-		...options,
-	});
-	if (!res.ok) {
-		const body = await res.json().catch(() => ({}));
-		throw new ApiError(res.status, (body as Record<string, string>).error || res.statusText);
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+	try {
+		const res = await fetch(`${BASE_URL}${path}`, {
+			...options,
+			headers: { "Content-Type": "application/json", ...options?.headers },
+			signal: controller.signal,
+		});
+		if (!res.ok) {
+			const body = await res.json().catch(() => ({}));
+			throw new ApiError(res.status, (body as Record<string, string>).error || res.statusText);
+		}
+		// 204 No Content
+		if (res.status === 204) return undefined as T;
+		return res.json() as Promise<T>;
+	} finally {
+		clearTimeout(timer);
 	}
-	// 204 No Content
-	if (res.status === 204) return undefined as T;
-	return res.json() as Promise<T>;
 }
 
 /**

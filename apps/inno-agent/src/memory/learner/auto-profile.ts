@@ -183,6 +183,66 @@ function ensureKnowledgeState(profile: LearnerProfile, conceptId: string): Knowl
 	return state;
 }
 
+/**
+ * SM-2 spaced-repetition scheduling (Wozniak & Gorzelanczyk, 1994).
+ *
+ * quality 0-5: inferred from mastery_delta when not explicitly provided.
+ *   5 = perfect recall, 4 = correct with hesitation, 3 = correct with difficulty,
+ *   2 = incorrect but easy to recall, 1 = incorrect, 0 = complete blackout.
+ *
+ * Returns the ISO date string for the next review.
+ */
+function computeSM2Review(state: import("./types.js").KnowledgeState, event: LearningEvent): string {
+	const SM2_EF_DEFAULT = 2.5;
+	const SM2_EF_MIN = 1.3;
+
+	// Derive quality from explicit payload or mastery_delta
+	let quality: number;
+	const rawQuality = event.payload.quality;
+	if (typeof rawQuality === "number" && rawQuality >= 0 && rawQuality <= 5) {
+		quality = Math.round(rawQuality);
+	} else {
+		const delta = typeof event.derived_signals?.mastery_delta === "number"
+			? event.derived_signals.mastery_delta
+			: event.event_type === "exercise_attempt" ? 0.03 : 0.02;
+		// Map mastery + delta to a quality score
+		const effective = clamp01((state.mastery + delta));
+		quality = effective >= 0.85 ? 5 : effective >= 0.7 ? 4 : effective >= 0.5 ? 3 : effective >= 0.3 ? 2 : 1;
+	}
+
+	let ef = state.sm2_ef ?? SM2_EF_DEFAULT;
+	let reps = state.sm2_repetitions ?? 0;
+	let interval = state.sm2_interval ?? 1;
+
+	if (quality >= 3) {
+		// Successful recall — advance the streak
+		if (reps === 0) {
+			interval = 1;
+		} else if (reps === 1) {
+			interval = 6;
+		} else {
+			interval = Math.round(interval * ef);
+		}
+		reps += 1;
+	} else {
+		// Failed recall — reset streak, review tomorrow
+		reps = 0;
+		interval = 1;
+	}
+
+	// Update EF: EF' = EF + 0.1 − (5 − q)(0.08 + (5 − q) × 0.02)
+	ef = Math.max(SM2_EF_MIN, ef + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
+
+	// Persist SM-2 state back onto the KnowledgeState
+	state.sm2_ef = ef;
+	state.sm2_interval = interval;
+	state.sm2_repetitions = reps;
+
+	const due = new Date(event.timestamp);
+	due.setDate(due.getDate() + interval);
+	return due.toISOString();
+}
+
 function updateKnowledgeFromEvent(profile: LearnerProfile, event: LearningEvent): boolean {
 	const conceptIds = event.context.concept_ids ?? [];
 	if (conceptIds.length === 0) return false;
@@ -223,9 +283,7 @@ function updateKnowledgeFromEvent(profile: LearnerProfile, event: LearningEvent)
 			changed = true;
 		}
 		if (eventIsNewer && (event.event_type === "exercise_attempt" || event.event_type === "concept_explained")) {
-			const due = new Date(event.timestamp);
-			due.setDate(due.getDate() + (state.mastery < 0.4 ? 1 : state.mastery < 0.75 ? 3 : 7));
-			const nextReview = due.toISOString();
+			const nextReview = computeSM2Review(state, event);
 			if (state.review_due_at !== nextReview) {
 				state.review_due_at = nextReview;
 				changed = true;

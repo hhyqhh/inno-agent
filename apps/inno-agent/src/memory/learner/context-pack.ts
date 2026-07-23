@@ -23,6 +23,47 @@ function summarizeEvent(event: LearningEvent): string {
 	return label || event.event_type;
 }
 
+/**
+ * Derive a teaching-hint string from recent affect signals.
+ *
+ * Based on D'Mello & Graesser (2012) and Pekrun's Control-Value Theory (2006):
+ * - frustrated / confused  → lower perceived difficulty, add scaffolding
+ * - bored / disengaged     → raise challenge, introduce novelty
+ * - engaged / excited      → maintain pace, optionally stretch further
+ * - neutral / absent       → no hint injected (avoid noise)
+ */
+function deriveAffectHint(recentEvents: LearningEvent[]): string | undefined {
+	const NEGATIVE = /frustrat|沮丧|confused|困惑|stuck|卡住|angry|焦虑|anxious|overwhelm|overwhelmed/i;
+	const BORED    = /bored|无聊|disengaged|distracted|boring/i;
+	const POSITIVE = /engaged|excited|兴奋|投入|motivated|happy|happy|好|很好|棒|great|excellent/i;
+
+	let negScore = 0;
+	let boredScore = 0;
+	let posScore = 0;
+
+	for (const event of recentEvents.slice(-5)) {
+		const affect = event.derived_signals?.affect;
+		if (typeof affect !== "string" || !affect.trim()) continue;
+		if (NEGATIVE.test(affect)) negScore += 1;
+		else if (BORED.test(affect)) boredScore += 1;
+		else if (POSITIVE.test(affect)) posScore += 1;
+	}
+
+	if (negScore >= 2) {
+		return "情绪提示：学习者近期表现出困惑或沮丧——请降低当前讲解难度，多用例子和脚手架支撑，并给予鼓励性反馈";
+	}
+	if (negScore === 1 && posScore === 0) {
+		return "情绪提示：学习者可能有轻度困惑——优先确认理解，再推进新内容";
+	}
+	if (boredScore >= 2) {
+		return "情绪提示：学习者可能感到无聊——适当提升挑战难度或引入新颖角度以重新激活投入感";
+	}
+	if (posScore >= 2) {
+		return "情绪提示：学习者当前投入度高——可适度提升挑战，保持学习动力";
+	}
+	return undefined;
+}
+
 export function buildContextPack(profile: LearnerProfile, recentEvents: LearningEvent[] = []): LearnerContextPack {
 	// Find highest-priority active goal
 	const activeGoals = profile.goals
@@ -91,6 +132,10 @@ export function buildContextPack(profile: LearnerProfile, recentEvents: Learning
 			review_due_at: ks.review_due_at!,
 			mastery: ks.mastery,
 		}));
+
+	// Affect-aware teaching hints (D'Mello & Graesser, 2012; Pekrun, 2006)
+	const affectHint = deriveAffectHint(recentEvents);
+	if (affectHint) teachingHints.push(affectHint);
 
 	const recentEventSummaries = recentEvents
 		.slice(-5)

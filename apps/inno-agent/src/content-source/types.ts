@@ -57,3 +57,26 @@ export const CATEGORY_MARKER: Record<ContentCategory, string> = {
 export function isSafeItemName(name: string): boolean {
 	return !!name && !name.includes("/") && !name.includes("\\") && !name.includes("..");
 }
+
+/**
+ * Map over items with a bounded number of in-flight async tasks, preserving
+ * order. Reading one marker file (SKILL.md / preset.json) per item over
+ * raw.githubusercontent.com throttles bursts (429); capping concurrency stops
+ * a large catalog from tripping the limit and silently dropping items.
+ */
+export async function mapWithConcurrency<T, R>(
+	items: T[],
+	limit: number,
+	fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+	const results = new Array<R>(items.length);
+	let next = 0;
+	const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+		while (next < items.length) {
+			const index = next++;
+			results[index] = await fn(items[index], index);
+		}
+	});
+	await Promise.all(workers);
+	return results;
+}

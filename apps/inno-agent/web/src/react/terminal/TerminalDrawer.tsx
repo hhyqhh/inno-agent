@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronUp, Terminal as TerminalIcon, RotateCcw, History } from "lucide-react";
 import { TerminalView } from "./TerminalView.js";
 import { RunsPanel } from "./RunsPanel.js";
@@ -7,22 +8,13 @@ import { sessionsStore } from "../../stores/sessions-store.js";
 import { workspaceStore } from "../../stores/workspace-store.js";
 import { useStoreSnapshot } from "../hooks.js";
 
-const STATUS_LABEL: Record<TerminalStatus, string> = {
-	idle: "未连接",
-	connecting: "连接中…",
-	connected: "已连接",
-	running: "运行中…",
-	disconnected: "已断开",
-	error: "错误",
-};
-
 const STATUS_DOT: Record<TerminalStatus, string> = {
-	idle: "bg-slate-300",
-	connecting: "bg-amber-400 animate-pulse",
-	connected: "bg-emerald-500",
-	running: "bg-blue-500 animate-pulse",
-	disconnected: "bg-slate-300",
-	error: "bg-red-500",
+	idle: "bg-[var(--inno-border-strong)]",
+	connecting: "bg-[var(--inno-warning)] animate-pulse",
+	connected: "bg-[var(--inno-success)]",
+	running: "bg-[var(--inno-accent)] animate-pulse",
+	disconnected: "bg-[var(--inno-border-strong)]",
+	error: "bg-[var(--inno-danger)]",
 };
 
 /**
@@ -30,6 +22,15 @@ const STATUS_DOT: Record<TerminalStatus, string> = {
  * xterm DOM to TerminalView when open.
  */
 export function TerminalDrawer() {
+	const { t } = useTranslation();
+	const STATUS_LABEL: Record<TerminalStatus, string> = {
+		idle: t("terminal.status.idle"),
+		connecting: t("terminal.status.connecting"),
+		connected: t("terminal.status.connected"),
+		running: t("terminal.status.running"),
+		disconnected: t("terminal.status.disconnected"),
+		error: t("terminal.status.error"),
+	};
 	const term = useStoreSnapshot(terminalStore, () => ({
 		isOpen: terminalStore.isOpen,
 		status: terminalStore.status,
@@ -68,10 +69,10 @@ export function TerminalDrawer() {
 				<button
 					onClick={toggle}
 					className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
-					title={term.isOpen ? "收起终端" : "展开终端"}
+					title={term.isOpen ? t("terminal.collapse") : t("terminal.expand")}
 				>
 					<TerminalIcon size={12} />
-					<span className="font-medium">终端</span>
+					<span className="font-medium">{t("terminal.title")}</span>
 					{term.isOpen ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
 				</button>
 				<span
@@ -80,21 +81,21 @@ export function TerminalDrawer() {
 					aria-label={STATUS_LABEL[term.status]}
 				/>
 				{term.cwd ? <span className="truncate text-[11px] text-[var(--inno-text-subtle)]" title={term.cwd}>{term.cwd}</span> : null}
-				{term.error ? <span className="text-[11px] text-red-600">{term.error}</span> : null}
+				{term.error ? <span className="text-[11px] text-[var(--inno-danger)]">{term.error}</span> : null}
 				<div className="ml-auto flex items-center gap-1">
 					{term.isOpen && sess.currentSessionId ? (
 						<>
 							<button
 								onClick={toggleHistory}
-								className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${showHistory ? "bg-[var(--inno-surface)] text-[var(--inno-text)] ring-1 ring-slate-200" : "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
-								title="历史"
+								className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${showHistory ? "bg-[var(--inno-surface)] text-[var(--inno-text)]" : "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
+								title={t("terminal.history")}
 							>
 								<History size={12} />
 							</button>
 							<button
 								onClick={() => void restart()}
 								className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
-								title="重启终端"
+								title={t("terminal.restart")}
 							>
 								<RotateCcw size={12} />
 							</button>
@@ -122,7 +123,7 @@ export function TerminalDrawer() {
 					)
 				) : (
 					<div className="flex h-[120px] items-center justify-center text-xs text-[var(--inno-text-muted)]">
-						请先打开或新建一个会话
+						{t("terminal.noSession")}
 					</div>
 				)
 			) : null}

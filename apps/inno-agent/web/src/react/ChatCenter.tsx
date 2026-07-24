@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
-import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search } from "lucide-react";
-import type { ChatMessage } from "../types/chat.js";
+import type { TFunction } from "i18next";
+import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search, FileCode2, Sparkles } from "lucide-react";
+import { Spinner } from "./ui/Spinner.js";
+import type { ChatMessage, ChatToolRecord } from "../types/chat.js";
 import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
@@ -20,6 +22,7 @@ import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { groupByCategory, matchesQuery } from "../utils/category-grouping.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { QuestionDialog } from "./QuestionDialog.js";
+import { buildConversationTurns, ConversationMinimap } from "./ConversationMinimap.js";
 import "@earendil-works/pi-web-ui";
 
 // Thresholds for collapsing a large paste into a placeholder chip. A paste
@@ -27,12 +30,14 @@ import "@earendil-works/pi-web-ui";
 // (a few paragraphs) stays inline, but dumping a whole file collapses.
 const PASTE_COLLAPSE_LINES = 20;
 const PASTE_COLLAPSE_CHARS = 2000;
+const LONG_ASSISTANT_CHARS = 6000;
+const LONG_ASSISTANT_LINES = 140;
 
 const CHANNEL_BADGE_CLASS: Record<string, string> = {
 	cli: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]",
 	web: "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]",
-	feishu: "bg-emerald-50 text-emerald-500",
-	scheduler: "bg-amber-50 text-amber-500",
+	feishu: "bg-[var(--inno-success-bg)] text-[var(--inno-success)]",
+	scheduler: "bg-[var(--inno-warning-bg)] text-[var(--inno-warning)]",
 	qq: "bg-cyan-50 text-cyan-500",
 	wechat: "bg-lime-50 text-lime-500",
 };
@@ -92,13 +97,77 @@ function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
 function ErrorBlock({ error }: { error: string }) {
 	const isLong = error.length > 80 || error.includes("\n");
 	return (
-		<details className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-700" open={!isLong}>
+		<details className="rounded-md border border-[var(--inno-danger-border)] bg-[var(--inno-danger-bg)] px-2.5 py-1.5 text-xs text-[var(--inno-danger)]" open={!isLong}>
 			<summary className="flex cursor-pointer select-none items-center gap-1.5 font-medium">
-				<AlertTriangle size={13} className="shrink-0" />
+				<AlertTriangle size={14} className="shrink-0" />
 				Request failed
-				{isLong ? <span className="text-red-400">· click to expand</span> : null}
+				{isLong ? <span className="text-[var(--inno-danger)]">· click to expand</span> : null}
 			</summary>
-			<pre className="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-red-600">{error}</pre>
+			<pre className="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[var(--inno-danger)]">{error}</pre>
+		</details>
+	);
+}
+
+function shouldCollapseAssistantContent(content: string): boolean {
+	if (content.length > LONG_ASSISTANT_CHARS) return true;
+	return content.split(/\r\n|\r|\n/).length > LONG_ASSISTANT_LINES;
+}
+
+function AssistantContent({ content }: { content: string }) {
+	const { t } = useTranslation();
+	const [expanded, setExpanded] = useState(false);
+	const trimmed = content.trim();
+	if (!trimmed) return null;
+	if (!shouldCollapseAssistantContent(trimmed)) {
+		return <markdown-artifact content={normalizeMarkdownMath(trimmed)} />;
+	}
+	const lineCount = trimmed.split(/\r\n|\r|\n/).length;
+	const preview = trimmed.slice(0, 900);
+	return (
+		<div className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-2.5">
+			<div className="mb-2 flex min-w-0 items-center gap-2 text-xs text-[var(--inno-text-muted)]">
+				<FileCode2 size={14} className="shrink-0 text-[var(--inno-accent)]" />
+				<span className="min-w-0 flex-1 truncate">{t("chat.longContentCollapsed", "内容较长，已折叠以保持页面流畅")}</span>
+				<span className="shrink-0 tabular-nums">{lineCount} {t("preview.streamingLines", "行")}</span>
+			</div>
+			{expanded ? (
+				<div className="max-h-[60vh] overflow-auto rounded border border-[var(--inno-border)] bg-[var(--inno-surface)] p-2">
+					<markdown-artifact content={normalizeMarkdownMath(trimmed)} />
+				</div>
+			) : (
+				<pre className="max-h-36 overflow-hidden whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[var(--inno-text-muted)] [overflow-wrap:anywhere]">
+					{preview}
+					{trimmed.length > preview.length ? "\n\n…" : ""}
+				</pre>
+			)}
+			<button
+				className="mt-2 rounded-md border border-[var(--inno-border)] px-2.5 py-1 text-xs text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
+				onClick={() => setExpanded((v) => !v)}
+			>
+				{expanded ? t("chat.collapseFullContent", "收起完整内容") : t("chat.expandFullContent", "展开完整内容")}
+			</button>
+		</div>
+	);
+}
+
+function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; className: string }) {
+	const [open, setOpen] = useState(false);
+	const detail = useMemo(() => {
+		if (!open) return "";
+		return JSON.stringify({
+			args: tool.args,
+			result: tool.result,
+		}, null, 2);
+	}, [open, tool.args, tool.result]);
+
+	return (
+		<details className={className} onToggle={(e) => setOpen(e.currentTarget.open)}>
+			<summary className={tool.isError ? "cursor-pointer break-words text-[var(--inno-danger)] [overflow-wrap:anywhere]" : "cursor-pointer break-words text-[var(--inno-text-muted)] [overflow-wrap:anywhere]"}>
+				{tool.toolName}
+			</summary>
+			{open ? (
+				<pre className="mt-1 max-h-40 max-w-full overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] [overflow-wrap:anywhere]">{detail}</pre>
+			) : null}
 		</details>
 	);
 }
@@ -159,18 +228,13 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 						{message.tools?.length ? (
 							<div className="mt-2 grid min-w-0 max-w-full gap-1.5">
 								{message.tools.map((tool) => (
-									<details key={tool.toolCallId} className="min-w-0 max-w-full overflow-hidden rounded border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1">
-										<summary className={tool.isError ? "cursor-pointer break-words text-red-600 [overflow-wrap:anywhere]" : "cursor-pointer break-words text-[var(--inno-text-muted)] [overflow-wrap:anywhere]"}>
-											{tool.toolName}
-										</summary>
-										<pre className="mt-1 max-h-40 max-w-full overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] [overflow-wrap:anywhere]">{JSON.stringify({ args: tool.args, result: tool.result }, null, 2)}</pre>
-									</details>
+									<ToolRecordDetails key={tool.toolCallId} tool={tool} className="min-w-0 max-w-full overflow-hidden rounded border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1" />
 								))}
 							</div>
 						) : null}
 					</details>
 				) : null}
-				<markdown-artifact content={normalizeMarkdownMath(message.content)} />
+				<AssistantContent content={message.content} />
 				{message.error ? (
 					<div className={message.content.trim() ? "mt-2" : ""}>
 						<ErrorBlock error={message.error} />
@@ -217,7 +281,7 @@ function ModeChip({ selected, onClick, disabled, children }: { selected: boolean
 			disabled={disabled}
 			className={`rounded-full border px-1.5 py-px text-[10px] leading-tight transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
 				selected
-					? "border-blue-300 bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
+					? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
 					: "border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
 			}`}
 		>
@@ -245,12 +309,12 @@ function PresetPicker({
 	onOpen: (id: string) => void;
 	query: string;
 	onQueryChange: (v: string) => void;
-	t: (key: string) => string;
+	t: TFunction;
 }) {
 	const uncategorizedLabel = t("presets.uncategorized");
 	const groups = useMemo(
-		() => groupByCategory(presets.filter((p) => matchesQuery(p, query)), uncategorizedLabel),
-		[presets, query, uncategorizedLabel],
+		() => groupByCategory(presets.filter((p) => matchesQuery(p, query, p.category ? t(`categories.${p.category}`, p.category) : undefined)), uncategorizedLabel),
+		[presets, query, uncategorizedLabel, t],
 	);
 	const totalMatched = useMemo(() => groups.reduce((sum, [, items]) => sum + items.length, 0), [groups]);
 	const showSearch = presets.length >= 4;
@@ -264,7 +328,7 @@ function PresetPicker({
 
 			{showSearch ? (
 				<div className="mb-2 flex items-center gap-2 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5">
-					<Search size={13} className="shrink-0 text-[var(--inno-text-subtle)]" />
+					<Search size={14} className="shrink-0 text-[var(--inno-text-subtle)]" />
 					<input
 						type="text"
 						value={query}
@@ -295,7 +359,7 @@ function PresetPicker({
 							    when nothing has been categorized yet. */}
 							{groups.length > 1 ? (
 								<div className="mb-1.5 px-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--inno-text-subtle)]">
-									{category} <span className="ml-1 text-[var(--inno-text-subtle)]">· {items.length}</span>
+									{t(`categories.${category}`, category)} <span className="ml-1 text-[var(--inno-text-subtle)]">· {items.length}</span>
 								</div>
 							) : null}
 							<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -306,7 +370,7 @@ function PresetPicker({
 										disabled={openingPresetId !== null}
 										onClick={() => onOpen(preset.id)}
 										title={preset.description}
-										className="group flex flex-col items-start rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2.5 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/40 disabled:opacity-50"
+										className="group flex flex-col items-start rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2.5 text-left transition-colors hover:border-[var(--inno-accent)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
 									>
 										<span className="text-sm font-medium text-[var(--inno-text)] group-hover:text-[var(--inno-accent)]">
 											{preset.name}
@@ -333,9 +397,11 @@ function PresetPicker({
 export function ChatCenter() {
 	const { t } = useTranslation();
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
+	const draftRef = useRef("");
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const imageInputRef = useRef<HTMLInputElement | null>(null);
 	const scrollRef = useRef<HTMLDivElement | null>(null);
+	const shouldStickToBottomRef = useRef(true);
 	const [uploads, setUploads] = useState<{ fileName: string; path: string }[]>([]);
 	const [isUploading, setIsUploading] = useState(false);
 	const [inlineImages, setInlineImages] = useState<(InlineImage & { name: string; previewUrl: string })[]>([]);
@@ -356,6 +422,16 @@ export function ChatCenter() {
 
 	// Simple Mode surfaces preset workspaces for one-click start.
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
+	// Whether the currently selected model accepts image input. Drives the
+	// paste/upload gate so users on text-only custom providers don't get
+	// silently-dropped images. Unknown/missing model → keep allowed (legacy).
+	const currentModelSupportsImages = useStoreSnapshot(settingsStore, () => {
+		const s = settingsStore.settings;
+		if (!s) return true;
+		const list = s.availableModels ?? s.configuredModels ?? [];
+		const m = list.find((x) => x.provider === s.defaultProvider && x.id === s.defaultModel);
+		return m ? m.input.includes("image") : true;
+	});
 	const [presets, setPresets] = useState<PresetMeta[]>([]);
 	const [openingPresetId, setOpeningPresetId] = useState<string | null>(null);
 	const [togglingMode, setTogglingMode] = useState(false);
@@ -376,6 +452,9 @@ export function ChatCenter() {
 		isLoadingHistory: chatStore.isLoadingHistory,
 		streamingText: chatStore.streamingText,
 		streamingThinking: chatStore.streamingThinking,
+		streamingTarget: chatStore.streamingTarget,
+		streamingActivity: chatStore.streamingActivity,
+		streamingActivityDetail: chatStore.streamingActivityDetail,
 		streamingError: chatStore.streamingError,
 		activeTools: chatStore.activeTools,
 		completedTools: chatStore.completedTools,
@@ -418,6 +497,10 @@ export function ChatCenter() {
 
 	// Welcome state: derived once in the sessions store (single source of truth).
 	const isWelcome = sessions.isWelcome;
+	const turnIndexByStartMessage = useMemo(
+		() => new Map(buildConversationTurns(chat.messages).map((turn) => [turn.startMessageIndex, turn.index])),
+		[chat.messages],
+	);
 
 	useEffect(() => {
 		if (isWelcome && workspaces.list.length === 0) {
@@ -453,23 +536,43 @@ export function ChatCenter() {
 		if (isWelcome && wsMode === "existing" && wsExistingId) {
 			void workspaceStore.setActiveWorkspace(wsExistingId);
 			appStore.setRightPanelTab("preview");
-			if (appStore.workspaceMode === "collapsed") {
+			if (
+				appStore.workspaceMode === "collapsed"
+				&& sessions.preselectedWorkspaceId === wsExistingId
+			) {
 				appStore.setWorkspaceWidth(300);
 				appStore.setWorkspaceMode("quarter");
 			}
 		}
-	}, [isWelcome, wsMode, wsExistingId]);
+	}, [isWelcome, wsMode, wsExistingId, sessions.preselectedWorkspaceId]);
+
+	const scrollTextKey = chat.streamingTarget === "workspace" ? chat.streamingTarget : chat.streamingText;
+
+	useEffect(() => {
+		shouldStickToBottomRef.current = true;
+	}, [sessions.currentSessionId]);
 
 	useEffect(() => {
 		requestAnimationFrame(() => {
 			const el = scrollRef.current;
-			if (el) el.scrollTop = el.scrollHeight;
+			if (el && shouldStickToBottomRef.current) el.scrollTop = el.scrollHeight;
 		});
-	}, [chat.messages, chat.streamingText, chat.streamingThinking, chat.activeTools.length, chat.completedTools.length, chat.pendingQuestion]);
+	}, [chat.messages, scrollTextKey, chat.streamingThinking, chat.activeTools.length, chat.completedTools.length, chat.pendingQuestion]);
+
+	const handleChatScroll = useCallback(() => {
+		const el = scrollRef.current;
+		if (!el) return;
+		shouldStickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+	}, []);
+
+	const pauseAutoScroll = useCallback(() => {
+		shouldStickToBottomRef.current = false;
+	}, []);
 
 	const handleInput = useCallback(() => {
 		const el = inputRef.current;
 		if (!el) return;
+		draftRef.current = el.value;
 		const maxHeight = 200;
 		el.style.height = "auto";
 		const h = Math.min(el.scrollHeight, maxHeight);
@@ -487,12 +590,12 @@ export function ChatCenter() {
 		if (wsMode === "temp") return { newWorkspace: { isTemp: true } };
 		if (wsMode === "new") {
 			const trimmed = wsName.trim();
-			if (!trimmed) return { __error: "请填写工作区名称" };
+			if (!trimmed) return { __error: t("chat.errWsName") };
 			return { newWorkspace: { name: trimmed, isTemp: false } };
 		}
-		if (!wsExistingId) return { __error: "请选择一个工作区" };
+		if (!wsExistingId) return { __error: t("chat.errWsSelect") };
 		return { workspaceId: wsExistingId };
-	}, [simpleMode, wsMode, wsName, wsExistingId]);
+	}, [simpleMode, wsMode, wsName, wsExistingId, t]);
 
 	// Load presets from the remote content hub once when the welcome screen is
 	// shown in Simple Mode. Falls back to an empty list on failure (offline /
@@ -515,12 +618,12 @@ export function ChatCenter() {
 				appStore.setWorkspaceWidth(560);
 				appStore.setWorkspaceMode("half");
 			} catch (err) {
-				setWsError(err instanceof Error ? err.message : "打开预设失败");
+				setWsError(err instanceof Error ? err.message : t("chat.errOpenPreset"));
 			} finally {
 				setOpeningPresetId(null);
 			}
 		})();
-	}, []);
+	}, [t]);
 
 	const handleSend = useCallback(() => {
 		const rawValue = inputRef.current?.value ?? "";
@@ -534,16 +637,18 @@ export function ChatCenter() {
 		};
 		const input = expandPaste(rawValue).trim();
 		if ((!input && uploads.length === 0 && inlineImages.length === 0) || chat.isSending || isUploading) return;
+		shouldStickToBottomRef.current = true;
 
 		const uploadNote = uploads.length > 0
-			? `\n\n[已上传到工作区]\n${uploads.map((file) => `- ${file.fileName}: ${file.path}`).join("\n")}`
+			? `\n\n${t("chat.uploadedToWorkspace")}\n${uploads.map((file) => `- ${file.fileName}: ${file.path}`).join("\n")}`
 			: "";
-		const messageContent = `${input}${uploadNote}` || (inlineImages.length > 0 ? "请描述这张图片" : "");
-		const imagesToSend = inlineImages.length > 0
+		const messageContent = `${input}${uploadNote}` || (inlineImages.length > 0 ? t("chat.describeImage") : "");
+		const imagesToSend = (inlineImages.length > 0 && currentModelSupportsImages)
 			? inlineImages.map(({ data, mimeType }) => ({ data, mimeType }))
 			: undefined;
 
 		const resetComposer = () => {
+			draftRef.current = "";
 			if (inputRef.current) {
 				inputRef.current.value = "";
 				inputRef.current.style.height = "auto";
@@ -569,7 +674,7 @@ export function ChatCenter() {
 					await sessionsStore.createSessionWith(wsInput);
 					void chatStore.send(messageContent, imagesToSend);
 				} catch (err) {
-					setWsError(err instanceof Error ? err.message : "创建会话失败");
+					setWsError(err instanceof Error ? err.message : t("chat.errCreateSession"));
 				}
 			})();
 			return;
@@ -579,7 +684,7 @@ export function ChatCenter() {
 		setUploads([]);
 		setInlineImages([]);
 		void chatStore.send(messageContent, imagesToSend);
-	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, pasteBlock]);
+	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, pasteBlock, currentModelSupportsImages, t]);
 
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		// Don't fire Send while the user is composing with an IME (e.g. picking
@@ -598,6 +703,7 @@ export function ChatCenter() {
 	}, []);
 
 	const handleRetry = useCallback(() => {
+		shouldStickToBottomRef.current = true;
 		void chatStore.retry();
 	}, []);
 
@@ -621,6 +727,7 @@ export function ChatCenter() {
 		const imageItems = Array.from(e.clipboardData.items).filter((item) => item.type.startsWith("image/"));
 		if (imageItems.length > 0) {
 			e.preventDefault();
+			if (!currentModelSupportsImages) return; // text-only model: drop silently
 			const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
 			addImageFiles(files);
 			return;
@@ -656,14 +763,15 @@ export function ChatCenter() {
 				});
 			}
 		}
-	}, [addImageFiles, t]);
+	}, [addImageFiles, currentModelSupportsImages, t]);
 
 	const handleImageFiles = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+		if (!currentModelSupportsImages) return; // text-only model: ignore picker
 		const files = Array.from(event.target.files ?? []).filter((f) => f.type.startsWith("image/"));
 		if (files.length === 0) return;
 		addImageFiles(files);
 		if (event.target) event.target.value = "";
-	}, [addImageFiles]);
+	}, [addImageFiles, currentModelSupportsImages]);
 
 	const removeInlineImage = useCallback((index: number) => {
 		setInlineImages((prev) => prev.filter((_, i) => i !== index));
@@ -712,7 +820,7 @@ export function ChatCenter() {
 					<span key={`${file.path}-${index}`} className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2 py-1 text-xs shadow-sm">
 						<span className="max-w-[220px] truncate">{file.fileName}</span>
 						<span className="text-[var(--inno-text-muted)]">{file.path}</span>
-						<button className="text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]" title="Remove upload" onClick={() => removeUpload(index)}>
+						<button className="text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]" title={t("chat.removeUpload")} onClick={() => removeUpload(index)}>
 							<X size={14} />
 						</button>
 					</span>
@@ -729,10 +837,10 @@ export function ChatCenter() {
 						<img src={img.previewUrl} alt={img.name} className="h-12 w-12 rounded object-cover" />
 						<button
 							className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] shadow-sm hover:bg-[var(--inno-accent-soft)] hover:text-[var(--inno-accent)]"
-							title="Remove image"
+							title={t("chat.removeImage")}
 							onClick={() => removeInlineImage(index)}
 						>
-							<X size={10} />
+							<X size={12} />
 						</button>
 					</span>
 				))}
@@ -762,15 +870,16 @@ export function ChatCenter() {
 		<div className="inno-composer flex items-end gap-2 rounded-lg p-2">
 			<input ref={fileInputRef} id="file-input" type="file" className="hidden" multiple onChange={handleFiles} />
 			<input ref={imageInputRef} id="image-input" type="file" className="hidden" multiple accept="image/*" onChange={handleImageFiles} />
-			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={activeWorkspaceId ? "Upload files to workspace" : "请先选择已有工作区或开始对话后再上传文件"} disabled={chat.isSending || isUploading || !activeWorkspaceId} onClick={() => fileInputRef.current?.click()}>
-				{isUploading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Paperclip size={18} />}
+			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={activeWorkspaceId ? t("chat.uploadFiles") : t("chat.uploadHint")} disabled={chat.isSending || isUploading || !activeWorkspaceId} onClick={() => fileInputRef.current?.click()}>
+				{isUploading ? <Spinner size={16} /> : <Paperclip size={16} />}
 			</button>
-			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title="Attach image" disabled={chat.isSending} onClick={() => imageInputRef.current?.click()}>
-				<Image size={18} />
+			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={currentModelSupportsImages ? t("chat.attachImage") : t("chat.imageNotSupported")} disabled={chat.isSending || !currentModelSupportsImages} onClick={() => imageInputRef.current?.click()}>
+				<Image size={16} />
 			</button>
 			<textarea
 				ref={inputRef}
 				id="chat-input"
+				defaultValue={draftRef.current}
 				className="min-h-[36px] max-h-[200px] flex-1 resize-none overflow-hidden rounded-md border-0 bg-transparent px-2 py-2 text-sm leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
 				placeholder={placeholder}
 				rows={1}
@@ -781,8 +890,8 @@ export function ChatCenter() {
 			/>
 			{chat.isSending ? (
 				<button
-					className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-red-600 text-white transition-colors hover:bg-red-700"
-					title="Stop generation"
+					className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[var(--inno-danger)] text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
+					title={t("chat.stopGeneration")}
 					onClick={handleStop}
 				>
 					<Square size={16} />
@@ -792,7 +901,7 @@ export function ChatCenter() {
 					{chat.lastUserPrompt ? (
 						<button
 							className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50"
-							title="Retry last message"
+							title={t("chat.retryLast")}
 							disabled={isUploading}
 							onClick={handleRetry}
 						>
@@ -801,11 +910,11 @@ export function ChatCenter() {
 					) : null}
 					<button
 						className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors ${isUploading ? "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]" : "inno-primary-button"}`}
-						title="Send"
+						title={t("chat.send")}
 						disabled={isUploading}
 						onClick={handleSend}
 					>
-						<SendHorizonal size={18} />
+						<SendHorizonal size={16} />
 					</button>
 				</>
 			)}
@@ -823,28 +932,24 @@ export function ChatCenter() {
 								type="button"
 								onClick={toggleMode}
 								disabled={togglingMode}
-								title={simpleMode ? "当前:简单模式 · 点击切换到普通模式" : "当前:普通模式 · 点击切换到简单模式"}
-								aria-label={simpleMode ? "切换到普通模式" : "切换到简单模式"}
-								className="mb-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-wait"
-								style={{ perspective: "600px" }}
+								title={simpleMode ? t("mode.currentSimpleClickNormal") : t("mode.currentNormalClickSimple")}
+								aria-label={simpleMode ? t("mode.switchToNormal") : t("mode.switchToSimple")}
+								className="flip-card-scene mb-3 rounded-xl outline-none focus-visible:shadow-[var(--inno-ring)] disabled:cursor-wait"
 							>
 								<motion.div
 									animate={{ rotateY: simpleMode ? 180 : 0 }}
 									transition={{ type: "spring", stiffness: 320, damping: 22 }}
-									style={{ transformStyle: "preserve-3d", position: "relative" }}
-									className="flex h-12 w-12 items-center justify-center"
+									className="flip-card flex h-12 w-12 items-center justify-center"
 								>
 									{/* Front — Normal mode */}
 									<span
-										className="absolute inset-0 flex items-center justify-center rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] text-base font-semibold text-[var(--inno-accent)] shadow-sm transition-colors hover:border-blue-300"
-										style={{ backfaceVisibility: "hidden" }}
+										className="flip-card-face absolute inset-0 flex items-center justify-center rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] text-base font-semibold text-[var(--inno-accent)] shadow-sm transition-colors hover:border-[var(--inno-accent)]"
 									>
 										IA
 									</span>
 									{/* Back — Simple mode */}
 									<span
-										className="absolute inset-0 flex items-center justify-center rounded-xl border border-blue-400 bg-[var(--inno-accent)] text-base font-semibold text-white shadow-sm"
-										style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+										className="flip-card-back absolute inset-0 flex items-center justify-center rounded-xl border border-[var(--inno-accent)] bg-[var(--inno-accent)] text-base font-semibold text-white shadow-sm"
 									>
 										IA
 									</span>
@@ -858,17 +963,17 @@ export function ChatCenter() {
 								type="button"
 								onClick={toggleMode}
 								disabled={togglingMode}
-								className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1 text-[11px] text-[var(--inno-text-muted)] transition-colors hover:border-blue-300 hover:text-[var(--inno-accent)] disabled:cursor-wait disabled:opacity-60"
+								className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1 text-[11px] text-[var(--inno-text-muted)] transition-colors hover:border-[var(--inno-accent)] hover:text-[var(--inno-accent)] disabled:cursor-wait disabled:opacity-60"
 							>
-								<span className={`h-1.5 w-1.5 rounded-full ${simpleMode ? "bg-blue-500" : "bg-slate-300"}`} />
-								{simpleMode ? "简单模式 · 切换到普通模式" : "普通模式 · 切换到简单模式"}
+								<span className={`h-1.5 w-1.5 rounded-full ${simpleMode ? "bg-[var(--inno-accent)]" : "bg-[var(--inno-border-strong)]"}`} />
+								{simpleMode ? t("mode.simpleShort") : t("mode.normalShort")}
 							</button>
 						</div>
 
 						{renderUploadChips()}
 						{renderInlineImagePreviews()}
 						{renderQuestionHint()}
-						{renderComposer("有什么想学习或实践的?发送消息开始…")}
+						{renderComposer(t("chat.welcomePlaceholder"))}
 
 						{simpleMode && presets.length > 0 ? (
 							<PresetPicker
@@ -883,36 +988,36 @@ export function ChatCenter() {
 
 						{simpleMode ? null : preselectedWs ? (
 							<div className="mt-3 flex flex-wrap items-center gap-2">
-								<span className="text-xs text-[var(--inno-text-subtle)]">工作区</span>
-								<span className="rounded-full bg-[var(--inno-accent-soft)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--inno-accent)] ring-1 ring-blue-100">
+								<span className="text-xs text-[var(--inno-text-subtle)]">{t("workspace.title")}</span>
+								<span className="rounded-full bg-[var(--inno-accent-soft)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--inno-accent)]">
 									{preselectedWs.name}
 								</span>
-								<span className="text-[10px] text-[var(--inno-text-subtle)]">新对话将创建于此工作区</span>
+								<span className="text-[10px] text-[var(--inno-text-subtle)]">{t("chat.newChatHere")}</span>
 							</div>
 						) : (
 							<div className="mt-3 flex flex-wrap items-center gap-2">
-								<span className="text-xs text-[var(--inno-text-subtle)]">工作区</span>
-								<ModeChip selected={wsMode === "temp"} onClick={() => setWsMode("temp")}>临时·用完即弃</ModeChip>
-								<ModeChip selected={wsMode === "new"} onClick={() => setWsMode("new")}>新建工作区</ModeChip>
+								<span className="text-xs text-[var(--inno-text-subtle)]">{t("workspace.title")}</span>
+								<ModeChip selected={wsMode === "temp"} onClick={() => setWsMode("temp")}>{t("chat.wsTemp")}</ModeChip>
+								<ModeChip selected={wsMode === "new"} onClick={() => setWsMode("new")}>{t("chat.wsNew")}</ModeChip>
 								{selectableWorkspaces.length > 0 ? (
-									<ModeChip selected={wsMode === "existing"} onClick={() => setWsMode("existing")}>已有工作区</ModeChip>
+									<ModeChip selected={wsMode === "existing"} onClick={() => setWsMode("existing")}>{t("chat.wsExisting")}</ModeChip>
 								) : null}
 								{wsMode === "new" ? (
 									<input
 										type="text"
-										placeholder="工作区名称,例如:pandas demo"
+										placeholder={t("chat.wsNamePlaceholder")}
 										value={wsName}
 										onChange={(e) => setWsName(e.target.value)}
-										className="ml-1 w-[200px] rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-px text-[10px] leading-tight outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+										className="ml-1 w-[200px] rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-px text-[10px] leading-tight outline-none focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 									/>
 								) : null}
 								{wsMode === "existing" ? (
 									<select
 										value={wsExistingId}
 										onChange={(e) => setWsExistingId(e.target.value)}
-										className="ml-1 max-w-[220px] rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-px text-[10px] leading-tight outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+										className="ml-1 max-w-[220px] rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-px text-[10px] leading-tight outline-none focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 									>
-										<option value="">选择一个工作区…</option>
+										<option value="">{t("chat.wsSelectPlaceholder")}</option>
 										{selectableWorkspaces.map((w) => (
 											<option key={w.id} value={w.id}>{w.name}</option>
 										))}
@@ -921,7 +1026,7 @@ export function ChatCenter() {
 							</div>
 						)}
 
-						{wsError ? <p className="mt-2 text-xs text-red-600">{wsError}</p> : null}
+						{wsError ? <p className="mt-2 text-xs text-[var(--inno-danger)]">{wsError}</p> : null}
 					</div>
 				</div>
 			</section>
@@ -931,25 +1036,65 @@ export function ChatCenter() {
 	/* ── Normal layout: scrollable messages + bottom composer ── */
 	return (
 		<section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-chat-bg)]">
-			<div
-				ref={scrollRef}
-				className="chat-scroll inno-chat-grid flex-1 min-h-0 overflow-y-auto px-4 py-4"
-			>
-				<div className="mx-auto flex min-w-0 max-w-3xl flex-col gap-3">
+			<div className="conversation-stage relative flex-1 min-h-0">
+				<div
+					ref={scrollRef}
+					onScroll={handleChatScroll}
+					className="chat-scroll inno-chat-grid h-full min-h-0 overflow-y-auto px-4 py-4"
+				>
+					<div data-conversation-content className="mx-auto flex min-w-0 max-w-3xl flex-col gap-3">
 					{chat.isLoadingHistory && chat.messages.length === 0 ? (
 						<div className="flex h-full flex-col items-center justify-center pt-20 text-[var(--inno-text-muted)]">
-							<span className="mb-3 inline-block h-5 w-5 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
-							<p className="text-sm">Loading session…</p>
+							<Spinner size={20} className="mb-3 text-[var(--inno-border-strong)]" />
+							<p className="text-sm">{t("chat.loadingSession")}</p>
+						</div>
+					) : null}
+
+					{!chat.isLoadingHistory && chat.messages.length === 0 && !chat.isSending ? (
+						<div className="flex flex-col items-center justify-center pt-20 text-center text-[var(--inno-text-muted)]">
+							<div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]">
+								<Sparkles size={18} />
+							</div>
+							<p className="text-sm font-medium text-[var(--inno-text)]">{t("chat.emptySessionTitle")}</p>
+							<p className="mt-1 text-xs">{t("chat.emptySessionHint")}</p>
 						</div>
 					) : null}
 
 					{(() => {
 						const channels = new Set(chat.messages.map((m) => m.channel).filter(Boolean));
 						const multiChannel = channels.size > 1;
-						return chat.messages.map((message, index) => (
-							<MessageBubble key={`${message.timestamp}-${index}`} message={message} showChannel={multiChannel} />
-						));
+						return chat.messages.map((message, index) => {
+							const turnIndex = turnIndexByStartMessage.get(index);
+							return (
+								<div
+									key={`${message.timestamp}-${index}`}
+									data-conversation-turn={turnIndex}
+								>
+									<MessageBubble message={message} showChannel={multiChannel} />
+								</div>
+							);
+						});
 					})()}
+
+					{chat.isSending && chat.streamingActivity ? (
+						<motion.div
+							className="flex justify-start"
+							initial={{ opacity: 0, y: 8 }}
+							animate={{ opacity: 1, y: 0 }}
+							transition={{ duration: 0.2, ease: "easeOut" }}
+						>
+							<div className="inno-message min-w-0 max-w-[78%] rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-[13px] text-[var(--inno-text-muted)] shadow-sm">
+								<div className="flex min-w-0 items-center gap-2">
+									<span className="inno-stream-status-dot is-streaming shrink-0" />
+									<Sparkles size={14} className="shrink-0 text-[var(--inno-accent)]" />
+									<span className="min-w-0 font-medium text-[var(--inno-text)]">{chat.streamingActivity}</span>
+									{chat.streamingActivityDetail ? (
+										<span className="min-w-0 truncate text-xs text-[var(--inno-text-subtle)]">{chat.streamingActivityDetail}</span>
+									) : null}
+								</div>
+							</div>
+						</motion.div>
+					) : null}
 
 					{chat.activeTools.length > 0 ? (
 						<motion.div
@@ -958,10 +1103,10 @@ export function ChatCenter() {
 							animate={{ opacity: 1, y: 0 }}
 							transition={{ duration: 0.2, ease: "easeOut" }}
 						>
-							<div className="inno-message min-w-0 max-w-[78%] overflow-hidden rounded-lg border border-blue-100 bg-[var(--inno-accent-soft)] px-3 py-2 text-[13px]">
+							<div className="inno-message min-w-0 max-w-[78%] overflow-hidden rounded-lg border border-[var(--inno-accent-soft)] bg-[var(--inno-accent-soft)] px-3 py-2 text-[13px]">
 								{chat.activeTools.map((tool) => (
 									<div key={tool.toolCallId} className="flex min-w-0 items-center gap-2 text-[var(--inno-text-muted)]">
-										<span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent" />
+										<Spinner size={12} className="shrink-0" />
 										<span className="min-w-0 break-words font-mono text-xs [overflow-wrap:anywhere]">{tool.toolName}</span>
 									</div>
 								))}
@@ -994,17 +1139,28 @@ export function ChatCenter() {
 								<summary className="cursor-pointer break-words [overflow-wrap:anywhere]">Completed tool calls · {chat.completedTools.length}</summary>
 								<div className="mt-2 grid min-w-0 max-w-full gap-1.5">
 									{chat.completedTools.map((tool) => (
-										<details key={tool.toolCallId} className="min-w-0 max-w-full overflow-hidden rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2 py-1">
-											<summary className={tool.isError ? "cursor-pointer break-words text-red-600 [overflow-wrap:anywhere]" : "cursor-pointer break-words text-[var(--inno-text-muted)] [overflow-wrap:anywhere]"}>{tool.toolName}</summary>
-											<pre className="mt-1 max-h-40 max-w-full overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] [overflow-wrap:anywhere]">{JSON.stringify({ args: tool.args, result: tool.result }, null, 2)}</pre>
-										</details>
+										<ToolRecordDetails key={tool.toolCallId} tool={tool} className="min-w-0 max-w-full overflow-hidden rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2 py-1" />
 									))}
 								</div>
 							</details>
 						</motion.div>
 					) : null}
 
-					{chat.streamingText ? (
+					{chat.streamingText && chat.streamingTarget === "workspace" ? (
+						<motion.div
+							className="flex justify-start"
+							initial={{ opacity: 0, y: 8 }}
+							animate={{ opacity: 1, y: 0 }}
+							transition={{ duration: 0.2, ease: "easeOut" }}
+						>
+							<div className="inno-message max-w-[78%] rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-[13px] text-[var(--inno-text-muted)]">
+								<div className="flex min-w-0 items-center gap-2">
+									<span className="inno-stream-status-dot is-streaming shrink-0" />
+									<span className="min-w-0 break-words [overflow-wrap:anywhere]">{t("chat.streamingInWorkspace", "长内容正在右侧文件区生成")}</span>
+								</div>
+							</div>
+						</motion.div>
+					) : chat.streamingText ? (
 						<motion.div
 							className="flex justify-start"
 							initial={{ opacity: 0, y: 8 }}
@@ -1050,7 +1206,13 @@ export function ChatCenter() {
 					{chat.pendingQuestion ? (
 						<QuestionDialog pending={chat.pendingQuestion} />
 					) : null}
+					</div>
 				</div>
+				<ConversationMinimap
+					messages={chat.messages}
+					scrollContainerRef={scrollRef}
+					onNavigateStart={pauseAutoScroll}
+				/>
 			</div>
 
 			<div className="shrink-0 border-t border-[var(--inno-border)] bg-[var(--inno-surface)] p-3">
@@ -1058,7 +1220,7 @@ export function ChatCenter() {
 					{renderUploadChips()}
 					{renderInlineImagePreviews()}
 					{renderQuestionHint()}
-					{renderComposer("Type a message...")}
+					{renderComposer(t("chat.composerPlaceholder"))}
 				</div>
 			</div>
 		</section>

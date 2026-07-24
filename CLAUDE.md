@@ -17,7 +17,7 @@ This is an npm workspaces monorepo (Node.js >=20.6.0, ES modules) for **Inno Age
 
 PI SDK packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-web-ui`) are pulled from npm.
 
-Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (scheduler), `@larksuiteoapi/node-sdk` (Feishu), `typebox` (validation), `undici` (HTTP client), `@juicesharp/rpiv-ask-user-question` (bridges agent `ask_user_question` tool calls to the web UI), `pi-subagents` (optional subagent support), `pi-sandbox` (optional OS-level sandboxing).
+Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (scheduler), `@larksuiteoapi/node-sdk` (Feishu), `typebox` (validation), `undici` (HTTP client), `@juicesharp/rpiv-ask-user-question` (bridges agent `ask_user_question` tool calls to the web UI), `pi-subagents` (optional subagent support), `pi-sandbox` (optional OS-level sandboxing), `graphology` + `graphology-communities-louvain` (wiki knowledge graph), `yaml` (YAML parsing), `@llamaindex/liteparse` (document parsing).
 
 `vitest` is a dev dependency but no test scripts or test files exist — the TypeScript build (`npm run build`) serves as the sanity check. No ESLint or Prettier configuration exists.
 
@@ -26,7 +26,7 @@ Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (sc
 Three tsconfig files, each self-contained (no `extends` chain):
 
 - **`tsconfig.base.json`** (repo root) — reference base: `ES2022` target, `Node16` module/resolution, strict mode, `sourceMap`, `declaration` + `declarationMap`, `experimentalDecorators`, `emitDecoratorMetadata`, `resolveJsonModule`, `useDefineForClassFields: false`. Not directly referenced by the other configs but documents the shared settings.
-- **`apps/inno-agent/tsconfig.json`** — backend: `outDir: ./dist`, `rootDir: ./src`, `types: ["node"]`. Compiles `src/foo.ts` → `dist/foo.js`. The compiled server entry point is `dist/server.js` and CLI entry is `dist/cli.js`.
+- **`apps/inno-agent/tsconfig.json`** — backend: `ES2022` target, `Node16` module/resolution, strict mode, `outDir: ./dist`, `rootDir: ./src`, `declaration`, `sourceMap`, `types: ["node"]`. Does NOT use `experimentalDecorators` or `emitDecoratorMetadata` (those are only in the root base config). Compiles `src/foo.ts` → `dist/foo.js`. The compiled server entry point is `dist/server.js` and CLI entry is `dist/cli.js`.
 - **`apps/inno-agent/web/tsconfig.json`** — frontend: `ESNext` module, `bundler` resolution, `lib` includes DOM/DOM.Iterable, `jsx: "react-jsx"`, `noEmit: true`, `isolatedModules: true`, `experimentalDecorators: true`, `useDefineForClassFields: false` (both needed for Lit decorator syntax in legacy components). TypeScript is only for type-checking during `vite build` — Vite handles the actual bundling.
 
 `tsx` is available as a dev dependency for running TypeScript files directly without compilation (e.g., `npx tsx some-script.ts`).
@@ -168,7 +168,7 @@ When editing path-related code, change `runtime.ts` rather than hard-coding path
 The agent loop is provided by `@earendil-works/pi-coding-agent` (npm). Inno wraps it with an extension factory in `apps/inno-agent/src/agent/inno-extension.ts`, which:
 
 1. Registers model providers from `config.json` via `pi.registerProvider` (e.g. an InnoSpark Anthropic-compatible endpoint).
-2. Registers six tool groups: **learner tools** (L1), **scheduler tools**, **L2 wiki tools**, **L3 recall tools**, **practice lab tools**, **document tools**.
+2. Registers seven tool groups: **learner tools** (L1), **scheduler tools**, **L2 wiki tools**, **L3 recall tools**, **practice lab tools**, **document tools**, **OCR tools**.
 3. Hooks `before_agent_start` to prepend `INNO_SYSTEM_PROMPT` + an L1 context pack (profile + recent events) + threshold-gated L3 recall + **per-workspace context** to the system prompt for every turn.
 4. Hooks `session_start` to install custom TUI header/title.
 5. Persists `model_select` events back to `config.json`.
@@ -181,6 +181,8 @@ Key files in `apps/inno-agent/src/agent/`:
 - `question-bridge.ts` — bridges `ask_user_question` tool calls from agent to web UI via an EventEmitter.
 - `practice-tools.ts` — Practice Lab tools (run commands, read run records).
 - `document-tools.ts` — file uploads, workspace file reading, document preview (CSV, Office formats).
+- `ocr-tools.ts` — OCR via external PaddleOCR-VL API, configured by `ocrApi` in config.json.
+- `workspace-path-guard.ts` — security path validation ensuring agent file operations stay within workspace bounds.
 - `observability-extension.ts` — two-layer observability: (1) extension layer for session lifecycle/model changes/compaction events, (2) prompt observer for per-turn execution, tool call details (args + results), message lifecycle, and usage/cost extraction. All handlers are wrapped in try-catch so observability never breaks the agent loop. Uses a dedicated child logger (`logger.child({ module: "observability" })`).
 
 `cli.ts` calls PI's `main(...)` with this extension and forces `--no-skills --skill <skillsDir>` so only the project's skills directory is loaded.
@@ -192,6 +194,10 @@ The Electron main process (`electron/main.js`) spawns the server as a child proc
 ### LLM Fetch Logger (`src/utils/fetch-logger.ts`)
 
 Wraps `globalThis.fetch` at startup to intercept and log all LLM provider API calls (OpenAI-style `/chat/completions`, Anthropic `/messages`, PI proxy `/api/stream`). Each request gets a correlation ID (`seq/unixTimestamp`), logs the request body (truncated to 8000 chars), and logs the response with status, elapsed time, and body (truncated to 4000 chars). Installed via `installFetchLogger()` in both `server.ts` and `cli.ts`.
+
+### Proxy Bypass (`src/utils/proxy-bypass.ts`)
+
+Manages `NO_PROXY` env var for providers with `bypassProxy: true` in config. Called at startup by both `server.ts` and `cli.ts` to ensure direct connections to specified provider endpoints.
 
 ### Content Hub System (`src/content-source/`)
 
@@ -223,8 +229,8 @@ Presets are fetched from the remote content hub and cached locally under `<dataD
 
 Three layers, all file-backed under `dataDir`:
 
-- **L1 learner profile** (`src/memory/learner/`): evidence-driven profile + event log. `profile-store.ts` persists learner state; `profile-updater.ts`/`auto-profile.ts` mutate the profile from tool calls. Summarized into a `ContextPack` injected each turn. The learner can inspect and edit their profile directly. `context-cache.ts` (`refreshContextCache`) writes a precomputed `context-cache.json` to `<dataDir>/` for fast injection. `rebuild-profile.ts` (`rebuildProfileFromEvents`) replays recorded learning events into the profile — useful after upgrading L1 rules.
-- **L2 wiki memory** (`src/memory/l2/`): a structured wiki with `manifest-store.ts`, `raw-store.ts`, `wiki-maintainer.ts` (parses frontmatter), `wiki-linker.ts`, `wiki-query.ts`, plus a `summarizer.ts`, `source-converter.ts`, and `document-parser.ts` (handles PDF, Office documents, images). Exposed both to the agent (as tools) and to the web UI via `/api/wiki/*` (pages list, page CRUD, graph, stats).
+- **L1 learner profile** (`src/memory/learner/`): evidence-driven profile + event log. `profile-store.ts` persists learner state; `profile-updater.ts`/`auto-profile.ts` mutate the profile from tool calls. Summarized into a `ContextPack` (via `context-pack.ts`) injected each turn. The learner can inspect and edit their profile directly. `rebuild-profile.ts` (`rebuildProfileFromEvents`) replays recorded learning events into the profile — useful after upgrading L1 rules.
+- **L2 wiki memory** (`src/memory/l2/`): a structured wiki (17 files). Core storage: `manifest-store.ts`, `raw-store.ts`. Wiki ops: `wiki-maintainer.ts` (frontmatter), `wiki-linker.ts`, `wiki-links.ts`, `wiki-query.ts`, `wiki-graph.ts` (knowledge graph with `graphology` + community detection via `graphology-communities-louvain`). Search/indexing: `l2-index-store.ts`, `l2-indexer.ts`, `l2-search.ts`, `l2-memory.ts`. Agent interface: `l2-tools.ts`. Also: `summarizer.ts`, `source-converter.ts`, `document-parser.ts` (PDF, Office, images), `overview.ts`. Exposed to both agent tools and web UI via `/api/wiki/*`.
 - **L3 cross-conversation recall** (`src/memory/l3/`): indexes PI session JSONL files into SQLite (`node:sqlite`) with FTS5 full-text search for lexical retrieval. `sqlite-store.ts` manages the schema (chunks + embeddings tables). `indexer.ts` extracts messages from session files. `recall.ts` performs threshold-gated retrieval (`l3_recall` tool). Degrades gracefully on Node <22.5 (where `node:sqlite` is unavailable) — L3 recall is simply disabled.
 
 ### Scheduler
@@ -238,14 +244,13 @@ Three layers, all file-backed under `dataDir`:
 - **Feishu** (`feishu/feishu-channel.ts`): native Lark/Feishu integration via `@larksuiteoapi/node-sdk`.
 - **QQ** and **WeChat** (`bridge/bridge-channel.ts`): bridge/sidecar mode — the agent communicates with an external sidecar process over HTTP, which handles the actual IM protocol. Each has a `sidecarBaseUrl` in config. Inbound messages arrive via `bridge/bridge-server.ts`, a local HTTP server that receives callbacks from sidecars.
 - **WeChat iLink** (`wechat/ilink-client.ts`): alternative non-bridge WeChat mode using iLink protocol instead of a sidecar. Supports QR code login (`POST /api/channels/wechat/qr-login`, `GET /api/channels/wechat/qr-status`).
-- **WeChat WeCom** (`wecom/`): stub implementation, not yet integrated.
 - `personal-dispatcher.ts` pushes reminders and messages back out through registered channels.
 - `channel-tools.ts` exposes agent tools (`send_file_to_channel`, etc.) for interacting with channels.
 - `dedupe-store.ts` prevents duplicate message delivery; `run-log.ts` tracks channel operation outcomes.
 
 ### HTTP server (`src/server.ts`)
 
-Plain Node `http.createServer` (no framework). Key endpoints:
+Plain Node `http.createServer` (no framework), ~4700 lines in a single file. Key endpoints:
 - `POST /api/chat/stream` — SSE streaming chat.
 - `POST /api/chat` — non-streaming chat (full response).
 - `GET /api/chat/events/:id` — SSE event replay for reconnecting to an in-progress chat stream after page navigation (backed by `SessionEventBroadcaster`, an in-memory buffer).
@@ -318,7 +323,7 @@ The `PI_CODING_AGENT_DIR` env var is set to `configDir` in `runtime.ts` so pi-sa
 
 ### Web UI
 
-Hybrid React + Lit. Mounts in `web/src/main.tsx` → `react/App.tsx`. State lives in framework-agnostic `stores/` (small `EventEmitter`-based stores: `chat-store`, `sessions-store`, `wiki-store`, `jobs-store`, `skills-store`, `settings-store`, `workspace-store`, `workspaces-store`, `learner-store`, `notebook-store`, `terminal-store`, `graph-store`, `theme-store`, `app-store`). Each store extends `EventEmitter` — components subscribe to change events and re-render on state mutation. REST/SSE calls go through `web/src/api/`. Some legacy Lit components remain under `components/`. Tailwind 4 via `@tailwindcss/vite`.
+Hybrid React + Lit. Mounts in `web/src/main.tsx` → `react/App.tsx`. State lives in framework-agnostic `stores/` (small `EventEmitter`-based stores: `chat-store`, `sessions-store`, `jobs-store`, `skills-store`, `settings-store`, `workspace-store`, `workspaces-store`, `learner-store`, `notebook-store`, `terminal-store`, `theme-store`, `app-store`). Each store extends `EventEmitter` — components subscribe to change events and re-render on state mutation. REST/SSE calls go through `web/src/api/`. Some legacy Lit components remain under `components/`. Tailwind 4 via `@tailwindcss/vite`.
 
 **Component convention**: New components should be React (in `web/src/react/`). The `web/src/components/` directory holds legacy Lit Web Components that predate the React migration. Do not add new Lit components.
 
@@ -366,7 +371,7 @@ Separate Dockerfile for building the custom base image. Based on `node:22-bookwo
 
 Template: `config.example.json` at repo root. Declares `defaultProvider`, `defaultModel`, a `providers` map (each with `baseUrl`, `api` ∈ {`openai-completions`, `anthropic-messages`}, `apiKey`, `models[]`), optional `server.port`, optional `channels.*` blocks, optional `bridge.token`, optional `subagents.enabled`, optional `contentHub`, `memory`, `simpleMode`, and `ui` sections. The server hot-rewrites this file when the user switches model via the UI.
 
-Model config supports `reasoning` (boolean), `contextWindow`, and `maxTokens` per model entry.
+Model config supports `reasoning` (boolean), `input` (modality array, e.g. `["text", "image"]`), `contextWindow`, and `maxTokens` per model entry. Provider config supports `authHeader` (boolean) and `bypassProxy` (boolean) fields.
 
 Full config.json structure (see `config.example.json`):
 ```json
@@ -377,7 +382,6 @@ Full config.json structure (see `config.example.json`):
   "server": { "port": 3000 },
   "channels": {
     "feishu": { "enabled": false, "personalOnly": true, "allowedUserIds": [] },
-    "qq":     { "enabled": false, "mode": "bridge", "personalOnly": true, "allowedUserIds": [], "sidecarBaseUrl": "http://127.0.0.1:4318" },
     "wechat": { "enabled": false, "mode": "bridge", "personalOnly": true, "allowedUserIds": [], "sidecarBaseUrl": "http://127.0.0.1:4319" }
   },
   "bridge": { "token": "replace-me-with-a-secret" },
@@ -397,16 +401,22 @@ Full config.json structure (see `config.example.json`):
     "l2Enabled": true,
     "l3Enabled": true
   },
-  "simpleMode": { "enabled": false },
-  "ui": { "theme": "light" }
+  "ocrApi": {
+    "token": "",
+    "model": "PaddleOCR-VL-1.6",
+    "baseUrl": "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
+  }
 }
 ```
+
+Note: `simpleMode` and `ui.theme` are not in `config.example.json` but are added at runtime by `normalizeConfig` defaults (`simpleMode.enabled: false`, `ui.theme: "light"`). QQ channel is supported in code via bridge but is not in the template config.
 
 - `contentHub` configures the remote source for skills and presets. `type` is `"github"` or `"bundle"`. For `"bundle"`, set `baseUrl` to the self-hosted server URL. `token` is the GitHub PAT (for `"github"` type) or bundle auth token.
 - `memory.l1Enabled` / `l2Enabled` / `l3Enabled` individually gate each memory layer. Simple Mode force-disables all three without overwriting these preferences.
 - `simpleMode.enabled` toggles Simple Mode (hides advanced features, surfaces preset workspaces).
 - `ui.theme` persists the UI theme preference.
 - `bridge.token` is the shared secret for bridge-mode IM channels (QQ, WeChat). Each channel supports `personalOnly` (restrict to specified users) and `allowedUserIds` (whitelist of user IDs).
+- `ocrApi` configures PaddleOCR-VL for image OCR. Agent uses this via `ocr-tools.ts`. Requires a `token` from Baidu PaddleOCR.
 
 ### Runtime PI SDK settings (`<configDir>/settings.json`)
 

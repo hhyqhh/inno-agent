@@ -5,8 +5,7 @@ import type {
 	Misconception,
 	LearnerPreferences,
 } from "./types.js";
-import { loadEvents, loadProfile, saveProfile } from "./profile-store.js";
-import { refreshContextCache } from "./context-cache.js";
+import { loadProfile, saveProfile } from "./profile-store.js";
 
 /**
  * Describes a partial update to the learner profile.
@@ -112,8 +111,6 @@ export function updateProfile(dataDir: string, update: ProfileUpdate): LearnerPr
 
 	saveProfile(dataDir, profile);
 
-	refreshContextCache(dataDir, profile, loadEvents(dataDir).slice(-8));
-
 	return profile;
 }
 
@@ -181,6 +178,5 @@ export function patchProfile(dataDir: string, patch: ProfilePatch): LearnerProfi
 	}
 
 	saveProfile(dataDir, profile);
-	refreshContextCache(dataDir, profile, loadEvents(dataDir).slice(-8));
 	return profile;
 }

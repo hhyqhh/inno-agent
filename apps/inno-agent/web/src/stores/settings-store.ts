@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveMeetingSettings, saveGithubSettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveMeetingSettings, saveGithubSettings, saveOcrSettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
 import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload, MeetingSettings } from "../types/settings.js";
 
 interface SettingsStoreEvents {
@@ -14,6 +14,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingChannels = false;
 	isSavingMemory = false;
 	isSavingGithub = false;
+	isSavingOcr = false;
 	isSavingContentHub = false;
 	isSavingSimpleMode = false;
 	isSavingMeeting = false;
@@ -182,6 +183,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			throw err;
 		} finally {
 			this.isSavingGithub = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveOcr(payload: OcrSettingsPayload): Promise<void> {
+		this.isSavingOcr = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveOcrSettings(payload);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save OCR settings";
+			this.emit("change", undefined);
+			throw err;
+		} finally {
+			this.isSavingOcr = false;
 			this.emit("change", undefined);
 		}
 	}

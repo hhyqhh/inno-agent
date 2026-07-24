@@ -8,16 +8,19 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { saveConfig, setDefaultModel, type InnoConfig } from "../config.js";
 import { createLearnerTools } from "../memory/learner/learner-tools.js";
-import { loadEvents, loadProfile } from "../memory/learner/profile-store.js";
+import { isProfileEmpty, loadEvents, loadProfile } from "../memory/learner/profile-store.js";
 import { buildContextPack, formatContextPackForPrompt } from "../memory/learner/context-pack.js";
 import { JobStore } from "../scheduler/job-store.js";
 import { createSchedulerTools } from "../scheduler/scheduler-tools.js";
 import { createChannelTools } from "../channels/channel-tools.js";
 import { createL2Tools } from "../memory/l2/l2-tools.js";
+import { getL2Memory } from "../memory/l2/l2-memory.js";
 import { L3Memory, createL3Tools, formatRecallForPrompt } from "../memory/l3/l3-tools.js";
 import { createPracticeTools } from "./practice-tools.js";
 import { createDocumentTools } from "./document-tools.js";
-import { INNO_SYSTEM_PROMPT } from "./system-prompt.js";
+import { createOcrTools } from "./ocr-tools.js";
+import { checkWorkspaceMutationPath } from "./workspace-path-guard.js";
+import { INNO_SYSTEM_PROMPT, ONBOARDING_GUIDE } from "./system-prompt.js";
 import { syncProvidersForSubagents } from "./provider-sync.js";
 import { questionBridge } from "./question-bridge.js";
 import { logger } from "../logger.js";
@@ -107,7 +110,7 @@ function buildWorkspaceContextSections(workspaceDir: string): string[] {
 			if (skills.length > 0) {
 				const block = formatSkillsForPrompt(skills);
 				if (block.trim()) {
-					sections.push(`# 本工作区私有技能${block}`);
+					sections.push(`# 本工作区私有技能\n${block}`);
 				}
 			}
 		} catch (err) {
@@ -117,6 +120,27 @@ function buildWorkspaceContextSections(workspaceDir: string): string[] {
 	}
 
 	return sections;
+}
+
+function formatWorkspaceFileInstructions(workspaceDir: string): string {
+	return [
+		"# 当前会话文件工作区",
+		`文件浏览器只显示此目录中的文件：\`${workspaceDir}\``,
+		"调用 write 或 edit 时必须使用相对于该目录的路径，例如 `notes.md` 或 `src/main.py`。",
+		"不要使用该目录之外的绝对路径，也不要通过 `..` 或符号链接越过该目录；越界修改会被拒绝。",
+	].join("\n");
+}
+
+/**
+ * Detect whether a bash command tries to launch a file/URL via `open` (macOS)
+ * or `xdg-open` (Linux). In browser-accessible deployments these execute on
+ * the server host where the user can't see them; the web file panel already
+ * auto-opens a preview when files are written.
+ */
+const OPEN_LAUNCH_CMD_RE = /(?:^|[;&|]|\s&&\s)\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:xdg-)?open\s+\S/;
+
+function isOpenLaunchCommand(command: string): boolean {
+	return OPEN_LAUNCH_CMD_RE.test(command);
 }
 
 export function createInnoExtension(
@@ -133,11 +157,13 @@ export function createInnoExtension(
 				baseUrl: providerConfig.baseUrl,
 				apiKey: providerConfig.apiKey || "local",
 				api: providerConfig.api ?? "openai-completions",
+				headers: providerConfig.headers,
+				authHeader: providerConfig.authHeader,
 				models: providerConfig.models.map((m) => ({
 					id: m.id,
 					name: m.name,
 					reasoning: m.reasoning,
-					input: ["text" as const, "image" as const],
+					input: m.input,
 					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 					contextWindow: m.contextWindow,
 					maxTokens: m.maxTokens,
@@ -197,10 +223,16 @@ export function createInnoExtension(
 		}
 
 		// 4. Register L2 Wiki memory tools (gated on config.memory.l2Enabled)
-		const l2Tools = createL2Tools(paths.l2DataDir, isL2Enabled);
+		const l2Memory = getL2Memory(paths.l2DataDir);
+		const l2Tools = createL2Tools(paths.l2DataDir, isL2Enabled, l2Memory);
 		for (const tool of l2Tools) {
 			pi.registerTool(tool);
 		}
+		// Backfill the retrieval index from existing wiki pages; never block boot.
+		// Index sync runs even when L2 is disabled (so re-enabling has no gap),
+		// but overview generation — a visible write to the knowledge base — is
+		// gated on L2 being enabled.
+		void l2Memory.backfill({ generateOverview: isL2Enabled() });
 
 		// 4a. Register L3 cross-conversation memory (sqlite-backed recall).
 		// Recall (auto-inject + the l3_recall tool) is gated at runtime on
@@ -221,6 +253,14 @@ export function createInnoExtension(
 			pi.registerTool(tool);
 		}
 
+		// 4c. Register OCR tool (Baidu PaddleOCR-VL). Used when the configured
+		// chat model cannot natively recognize images. Reads credentials live
+		// from configHolder so settings changes take effect without restart.
+		const ocrTools = createOcrTools(configHolder);
+		for (const tool of ocrTools) {
+			pi.registerTool(tool);
+		}
+
 		// 4b. Register practice-lab tools (when workspace registry available)
 		if (deps?.workspaceRegistry && deps.getCurrentSessionId) {
 			const practiceTools = createPracticeTools({
@@ -232,9 +272,54 @@ export function createInnoExtension(
 			}
 		}
 
-		// 5. Log all tool execution errors centrally. This covers every tool
-			// registered with the PI SDK — both Inno's custom tools and the
-			// built-in bash/read/edit/write/grep/find/ls tools — without needing
+		// 5. Keep built-in file mutations inside the workspace bound to the
+		// active session. PI accepts absolute paths, so cwd alone is not a
+		// sufficient boundary when the model emits a stale parent path.
+		pi.on("tool_call", async (event) => {
+			if (event.toolName !== "write" && event.toolName !== "edit") return undefined;
+
+			const requestedPath = event.input.path;
+			const workspaceDir = resolveActiveWorkspaceDir(paths, deps);
+			if (typeof requestedPath !== "string") {
+				return { block: true, reason: "文件路径无效，请使用当前工作区内的相对路径。" };
+			}
+
+			const check = checkWorkspaceMutationPath(workspaceDir, requestedPath);
+			if (check.allowed) return undefined;
+
+			logger.warn(
+				{
+					toolName: event.toolName,
+					requestedPath,
+					resolvedPath: check.resolvedPath,
+					workspaceDir,
+					reason: check.reason,
+				},
+				"blocked file mutation outside active workspace",
+			);
+			return {
+				block: true,
+				reason: `文件路径不在当前工作区内。当前工作区是 ${workspaceDir}，请改用相对路径后重试。`,
+			};
+		});
+
+		// 5b. Block `open`/`xdg-open` shell commands. In server deployments
+		// these run on the host where the user can't see the result; the web
+		// file panel already auto-opens a preview when files are written.
+		pi.on("tool_call", async (event) => {
+			if (event.toolName !== "bash") return undefined;
+			const command = event.input?.command;
+			if (typeof command !== "string" || !isOpenLaunchCommand(command)) return undefined;
+			logger.warn({ command }, "blocked open/xdg-open command in bash tool");
+			return {
+				block: true,
+				reason: "不要使用 open/xdg-open 命令打开文件。文件生成后用户会在浏览器右侧的文件预览面板自动看到结果；如需引导用户查看，在回复里说明文件路径即可。",
+			};
+		});
+
+		// 5a. Log all tool execution errors centrally. This covers every tool
+				// registered with the PI SDK — both Inno's custom tools and the
+				// built-in bash/read/edit/write/grep/find/ls tools — without needing
 			// per-tool try/catch blocks.
 			pi.on("tool_result", async (event) => {
 				if (event.isError) {
@@ -258,6 +343,14 @@ export function createInnoExtension(
 				// unless the learner has turned L1 off in settings.
 				if (isL1Enabled()) {
 					const profile = loadProfile(paths.learnerDataDir);
+
+					// If the profile is empty (new user), inject the structured
+					// onboarding guide so the agent prioritises building a baseline
+					// learner profile over casual conversation.
+					if (isProfileEmpty(profile)) {
+						sections.push(ONBOARDING_GUIDE);
+					}
+
 					const recentEvents = loadEvents(paths.learnerDataDir).slice(-8);
 					const contextPack = buildContextPack(profile, recentEvents);
 					const contextSection = formatContextPackForPrompt(contextPack);
@@ -266,6 +359,7 @@ export function createInnoExtension(
 
 				// Inject per-workspace context: agent.md + private skills.
 				const workspaceDir = resolveActiveWorkspaceDir(paths, deps);
+				sections.push(formatWorkspaceFileInstructions(workspaceDir));
 				sections.push(...buildWorkspaceContextSections(workspaceDir));
 
 				// Inject threshold-gated cross-conversation recall (L3). Only

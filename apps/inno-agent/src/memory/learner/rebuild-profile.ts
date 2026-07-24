@@ -1,6 +1,5 @@
 import { applyLearningEventToProfile, learningEventSummarySentence } from "./auto-profile.js";
 import { loadEvents, loadProfile, saveProfile } from "./profile-store.js";
-import { refreshContextCache } from "./context-cache.js";
 
 /**
  * Replays recorded events into the current profile. This is useful after
@@ -31,9 +30,6 @@ export function rebuildProfileFromEvents(dataDir: string): number {
 	const after = JSON.stringify(profile);
 	if (before !== after) {
 		saveProfile(dataDir, profile);
-		refreshContextCache(dataDir, profile, events.slice(-8));
-	} else {
-		refreshContextCache(dataDir, profile, events.slice(-8));
 	}
 
 	return before !== after ? applied : 0;

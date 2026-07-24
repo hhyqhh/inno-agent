@@ -5,6 +5,7 @@ import { setMaxListeners } from "node:events";
 import { installFetchLogger } from "./utils/fetch-logger.js";
 import { main, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "./config.js";
+import { applyProviderProxyBypass } from "./utils/proxy-bypass.js";
 import { createInnoExtension, type ConfigHolder } from "./agent/inno-extension.js";
 import { ensureDir } from "./storage/file-store.js";
 import { applyRuntimeEnvironment, parseRuntimeArgs, resolveRuntimePaths } from "./runtime.js";
@@ -28,6 +29,7 @@ applyRuntimeEnvironment(paths);
 
 // Load config
 const config = loadConfig(paths.configPath);
+applyProviderProxyBypass(config);
 
 // Ensure data directories exist
 ensureDir(paths.learnerDataDir);

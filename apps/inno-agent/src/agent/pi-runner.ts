@@ -195,6 +195,8 @@ export async function initSession(
 				baseUrl: providerConfig.baseUrl,
 				apiKey: providerConfig.apiKey || "local",
 				api: providerConfig.api ?? "openai-completions",
+				headers: providerConfig.headers,
+				authHeader: providerConfig.authHeader,
 				models: providerConfig.models.map(modelConfigToProviderModel),
 			});
 			_registeredProviderIds.add(providerId);
@@ -263,7 +265,7 @@ function modelConfigToProviderModel(model: InnoConfig["providers"][string]["mode
 		id: model.id,
 		name: model.name,
 		reasoning: model.reasoning,
-		input: ["text" as const, "image" as const],
+		input: model.input,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: model.contextWindow,
 		maxTokens: model.maxTokens,
@@ -302,6 +304,8 @@ export async function refreshConfiguredProviders(config: InnoConfig): Promise<vo
 			baseUrl: providerConfig.baseUrl,
 			apiKey: providerConfig.apiKey || "local",
 			api: providerConfig.api ?? "openai-completions",
+			headers: providerConfig.headers,
+			authHeader: providerConfig.authHeader,
 			models: providerConfig.models.map(modelConfigToProviderModel),
 		});
 		_registeredProviderIds.add(providerId);

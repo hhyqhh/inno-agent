@@ -23,6 +23,7 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 	workspaceWidth = getInitialWorkspaceWidth();
 
 	setRightPanelTab(tab: RightPanelTab) {
+		if (this.rightPanelTab === tab) return;
 		this.rightPanelTab = tab;
 		this.emit("change", undefined);
 	}
@@ -43,12 +44,15 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 	}
 
 	setWorkspaceMode(mode: WorkspaceMode) {
+		if (this.workspaceMode === mode) return;
 		this.workspaceMode = mode;
 		this.emit("change", undefined);
 	}
 
 	setWorkspaceWidth(width: number) {
-		this.workspaceWidth = Math.max(240, Math.min(920, Math.round(width)));
+		const next = Math.max(240, Math.min(920, Math.round(width)));
+		if (this.workspaceWidth === next) return;
+		this.workspaceWidth = next;
 		if (typeof window !== "undefined") {
 			window.localStorage.setItem("inno.workspaceWidth", String(this.workspaceWidth));
 		}

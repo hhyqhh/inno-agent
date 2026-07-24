@@ -3,14 +3,24 @@
  * Skills panel (local + library) and the Simple Mode preset grid.
  */
 
-/** Substring match (case-insensitive) on any of name / description / category. */
-export function matchesQuery(item: { name: string; description?: string; category?: string }, query: string): boolean {
+/**
+ * Substring match (case-insensitive) on any of name / description / category.
+ * `categoryLabel` is the localized display label for the category (when
+ * different from the raw value), so a search in English mode also matches the
+ * translated category — e.g. "document" finds items categorized "文档处理".
+ */
+export function matchesQuery(
+	item: { name: string; description?: string; category?: string },
+	query: string,
+	categoryLabel?: string,
+): boolean {
 	if (!query) return true;
 	const q = query.toLowerCase();
 	return (
 		item.name.toLowerCase().includes(q) ||
 		(item.description?.toLowerCase().includes(q) ?? false) ||
-		(item.category?.toLowerCase().includes(q) ?? false)
+		(item.category?.toLowerCase().includes(q) ?? false) ||
+		(categoryLabel?.toLowerCase().includes(q) ?? false)
 	);
 }
 

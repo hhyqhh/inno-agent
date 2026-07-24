@@ -1,6 +1,6 @@
 {
 	"name": "inno-agent",
-	"version": "0.4.2",
+	"version": "0.4.4",
 	"description": "Personal learning agent built on PI SDK with three-layer memory system",
 	"type": "module",
 	"bin": {
@@ -32,7 +32,10 @@
 		"source-map-support": "^0.5.21",
 		"typebox": "^1.1.24",
 		"undici": "^7.19.1",
-		"ws": "^8.21.0"
+		"ws": "^8.21.0",
+		"graphology": "^0.26.0",
+		"graphology-communities-louvain": "^2.0.2",
+		"yaml": "^2.6.1"
 	},
 	"engines": {
 		"node": ">=20.6.0"

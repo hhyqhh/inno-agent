@@ -3,6 +3,7 @@ export interface InnoModelInfo {
 	name: string;
 	provider: string;
 	reasoning: boolean;
+	input: Array<"text" | "image">;
 	contextWindow: number;
 	maxTokens: number;
 	baseUrl?: string;
@@ -12,6 +13,7 @@ export interface InnoProviderModel {
 	id: string;
 	name: string;
 	reasoning: boolean;
+	input: Array<"text" | "image">;
 	contextWindow: number;
 	maxTokens: number;
 }
@@ -20,6 +22,9 @@ export interface InnoProviderSettings {
 	baseUrl: string;
 	apiKey: string; // masked
 	api?: string;
+	headers?: Record<string, string>;
+	authHeader?: boolean;
+	bypassProxy?: boolean;
 	models: InnoProviderModel[];
 }
 
@@ -28,6 +33,9 @@ export interface UpsertProviderRequest {
 	baseUrl: string;
 	apiKey: string;
 	api: string;
+	headers?: Record<string, string>;
+	authHeader?: boolean;
+	bypassProxy?: boolean;
 	models: InnoProviderModel[];
 	makeDefault?: boolean;
 	preserveApiKey?: boolean;
@@ -92,6 +100,11 @@ export interface InnoSettings {
 	};
 	bridge?: { token: string }; // masked
 	github?: { token: string }; // masked
+	ocrApi?: {
+		token: string; // masked
+		model?: string;
+		baseUrl?: string;
+	};
 	contentHub?: {
 		type: "github" | "bundle";
 		owner: string;

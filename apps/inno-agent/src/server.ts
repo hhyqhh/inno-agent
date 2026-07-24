@@ -3,14 +3,19 @@
 import "source-map-support/register.js";
 
 import { createServer, type IncomingMessage as HttpReq, type ServerResponse } from "node:http";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFile } from "node:child_process";
 import { setMaxListeners } from "node:events";
-import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { promisify } from "node:util";
+import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+import { getL2Memory } from "./memory/l2/l2-memory.js";
+import { buildWikiGraph } from "./memory/l2/wiki-graph.js";
 import { loadConfig, saveConfig, setDefaultModel, upsertProvider, deleteProvider, deleteModel, normalizeContentHubConfig, normalizeMeetingConfig, type InnoConfig, type InnoContentHubConfig, type InnoModelConfig, type InnoProviderConfig } from "./config.js";
 import { installFetchLogger } from "./utils/fetch-logger.js";
+import { applyProviderProxyBypass } from "./utils/proxy-bypass.js";
 import { ensureDir, readJson, readText, writeJson, writeText } from "./storage/file-store.js";
 import {
 	createNewSession,
@@ -83,6 +88,7 @@ import { questionBridge, type QuestionBridgeResult } from "./agent/question-brid
 import { DEFAULT_WORKSPACE_ID, TEMP_WORKSPACE_ID, WorkspaceRegistry } from "./workspace/workspace-registry.js";
 import { listPresets, listRemotePresets, ensurePresetCached, instantiatePreset } from "./presets/preset-store.js";
 import { createContentSource, type RemoteContentSource } from "./content-source/index.js";
+import { mapWithConcurrency } from "./content-source/types.js";
 import { RunRecordStore } from "./terminal/run-record-store.js";
 import { TerminalSessionManager } from "./terminal/terminal-session-manager.js";
 import { MeetingManager } from "./meeting/meeting-manager.js";
@@ -174,6 +180,9 @@ function piEventToSseEvent(event: any): unknown | null {
 			const ev = event.assistantMessageEvent;
 			if (ev.type === "text_delta") return { type: "text_delta", delta: ev.delta };
 			if (ev.type === "thinking_delta") return { type: "thinking_delta", delta: ev.delta };
+			if (ev.type === "toolcall_start" || ev.type === "toolcall_delta" || ev.type === "toolcall_end") {
+				return toolCallStreamEventFromAssistantEvent(ev);
+			}
 			if (ev.type === "error") return { type: "error", message: ev.error.errorMessage || `LLM API error (stopReason: ${ev.error.stopReason})` };
 			return null;
 		}
@@ -191,6 +200,25 @@ function piEventToSseEvent(event: any): unknown | null {
 		default:
 			return null;
 	}
+}
+
+function toolCallStreamEventFromAssistantEvent(ev: any): unknown | null {
+	const content = Array.isArray(ev.partial?.content) ? ev.partial.content : [];
+	const block = typeof ev.contentIndex === "number" ? content[ev.contentIndex] : undefined;
+	if (!block || typeof block !== "object" || block.type !== "toolCall") return null;
+	const toolCallId = typeof block.id === "string" && block.id ? block.id : `content-${ev.contentIndex}`;
+	const toolName = typeof block.name === "string" ? block.name : "";
+	if (!toolName) return null;
+	const args = ev.type === "toolcall_end"
+		? ev.toolCall?.arguments ?? block.arguments
+		: undefined;
+	return {
+		type: "tool_call_delta",
+		toolCallId,
+		toolName,
+		...(args !== undefined ? { args } : {}),
+		...(ev.type === "toolcall_delta" && typeof ev.delta === "string" ? { argsDelta: ev.delta } : {}),
+	};
 }
 
 /** Convert a raw PI SDK event to a ChannelStreamEvent for channel streaming replies. */
@@ -234,6 +262,7 @@ async function ensureBootstrapped(): Promise<void> {
 
 		// ---- config (loaded lazily, not at process start) ----
 		config = loadConfig(paths.configPath);
+		applyProviderProxyBypass(config);
 
 		// ---- data directories ----
 		ensureDir(paths.learnerDataDir);
@@ -471,12 +500,72 @@ function maskSecret(value: string | undefined): string {
 	return value ? `****${value.slice(-4)}` : "";
 }
 
+/**
+ * Persist inline chat images (base64 data URLs from the web UI) to a
+ * workspace-local `.chat-images/` directory so file-path-based tools
+ * (`ocr_image`, `parse_document`) can read them. Returns workspace-relative
+ * paths. When the chat model cannot natively recognize images, the agent is
+ * steered (via the system prompt) to call `ocr_image` with these paths.
+ */
+function persistInlineImages(images: Array<{ data: string; mimeType: string }>): string[] {
+	if (images.length === 0) return [];
+	const workspaceDir = process.env.INNO_WORKSPACE_DIR || process.cwd();
+	const chatImagesDir = join(workspaceDir, ".chat-images");
+	try {
+		if (!existsSync(chatImagesDir)) mkdirSync(chatImagesDir, { recursive: true });
+	} catch (err) {
+		logger.warn({ err }, "failed to create .chat-images dir");
+		return [];
+	}
+	const timestamp = Date.now();
+	const paths: string[] = [];
+	images.forEach((img, idx) => {
+		const ext = mimeTypeToExtension(img.mimeType);
+		const filename = `${timestamp}-${idx}${ext}`;
+		const filePath = join(chatImagesDir, filename);
+		try {
+			writeFileSync(filePath, Buffer.from(img.data, "base64"));
+			paths.push(`.chat-images/${filename}`);
+		} catch (err) {
+			logger.warn({ err, filename }, "failed to persist inline image");
+		}
+	});
+	return paths;
+}
+
+function mimeTypeToExtension(mimeType: string): string {
+	switch (mimeType) {
+		case "image/png": return ".png";
+		case "image/jpeg": return ".jpg";
+		case "image/gif": return ".gif";
+		case "image/webp": return ".webp";
+		case "image/tiff": return ".tiff";
+		case "image/bmp": return ".bmp";
+		default: return ".png";
+	}
+}
+
+/**
+ * Prepend a path-hint block to the user prompt when inline images were
+ * persisted, so the agent knows which files to pass to `ocr_image` /
+ * `parse_document` when the model can't natively see images.
+ */
+function prependImagePathsHint(prompt: string, imagePaths: string[]): string {
+	if (imagePaths.length === 0) return prompt;
+	const list = imagePaths.map((p) => `- ${p}`).join("\n");
+	return (
+		`[用户本轮上传了 ${imagePaths.length} 张图片，已保存到工作区：\n${list}\n` +
+		`如果需要识别图片中的文字（当前模型可能不支持图片识别），请调用 ocr_image 工具并传入上述路径。]\n\n${prompt}`
+	);
+}
+
 function providerModelToRuntimeModel(model: InnoModelConfig, provider: string, baseUrl: string) {
 	return {
 		id: model.id,
 		name: model.name,
 		provider,
 		reasoning: model.reasoning,
+		input: model.input,
 		contextWindow: model.contextWindow,
 		maxTokens: model.maxTokens,
 		baseUrl,
@@ -495,6 +584,7 @@ function buildSafeSettings() {
 		name: model.name,
 		provider: model.provider,
 		reasoning: model.reasoning,
+		input: model.input,
 		contextWindow: model.contextWindow,
 		maxTokens: model.maxTokens,
 		baseUrl: model.baseUrl,
@@ -512,6 +602,9 @@ function buildSafeSettings() {
 				{
 					...providerConfig,
 					apiKey: maskSecret(providerConfig.apiKey),
+					headers: providerConfig.headers
+						? Object.fromEntries(Object.entries(providerConfig.headers).map(([key, value]) => [key, maskSecret(value)]))
+						: undefined,
 				},
 			]),
 		),
@@ -523,6 +616,13 @@ function buildSafeSettings() {
 			: undefined,
 		github: config.github
 			? { token: maskSecret(config.github.token) }
+			: undefined,
+		ocrApi: config.ocrApi
+			? {
+				token: maskSecret(config.ocrApi.token),
+				model: config.ocrApi.model,
+				baseUrl: config.ocrApi.baseUrl,
+			}
 			: undefined,
 		contentHub: config.contentHub
 			? { ...config.contentHub, token: maskSecret(config.contentHub.token) }
@@ -542,9 +642,24 @@ function parseModelConfig(value: unknown): InnoModelConfig {
 		id,
 		name: typeof record.name === "string" && record.name.trim() ? record.name.trim() : id,
 		reasoning: Boolean(record.reasoning),
+		input: ("input" in record)
+			? (Array.isArray(record.input) && record.input.includes("image") ? ["text", "image"] : ["text"])
+			: ["text", "image"],
 		contextWindow: typeof record.contextWindow === "number" ? record.contextWindow : Number(record.contextWindow ?? 128000),
 		maxTokens: typeof record.maxTokens === "number" ? record.maxTokens : Number(record.maxTokens ?? 8192),
 	};
+}
+
+function parseStringHeaders(value: unknown): Record<string, string> | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const headers: Record<string, string> = {};
+	for (const [key, headerValue] of Object.entries(value as Record<string, unknown>)) {
+		const normalizedKey = key.trim();
+		if (normalizedKey && typeof headerValue === "string") {
+			headers[normalizedKey] = headerValue;
+		}
+	}
+	return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
 function parseProviderPayload(body: Record<string, unknown>): {
@@ -552,6 +667,7 @@ function parseProviderPayload(body: Record<string, unknown>): {
 	provider: InnoProviderConfig;
 	makeDefault: boolean;
 	preserveApiKey: boolean;
+	preserveHeaders: boolean;
 } {
 	const providerId = typeof body.providerId === "string" ? body.providerId.trim() : "";
 	if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(providerId)) {
@@ -560,13 +676,23 @@ function parseProviderPayload(body: Record<string, unknown>): {
 	const baseUrl = typeof body.baseUrl === "string" ? body.baseUrl.trim() : "";
 	const apiKey = typeof body.apiKey === "string" ? body.apiKey : "";
 	const api = typeof body.api === "string" ? body.api.trim() : "openai-completions";
+	const headers = parseStringHeaders(body.headers);
 	const rawModels = Array.isArray(body.models) ? body.models : [];
 	const models = rawModels.map(parseModelConfig);
 	return {
 		providerId,
-		provider: { baseUrl, apiKey, api, models },
+		provider: {
+			baseUrl,
+			apiKey,
+			api,
+			...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+			...(body.authHeader === true ? { authHeader: true } : {}),
+			...(body.bypassProxy === true ? { bypassProxy: true } : {}),
+			models,
+		},
 		makeDefault: Boolean(body.makeDefault),
 		preserveApiKey: Boolean(body.preserveApiKey),
+		preserveHeaders: !Object.prototype.hasOwnProperty.call(body, "headers"),
 	};
 }
 
@@ -791,6 +917,7 @@ function parseSkillFrontmatter(content: string): Record<string, string | boolean
 		const kv = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
 		if (!kv) continue;
 		const raw = kv[2].trim();
+		if (kv[1] in fm) continue; // 保留第一个值（标准YAML行为）
 		fm[kv[1]] = raw === "true" ? true : raw === "false" ? false : raw.replace(/^["']|["']$/g, "");
 	}
 	return fm;
@@ -1078,27 +1205,28 @@ async function listSkillLibrary(forceRefresh = false): Promise<SkillLibraryItem[
 			: [],
 	);
 
-	const result = await Promise.all(
-		items.map(async (item): Promise<SkillLibraryItem> => {
-			// Prefer inline meta (bundle service); otherwise read SKILL.md frontmatter.
-			let description = typeof item.meta?.description === "string" ? item.meta.description : "";
-			let category = typeof item.meta?.category === "string" ? item.meta.category.trim() : "";
-			if (!description || !category) {
-				const md = await source.readItemTextFile("skills", item.name, "SKILL.md");
-				if (md) {
-					const fields = extractFrontmatterFields(md);
-					if (!description) description = fields.description;
-					if (!category) category = fields.category;
-				}
+	// One SKILL.md read per item over raw.githubusercontent.com; cap concurrency
+	// so a large library doesn't burst past the raw CDN throttle (429) and lose
+	// descriptions. Matches the preset library's approach.
+	const result = await mapWithConcurrency(items, 5, async (item): Promise<SkillLibraryItem> => {
+		// Prefer inline meta (bundle service); otherwise read SKILL.md frontmatter.
+		let description = typeof item.meta?.description === "string" ? item.meta.description : "";
+		let category = typeof item.meta?.category === "string" ? item.meta.category.trim() : "";
+		if (!description || !category) {
+			const md = await source.readItemTextFile("skills", item.name, "SKILL.md");
+			if (md) {
+				const fields = extractFrontmatterFields(md);
+				if (!description) description = fields.description;
+				if (!category) category = fields.category;
 			}
-			return {
-				name: item.name,
-				description,
-				category: category || undefined,
-				installed: localNames.has(slugifySkillName(item.name)),
-			};
-		}),
-	);
+		}
+		return {
+			name: item.name,
+			description,
+			category: category || undefined,
+			installed: localNames.has(slugifySkillName(item.name)),
+		};
+	});
 	return result.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -1330,6 +1458,106 @@ function workspaceRelativePath(rootDir: string, filePath: string): string {
 	return relative(rootDir, filePath) || "";
 }
 
+interface WorkspaceFileChange {
+	path: string;
+	change: "created" | "modified" | "deleted";
+}
+
+interface WorkspaceChangeMonitor {
+	noteToolEnd(toolCallId: string, toolName: string): void;
+	close(): void;
+}
+
+const WORKSPACE_CHANGE_IGNORES = new Set([
+	...WORKSPACE_IGNORES,
+	".next",
+	".vite",
+	"coverage",
+]);
+const MAX_WORKSPACE_CHANGE_EVENTS = 40;
+const WORKSPACE_CHANGE_SETTLE_MS = 80;
+
+function createWorkspaceChangeMonitor(
+	rootDir: string | null,
+	publish: (event: unknown) => void,
+): WorkspaceChangeMonitor | null {
+	if (!rootDir || !existsSync(rootDir)) return null;
+	const root = resolve(rootDir);
+	const pending = new Map<string, "change" | "rename">();
+	let context: { toolCallId: string; toolName: string } | null = null;
+	let timer: ReturnType<typeof setTimeout> | null = null;
+	let closed = false;
+
+	const flush = () => {
+		if (timer) clearTimeout(timer);
+		timer = null;
+		if (pending.size === 0 || !context) return;
+		const entries = Array.from(pending.entries());
+		pending.clear();
+		const changes: WorkspaceFileChange[] = [];
+		for (const [path, eventType] of entries.slice(0, MAX_WORKSPACE_CHANGE_EVENTS)) {
+			const fullPath = resolve(root, path);
+			if (existsSync(fullPath)) {
+				try {
+					if (!statSync(fullPath).isFile()) continue;
+				} catch {
+					continue;
+				}
+				changes.push({ path, change: eventType === "rename" ? "created" : "modified" });
+			} else {
+				changes.push({ path, change: "deleted" });
+			}
+		}
+		if (changes.length > 0) {
+			publish({
+				type: "workspace_change",
+				...context,
+				changes,
+				truncated: entries.length > MAX_WORKSPACE_CHANGE_EVENTS,
+			});
+		}
+	};
+
+	const scheduleFlush = () => {
+		if (!context || closed) return;
+		if (timer) clearTimeout(timer);
+		timer = setTimeout(flush, WORKSPACE_CHANGE_SETTLE_MS);
+	};
+
+	let watcher: ReturnType<typeof watch>;
+	try {
+		watcher = watch(root, { recursive: true }, (eventType, filename) => {
+			if (!filename || closed) return;
+			const fullPath = resolve(root, filename.toString());
+			const relativePath = relative(root, fullPath);
+			if (!relativePath || relativePath.startsWith("..") || isAbsolute(relativePath)) return;
+			const normalizedPath = relativePath.replaceAll("\\", "/");
+			if (normalizedPath.split("/").some((part) => WORKSPACE_CHANGE_IGNORES.has(part))) return;
+			pending.set(normalizedPath, eventType);
+			scheduleFlush();
+		});
+	} catch (err) {
+		logger.warn({ err, root }, "workspace file monitoring unavailable");
+		return null;
+	}
+
+	watcher.on("error", (err) => {
+		logger.warn({ err, root }, "workspace file monitor failed");
+	});
+
+	return {
+		noteToolEnd(toolCallId, toolName) {
+			context = { toolCallId, toolName };
+			scheduleFlush();
+		},
+		close() {
+			closed = true;
+			flush();
+			watcher.close();
+		},
+	};
+}
+
 /** Build a tree node for an installed private skill directory under `<root>/.skills`. */
 function workspaceSkillNode(root: string, skillName: string): { name: string; path: string; type: string; size: number; updatedAt: string } {
 	const dir = join(root, WORKSPACE_PRIVATE_SKILLS_DIR, skillName);
@@ -1343,27 +1571,74 @@ function workspaceSkillNode(root: string, skillName: string): { name: string; pa
 	};
 }
 
-function readWorkspaceTree(rootDir: string, dir: string, depth = 0): WorkspaceTreeNode[] {
-	if (depth > 4) return [];
-	return readdirSync(dir, { withFileTypes: true })
+// Deep enough to cover nested output conventions (e.g. skill runs that nest
+// <skill>/<slug>/<timestamp>/<artifact>/<file>), while still bounded so a
+// pathological tree cannot hang the request.
+const WORKSPACE_TREE_MAX_DEPTH = 8;
+
+/**
+ * Canonicalize a tree root for containment checks. The root itself may
+ * contain symlink components (e.g. macOS /tmp → /private/tmp); children's
+ * realpaths never match a non-canonical root, which would silently render
+ * every directory empty.
+ */
+function canonicalTreeRoot(dir: string): string {
+	try {
+		return realpathSync(dir);
+	} catch {
+		return dir;
+	}
+}
+
+function readWorkspaceTree(rootDir: string, dir: string, depth = 0, seen: ReadonlySet<string> = new Set()): WorkspaceTreeNode[] {
+	if (depth > WORKSPACE_TREE_MAX_DEPTH) return [];
+	const realRoot = canonicalTreeRoot(rootDir);
+	let entries: Dirent<string>[];
+	try {
+		entries = readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+	return entries
 		.filter((entry) => !WORKSPACE_IGNORES.has(entry.name))
 		.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name, "zh-CN"))
 		.slice(0, 200)
-		.map((entry) => {
+		.map((entry): WorkspaceTreeNode | null => {
 			const fullPath = join(dir, entry.name);
-			const stat = statSync(fullPath);
+			// statSync follows symlinks, so a directory symlink (e.g. a `latest`
+			// pointer) resolves to its target type. A broken symlink throws here
+			// and is skipped instead of crashing the whole tree with a 500.
+			let stat: ReturnType<typeof statSync>;
+			try {
+				stat = statSync(fullPath);
+			} catch {
+				return null;
+			}
+			const isDir = stat.isDirectory();
 			const node: WorkspaceTreeNode = {
 				name: entry.name,
 				path: workspaceRelativePath(rootDir, fullPath),
-				type: entry.isDirectory() ? "directory" : "file",
+				type: isDir ? "directory" : "file",
 				size: stat.size,
 				updatedAt: stat.mtime.toISOString(),
 			};
-			if (entry.isDirectory()) {
-				node.children = readWorkspaceTree(rootDir, fullPath, depth + 1);
+			if (isDir) {
+				// Resolve the real path to (a) keep symlink traversal inside the
+				// workspace root and (b) guard against symlink cycles.
+				let real: string;
+				try {
+					real = realpathSync(fullPath);
+				} catch {
+					real = fullPath;
+				}
+				const withinRoot = real === realRoot || real.startsWith(realRoot + sep);
+				node.children = withinRoot && !seen.has(real)
+					? readWorkspaceTree(rootDir, fullPath, depth + 1, new Set([...seen, real]))
+					: [];
 			}
 			return node;
-		});
+		})
+		.filter((node): node is WorkspaceTreeNode => node !== null);
 }
 
 function contentTypeForWorkspaceFile(filePath: string): string {
@@ -1389,6 +1664,114 @@ const TEXT_NOEXT_NAMES = new Set(["makefile", "dockerfile", "gemfile", "rakefile
 
 /** Office document extensions previewable via LiteParse text extraction. */
 const OFFICE_PREVIEW_EXTENSIONS = new Set([".docx", ".xlsx", ".pptx"]);
+
+/** Map an office extension to a preview format the frontend dispatches on. */
+function officeFormat(filePath: string): "docx" | "xlsx" | "pptx" | undefined {
+	const ext = extname(filePath).toLowerCase();
+	if (ext === ".docx") return "docx";
+	if (ext === ".xlsx") return "xlsx";
+	if (ext === ".pptx") return "pptx";
+	return undefined;
+}
+
+// --- PPTX → SVG conversion (pure-Python converter, no LibreOffice) ---
+const PPTX_TIMEOUT_MS = 60_000;
+const MAX_PPTX_SLIDES = 200;
+const MAX_PPTX_BYTES = 50 * 1024 * 1024;
+const execFileAsync = promisify(execFile);
+let cachedPythonExe: string | null | undefined;
+
+/** Absolute path to the vendored pptx_to_svg CLI (dev = repo, prod = bundled). */
+function pptxScriptPath(): string {
+	// In a packaged Electron app, codeDir points inside app.asar but the script
+	// is unpacked (asarUnpack) to app.asar.unpacked — Python can't read asar.
+	const base = paths.codeDir.replace(/app\.asar([\\/])/, "app.asar.unpacked$1");
+	return join(base, "scripts", "pptx_to_svg.py");
+}
+
+/** Resolve a usable Python executable, caching the result. */
+function resolvePythonExecutable(): string | null {
+	if (cachedPythonExe !== undefined) return cachedPythonExe;
+	const candidates: string[] = [];
+	const override = process.env.INNO_PYTHON?.trim();
+	if (override) candidates.push(override);
+	// On Windows the launcher is usually `python`; elsewhere prefer `python3`.
+	if (process.platform === "win32") candidates.push("python", "python3");
+	else candidates.push("python3", "python");
+	for (const candidate of candidates) {
+		try {
+			const probe = spawnSync(candidate, ["--version"], { stdio: "ignore", windowsHide: true });
+			if (!probe.error && probe.status === 0) {
+				cachedPythonExe = candidate;
+				return candidate;
+			}
+		} catch {
+			// try next candidate
+		}
+	}
+	cachedPythonExe = null;
+	return null;
+}
+
+interface PptxSvgSlide {
+	index: number;
+	svg: string;
+}
+
+interface PptxConvertResult {
+	slides: PptxSvgSlide[];
+	canvasPx?: [number, number];
+}
+
+/**
+ * Convert a .pptx to per-slide SVG strings via the vendored Python converter.
+ * Runs asynchronously (never blocks the HTTP loop) and always cleans up its
+ * temp directory. Throws on failure so the caller can return a 422 fallback.
+ */
+async function convertPptxToSvg(filePath: string): Promise<PptxConvertResult> {
+	const python = resolvePythonExecutable();
+	if (!python) {
+		throw new Error("Python is not available; set INNO_PYTHON or install python3");
+	}
+	const script = pptxScriptPath();
+	if (!existsSync(script)) {
+		throw new Error(`pptx converter not found at ${script}`);
+	}
+	const outDir = join(tmpdir(), `inno-pptx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+	ensureDir(outDir);
+	try {
+		const { stdout } = await execFileAsync(
+			python,
+			[script, filePath, "--embed-images", "--inheritance-mode", "flat", "-o", outDir],
+			{ timeout: PPTX_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
+		);
+		const svgDir = join(outDir, "svg");
+		if (!existsSync(svgDir)) {
+			throw new Error("converter produced no output");
+		}
+		const files = readdirSync(svgDir)
+			.filter((f) => /^slide_\d+\.svg$/i.test(f))
+			.sort((a, b) => {
+				const na = Number(a.match(/\d+/)?.[0] ?? 0);
+				const nb = Number(b.match(/\d+/)?.[0] ?? 0);
+				return na - nb;
+			});
+		const slides: PptxSvgSlide[] = [];
+		for (const file of files.slice(0, MAX_PPTX_SLIDES)) {
+			const index = Number(file.match(/\d+/)?.[0] ?? slides.length + 1);
+			slides.push({ index, svg: readFileSync(join(svgDir, file), "utf-8") });
+		}
+		if (slides.length === 0) {
+			throw new Error("converter produced no slides");
+		}
+		let canvasPx: [number, number] | undefined;
+		const match = /Canvas:\s*([\d.]+)\s*x\s*([\d.]+)\s*px/i.exec(stdout);
+		if (match) canvasPx = [Number(match[1]), Number(match[2])];
+		return { slides, canvasPx };
+	} finally {
+		rmSync(outDir, { recursive: true, force: true });
+	}
+}
 
 /** Whether a file looks like a dotfile config (almost always text). */
 function isDotfileText(filePath: string): boolean {
@@ -1525,6 +1908,100 @@ interface SessionSummary {
 
 type SessionTopicMetadata = Record<string, { topic: string; updatedAt: string; generated?: boolean }>;
 
+/**
+ * Serialize a parsed session (summary + merged messages) into a review-friendly
+ * Markdown document. User turns become `## 🧑 用户`, assistant turns become
+ * `## 🤖 助手`; thinking traces and tool calls are folded into `<details>` so
+ * the linear reading flow stays clean while the full trace remains available.
+ *
+ * Images are inlined as data URLs so the exported file is self-contained.
+ */
+function sessionToMarkdown(
+	summary: SessionSummary,
+	messages: SessionMessageSummary[],
+): string {
+	const lines: string[] = [];
+	const title = summary.name?.trim() || "未命名对话";
+	lines.push(`# ${title}`, "");
+	const createdAt = safeFormatDate(summary.createdAt);
+	const updatedAt = safeFormatDate(summary.updatedAt);
+	const channels = summary.channels.length > 0 ? summary.channels.join("、") : "—";
+	lines.push(
+		`> 共 ${messages.length} 条消息 · 渠道：${channels}`,
+		`> 创建：${createdAt} · 更新：${updatedAt}`,
+		`> 导出：${new Date().toISOString()}`,
+		"",
+		"---",
+		"",
+	);
+	for (const msg of messages) {
+		const time = safeFormatDate(new Date(msg.timestamp).toISOString());
+		if (msg.role === "user") {
+			lines.push(`## 🧑 用户`, "");
+			lines.push(`*${time}*`, "");
+		} else {
+			lines.push(`## 🤖 助手`, "");
+			lines.push(`*${time}*`, "");
+		}
+		if (msg.content.trim()) {
+			lines.push(msg.content.trim(), "");
+		}
+		if (msg.images && msg.images.length > 0) {
+			for (const img of msg.images) {
+				if (img.previewUrl) {
+					lines.push(`![image](${img.previewUrl})`, "");
+				}
+			}
+		}
+		if (msg.thinking && msg.thinking.trim()) {
+			lines.push(
+				"<details><summary>💭 思考过程</summary>",
+				"",
+				msg.thinking.trim(),
+				"",
+				"</details>",
+				"",
+			);
+		}
+		if (msg.tools && msg.tools.length > 0) {
+			for (const tool of msg.tools) {
+				const tag = tool.isError ? "❌" : "🔧";
+				lines.push(
+					`<details><summary>${tag} 工具调用：${tool.toolName}</summary>`,
+					"",
+					"**参数：**",
+					"",
+					"```json",
+					safeStringify(tool.args),
+					"```",
+					"",
+				);
+				if (tool.result !== undefined) {
+					lines.push("**结果：**", "", "```json", safeStringify(tool.result), "```", "");
+				}
+				lines.push("</details>", "");
+			}
+		}
+	}
+	return lines.join("\n");
+}
+
+/** Format an ISO date string for display; returns "—" on invalid input. */
+function safeFormatDate(iso: string): string {
+	const t = Date.parse(iso);
+	if (Number.isNaN(t)) return "—";
+	return new Date(t).toISOString().replace("T", " ").replace(/\.\d+Z$/, "Z");
+}
+
+/** Pretty JSON.stringify with a fallback for non-serializable values. */
+function safeStringify(value: unknown): string {
+	try {
+		return JSON.stringify(value, null, 2) ?? String(value);
+	} catch {
+		return String(value);
+	}
+}
+
 function sessionTopicMetadataPath(): string {
 	return join(dataDir, "sessions", "meta.json");
 }
@@ -1546,7 +2023,7 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 		const messages: SessionMessageSummary[] = [];
 		const channels = new Set<SessionChannel>();
 		let createdAt = "";
-		let updatedAt = "";
+		let lastMessageAt = "";
 
 		// Aggregator for the in-progress assistant turn. PI splits one assistant
 		// turn into multiple JSONL entries (thinking + toolCalls + toolResults
@@ -1569,38 +2046,49 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 			const entry = JSON.parse(line) as Record<string, unknown>;
 			const timestamp = typeof entry.timestamp === "string" ? entry.timestamp : "";
 			if (!createdAt && timestamp) createdAt = timestamp;
-			if (timestamp) updatedAt = timestamp;
-			const entryText = line.toLowerCase();
-			// Detect channel from entry content
+			// Detect channel ONLY from structured JSON fields written by the system
+			// (message.channel / message.source / message.api / message.model).
+			// We intentionally do NOT substring-match the raw line for natural-language
+			// keywords like "飞书" / "scheduled" — those appear in ordinary user/assistant
+			// text and would falsely tag a web session as a feishu/scheduler session.
+			// Verified on unmodified code: a learner asking "飞书的英文名?" (user text)
+			// or a reply that merely mentions "飞书" (assistant text) both got mislabeled
+			// as channel=feishu even though origin stayed web. The authoritative channel
+			// record lives in channels.json (via recordCurrentSessionChannel); this
+			// detection is only a best-effort hint for legacy sessions that predate it.
 			let entryChannel: SessionChannel | undefined;
-			if (entryText.includes('"channel":"feishu"') || entryText.includes("飞书") || entryText.includes("附件已下载到")) {
+			const msgObj = entry.type === "message" && entry.message && typeof entry.message === "object"
+				? entry.message as Record<string, unknown>
+				: undefined;
+			const channelField = typeof msgObj?.channel === "string" ? (msgObj.channel as string) : "";
+			const sourceField = typeof msgObj?.source === "string" ? (msgObj.source as string) : "";
+			const apiField = typeof msgObj?.api === "string" ? (msgObj.api as string) : "";
+			const modelField = typeof msgObj?.model === "string" ? (msgObj.model as string) : "";
+			if (channelField === "feishu") {
 				channels.add("feishu");
 				entryChannel = "feishu";
 			}
-			if (entryText.includes('"channel":"wechat"') || entryText.includes('"channel":"wecom"')) {
+			if (channelField === "wechat" || channelField === "wecom") {
 				channels.add("wechat");
 				entryChannel = entryChannel ?? "wechat";
 			}
-			if (entryText.includes('"channel":"qq"')) {
+			if (channelField === "qq") {
 				channels.add("qq");
 				entryChannel = entryChannel ?? "qq";
 			}
-			if (entryText.includes('"source":"web"') || entryText.includes('"channel":"web"')) {
+			if (sourceField === "web" || channelField === "web") {
 				channels.add("web");
 				entryChannel = entryChannel ?? "web";
 			}
-			if (entryText.includes('"tasktype"') || entryText.includes("scheduled")) {
-				channels.add("scheduler");
-				entryChannel = entryChannel ?? "scheduler";
-			}
-			// Check for scheduler-authored assistant messages
-			if (entryText.includes('"api":"inno-background"') || entryText.includes('"model":"scheduler"')) {
+			// Scheduler-authored assistant messages carry a synthetic api/model marker.
+			if (apiField === "inno-background" || modelField === "scheduler") {
 				channels.add("scheduler");
 				entryChannel = entryChannel ?? "scheduler";
 			}
 
-			if (entry.type !== "message" || !entry.message || typeof entry.message !== "object") continue;
-			const message = entry.message as Record<string, unknown>;
+			if (!msgObj) continue;
+			if (timestamp) lastMessageAt = timestamp;
+			const message = msgObj;
 			const role = message.role;
 			const ts = timestamp ? Date.parse(timestamp) : Date.now();
 			const messageId =
@@ -1691,7 +2179,7 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 				id: basename(filePath),
 				name,
 				createdAt: createdAt || fallbackTime,
-				updatedAt: updatedAt || fallbackTime,
+				updatedAt: lastMessageAt || createdAt || fallbackTime,
 				messageCount: filtered.length,
 				preview,
 				channels: channels.size > 0 ? Array.from(channels) : [],
@@ -2318,25 +2806,50 @@ const server = createServer(async (req, res) => {
 				json(res, 404, { error: "Skill not found" });
 				return;
 			}
-			function readSkillTree(dir: string, depth = 0): WorkspaceTreeNode[] {
-				if (depth > 4) return [];
-				return readdirSync(dir, { withFileTypes: true })
+			const skillRootReal = canonicalTreeRoot(skillDir);
+			function readSkillTree(dir: string, depth = 0, seen: ReadonlySet<string> = new Set()): WorkspaceTreeNode[] {
+				if (depth > WORKSPACE_TREE_MAX_DEPTH) return [];
+				let entries: Dirent<string>[];
+				try {
+					entries = readdirSync(dir, { withFileTypes: true });
+				} catch {
+					return [];
+				}
+				return entries
 					.filter((e) => !e.name.startsWith(".") && e.name !== "__MACOSX" && e.name !== "node_modules")
 					.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name, "zh-CN"))
 					.slice(0, 200)
-					.map((entry) => {
+					.map((entry): WorkspaceTreeNode | null => {
 						const fullPath = join(dir, entry.name);
-						const st = statSync(fullPath);
+						let st: ReturnType<typeof statSync>;
+						try {
+							st = statSync(fullPath);
+						} catch {
+							return null;
+						}
+						const isDir = st.isDirectory();
 						const node: WorkspaceTreeNode = {
 							name: entry.name,
 							path: relative(skillDir, fullPath),
-							type: entry.isDirectory() ? "directory" : "file",
+							type: isDir ? "directory" : "file",
 							size: st.size,
 							updatedAt: st.mtime.toISOString(),
 						};
-						if (entry.isDirectory()) node.children = readSkillTree(fullPath, depth + 1);
+						if (isDir) {
+							let real: string;
+							try {
+								real = realpathSync(fullPath);
+							} catch {
+								real = fullPath;
+							}
+							const withinRoot = real === skillRootReal || real.startsWith(skillRootReal + sep);
+							node.children = withinRoot && !seen.has(real)
+								? readSkillTree(fullPath, depth + 1, new Set([...seen, real]))
+								: [];
+						}
 						return node;
-					});
+					})
+					.filter((node): node is WorkspaceTreeNode => node !== null);
 			}
 			const st = statSync(skillDir);
 			json(res, 200, {
@@ -2438,6 +2951,7 @@ const server = createServer(async (req, res) => {
 			const channelMetadata = readSessionChannelMetadata();
 			const topicMetadata = readSessionTopicMetadata();
 			const archiveMetadata = readJson<Record<string, boolean>>(sessionArchiveMetadataPath(), {});
+			const currentSessionId = getCurrentSessionId();
 			const sessions = existsSync(sessionDir)
 				? readdirSync(sessionDir)
 						.filter((file) => file.endsWith(".jsonl"))
@@ -2447,9 +2961,37 @@ const server = createServer(async (req, res) => {
 						.map((summary) => bindCliSessionWorkspace(summary))
 						.map((summary) => withRecordedTopic(summary, topicMetadata))
 						.map((summary) => ({ ...summary, archived: archiveMetadata[summary.id] === true }))
+						.filter((summary) => summary.messageCount > 0 || (summary.id === currentSessionId && summary.origin === "web"))
 						.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
 				: [];
 			json(res, 200, sessions);
+			return;
+		}
+
+		const exportSessionMatch = matchRoute("GET", method, url, "/api/sessions/:id/export.md");
+		if (exportSessionMatch) {
+			const sessionPath = sessionFileFromId(join(dataDir, "sessions"), decodeURIComponent(exportSessionMatch.id));
+			if (!sessionPath || !existsSync(sessionPath)) {
+				json(res, 404, { error: "Session not found" });
+				return;
+			}
+			const parsed = parseSessionFile(sessionPath);
+			if (!parsed) {
+				json(res, 422, { error: "Unable to parse session" });
+				return;
+			}
+			const summary = withRecordedTopic(
+				withRecordedChannels(parsed.summary, readSessionChannelMetadata()),
+				readSessionTopicMetadata(),
+			);
+			const md = sessionToMarkdown(summary, parsed.messages);
+			const baseName = (summary.name?.trim() || summary.id.replace(/\.jsonl$/, "")).replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
+			res.writeHead(200, {
+				"Content-Type": "text/markdown; charset=utf-8",
+				"Content-Disposition": contentDispositionAttachment(`${baseName}.md`),
+				"Cache-Control": "no-store",
+			});
+			res.end(md);
 			return;
 		}
 
@@ -2541,6 +3083,10 @@ const server = createServer(async (req, res) => {
 		if (method === "POST" && url === "/api/sessions") {
 			const body = await readBody(req).catch(() => ({})) as Record<string, unknown>;
 			const id = await createNewSession();
+			// This endpoint is exclusively the Web UI's session-creation path.
+			// Record the origin immediately so Simple Mode includes the new empty
+			// session before the first assistant response has finished streaming.
+			recordCurrentSessionChannel("web", id, { setOriginIfEmpty: true });
 
 			// Determine target workspace. The UI chooser always sends an explicit
 			// choice (new/existing); temp is only a safety fallback. A presetId
@@ -2753,6 +3299,7 @@ const server = createServer(async (req, res) => {
 				syncManifestTagsForWikiPage(l2DataDir, path, frontmatter.source_ids, frontmatter.tags);
 			}
 			refreshL2TagIndex();
+			await getL2Memory(l2DataDir).indexPageByPath(path);
 			json(res, 200, { path, saved: true });
 			return;
 		}
@@ -2806,6 +3353,7 @@ const server = createServer(async (req, res) => {
 				rmSync(fullPath);
 				removeWikiPathFromManifest(l2DataDir, path);
 				refreshL2TagIndex();
+				await getL2Memory(l2DataDir).removePage(path);
 				json(res, 200, { path, deleted: true });
 			} catch (err) {
 				logger.warn({ err }, "failed to delete wiki page");
@@ -2817,61 +3365,7 @@ const server = createServer(async (req, res) => {
 		if (method === "GET" && url === "/api/wiki/graph") {
 			try {
 				refreshL2TagIndex();
-				const nodes: unknown[] = [];
-				const edges: unknown[] = [];
-				const titleToNodeId = new Map<string, string>();
-				const pendingLinks: { source: string; target: string }[] = [];
-
-				for (const wikiPath of listWikiPagePaths()) {
-					const fullPath = join(l2DataDir, wikiPath);
-					if (!existsSync(fullPath)) continue;
-					const content = readText(fullPath);
-					const { frontmatter, body } = parseFrontmatter(content);
-					if (!frontmatter) continue;
-
-					const nodeId = wikiPath;
-					titleToNodeId.set(frontmatter.title, nodeId);
-					titleToNodeId.set(wikiPath, nodeId);
-					titleToNodeId.set(basename(wikiPath, extname(wikiPath)), nodeId);
-					nodes.push({
-						id: nodeId,
-						title: frontmatter.title,
-						type: frontmatter.type,
-						tags: frontmatter.tags,
-					});
-
-					// Extract [[wiki links]] from body
-					const linkPattern = /\[\[([^\]]+)\]\]/g;
-					let match;
-					while ((match = linkPattern.exec(body)) !== null) {
-						const linkText = match[1].split("|")[0].trim();
-						pendingLinks.push({ source: nodeId, target: linkText });
-					}
-
-					// Shared tag edges
-					for (const tag of frontmatter.tags) {
-						edges.push({ source: nodeId, target: `tag:${tag}`, type: "tag" });
-					}
-				}
-
-				for (const link of pendingLinks) {
-					edges.push({ source: link.source, target: titleToNodeId.get(link.target) ?? link.target, type: "link" });
-				}
-
-				// Add tag and unresolved wiki-link nodes
-				const tagNodes = new Set<string>();
-				for (const edge of edges as { source: string; target: string; type: string }[]) {
-					if (edge.type === "tag" && !tagNodes.has(edge.target)) {
-						tagNodes.add(edge.target);
-						nodes.push({ id: edge.target, title: edge.target.replace("tag:", "#"), type: "tag", tags: [] });
-					}
-					if (edge.type === "link" && !titleToNodeId.has(edge.target)) {
-						titleToNodeId.set(edge.target, edge.target);
-						nodes.push({ id: edge.target, title: edge.target, type: "concept", tags: [] });
-					}
-				}
-
-				json(res, 200, { nodes, edges });
+				json(res, 200, buildWikiGraph(l2DataDir));
 			} catch (err) {
 				logger.warn({ err }, "failed to build wiki graph");
 				json(res, 200, { nodes: [], edges: [] });
@@ -3150,18 +3644,23 @@ const server = createServer(async (req, res) => {
 			if (!forceText && (kind === "binary" || kind === "pdf" || kind === "image" || kind === "office")) {
 				const relPath = workspaceRelativePath(root, filePath);
 				const rawUrl = `/api/workspace/raw?workspaceId=${encodeURIComponent(wsId)}&path=${encodeURIComponent(relPath)}`;
+				const format = kind === "office" ? officeFormat(filePath) : undefined;
+				// pptx is rendered as SVG via the Python converter; docx/xlsx are
+				// rendered client-side from the raw bytes, so they need no previewUrl.
+				let previewUrl: string | undefined;
+				if (format === "pptx") {
+					previewUrl = `/api/workspace/pptx-preview?workspaceId=${encodeURIComponent(wsId)}&path=${encodeURIComponent(relPath)}`;
+				}
 				json(res, 200, {
 					path: relPath,
 					name: basename(filePath),
 					kind,
+					format,
 					mimeType: contentType,
 					size: stat.size,
 					updatedAt: stat.mtime.toISOString(),
 					url: rawUrl,
-					// Office docs carry a separate URL that returns extracted text JSON.
-					previewUrl: kind === "office"
-						? `/api/workspace/office-preview?workspaceId=${encodeURIComponent(wsId)}&path=${encodeURIComponent(relPath)}`
-						: undefined,
+					previewUrl,
 				});
 				return;
 			}
@@ -3266,6 +3765,38 @@ const server = createServer(async (req, res) => {
 			} catch (err) {
 				logger.warn({ err }, "failed to parse office document");
 				json(res, 422, { error: err instanceof Error ? err.message : "Failed to parse document" });
+			}
+			return;
+		}
+
+		// Render a .pptx as per-slide SVG via the vendored Python converter.
+		if (method === "GET" && url.startsWith("/api/workspace/pptx-preview?")) {
+			const params = new URL(url, "http://localhost").searchParams;
+			const requestedPath = params.get("path") ?? "";
+			const wsId = workspaceIdFromQuery(url);
+			const filePath = safeWorkspacePath(wsId, requestedPath);
+			if (!filePath || !existsSync(filePath) || !statSync(filePath).isFile()) {
+				json(res, 404, { error: "Workspace file not found" });
+				return;
+			}
+			if (statSync(filePath).size > MAX_PPTX_BYTES) {
+				json(res, 413, { error: "Presentation is too large to preview" });
+				return;
+			}
+			try {
+				const result = await convertPptxToSvg(filePath);
+				json(res, 200, {
+					name: basename(filePath),
+					slideCount: result.slides.length,
+					slides: result.slides,
+					canvasPx: result.canvasPx,
+				});
+			} catch (err) {
+				logger.warn({ err }, "failed to convert pptx to svg");
+				json(res, 422, {
+					error: err instanceof Error ? err.message : "Failed to render presentation",
+					code: "PPTX_CONVERT_FAILED",
+				});
 			}
 			return;
 		}
@@ -3475,7 +4006,9 @@ const server = createServer(async (req, res) => {
 			try {
 				const remote = await listRemotePresets(getContentSource(), forceRefresh);
 				if (remote.length > 0) {
-					json(res, 200, remote);
+					const merged = new Map(listPresets(paths).map((preset) => [preset.id, preset]));
+					for (const preset of remote) merged.set(preset.id, preset);
+					json(res, 200, Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name)));
 				} else {
 					json(res, 200, listPresets(paths));
 				}
@@ -4460,8 +4993,10 @@ const server = createServer(async (req, res) => {
 				upsertProvider(config, payload.providerId, payload.provider, {
 					makeDefault: payload.makeDefault,
 					preserveApiKey: payload.preserveApiKey,
+					preserveHeaders: payload.preserveHeaders,
 				}),
 			);
+			applyProviderProxyBypass(config);
 			await refreshConfiguredProviders(config);
 			if (payload.makeDefault) {
 				await switchModel(config.defaultProvider, config.defaultModel);
@@ -4666,6 +5201,33 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		// --- OCR API settings (Baidu PaddleOCR-VL token / model / baseUrl) ---
+		if (method === "PUT" && url === "/api/settings/ocr") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			if (typeof body.token !== "string") {
+				json(res, 400, { error: "Missing token (string)" });
+				return;
+			}
+			const incoming = body.token.trim();
+			// A masked value (e.g. "****abcd") means "keep the existing token".
+			const token = incoming.startsWith("****") ? (config.ocrApi?.token ?? "") : incoming;
+			const model = typeof body.model === "string" ? body.model.trim() : config.ocrApi?.model;
+			const baseUrl = typeof body.baseUrl === "string" ? body.baseUrl.trim() : config.ocrApi?.baseUrl;
+			if (!token) {
+				config.ocrApi = undefined;
+			} else {
+				config.ocrApi = {
+					token,
+					model: model || undefined,
+					baseUrl: baseUrl || undefined,
+				};
+			}
+			config = saveConfig(paths.configPath, config);
+			syncConfig(config);
+			json(res, 200, buildSafeSettings());
+			return;
+		}
+
 		// --- Content Hub settings (source for skill library + presets) ---
 		if (method === "PUT" && url === "/api/settings/content-hub") {
 			const body = (await readBody(req)) as Record<string, unknown>;
@@ -4790,6 +5352,10 @@ const server = createServer(async (req, res) => {
 				.filter((img): img is { data: string; mimeType: string } =>
 					img && typeof img.data === "string" && typeof img.mimeType === "string")
 				.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
+			// Persist inline images to the workspace so file-path tools (ocr_image,
+			// parse_document) can read them when the chat model can't see images.
+			const imagePaths = persistInlineImages(images);
+			const promptWithHint = prependImagePathsHint(prompt, imagePaths);
 			// Use atomic switch+prompt when a specific session is requested.
 			const requestedSessionId = typeof body.sessionId === "string" ? body.sessionId : null;
 			let output: string;
@@ -4797,12 +5363,12 @@ const server = createServer(async (req, res) => {
 				if (requestedSessionId) {
 					const sessionPath = sessionFileFromId(join(dataDir, "sessions"), requestedSessionId);
 					if (sessionPath && existsSync(sessionPath)) {
-						output = await runPromptInSession(sessionPath, prompt, images.length ? images : undefined);
+						output = await runPromptInSession(sessionPath, promptWithHint, images.length ? images : undefined);
 					} else {
-						output = await runPromptSerialized(prompt, images.length ? images : undefined);
+						output = await runPromptSerialized(promptWithHint, images.length ? images : undefined);
 					}
 				} else {
-					output = await runPromptSerialized(prompt, images.length ? images : undefined);
+					output = await runPromptSerialized(promptWithHint, images.length ? images : undefined);
 				}
 			} catch (err) {
 				logger.error({ err, sessionId: requestedSessionId }, "Non-streaming chat LLM call failed");
@@ -4859,20 +5425,32 @@ const server = createServer(async (req, res) => {
 				"X-Accel-Buffering": "no",
 			});
 			let ended = false;
+			const eventsHeartbeat = setInterval(() => {
+				if (!ended) {
+					try {
+						res.write(": heartbeat\n\n");
+						logger.debug({ sessionId }, "SSE event replay heartbeat sent");
+					} catch (err) {
+						logger.warn({ sessionId, err }, "SSE event replay heartbeat write failed");
+					}
+				}
+			}, 15_000);
 			const unsub = bc.subscribe((event: unknown) => {
 				if (ended) return;
 				res.write(`data: ${JSON.stringify(event)}\n\n`);
 				if ((event as any).type === "done" || ((event as any).type === "error" && !(event as any).toolCallId)) {
+					clearInterval(eventsHeartbeat);
 					res.write("data: [DONE]\n\n");
 					ended = true;
 					res.end();
 				}
 			});
 			if (bc.closed && !ended) {
+				clearInterval(eventsHeartbeat);
 				res.write("data: [DONE]\n\n");
 				res.end();
 			}
-			req.on("close", unsub);
+			req.on("close", () => { clearInterval(eventsHeartbeat); unsub(); });
 			return;
 		}
 
@@ -4889,6 +5467,10 @@ const server = createServer(async (req, res) => {
 				.filter((img): img is { data: string; mimeType: string } =>
 					img && typeof img.data === "string" && typeof img.mimeType === "string")
 				.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
+			// Persist inline images to the workspace so file-path tools (ocr_image,
+			// parse_document) can read them when the chat model can't see images.
+			const imagePaths = persistInlineImages(images);
+			const promptWithHint = prependImagePathsHint(prompt, imagePaths);
 			const imageArgs = images.length ? images : undefined;
 
 			// Resolve target session path for atomic switch+stream.
@@ -4914,8 +5496,21 @@ const server = createServer(async (req, res) => {
 			};
 
 			let aborted = false;
+
+			const heartbeatInterval = setInterval(() => {
+				if (!aborted) {
+					try {
+						res.write(": heartbeat\n\n");
+						logger.debug({ sessionId: capturedSessionId }, "SSE heartbeat sent");
+					} catch (err) {
+						logger.warn({ sessionId: capturedSessionId, err }, "SSE heartbeat write failed");
+					}
+				}
+			}, 15_000);
+
 			req.on("close", () => {
 				aborted = true;
+				clearInterval(heartbeatInterval);
 				questionBridge.setEmitter(null);
 				questionBridge.cancel();
 			});
@@ -4926,6 +5521,14 @@ const server = createServer(async (req, res) => {
 			// to the event stream after navigating away.
 			const broadcaster = new SessionEventBroadcaster();
 			sessionBroadcasters.set(capturedSessionId, broadcaster);
+			const publishStreamEvent = (event: unknown) => {
+				broadcaster.publish(event);
+				if (!aborted) sseWrite(event);
+			};
+
+			const streamWorkspaceId = workspaceRegistry.getSessionWorkspaceId(capturedSessionId);
+			const streamWorkspaceRoot = workspaceRegistry.resolveWorkspaceDir(streamWorkspaceId);
+			const workspaceChangeMonitor = createWorkspaceChangeMonitor(streamWorkspaceRoot, publishStreamEvent);
 
 			// Track whether the model API surfaced an error this turn. The PI SDK
 			// does NOT throw on model API errors (e.g. HTTP 413 from an over-long
@@ -4966,6 +5569,7 @@ const server = createServer(async (req, res) => {
 						);
 						break;
 					case "tool_execution_end":
+						workspaceChangeMonitor?.noteToolEnd(event.toolCallId, event.toolName);
 						if (event.isError) {
 							const errText = Array.isArray(event.result?.content)
 								? event.result.content.map((c: { text?: string }) => c.text ?? "").join(" ").slice(0, 500)
@@ -4996,12 +5600,9 @@ const server = createServer(async (req, res) => {
 						break;
 				}
 
-				// Convert to SSE event and publish to broadcaster + live client
+				// Convert to an SSE event and publish to broadcaster + live client.
 				const sseEvent = piEventToSseEvent(event);
-				if (sseEvent) {
-					broadcaster.publish(sseEvent);
-					if (!aborted) sseWrite(sseEvent);
-				}
+				if (sseEvent) publishStreamEvent(sseEvent);
 			};
 
 			promptStartTime = Date.now();
@@ -5009,8 +5610,8 @@ const server = createServer(async (req, res) => {
 				// Use atomic switch+stream when a specific session is requested,
 				// preventing race conditions with channel session switches.
 				const fullText = targetSessionPath
-					? await runPromptStreamingInSession(targetSessionPath, prompt, onEvent, imageArgs)
-					: await runPromptStreaming(prompt, onEvent, imageArgs);
+					? await runPromptStreamingInSession(targetSessionPath, promptWithHint, onEvent, imageArgs)
+					: await runPromptStreaming(promptWithHint, onEvent, imageArgs);
 				const doneEvent = { type: "done", fullText };
 				broadcaster.publish(doneEvent);
 				if (!aborted) sseWrite(doneEvent);
@@ -5026,6 +5627,8 @@ const server = createServer(async (req, res) => {
 					sseWrite(errorEvent);
 				}
 			} finally {
+				clearInterval(heartbeatInterval);
+				workspaceChangeMonitor?.close();
 				// Always attribute this turn to the web channel — even on abort or
 				// error — so an interrupted first prompt keeps origin "web" instead
 				// of being mislabeled "cli" (which happens when no channels.json
@@ -5038,14 +5641,14 @@ const server = createServer(async (req, res) => {
 				// session stays in the sidebar and can be reopened. No-op when an
 				// assistant message already exists (normal/errored turns).
 				persistPendingUserTurn(capturedSessionId);
-				// Keep the broadcaster alive for 60s so reconnecting clients can
-				// replay the full event history, then clean up.
+				// Keep the broadcaster alive for 5 minutes so reconnecting
+				// clients (e.g. after gateway timeout) can replay event history.
 				setTimeout(() => {
 					if (sessionBroadcasters.get(capturedSessionId) === broadcaster) {
 						broadcaster.close();
 						sessionBroadcasters.delete(capturedSessionId);
 					}
-				}, 60_000);
+				}, 300_000);
 			}
 			if (!aborted) {
 				res.write("data: [DONE]\n\n");

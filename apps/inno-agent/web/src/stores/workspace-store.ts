@@ -13,6 +13,19 @@ import {
 } from "../api/workspace.js";
 import type { WorkspaceFileDetail, WorkspaceTree } from "../types/workspace.js";
 
+export interface StreamingWorkspacePreview {
+	id: string;
+	title: string;
+	path?: string;
+	language: string;
+	content: string;
+	status: "streaming" | "done" | "error";
+	stage?: string;
+	source: "assistant" | "tool";
+	createdAt: number;
+	updatedAt: number;
+}
+
 interface WorkspaceStoreEvents {
 	change: void;
 }
@@ -24,6 +37,7 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	isLoadingFile = false;
 	isMutating = false;
 	error = "";
+	streamingPreview: StreamingWorkspacePreview | null = null;
 
 	/** The workspace currently shown in the panel. null → server default. */
 	activeWorkspaceId: string | null = null;
@@ -89,6 +103,60 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 			this.isLoadingFile = false;
 			this.emit("change", undefined);
 		}
+	}
+
+	startStreamingPreview(input: {
+		id: string;
+		title: string;
+		path?: string;
+		language?: string;
+		content?: string;
+		stage?: string;
+		source?: StreamingWorkspacePreview["source"];
+	}): void {
+		const now = Date.now();
+		this.streamingPreview = {
+			id: input.id,
+			title: input.title,
+			path: input.path,
+			language: input.language ?? languageFromPath(input.path ?? input.title),
+			content: input.content ?? "",
+			status: "streaming",
+			stage: input.stage,
+			source: input.source ?? "assistant",
+			createdAt: now,
+			updatedAt: now,
+		};
+		this.emit("change", undefined);
+	}
+
+	updateStreamingPreview(id: string, patch: Partial<Pick<StreamingWorkspacePreview, "title" | "path" | "language" | "content" | "status" | "stage">>): void {
+		if (!this.streamingPreview || this.streamingPreview.id !== id) return;
+		const keys = ["title", "path", "language", "content", "status", "stage"] as const;
+		if (!keys.some((key) => key in patch && patch[key] !== this.streamingPreview?.[key])) return;
+		this.streamingPreview = {
+			...this.streamingPreview,
+			...patch,
+			updatedAt: Date.now(),
+		};
+		this.emit("change", undefined);
+	}
+
+	finishStreamingPreview(id: string, status: "done" | "error" = "done"): void {
+		if (!this.streamingPreview || this.streamingPreview.id !== id) return;
+		if (this.streamingPreview.status === status) return;
+		this.streamingPreview = {
+			...this.streamingPreview,
+			status,
+			updatedAt: Date.now(),
+		};
+		this.emit("change", undefined);
+	}
+
+	clearStreamingPreview(id?: string): void {
+		if (id && this.streamingPreview?.id !== id) return;
+		this.streamingPreview = null;
+		this.emit("change", undefined);
 	}
 
 	/* --- Edit lifecycle --- */
@@ -277,3 +345,18 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 }
 
 export const workspaceStore = new WorkspaceStoreImpl();
+
+function languageFromPath(path: string): string {
+	const lower = path.toLowerCase();
+	if (lower.endsWith(".ts") || lower.endsWith(".tsx")) return "typescript";
+	if (lower.endsWith(".js") || lower.endsWith(".jsx") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) return "javascript";
+	if (lower.endsWith(".py")) return "python";
+	if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "markdown";
+	if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
+	if (lower.endsWith(".css") || lower.endsWith(".scss") || lower.endsWith(".less")) return "css";
+	if (lower.endsWith(".json") || lower.endsWith(".jsonl")) return "json";
+	if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "yaml";
+	if (lower.endsWith(".sql")) return "sql";
+	if (lower.endsWith(".sh") || lower.endsWith(".bash") || lower.endsWith(".zsh")) return "bash";
+	return "plaintext";
+}

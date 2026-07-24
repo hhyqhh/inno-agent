@@ -25,10 +25,13 @@ interface PiModelsJson {
 		baseUrl?: string;
 		apiKey?: string;
 		api?: string;
+		headers?: Record<string, string>;
+		authHeader?: boolean;
 		models?: Array<{
 			id: string;
 			name?: string;
 			reasoning?: boolean;
+			input?: Array<"text" | "image">;
 			contextWindow?: number;
 			maxTokens?: number;
 		}>;
@@ -70,10 +73,13 @@ export function syncProvidersForSubagents(config: InnoConfig): void {
 			baseUrl: providerConfig.baseUrl,
 			apiKey: providerConfig.apiKey,
 			api: providerConfig.api,
+			headers: providerConfig.headers,
+			authHeader: providerConfig.authHeader,
 			models: providerConfig.models.map((m) => ({
 				id: m.id,
 				name: m.name,
 				reasoning: m.reasoning,
+				input: m.input,
 				contextWindow: m.contextWindow,
 				maxTokens: m.maxTokens,
 			})),

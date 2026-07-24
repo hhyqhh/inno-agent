@@ -2,7 +2,6 @@ import { join } from "node:path";
 import { readJson, writeJson, appendJsonl, readJsonl } from "../../storage/file-store.js";
 import { type LearnerProfile, type LearningEvent, createDefaultProfile } from "./types.js";
 import { applyLearningEventToProfile } from "./auto-profile.js";
-import { refreshContextCache } from "./context-cache.js";
 
 const PROFILE_FILE = "profile.json";
 const EVENTS_FILE = "events.jsonl";
@@ -40,9 +39,21 @@ export function recordEventAndUpdateProfile(dataDir: string, event: LearningEven
 	const profile = loadProfile(dataDir);
 	if (applyLearningEventToProfile(profile, event)) {
 		saveProfile(dataDir, profile);
-		refreshContextCache(dataDir, profile, loadEvents(dataDir).slice(-8));
 	}
 	return profile;
+}
+
+/**
+ * Check whether the learner profile is effectively empty (new user).
+ * Returns true when no goals, knowledge states, summary, or preferences
+ * have been recorded — indicating a first-time user who needs onboarding.
+ */
+export function isProfileEmpty(profile: LearnerProfile): boolean {
+	return profile.goals.length === 0
+		&& profile.knowledge_states.length === 0
+		&& profile.profile_summary === ""
+		&& profile.preferences.explanation_style.length === 0
+		&& profile.preferences.practice_style.length === 0;
 }
 
 /**

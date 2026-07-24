@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Tree, type NodeRendererProps, type TreeApi, type CreateHandler, type RenameHandler, type DeleteHandler, type MoveHandler } from "react-arborist";
 import CodeMirror from "@uiw/react-codemirror";
@@ -16,20 +16,82 @@ import { cpp } from "@codemirror/lang-cpp";
 import { rust } from "@codemirror/lang-rust";
 import { go } from "@codemirror/lang-go";
 import type { Extension } from "@codemirror/state";
-import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, FileCode2 } from "lucide-react";
-import { workspaceStore } from "../stores/workspace-store.js";
+import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, FileCode2, Presentation, FileSpreadsheet, Copy, Check } from "lucide-react";
+import { workspaceStore, type StreamingWorkspacePreview } from "../stores/workspace-store.js";
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { settingsStore } from "../stores/settings-store.js";
+import { appStore } from "../stores/app-store.js";
 import { getSessionWorkspace } from "../api/workspaces.js";
 import { TerminalDrawer } from "./terminal/TerminalDrawer.js";
 import { RunButton } from "./terminal/RunButton.js";
 import { MilkdownEditor } from "./notebook/MilkdownEditor.js";
-import type { WorkspaceFileDetail, WorkspaceFileKind } from "../types/workspace.js";
+import type { WorkspaceFileDetail, WorkspaceFileKind, WorkspaceOfficeFormat } from "../types/workspace.js";
 import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { useStoreSnapshot } from "./hooks.js";
+
+// Heavy office renderers are lazy-loaded so docx-preview / xlsx stay off the
+// critical path and only download when an office file is actually opened.
+const PptxPreview = lazy(() => import("./office/PptxPreview.js"));
+const DocxPreview = lazy(() => import("./office/DocxPreview.js"));
+const XlsxPreview = lazy(() => import("./office/XlsxPreview.js"));
+
+const MAX_STREAMING_MARKDOWN_FORMAT_CHARS = 160_000;
+const TREE_PANE_WIDTH = 260;
+const CONTENT_REVEAL_WIDTH = TREE_PANE_WIDTH + 150;
+const DEFAULT_PREVIEW_PANEL_WIDTH = 560;
+
+function streamingMarkdownInterval(contentLength: number): number {
+	if (contentLength < 40_000) return 240;
+	if (contentLength < 100_000) return 420;
+	return 700;
+}
+
+function useStreamingMarkdownSnapshot(content: string, enabled: boolean): string {
+	const [snapshot, setSnapshot] = useState(content);
+	const latestContentRef = useRef(content);
+	const timerRef = useRef<number | null>(null);
+	const lastSnapshotAtRef = useRef(0);
+	latestContentRef.current = content;
+
+	useEffect(() => {
+		if (!enabled) {
+			if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+			timerRef.current = null;
+			lastSnapshotAtRef.current = 0;
+			return;
+		}
+		if (timerRef.current !== null) return;
+
+		const elapsed = performance.now() - lastSnapshotAtRef.current;
+		const delay = Math.max(0, streamingMarkdownInterval(content.length) - elapsed);
+		timerRef.current = window.setTimeout(() => {
+			timerRef.current = null;
+			lastSnapshotAtRef.current = performance.now();
+			const next = latestContentRef.current;
+			setSnapshot((current) => current === next ? current : next);
+		}, delay);
+	}, [content, enabled]);
+
+	useEffect(() => () => {
+		if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+		timerRef.current = null;
+	}, []);
+
+	return enabled ? snapshot : content;
+}
+
+const MarkdownStreamSnapshot = memo(function MarkdownStreamSnapshot({ content, showCursor }: { content: string; showCursor: boolean }) {
+	const normalizedContent = useMemo(() => normalizeMarkdownMath(content), [content]);
+	return (
+		<div className="px-4 py-3 text-[13px] leading-relaxed text-[var(--inno-text)] [overflow-wrap:anywhere]">
+			<markdown-artifact content={normalizedContent} />
+			{showCursor ? <span className="inno-stream-cursor" aria-hidden="true" /> : null}
+		</div>
+	);
+});
 
 /* ---------- helpers ---------- */
 
@@ -45,7 +107,19 @@ function nodeIcon(name: string, isDir: boolean, isOpen: boolean) {
 	if (lower.endsWith(".md")) return <FileText size={14} />;
 	if (lower.endsWith(".pdf")) return <FileType size={14} />;
 	if (lower.endsWith(".html") || lower.endsWith(".htm")) return <Globe size={14} />;
+	if (lower.endsWith(".pptx")) return <Presentation size={14} />;
+	if (lower.endsWith(".xlsx")) return <FileSpreadsheet size={14} />;
+	if (lower.endsWith(".docx")) return <FileText size={14} />;
 	return <File size={14} />;
+}
+
+/** Derive the office format from a filename when the backend didn't supply it. */
+function officeFormatFromName(name: string): WorkspaceOfficeFormat | undefined {
+	const lower = name.toLowerCase();
+	if (lower.endsWith(".pptx")) return "pptx";
+	if (lower.endsWith(".docx")) return "docx";
+	if (lower.endsWith(".xlsx")) return "xlsx";
+	return undefined;
 }
 
 /** Whether a file kind supports text editing */
@@ -160,7 +234,7 @@ function CsvPreview({ name, content }: { name: string; content: string }) {
 				</thead>
 				<tbody>
 					{body.map((r, ri) => (
-						<tr key={ri} className="odd:bg-[var(--inno-surface)] even:bg-slate-50/60">
+						<tr key={ri} className="odd:bg-[var(--inno-surface)] even:bg-[var(--inno-surface-muted)]">
 							{header.map((_, ci) => (
 								<td key={ci} className="border border-[var(--inno-border)] px-2 py-1 align-top text-[var(--inno-text-muted)]">
 									{r[ci] ?? ""}
@@ -222,7 +296,7 @@ function OfficePreview({ file }: { file: WorkspaceFileDetail }) {
 		return (
 			<div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-[var(--inno-text-muted)]">
 				<div className="font-medium text-[var(--inno-text)]">{file.name}</div>
-				<div className="text-xs text-red-500">{error}</div>
+				<div className="text-xs text-[var(--inno-danger)]">{error}</div>
 				<button className="flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" onClick={downloadOriginal}>
 					<Download size={12} />
 					{t("files.download", "Download")}
@@ -308,6 +382,15 @@ function Preview({ file, isLoading }: { file: WorkspaceFileDetail; isLoading: bo
 		);
 	}
 	if (file.kind === "office") {
+		const fmt = file.format ?? officeFormatFromName(file.name);
+		const fallback = (
+			<div className="flex h-full items-center justify-center text-sm text-[var(--inno-text-muted)]">
+				{t("preview.loadingFile")}
+			</div>
+		);
+		if (fmt === "pptx") return <Suspense fallback={fallback}><PptxPreview file={file} /></Suspense>;
+		if (fmt === "docx") return <Suspense fallback={fallback}><DocxPreview file={file} /></Suspense>;
+		if (fmt === "xlsx") return <Suspense fallback={fallback}><XlsxPreview file={file} /></Suspense>;
 		return <OfficePreview file={file} />;
 	}
 	if (file.kind === "binary") {
@@ -319,7 +402,7 @@ function Preview({ file, isLoading }: { file: WorkspaceFileDetail; isLoading: bo
 					className="mt-2 flex items-center gap-1.5 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
 					onClick={() => workspaceStore.openAsText()}
 				>
-					<FileCode2 size={13} />
+					<FileCode2 size={14} />
 					{t("preview.openAsText", "Open as Text")}
 				</button>
 			</div>
@@ -377,6 +460,113 @@ function CodeEditorPane({ value, onChange, lang }: { value: string; onChange: (v
 	);
 }
 
+function StreamingPreviewPane({ preview, onToggleSidebar, sidebarOpen }: { preview: StreamingWorkspacePreview; onToggleSidebar: () => void; sidebarOpen: boolean }) {
+	const { t } = useTranslation();
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const [copied, setCopied] = useState(false);
+	const isStreaming = preview.status === "streaming";
+	const isMarkdownPreview = isStreamingMarkdownPreview(preview);
+	const shouldFormatMarkdown = isMarkdownPreview
+		&& (!isStreaming || preview.content.length <= MAX_STREAMING_MARKDOWN_FORMAT_CHARS);
+	const markdownSnapshot = useStreamingMarkdownSnapshot(
+		preview.content,
+		isStreaming && shouldFormatMarkdown,
+	);
+	const visibleContent = shouldFormatMarkdown ? markdownSnapshot : preview.content;
+	const lineCount = useMemo(
+		() => visibleContent ? visibleContent.split(/\r\n|\r|\n/).length : 0,
+		[visibleContent],
+	);
+	const statusLabel = isStreaming
+		? preview.stage ?? t("preview.streamingGenerating", "正在生成")
+		: preview.status === "error"
+			? t("preview.streamingError", "生成中断")
+			: t("preview.streamingDone", "生成完成");
+
+	useEffect(() => {
+		if (!isStreaming) return;
+		const el = scrollRef.current;
+		if (el) el.scrollTop = el.scrollHeight;
+	}, [visibleContent, isStreaming]);
+
+	const copyContent = useCallback(() => {
+		if (!preview.content) return;
+		void navigator.clipboard?.writeText(preview.content).then(() => {
+			setCopied(true);
+			window.setTimeout(() => setCopied(false), 1200);
+		});
+	}, [preview.content]);
+
+	return (
+		<div className="flex h-full flex-col">
+			<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
+				<div className="flex min-w-0 flex-1 items-center gap-2">
+					<button
+						className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+						onClick={onToggleSidebar}
+						title={sidebarOpen ? t("common.collapseSidebar", "收起侧栏") : t("common.expandSidebar", "展开侧栏")}
+					>
+						{sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+					</button>
+					<span className={`inno-stream-status-dot ${isStreaming ? "is-streaming" : ""}`} />
+					<div className="min-w-0">
+						<div className="truncate text-sm font-medium">{preview.title}</div>
+						<div className="truncate text-[10px] text-[var(--inno-text-muted)]">
+							{statusLabel}
+							{preview.path ? ` · ${preview.path}` : ""}
+							{lineCount ? ` · ${lineCount} ${t("preview.streamingLines", "行")}` : ""}
+						</div>
+					</div>
+				</div>
+				<div className="flex items-center gap-1.5">
+					<button
+						disabled={!preview.content}
+						className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:cursor-not-allowed disabled:opacity-40"
+						onClick={copyContent}
+					>
+						{copied ? <Check size={12} /> : <Copy size={12} />}
+						{copied ? t("common.copied", "已复制") : t("common.copy", "复制")}
+					</button>
+					{isStreaming ? null : (
+						<button
+							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							title={t("preview.streamingClose", "关闭生成预览")}
+							onClick={() => workspaceStore.clearStreamingPreview(preview.id)}
+						>
+							<X size={14} />
+						</button>
+					)}
+				</div>
+			</div>
+			<div ref={scrollRef} className="workspace-scroll min-h-0 flex-1 overflow-auto bg-[var(--inno-surface)]">
+				<div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-4 py-2 text-[10px] text-[var(--inno-text-muted)]">
+					<Sparkles size={12} className="shrink-0 text-[var(--inno-accent)]" />
+					<span className="truncate">{t("preview.streamingHint", "长内容正在右侧生成，聊天区只保留摘要。")}</span>
+				</div>
+				{preview.content ? (
+					shouldFormatMarkdown ? (
+						<MarkdownStreamSnapshot content={visibleContent} showCursor={isStreaming} />
+					) : (
+						<pre className="min-h-full whitespace-pre-wrap break-words px-4 py-3 font-mono text-[12px] leading-relaxed text-[var(--inno-text)] [overflow-wrap:anywhere]">
+							{preview.content}
+							{isStreaming ? <span className="inno-stream-cursor" aria-hidden="true" /> : null}
+						</pre>
+					)
+				) : (
+					<div className="flex h-full items-center justify-center px-4 text-sm text-[var(--inno-text-muted)]">
+						{t("preview.streamingWaiting", "等待模型开始输出…")}
+					</div>
+				)}
+			</div>
+		</div>
+	);
+}
+
+function isStreamingMarkdownPreview(preview: StreamingWorkspacePreview): boolean {
+	const name = `${preview.path ?? ""} ${preview.title}`.toLowerCase();
+	return preview.language === "markdown" || name.includes(".md") || name.includes(".markdown");
+}
+
 /* ---------- File Content Pane (preview + edit) ---------- */
 
 function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: () => void; sidebarOpen: boolean }) {
@@ -389,9 +579,14 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 		editBuffer: workspaceStore.editBuffer,
 		isSaving: workspaceStore.isSaving,
 		error: workspaceStore.error,
+		streamingPreview: workspaceStore.streamingPreview,
 	}));
 
 	const canEdit = state.file != null && isEditable(state.file.kind);
+
+	if (state.streamingPreview) {
+		return <StreamingPreviewPane key={state.streamingPreview.id} preview={state.streamingPreview} onToggleSidebar={onToggleSidebar} sidebarOpen={sidebarOpen} />;
+	}
 
 	if (state.isEditing && state.file) {
 		const isMd = state.file.kind === "markdown";
@@ -444,7 +639,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 						onClick={onToggleSidebar}
 						title={sidebarOpen ? t("common.collapseSidebar", "Collapse sidebar") : t("common.expandSidebar", "Expand sidebar")}
 					>
-						{sidebarOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
+						{sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
 					</button>
 					<div className="min-w-0">
 						<div className="truncate text-sm font-medium">{state.file?.name ?? t("preview.noFile", "No file selected")}</div>
@@ -467,7 +662,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 				</div>
 			</div>
 			<div className="workspace-scroll min-h-0 flex-1 overflow-auto">
-				{state.error ? <div className="p-4 text-sm text-red-500">{state.error}</div> : null}
+				{state.error ? <div className="p-4 text-sm text-[var(--inno-danger)]">{state.error}</div> : null}
 				{!state.error && state.file ? <Preview file={state.file} isLoading={state.isLoadingFile} /> : null}
 				{!state.error && !state.file ? <div className="flex h-full items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("preview.noPreview", "Nothing to preview")}</div> : null}
 			</div>
@@ -487,14 +682,21 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 			style={style}
 			className={`group flex items-center gap-1.5 rounded-md px-2 py-1 text-xs cursor-pointer select-none ${
 				selected
-					? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100"
-					: "text-[var(--inno-text-muted)] hover:bg-slate-100/85 hover:text-[var(--inno-text)]"
+					? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
+					: "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 			}`}
 			onClick={(e) => {
 				e.stopPropagation();
 				if (isDir) node.toggle();
 				else {
 					node.select();
+					workspaceStore.clearStreamingPreview();
+					if (appStore.workspaceWidth < CONTENT_REVEAL_WIDTH) {
+						appStore.setWorkspaceWidth(DEFAULT_PREVIEW_PANEL_WIDTH);
+					}
+					if (appStore.workspaceMode === "quarter") {
+						appStore.setWorkspaceMode("half");
+					}
 					void workspaceStore.selectFile(node.data.path);
 				}
 			}}
@@ -512,7 +714,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 			{node.isEditing ? (
 				<input
 					autoFocus
-					className="min-w-0 flex-1 rounded border border-blue-300 bg-[var(--inno-surface)] px-1 py-0.5 text-xs outline-none focus:ring-1 focus:ring-blue-200"
+					className="min-w-0 flex-1 rounded border border-[var(--inno-accent)] bg-[var(--inno-surface)] px-1 py-0.5 text-xs outline-none focus-visible:shadow-[var(--inno-ring)]"
 					defaultValue={node.data.name}
 					onFocus={(e) => {
 						const val = e.currentTarget.value;
@@ -602,7 +804,7 @@ function DeleteConfirm({ paths, onConfirm, onCancel }: { paths: string[]; onConf
 					<button className="rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]" onClick={onCancel}>
 						{t("common.cancel", "Cancel")}
 					</button>
-					<button className="rounded-md bg-red-500 px-3 py-1.5 text-xs text-white hover:bg-red-600" onClick={onConfirm}>
+					<button className="rounded-md bg-[var(--inno-danger)] px-3 py-1.5 text-xs text-white hover:bg-[var(--inno-danger)]" onClick={onConfirm}>
 						{t("common.delete", "Delete")}
 					</button>
 				</div>
@@ -642,8 +844,6 @@ export function WorkspaceBrowser() {
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	// The file tree pane keeps a fixed width; the content preview pane appears
 	// only once the panel is dragged wide enough to fit it beside the tree.
-	const TREE_PANE_WIDTH = 260;
-	const CONTENT_REVEAL_WIDTH = TREE_PANE_WIDTH + 150;
 	const showContent = sidebarOpen ? panelWidth >= CONTENT_REVEAL_WIDTH : true;
 
 	// Measure the panel width to decide whether the content pane fits.
@@ -811,7 +1011,7 @@ export function WorkspaceBrowser() {
 		<div ref={rootRef} className={`grid h-full min-h-0 gap-3 bg-transparent p-3 transition-[grid-template-columns] duration-200 ${showContent ? (sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]") : "grid-cols-[minmax(0,1fr)]"}`}>
 			{/* --- Tree pane --- */}
 			<aside
-				className={`inno-workspace-card relative flex min-h-0 flex-col overflow-hidden rounded-lg transition-opacity duration-200 ${isDragOver ? "border-blue-400 bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+				className={`inno-workspace-card relative flex min-h-0 flex-col overflow-hidden rounded-lg transition-opacity duration-200 ${isDragOver ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
 				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
 				onDrop={handleDrop}
@@ -820,14 +1020,14 @@ export function WorkspaceBrowser() {
 				<div className="flex h-10 items-center gap-1 border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2">
 					<div className="min-w-0 flex-1">
 						<span className="block max-w-[220px] truncate px-1 text-xs font-medium text-[var(--inno-text)]" title={activeWorkspaceName}>
-							{activeWorkspaceName || "工作区"}
+							{activeWorkspaceName || t("workspace.title")}
 						</span>
 					</div>
-					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-violet-100 hover:text-violet-600 disabled:opacity-40" title={t("files.uploadSkill", "上传技能包 (.zip/.md) 到 .skills")} onClick={() => skillUploadRef.current?.click()}>
-						<Sparkles size={13} />
+					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-accent)] disabled:opacity-40" title={t("files.uploadSkill", "Upload skill package (.zip/.md) to .skills")} onClick={() => skillUploadRef.current?.click()}>
+						<Sparkles size={14} />
 					</button>
-					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-slate-200 hover:text-[var(--inno-text)] disabled:opacity-40" title={t("preview.refresh", "Refresh")} onClick={() => void workspaceStore.loadTree()}>
-						<RefreshCw size={13} />
+					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-40" title={t("preview.refresh", "Refresh")} onClick={() => void workspaceStore.loadTree()}>
+						<RefreshCw size={14} />
 					</button>
 					<input ref={skillUploadRef} type="file" multiple accept=".zip,application/zip,.md,text/markdown" className="hidden" onChange={handleSkillUploadChange} />
 				</div>

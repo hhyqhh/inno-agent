@@ -7,7 +7,7 @@ import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 import { ensureDir, readText, writeText } from "../../storage/file-store.js";
-import type { ManifestEntry, WikiPageType } from "./types.js";
+import type { ManifestEntry, WikiPageType, WikiPageFrontmatter } from "./types.js";
 import { parseFrontmatter, serializeFrontmatter } from "./wiki-maintainer.js";
 import { logger } from "../../logger.js";
 import { normalizeMarkdownForMilkdown } from "./markdown-normalizer.js";
@@ -24,6 +24,8 @@ export interface WikiLinkMaintenanceResult {
 	created: string[];
 	updated: string[];
 	unchanged: string[];
+	/** Pages where a contradiction with the new source was recorded. */
+	contested: string[];
 	pages: string[];
 }
 
@@ -322,73 +324,35 @@ function referenceBullet(entry: ManifestEntry, sourcePagePath: string): string {
 	return `- [[${entry.title}]] — \`${sourcePagePath}\``;
 }
 
-function addFrontmatterArrayItem(yamlBlock: string, key: string, value: string): { yaml: string; changed: boolean } {
-	const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const multilineItemPattern = new RegExp(`^\\s+-\\s+${escaped}\\s*$`, "m");
-	const inlineKeyPattern = new RegExp(`^${key}:\\s*\\[(.*)\\]\\s*$`, "m");
-	const multilineKeyPattern = new RegExp(`^${key}:\\s*$`, "m");
-
-	if (multilineItemPattern.test(yamlBlock)) return { yaml: yamlBlock, changed: false };
-
-	const inlineMatch = yamlBlock.match(inlineKeyPattern);
-	if (inlineMatch) {
-		const items = inlineMatch[1]
-			.split(",")
-			.map((item) => item.trim())
-			.filter(Boolean);
-		if (items.includes(value)) return { yaml: yamlBlock, changed: false };
-		const replacement = `${key}:\n${items.map((item) => `  - ${item}`).join("\n")}\n  - ${value}`;
-		return { yaml: yamlBlock.replace(inlineKeyPattern, replacement), changed: true };
-	}
-
-	const keyMatch = yamlBlock.match(multilineKeyPattern);
-	if (keyMatch && keyMatch.index !== undefined) {
-		const start = keyMatch.index + keyMatch[0].length;
-		const nextKeyMatch = yamlBlock.slice(start).match(/^\w+:\s*/m);
-		const insertAt = nextKeyMatch?.index === undefined ? yamlBlock.length : start + nextKeyMatch.index;
-		const before = yamlBlock.slice(0, insertAt).trimEnd();
-		const after = yamlBlock.slice(insertAt);
-		return { yaml: `${before}\n  - ${value}\n${after.replace(/^\n/, "")}`, changed: true };
-	}
-
-	return { yaml: `${yamlBlock.trimEnd()}\n${key}:\n  - ${value}`, changed: true };
+/**
+ * Parse a page's frontmatter, let `fn` mutate it, then re-serialize. Returns
+ * the original content unchanged (changed=false) when the page has no
+ * frontmatter or when the mutation produces no logical difference.
+ */
+function mutateFrontmatter(
+	content: string,
+	fn: (fm: WikiPageFrontmatter) => void,
+): { content: string; changed: boolean } {
+	const { frontmatter, body } = parseFrontmatter(content);
+	if (!frontmatter) return { content, changed: false };
+	const before = serializeFrontmatter(frontmatter);
+	fn(frontmatter);
+	const after = serializeFrontmatter(frontmatter);
+	if (after === before) return { content, changed: false };
+	return { content: `${after}\n${body}`, changed: true };
 }
 
 function updateFrontmatterReference(content: string, entry: ManifestEntry, sourcePagePath: string): {
 	content: string;
 	changed: boolean;
 } {
-	const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-	if (!match) return { content, changed: false };
-
-	let yamlBlock = match[1];
-	let changed = false;
-
-	if (!/^created:\s*.*$/m.test(yamlBlock)) {
-		const existingUpdated = yamlBlock.match(/^updated:\s*(.*)$/m)?.[1]?.trim();
-		yamlBlock = `${yamlBlock.trimEnd()}\ncreated: ${existingUpdated || new Date().toISOString().slice(0, 10)}`;
-		changed = true;
-	}
-
-	const sourceResult = addFrontmatterArrayItem(yamlBlock, "sources", sourcePagePath);
-	yamlBlock = sourceResult.yaml;
-	changed ||= sourceResult.changed;
-
-	const sourceIdResult = addFrontmatterArrayItem(yamlBlock, "source_ids", entry.id);
-	yamlBlock = sourceIdResult.yaml;
-	changed ||= sourceIdResult.changed;
-
 	const today = new Date().toISOString().slice(0, 10);
-	if (/^updated:\s*.*$/m.test(yamlBlock)) {
-		const nextYaml = yamlBlock.replace(/^updated:\s*.*$/m, `updated: ${today}`);
-		changed ||= nextYaml !== yamlBlock;
-		yamlBlock = nextYaml;
-	} else {
-		yamlBlock = `${yamlBlock.trimEnd()}\nupdated: ${today}`;
-		changed = true;
-	}
-
-	return { content: `---\n${yamlBlock}\n---\n${match[2]}`, changed };
+	return mutateFrontmatter(content, (fm) => {
+		if (!fm.sources.includes(sourcePagePath)) fm.sources.push(sourcePagePath);
+		if (!fm.source_ids.includes(entry.id)) fm.source_ids.push(entry.id);
+		if (!fm.created) fm.created = fm.updated || today;
+		fm.updated = today;
+	});
 }
 
 function addReferenceIfMissing(content: string, entry: ManifestEntry, sourcePagePath: string): string | null {
@@ -447,6 +411,11 @@ function upsertLinkedPage(
  * The source page keeps the original summary. This function creates or updates
  * linked entity/concept pages, then returns their paths so the manifest and
  * index can include them in the same archive transaction.
+ *
+ * With a model available this runs two-stage CoT: (1) extract candidates and
+ * read their existing page definitions, (2) plan create/update with merged
+ * definitions and contradiction detection, then write/merge. Without a model
+ * the original non-destructive behavior (create-or-append-reference) applies.
  */
 export async function maintainLinkedWikiPages(
 	l2DataDir: string,
@@ -457,16 +426,253 @@ export async function maintainLinkedWikiPages(
 	modelRegistry?: ModelRegistry,
 	options: WikiLinkMaintenanceOptions = {},
 ): Promise<WikiLinkMaintenanceResult> {
-	const result: WikiLinkMaintenanceResult = { created: [], updated: [], unchanged: [], pages: [] };
+	const result: WikiLinkMaintenanceResult = { created: [], updated: [], unchanged: [], contested: [], pages: [] };
 	const items = await extractLinkedItems(model, modelRegistry, entry.title, sourcePageBody, options.currentRelations);
-	for (const item of items) {
-		const page = upsertLinkedPage(l2DataDir, item, entry, sourcePagePath, options);
-		if (options.createMissing === false && page.status === "unchanged" && !existsSync(join(l2DataDir, page.path))) {
-			continue;
+
+	// Stage 1: read existing definitions for all candidates, build plan.
+	const candidates = items.map((it) => ({
+		title: it.title,
+		type: it.type,
+		existingDefinition: readExistingDefinition(l2DataDir, it),
+	}));
+	const plan = await planLinkedItems(model, modelRegistry, entry.title, sourcePageBody, candidates);
+
+	if (plan) {
+		// Stage 2: write/merge according to plan.
+		for (const p of plan) {
+			const page = upsertPlannedPage(l2DataDir, p, entry, sourcePagePath, options);
+			if (options.createMissing === false && page.status === "unchanged" && !existsSync(join(l2DataDir, page.path))) {
+				continue;
+			}
+			result.pages.push(page.path);
+			result[page.status].push(page.path);
+			if (page.contested) result.contested.push(page.path);
 		}
-		result.pages.push(page.path);
-		result[page.status].push(page.path);
+	} else {
+		// Fallback: original non-destructive create-or-append-reference.
+		for (const item of items) {
+			const page = upsertLinkedPage(l2DataDir, item, entry, sourcePagePath, options);
+			if (options.createMissing === false && page.status === "unchanged" && !existsSync(join(l2DataDir, page.path))) {
+				continue;
+			}
+			result.pages.push(page.path);
+			result[page.status].push(page.path);
+		}
 	}
 	result.pages = [...new Set(result.pages)];
 	return result;
+}
+
+// ============================================================================
+// Two-stage CoT helpers
+// ============================================================================
+
+interface PlanItem {
+	title: string;
+	type: LinkablePageType;
+	action: "create" | "update";
+	definition: string;
+	contradiction?: string;
+}
+
+const STAGE1_PLAN_PROMPT = `你是学习 Wiki 知识库的维护规划助手。已知一份新资料的摘要，以及知识库中若干实体/概念页面的现有定义。请为每个条目规划如何维护。
+
+规则：
+- action=create：知识库尚无此条目（现有定义为空）。definition 写一到三句中文定义。
+- action=update：已有此条目。请把新资料的信息与现有定义**融合**，写出更完整、准确、无重复的 definition（融合后的完整定义，而不是仅追加）。
+- 若新资料与现有定义存在**事实冲突/矛盾**，将 contradiction 设为一句话冲突说明；否则设为 null。
+- definition 聚焦"是什么"，不要写入学习者个人状态、目标或偏好。
+- 最多处理 20 个条目。
+
+资料标题：{title}
+
+资料摘要：
+---
+{summary}
+---
+
+候选条目（existingDefinition 为空表示知识库暂无该条目）：
+{candidates}
+
+只返回 JSON，不要代码块：
+{"items":[{"title":"条目名","type":"concept","action":"update","definition":"融合后的完整定义","contradiction":null}]}`;
+
+function parsePlanItems(text: string): PlanItem[] {
+	const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+	const start = trimmed.indexOf("{");
+	const end = trimmed.lastIndexOf("}");
+	if (start < 0 || end < start) return [];
+	let parsed: { items?: unknown };
+	try {
+		parsed = JSON.parse(trimmed.slice(start, end + 1)) as { items?: unknown };
+	} catch {
+		return [];
+	}
+	if (!Array.isArray(parsed.items)) return [];
+	const planItems: PlanItem[] = [];
+	const seen = new Set<string>();
+	for (const raw of parsed.items) {
+		if (!raw || typeof raw !== "object") continue;
+		const rec = raw as Record<string, unknown>;
+		const title = typeof rec.title === "string" ? cleanTitle(rec.title) : "";
+		const type = rec.type === "entity" ? "entity" : rec.type === "concept" ? "concept" : null;
+		if (!title || !type || !isUsefulTitle(title) || seen.has(title)) continue;
+		const definition = typeof rec.definition === "string" ? rec.definition.trim() : "";
+		if (!definition) continue;
+		seen.add(title);
+		planItems.push({
+			title,
+			type,
+			action: rec.action === "update" ? "update" : "create",
+			definition,
+			contradiction:
+				typeof rec.contradiction === "string" && rec.contradiction.trim() ? rec.contradiction.trim() : undefined,
+		});
+	}
+	return planItems;
+}
+
+function readExistingDefinition(l2DataDir: string, item: LinkedItem): string | undefined {
+	const found = findExistingPage(l2DataDir, item);
+	if (!found.exists) return undefined;
+	const abs = join(l2DataDir, found.path);
+	if (!existsSync(abs)) return undefined;
+	const { body } = parseFrontmatter(readText(abs));
+	const idx = body.indexOf("## 定义");
+	if (idx < 0) return undefined;
+	const rest = body.slice(idx + "## 定义".length);
+	const nextSec = rest.search(/\n## /);
+	const def = (nextSec >= 0 ? rest.slice(0, nextSec) : rest).trim();
+	return def || undefined;
+}
+
+async function planLinkedItems(
+	model: Model<any> | undefined,
+	modelRegistry: ModelRegistry | undefined,
+	title: string,
+	summary: string,
+	candidates: { title: string; type: LinkablePageType; existingDefinition?: string }[],
+): Promise<PlanItem[] | null> {
+	if (!model || !modelRegistry || candidates.length === 0) return null;
+	const candidateJson = JSON.stringify(
+		candidates.map((c) => ({
+			title: c.title,
+			type: c.type,
+			existingDefinition: c.existingDefinition ? c.existingDefinition.slice(0, 600) : "",
+		})),
+	);
+	const truncatedSummary =
+		summary.length > MAX_LINK_PROMPT_LENGTH ? summary.slice(0, MAX_LINK_PROMPT_LENGTH) + "\n\n...(内容已截断)" : summary;
+	const prompt = STAGE1_PLAN_PROMPT
+		.replace("{title}", title)
+		.replace("{summary}", truncatedSummary)
+		.replace("{candidates}", candidateJson);
+	try {
+		const auth = await modelRegistry.getApiKeyAndHeaders(model);
+		if (!auth.ok || !auth.apiKey) return null;
+		const response = await complete(
+			model,
+			{ messages: [{ role: "user" as const, content: [{ type: "text" as const, text: prompt }], timestamp: Date.now() }] },
+			{ apiKey: auth.apiKey, headers: auth.headers, maxTokens: 4096 },
+		);
+		if (response.stopReason === "error") return null;
+		const text = response.content
+			.filter((c): c is { type: "text"; text: string } => c.type === "text")
+			.map((c) => c.text)
+			.join("\n");
+		const plan = parsePlanItems(text);
+		return plan.length > 0 ? plan : null;
+	} catch (err) {
+		logger.warn({ err }, "LLM ingest planning failed, using fallback");
+		return null;
+	}
+}
+
+function replaceDefinitionSection(content: string, newDef: string): string {
+	const header = "## 定义";
+	const idx = content.indexOf(header);
+	if (idx < 0) {
+		const relIdx = content.indexOf("\n## 相关资料");
+		const section = `## 定义\n\n${newDef}\n\n`;
+		if (relIdx >= 0) return `${content.slice(0, relIdx + 1)}${section}${content.slice(relIdx + 1)}`;
+		return `${content.trimEnd()}\n\n${section}`;
+	}
+	const bodyStart = idx + header.length;
+	const rest = content.slice(bodyStart);
+	const nextSec = rest.search(/\n## /);
+	const insertEnd = nextSec >= 0 ? bodyStart + nextSec : content.length;
+	return `${content.slice(0, bodyStart)}\n\n${newDef}\n${content.slice(insertEnd)}`;
+}
+
+function applyContradiction(content: string, entry: ManifestEntry, note: string): string | null {
+	const fmResult = mutateFrontmatter(content, (fm) => {
+		fm.contested = true;
+		if (!fm.contradictions) fm.contradictions = [];
+		if (!fm.contradictions.includes(entry.id)) fm.contradictions.push(entry.id);
+	});
+	let next = fmResult.content;
+	let changed = fmResult.changed;
+	if (!next.includes(note)) {
+		const bullet = `- ${note}（来源 [[${entry.title}]] \`${entry.id}\`）`;
+		const header = "\n## 争议";
+		const idx = next.indexOf(header);
+		if (idx >= 0) {
+			const bodyStart = idx + header.length;
+			const rest = next.slice(bodyStart);
+			const nextSec = rest.search(/\n## /);
+			const insertAt = nextSec >= 0 ? bodyStart + nextSec : next.length;
+			next = `${next.slice(0, insertAt).trimEnd()}\n${bullet}${next.slice(insertAt)}`;
+		} else {
+			next = `${next.trimEnd()}\n\n## 争议\n\n${bullet}\n`;
+		}
+		changed = true;
+	}
+	return changed ? next : null;
+}
+
+function mergeIntoExistingPage(
+	content: string,
+	item: PlanItem,
+	entry: ManifestEntry,
+	sourcePagePath: string,
+): { content: string; contested: boolean } | null {
+	let next = content;
+	let changed = false;
+	let contested = false;
+	if (item.definition) {
+		const replaced = replaceDefinitionSection(next, item.definition);
+		if (replaced !== next) { next = replaced; changed = true; }
+	}
+	const withRef = addReferenceIfMissing(next, entry, sourcePagePath);
+	if (withRef) { next = withRef; changed = true; }
+	if (item.contradiction) {
+		const withContra = applyContradiction(next, entry, item.contradiction);
+		if (withContra) { next = withContra; changed = true; contested = true; }
+	}
+	return changed ? { content: next, contested } : null;
+}
+
+function upsertPlannedPage(
+	l2DataDir: string,
+	item: PlanItem,
+	entry: ManifestEntry,
+	sourcePagePath: string,
+	options: WikiLinkMaintenanceOptions = {},
+): { path: string; status: "created" | "updated" | "unchanged"; contested: boolean } {
+	const linked: LinkedItem = { title: item.title, type: item.type, description: item.definition };
+	const found = findExistingPage(l2DataDir, linked);
+	const relativePath = found.path;
+	const absPath = join(l2DataDir, relativePath);
+	ensureDir(join(l2DataDir, "wiki", pageDirForType(item.type)));
+	if (!found.exists && options.createMissing === false) {
+		return { path: relativePath, status: "unchanged", contested: false };
+	}
+	if (!existsSync(absPath)) {
+		writeText(absPath, buildNewPage(linked, entry, sourcePagePath));
+		return { path: relativePath, status: "created", contested: false };
+	}
+	const merged = mergeIntoExistingPage(readText(absPath), item, entry, sourcePagePath);
+	if (!merged) return { path: relativePath, status: "unchanged", contested: false };
+	writeText(absPath, merged.content);
+	return { path: relativePath, status: "updated", contested: merged.contested };
 }

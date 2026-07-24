@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Trash2, Pencil, X, ChevronDown, ChevronRight, Plus, QrCode as QrCodeIcon, CheckCircle, Wifi, WifiOff, Database } from "lucide-react";
+import { Trash2, Pencil, X, ChevronDown, ChevronRight, Plus, QrCode as QrCodeIcon, CheckCircle, Wifi, WifiOff, Database, KeyRound } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { getWikiStats } from "../api/wiki.js";
 import { settingsStore } from "../stores/settings-store.js";
@@ -10,6 +10,9 @@ import type { InnoModelInfo, InnoProviderModel as ProviderModel, InnoSettings, C
 import type { WikiStats } from "../types/wiki.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { setLocale } from "../i18n/index.js";
+import { Switch } from "./ui/Switch.js";
+import { inputCls } from "./ui/input.js";
+import { checkboxCls } from "./ui/checkbox.js";
 
 const apiOptions = ["openai-completions", "openai-responses", "anthropic-messages"];
 
@@ -23,6 +26,9 @@ interface ProviderFormState {
 	contextWindow: string;
 	maxTokens: string;
 	reasoning: boolean;
+	supportsImages: boolean;
+	authHeader: boolean;
+	bypassProxy: boolean;
 	makeDefault: boolean;
 	preserveApiKey: boolean;
 }
@@ -37,6 +43,9 @@ const emptyForm: ProviderFormState = {
 	contextWindow: "128000",
 	maxTokens: "8192",
 	reasoning: false,
+	supportsImages: false,
+	authHeader: false,
+	bypassProxy: false,
 	makeDefault: true,
 	preserveApiKey: false,
 };
@@ -74,6 +83,9 @@ function ModelEditForm({ model, settings, onClose }: {
 		contextWindow: String(model.contextWindow),
 		maxTokens: String(model.maxTokens),
 		reasoning: model.reasoning,
+		supportsImages: model.input.includes("image"),
+		authHeader: provider?.authHeader === true,
+		bypassProxy: provider?.bypassProxy === true,
 		makeDefault: settings.defaultProvider === model.provider && settings.defaultModel === model.id,
 		preserveApiKey: Boolean(provider?.apiKey),
 	});
@@ -95,6 +107,7 @@ function ModelEditForm({ model, settings, onClose }: {
 				id: form.modelId.trim(),
 				name: form.modelName.trim() || form.modelId.trim(),
 				reasoning: form.reasoning,
+				input: form.supportsImages ? ["text", "image"] : ["text"],
 				contextWindow: Math.trunc(contextWindow),
 				maxTokens: Math.trunc(maxTokens),
 			};
@@ -103,6 +116,8 @@ function ModelEditForm({ model, settings, onClose }: {
 				baseUrl: form.baseUrl.trim(),
 				apiKey: form.apiKey,
 				api: form.api,
+				authHeader: form.authHeader,
+				bypassProxy: form.bypassProxy,
 				models: [providerModel],
 				makeDefault: form.makeDefault,
 				preserveApiKey: form.preserveApiKey,
@@ -118,10 +133,10 @@ function ModelEditForm({ model, settings, onClose }: {
 	const maskedKey = provider?.apiKey ? "••••••••" : "";
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-accent-soft)] bg-blue-50/50 p-3">
+		<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 			<div className="mb-2 flex items-center justify-between">
 				<span className="text-xs font-medium text-[var(--inno-text)]">{t("settings.editModel", "Edit Model")}</span>
-				<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={onClose}><X size={14} /></button>
+				<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onClose}><X size={14} /></button>
 			</div>
 			<div className="grid grid-cols-2 gap-2">
 				<div>
@@ -160,11 +175,14 @@ function ModelEditForm({ model, settings, onClose }: {
 				</div>
 			</div>
 			<div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
-				<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
-				<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
-				<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.preserveApiKey} onChange={(e) => setForm({ ...form, preserveApiKey: e.target.checked })} /> {t("settings.form.preserveApiKey")}</label>
+				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
+				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.supportsImages} onChange={(e) => setForm({ ...form, supportsImages: e.target.checked })} /> {t("settings.form.supportsImages")}</label>
+				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
+				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
+				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
+				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.preserveApiKey} onChange={(e) => setForm({ ...form, preserveApiKey: e.target.checked })} /> {t("settings.form.preserveApiKey")}</label>
 			</div>
-			{formError ? <div className="mt-2 rounded bg-red-50 px-2 py-1 text-xs text-red-700">{formError}</div> : null}
+			{formError ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div> : null}
 			<div className="mt-2 flex gap-2">
 				<button className="rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void handleSave()}>
 					{saving ? t("settings.savingProvider") : t("settings.saveProvider")}
@@ -183,7 +201,7 @@ function ThemeSettings() {
 	const { t } = useTranslation();
 	const state = useStoreSnapshot(themeStore, () => ({ current: themeStore.current }));
 	return (
-		<div className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
+		<div className="flex shrink-0 items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
 			<span>{t("settings.theme")}</span>
 			<div className="flex gap-1">
 				{THEME_IDS.map((id) => {
@@ -198,7 +216,7 @@ function ThemeSettings() {
 							className={`h-5 w-5 rounded-full border-2 transition-all ${
 								active
 									? "border-[var(--inno-accent)] ring-2 ring-[var(--inno-accent)]/30 scale-110"
-									: "border-[var(--inno-border-strong)] hover:border-slate-400"
+									: "border-[var(--inno-border-strong)] hover:border-[var(--inno-border-strong)]"
 							}`}
 							style={{ backgroundColor: THEME_PREVIEW_COLORS[id] }}
 						/>
@@ -232,6 +250,7 @@ function NewProviderForm() {
 				id: form.modelId.trim(),
 				name: form.modelName.trim() || form.modelId.trim(),
 				reasoning: form.reasoning,
+				input: form.supportsImages ? ["text", "image"] : ["text"],
 				contextWindow: Math.trunc(contextWindow),
 				maxTokens: Math.trunc(maxTokens),
 			};
@@ -240,6 +259,8 @@ function NewProviderForm() {
 				baseUrl: form.baseUrl.trim(),
 				apiKey: form.apiKey,
 				api: form.api,
+				authHeader: form.authHeader,
+				bypassProxy: form.bypassProxy,
 				models: [model],
 				makeDefault: form.makeDefault,
 				preserveApiKey: false,
@@ -306,11 +327,14 @@ function NewProviderForm() {
 						</div>
 					</div>
 					<div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
-						<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
-						<label className="flex items-center gap-1.5"><input type="checkbox" className="h-3.5 w-3.5" checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
+						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
+						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.supportsImages} onChange={(e) => setForm({ ...form, supportsImages: e.target.checked })} /> {t("settings.form.supportsImages")}</label>
+						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
+						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
+						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
 					</div>
-					{formError ? <div className="mt-2 rounded bg-red-50 px-2 py-1 text-xs text-red-700">{formError}</div> : null}
-					{saveMessage ? <div className="mt-2 rounded bg-green-50 px-2 py-1 text-xs text-green-700">{saveMessage}</div> : null}
+					{formError ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div> : null}
+					{saveMessage ? <div className="mt-2 rounded bg-[var(--inno-success-bg)] px-2 py-1 text-xs text-[var(--inno-success)]">{saveMessage}</div> : null}
 					<button className="mt-3 rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void handleSave()}>
 						{saving ? t("settings.savingProvider") : t("settings.saveProvider")}
 					</button>
@@ -394,6 +418,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 	const [qqAllowedUsers, setQqAllowedUsers] = useState(
 		(qqConfig?.allowedUserIds ?? []).join("\n"),
 	);
+	// QQ channel is not yet implemented; flip to true when ready to expose settings.
+	const QQ_CHANNEL_READY = false;
 
 	// WeChat (iLink native mode)
 	const wechatConfig = settings.channels?.wechat;
@@ -510,12 +536,11 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 		}
 	}
 
-	const inputCls = "w-full rounded-md border border-[var(--inno-border)] px-2.5 py-1.5 text-xs";
 	const labelCls = "mb-0.5 block text-[10px] text-[var(--inno-text-muted)]";
 	const checkCls = "flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]";
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+		<div className="rounded-lg bg-[var(--inno-surface)]">
 			<button
 				className="flex w-full items-center justify-between px-4 py-3 text-left"
 				onClick={() => { setExpanded((v) => !v); setFormError(null); setSaveMsg(null); }}
@@ -525,22 +550,22 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 					<span className="text-sm font-medium text-[var(--inno-text)]">{t("settings.channels.title")}</span>
 				</div>
 				<div className="flex items-center gap-2 text-xs text-[var(--inno-text-subtle)]">
-					{feishuEnabled && <span className="rounded bg-green-50 px-1.5 py-0.5 text-green-700">{t("settings.channels.feishu.title")}</span>}
-					{qqEnabled && <span className="rounded bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-[var(--inno-accent)]">{t("settings.channels.qq.title")}</span>}
-					{wechatEnabled && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">{t("settings.channels.wechat.title")}</span>}
+					{feishuEnabled && <span className="rounded bg-[var(--inno-success-bg)] px-1.5 py-0.5 text-[var(--inno-success)]">{t("settings.channels.feishu.title")}</span>}
+					{qqEnabled && QQ_CHANNEL_READY && <span className="rounded bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-[var(--inno-accent)]">{t("settings.channels.qq.title")}</span>}
+					{wechatEnabled && <span className="rounded bg-[var(--inno-success-bg)] px-1.5 py-0.5 text-[var(--inno-success)]">{t("settings.channels.wechat.title")}</span>}
 				</div>
 			</button>
 			{expanded && (
 				<div className="border-t border-[var(--inno-border)] px-4 pb-4 pt-3 grid gap-4">
 					{/* Feishu */}
-					<div className="rounded-lg border border-[var(--inno-border)] p-3">
+					<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 						<div className="mb-2 flex items-center justify-between">
 							<div>
 								<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.channels.feishu.title")}</div>
 								<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.channels.feishu.desc")}</div>
 							</div>
 							<label className={checkCls}>
-								<input type="checkbox" className="h-3.5 w-3.5" checked={feishuEnabled} onChange={(e) => setFeishuEnabled(e.target.checked)} />
+								<input type="checkbox" className={checkboxCls} checked={feishuEnabled} onChange={(e) => setFeishuEnabled(e.target.checked)} />
 								{t("settings.channels.enabled")}
 							</label>
 						</div>
@@ -548,25 +573,25 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 						{/* Feishu QR Registration */}
 						<div className="mb-3">
 							{feishuQrState === "waitingScan" && feishuQrUrl ? (
-								<div className="flex flex-col items-center gap-2 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-bg-alt)] p-4">
+								<div className="flex flex-col items-center gap-2 rounded-lg bg-[var(--inno-bg-alt)] p-4">
 									<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.feishu.qrTitle")}</div>
 									<QRCodeSVG value={feishuQrUrl} size={192} />
 									<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.feishu.qrSubtitle")}</div>
 									<div className="text-[10px] text-[var(--inno-accent)]">{t("settings.feishu.qrWaiting")}</div>
 								</div>
 							) : feishuQrState === "confirmed" ? (
-								<div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 p-3">
-									<CheckCircle className="h-4 w-4 text-green-600" />
-									<span className="text-xs text-green-700">{t("settings.feishu.qrConfirmed")}</span>
+								<div className="flex items-center gap-2 rounded-lg border border-[var(--inno-success-border)] bg-[var(--inno-success-bg)] p-3">
+									<CheckCircle className="h-4 w-4 text-[var(--inno-success)]" />
+									<span className="text-xs text-[var(--inno-success)]">{t("settings.feishu.qrConfirmed")}</span>
 								</div>
 							) : feishuQrState === "expired" ? (
-								<div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-									<span className="text-xs text-amber-700">{t("settings.feishu.qrExpired")}</span>
+								<div className="flex items-center gap-2 rounded-lg border border-[var(--inno-warning-border)] bg-[var(--inno-warning-bg)] p-3">
+									<span className="text-xs text-[var(--inno-warning)]">{t("settings.feishu.qrExpired")}</span>
 									<button className="ml-auto rounded bg-[var(--inno-accent)] px-2 py-0.5 text-[10px] text-white" onClick={startFeishuQrRegister}>{t("settings.feishu.qrRegenerate")}</button>
 								</div>
 							) : feishuQrState === "denied" ? (
-								<div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
-									<span className="text-xs text-red-700">{t("settings.feishu.qrDenied")}</span>
+								<div className="flex items-center gap-2 rounded-lg border border-[var(--inno-danger-border)] bg-[var(--inno-danger-bg)] p-3">
+									<span className="text-xs text-[var(--inno-danger)]">{t("settings.feishu.qrDenied")}</span>
 									<button className="ml-auto rounded bg-[var(--inno-accent)] px-2 py-0.5 text-[10px] text-white" onClick={startFeishuQrRegister}>{t("settings.feishu.qrRegenerate")}</button>
 								</div>
 							) : feishuQrState === "scanning" ? (
@@ -576,12 +601,12 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 									className="w-full rounded border border-[var(--inno-border)] bg-[var(--inno-bg-alt)] px-3 py-2 text-xs text-[var(--inno-text)] hover:bg-[var(--inno-bg-hover)] flex items-center justify-center gap-2"
 									onClick={startFeishuQrRegister}
 								>
-									<QrCodeIcon className="h-3.5 w-3.5" />
+									<QrCodeIcon size={14} />
 									{t("settings.feishu.qrRegister")}
 								</button>
 							)}
 							{feishuQrError && (
-								<div className="mt-1 rounded bg-red-50 px-2 py-1 text-[10px] text-red-600">{feishuQrError}</div>
+								<div className="mt-1 rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-[10px] text-[var(--inno-danger)]">{feishuQrError}</div>
 							)}
 						</div>
 
@@ -597,7 +622,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								</div>
 								<div className="col-span-2 flex items-center gap-3">
 									<label className={checkCls}>
-										<input type="checkbox" className="h-3.5 w-3.5" checked={feishuPersonalOnly} onChange={(e) => setFeishuPersonalOnly(e.target.checked)} />
+										<input type="checkbox" className={checkboxCls} checked={feishuPersonalOnly} onChange={(e) => setFeishuPersonalOnly(e.target.checked)} />
 										{t("settings.channels.personalOnly")}
 									</label>
 								</div>
@@ -609,15 +634,16 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 						)}
 					</div>
 
-					{/* QQ */}
-					<div className="rounded-lg border border-[var(--inno-border)] p-3">
+					{/* QQ (hidden: channel not yet implemented) */}
+					{QQ_CHANNEL_READY && (
+					<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 						<div className="mb-2 flex items-center justify-between">
 							<div>
 								<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.channels.qq.title")}</div>
 								<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.channels.qq.desc")}</div>
 							</div>
 							<label className={checkCls}>
-								<input type="checkbox" className="h-3.5 w-3.5" checked={qqEnabled} onChange={(e) => setQqEnabled(e.target.checked)} />
+								<input type="checkbox" className={checkboxCls} checked={qqEnabled} onChange={(e) => setQqEnabled(e.target.checked)} />
 								{t("settings.channels.enabled")}
 							</label>
 						</div>
@@ -629,7 +655,7 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								</div>
 								<div className="col-span-2 flex items-center gap-3">
 									<label className={checkCls}>
-										<input type="checkbox" className="h-3.5 w-3.5" checked={qqPersonalOnly} onChange={(e) => setQqPersonalOnly(e.target.checked)} />
+										<input type="checkbox" className={checkboxCls} checked={qqPersonalOnly} onChange={(e) => setQqPersonalOnly(e.target.checked)} />
 										{t("settings.channels.personalOnly")}
 									</label>
 								</div>
@@ -640,16 +666,17 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 							</div>
 						)}
 					</div>
+					)}
 
 					{/* WeChat (iLink native) */}
-					<div className="rounded-lg border border-[var(--inno-border)] p-3">
+					<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 						<div className="mb-2 flex items-center justify-between">
 							<div>
 								<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.channels.wechat.title")}</div>
 								<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.channels.wechat.desc")}</div>
 							</div>
 							<label className={checkCls}>
-								<input type="checkbox" className="h-3.5 w-3.5" checked={wechatEnabled} onChange={(e) => setWechatEnabled(e.target.checked)} />
+								<input type="checkbox" className={checkboxCls} checked={wechatEnabled} onChange={(e) => setWechatEnabled(e.target.checked)} />
 								{t("settings.channels.enabled")}
 							</label>
 						</div>
@@ -659,8 +686,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 								<div className="flex items-center gap-2 rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2.5 py-2">
 									{wxConnected ? (
 										<>
-											<Wifi size={14} className="text-green-600" />
-											<span className="text-xs font-medium text-green-700">{t("settings.channels.wechat.connected")}</span>
+											<Wifi size={14} className="text-[var(--inno-success)]" />
+											<span className="text-xs font-medium text-[var(--inno-success)]">{t("settings.channels.wechat.connected")}</span>
 											{wxBotId && <span className="text-[10px] text-[var(--inno-text-subtle)] ml-1">{t("settings.channels.wechat.botId")}: {wxBotId}</span>}
 										</>
 									) : (
@@ -677,13 +704,13 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 										<QRCodeSVG value={qrUrl} size={192} level="M" />
 									)}
 									{qrStatus === "confirmed" && (
-										<div className="flex items-center gap-1.5 text-xs text-green-600">
+										<div className="flex items-center gap-1.5 text-xs text-[var(--inno-success)]">
 											<CheckCircle size={14} />
 											{t("settings.channels.wechat.confirmed")}
 										</div>
 									)}
 									{qrStatus === "expired" && (
-										<div className="text-xs text-amber-600">{t("settings.channels.wechat.expired")}</div>
+										<div className="text-xs text-[var(--inno-warning)]">{t("settings.channels.wechat.expired")}</div>
 									)}
 									{qrStatus === "scanning" && (
 										<div className="text-xs text-[var(--inno-text-subtle)]">{t("settings.channels.wechat.scanning")}</div>
@@ -699,17 +726,17 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 											className="flex items-center gap-1.5 rounded-md inno-primary-button px-3 py-1.5 text-xs text-white"
 											onClick={() => void startQrLogin()}
 										>
-											<QrCodeIcon size={13} />
+											<QrCodeIcon size={14} />
 											{wxConnected ? t("settings.channels.wechat.relogin") : t("settings.channels.wechat.scanLogin")}
 										</button>
 									)}
 									{qrError && (
-										<div className="rounded bg-red-50 px-2 py-1 text-xs text-red-700">{qrError}</div>
+										<div className="rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{qrError}</div>
 									)}
 								</div>
 								<div className="flex items-center gap-3">
 									<label className={checkCls}>
-										<input type="checkbox" className="h-3.5 w-3.5" checked={wechatPersonalOnly} onChange={(e) => setWechatPersonalOnly(e.target.checked)} />
+										<input type="checkbox" className={checkboxCls} checked={wechatPersonalOnly} onChange={(e) => setWechatPersonalOnly(e.target.checked)} />
 										{t("settings.channels.personalOnly")}
 									</label>
 								</div>
@@ -722,8 +749,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 					</div>
 
 					{/* Bridge Token (used by QQ sidecar) */}
-					{qqEnabled && (
-						<div className="rounded-lg border border-[var(--inno-border)] p-3">
+					{QQ_CHANNEL_READY && qqEnabled && (
+						<div className="rounded-lg bg-[var(--inno-surface)] p-3">
 							<div className="text-xs font-medium text-[var(--inno-text)] mb-1">{t("settings.channels.bridgeToken")}</div>
 							<div className="text-[10px] text-[var(--inno-text-subtle)] mb-2">{t("settings.channels.bridgeTokenHint")}</div>
 							<input
@@ -737,8 +764,8 @@ function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 						</div>
 					)}
 
-					{formError && <div className="rounded bg-red-50 px-2 py-1 text-xs text-red-700">{formError}</div>}
-					{saveMsg && <div className="rounded bg-green-50 px-2 py-1 text-xs text-green-700">{saveMsg}</div>}
+					{formError && <div className="rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div>}
+					{saveMsg && <div className="rounded bg-[var(--inno-success-bg)] px-2 py-1 text-xs text-[var(--inno-success)]">{saveMsg}</div>}
 					<button
 						className="rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50 justify-self-start"
 						disabled={saving}
@@ -804,13 +831,12 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 		}
 	}
 
-	const inputCls = "h-8 min-w-0 w-full rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:border-blue-400 focus:outline-none";
 	const sourceLabel = type === "github"
 		? `GitHub · ${owner || "?"}/${repo || "?"}`
 		: `${t("settings.contentHub.bundle", "自托管服务")} · ${baseUrl || "?"}`;
 
 	return (
-		<div className="min-w-0 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+		<div className="min-w-0 rounded-lg bg-[var(--inno-surface)] p-4">
 			<button className="inno-settings-card-toggle flex w-full min-w-0 items-start gap-2 text-left" onClick={() => setOpen((v) => !v)}>
 				<Database size={16} className="mt-0.5 shrink-0 text-[var(--inno-text)]" />
 				<div className="min-w-0 flex-1">
@@ -829,13 +855,13 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 					<div className="flex flex-wrap items-center gap-1.5">
 						<button
 							onClick={() => setType("github")}
-							className={`flex h-7 items-center rounded-md border px-2.5 text-xs ${type === "github" ? "border-blue-400 bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"}`}
+							className={`flex h-7 items-center rounded-md border px-2.5 text-xs ${type === "github" ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"}`}
 						>
 							GitHub
 						</button>
 						<button
 							onClick={() => setType("bundle")}
-							className={`flex h-7 items-center rounded-md border px-2.5 text-xs ${type === "bundle" ? "border-blue-400 bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"}`}
+							className={`flex h-7 items-center rounded-md border px-2.5 text-xs ${type === "bundle" ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"}`}
 						>
 							{t("settings.contentHub.bundle", "自托管服务")}
 						</button>
@@ -880,6 +906,136 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 	);
 }
 
+/* ---------- OCR API Settings (Baidu PaddleOCR-VL token) ---------- */
+
+function OcrSettings({ settings }: { settings: InnoSettings }) {
+	const { t } = useTranslation();
+	const ocr = settings.ocrApi;
+	const [open, setOpen] = useState(false);
+	const [token, setToken] = useState("");
+	const [model, setModel] = useState("");
+	const [baseUrl, setBaseUrl] = useState("");
+	const [saving, setSaving] = useState(false);
+	const [saved, setSaved] = useState(false);
+
+	const maskedToken = ocr?.token ?? "";
+	const hasExistingToken = Boolean(maskedToken);
+	const [tokenDirty, setTokenDirty] = useState(false);
+
+	useEffect(() => {
+		setModel(ocr?.model ?? "");
+		setBaseUrl(ocr?.baseUrl ?? "");
+		setToken("");
+		setTokenDirty(false);
+		setSaved(false);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [maskedToken, ocr?.model, ocr?.baseUrl]);
+
+	const dirty = tokenDirty || model !== (ocr?.model ?? "") || baseUrl !== (ocr?.baseUrl ?? "");
+
+	async function handleSave() {
+		setSaving(true);
+		setSaved(false);
+		try {
+			const tokenToSend = tokenDirty ? token.trim() : maskedToken;
+			await settingsStore.saveOcr({
+				token: tokenToSend,
+				model: model.trim() || undefined,
+				baseUrl: baseUrl.trim() || undefined,
+			});
+			setSaved(true);
+			setToken("");
+			setTokenDirty(false);
+		} catch {
+			// error surfaced via store
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	async function handleClear() {
+		setSaving(true);
+		setSaved(false);
+		try {
+			await settingsStore.saveOcr({ token: "" });
+			setSaved(true);
+			setToken("");
+			setTokenDirty(false);
+		} catch {
+			// error surfaced via store
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	return (
+		<div className="min-w-0 rounded-lg bg-[var(--inno-surface)] p-4">
+			<button className="inno-settings-card-toggle flex w-full min-w-0 items-start gap-2 text-left" onClick={() => setOpen((v) => !v)}>
+				<KeyRound size={16} className="mt-0.5 shrink-0 text-[var(--inno-text)]" />
+				<div className="min-w-0 flex-1">
+					<h4 className="break-words text-sm font-medium text-[var(--inno-text)]">{t("settings.ocr.title", "OCR API (图片文字识别)")}</h4>
+					<p className="mt-1 max-w-full break-words text-xs leading-relaxed text-[var(--inno-text-muted)]">
+						{t("settings.ocr.desc", "当接入的模型不支持图片识别时，调用百度 vl-ocr API 提取图片文字。需在百度 AI Studio 获取 token。")}
+					</p>
+					{!open && (
+						<p className="mt-1 break-all text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">
+							{hasExistingToken ? `token: ${maskedToken}` : t("settings.ocr.tokenPlaceholder", "未配置")}
+						</p>
+					)}
+				</div>
+				<ChevronDown size={14} className={`mt-1 shrink-0 text-[var(--inno-text-subtle)] transition-transform ${open ? "rotate-180" : ""}`} />
+			</button>
+
+			{open ? (
+				<div className="mt-3 grid gap-2.5">
+					<div className="grid min-w-0 gap-2">
+						<input
+							className={inputCls}
+							type="password"
+							value={token}
+							onChange={(e) => { setToken(e.target.value); setTokenDirty(true); setSaved(false); }}
+							placeholder={hasExistingToken ? maskedToken : (t("settings.ocr.tokenPlaceholder", "bearer token") ?? "")}
+							autoComplete="off"
+						/>
+						<input
+							className={inputCls}
+							value={model}
+							onChange={(e) => { setModel(e.target.value); setSaved(false); }}
+							placeholder={t("settings.ocr.modelPlaceholder", "PaddleOCR-VL-1.6") ?? ""}
+							autoComplete="off"
+						/>
+						<input
+							className={inputCls}
+							value={baseUrl}
+							onChange={(e) => { setBaseUrl(e.target.value); setSaved(false); }}
+							placeholder={t("settings.ocr.baseUrlPlaceholder", "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs") ?? ""}
+							autoComplete="off"
+						/>
+					</div>
+					<div className="flex min-w-0 flex-wrap items-center gap-2">
+						<button
+							disabled={saving || !dirty}
+							onClick={() => void handleSave()}
+							className="flex h-8 shrink-0 items-center rounded-md inno-primary-button px-3 text-xs text-white disabled:opacity-50"
+						>
+							{saving ? t("common.loading") : saved ? t("settings.ocr.saved", "已保存") : t("common.save")}
+						</button>
+						{hasExistingToken && (
+							<button
+								disabled={saving}
+								onClick={() => void handleClear()}
+								className="flex h-8 shrink-0 items-center rounded-md border border-[var(--inno-border)] px-3 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							>
+								{t("settings.ocr.clear", "清除")}
+							</button>
+						)}
+					</div>
+				</div>
+			) : null}
+		</div>
+	);
+}
+
 /* ---------- Memory Settings (L1/L2/L3 layer toggles) ---------- */
 
 type MemoryLayer = "l1Enabled" | "l2Enabled" | "l3Enabled";
@@ -907,15 +1063,7 @@ function MemoryToggleRow({
 				<h4 className="text-sm font-medium text-[var(--inno-text)]">{title}</h4>
 				<p className="mt-1 text-xs text-[var(--inno-text-muted)]">{desc}</p>
 			</div>
-			<button
-				role="switch"
-				aria-checked={shown}
-				disabled={saving || locked}
-				onClick={() => onToggle(!enabled)}
-				className={`relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${shown ? "bg-[var(--inno-accent)]" : "bg-slate-300"}`}
-			>
-				<span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-[var(--inno-surface)] transition-transform ${shown ? "translate-x-[18px]" : "translate-x-1"}`} />
-			</button>
+			<Switch checked={shown} onChange={onToggle} disabled={saving || locked} />
 		</div>
 	);
 }
@@ -958,9 +1106,9 @@ function MemorySettings({ settings }: { settings: InnoSettings }) {
 	];
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+		<div className="rounded-lg bg-[var(--inno-surface)] p-4">
 			<h4 className="mb-3 text-sm font-medium text-[var(--inno-text)]">{t("settings.memorySection")}</h4>
-			{locked ? <p className="mb-3 text-xs text-amber-600">{t("settings.simpleMode.memoryLocked")}</p> : null}
+			{locked ? <p className="mb-3 text-xs text-[var(--inno-warning)]">{t("settings.simpleMode.memoryLocked")}</p> : null}
 			<div className="grid gap-4">
 				{layers.map(({ key, ns }) => {
 					const enabled = state[key];
@@ -1005,7 +1153,7 @@ function SimpleModeSettings({ settings }: { settings: InnoSettings }) {
 	}
 
 	return (
-		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+		<div className="rounded-lg bg-[var(--inno-surface)] p-4">
 			<div className="flex items-start justify-between gap-3">
 				<div className="min-w-0">
 					<h4 className="text-sm font-medium text-[var(--inno-text)]">{t("settings.simpleMode.title")}</h4>
@@ -1013,15 +1161,7 @@ function SimpleModeSettings({ settings }: { settings: InnoSettings }) {
 						{enabled ? t("settings.simpleMode.onDesc") : t("settings.simpleMode.offDesc")}
 					</p>
 				</div>
-				<button
-					role="switch"
-					aria-checked={enabled}
-					disabled={saving}
-					onClick={() => void handleToggle(!enabled)}
-					className={`relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${enabled ? "bg-[var(--inno-accent)]" : "bg-slate-300"}`}
-				>
-					<span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-[var(--inno-surface)] transition-transform ${enabled ? "translate-x-[18px]" : "translate-x-1"}`} />
-				</button>
+				<Switch checked={enabled} onChange={(v) => void handleToggle(v)} disabled={saving} />
 			</div>
 		</div>
 	);
@@ -1110,15 +1250,15 @@ export function SettingsPanel() {
 	const models = state.settings?.availableModels ?? state.settings?.configuredModels ?? [];
 
 	return (
-		<div className="h-full overflow-y-auto p-3">
+		<div className="settings-panel h-full overflow-y-auto p-3">
 			<div className="grid gap-3">
 				{/* Status cards */}
-				<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
-					<div className="mb-3 flex items-center justify-between">
+				<div className="rounded-lg bg-[var(--inno-surface)] p-4">
+					<div className="settings-panel-header mb-3 flex flex-col items-stretch gap-3">
 						<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("settings.title")}</h3>
-						<div className="flex items-center gap-2">
+						<div className="settings-panel-controls flex flex-wrap items-center gap-2">
 							<ThemeSettings />
-							<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
+							<label className="flex shrink-0 items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
 								<span>{t("settings.language")}</span>
 								<select
 									className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 text-xs"
@@ -1129,23 +1269,23 @@ export function SettingsPanel() {
 									<option value="en">{t("settings.languageOptions.en")}</option>
 								</select>
 							</label>
-							<button className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void settingsStore.load()}>
+							<button className="shrink-0 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void settingsStore.load()}>
 								{t("settings.refresh")}
 							</button>
 						</div>
 					</div>
 					{state.isLoading ? <div className="text-sm text-[var(--inno-text-muted)]">{t("settings.loading")}</div> : null}
-					{state.error ? <div className="rounded bg-red-50 p-2 text-sm text-red-700">{state.error}</div> : null}
-					<div className="grid grid-cols-3 gap-3 text-sm">
+					{state.error ? <div className="rounded bg-[var(--inno-danger-bg)] p-2 text-sm text-[var(--inno-danger)]">{state.error}</div> : null}
+					<div className="settings-stats-grid grid gap-3 text-sm">
 						<div className="rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
 							<div className="text-xs text-[var(--inno-text-muted)]">{t("settings.stats.server")}</div>
-							<div className={healthOk ? "font-medium text-green-700" : "font-medium text-red-600"}>
+							<div className={healthOk ? "font-medium text-[var(--inno-success)]" : "font-medium text-[var(--inno-danger)]"}>
 								{healthOk ? t("settings.stats.healthy") : t("settings.stats.offline")}
 							</div>
 						</div>
-						<div className="rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
+						<div className="min-w-0 rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
 							<div className="text-xs text-[var(--inno-text-muted)]">{t("settings.stats.defaultModel")}</div>
-							<div className="font-medium text-[var(--inno-text)]">{state.settings ? `${state.settings.defaultProvider}/${state.settings.defaultModel}` : "-"}</div>
+							<div className="font-medium text-[var(--inno-text)] [overflow-wrap:anywhere]">{state.settings ? `${state.settings.defaultProvider}/${state.settings.defaultModel}` : "-"}</div>
 						</div>
 						<div className="rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
 							<div className="text-xs text-[var(--inno-text-muted)]">{t("settings.stats.wiki")}</div>
@@ -1157,7 +1297,7 @@ export function SettingsPanel() {
 				</div>
 
 				{/* Models */}
-				<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+				<div className="rounded-lg bg-[var(--inno-surface)] p-4">
 					<h4 className="mb-3 text-sm font-medium text-[var(--inno-text)]">{t("settings.models")}</h4>
 					<div className="grid gap-2">
 						{models.map((model) => {
@@ -1188,10 +1328,10 @@ export function SettingsPanel() {
 											title={t("common.edit", "Edit")}
 											onClick={() => setEditingModel(key)}
 										>
-											<Pencil size={13} />
+											<Pencil size={14} />
 										</button>
 										<button
-											className="flex h-7 w-7 items-center justify-center rounded text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+											className="flex h-7 w-7 items-center justify-center rounded text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)] group-hover:opacity-100"
 											title={t("common.delete", "Delete")}
 											onClick={() => {
 												if (window.confirm(t("settings.confirmDelete", { id: `${model.provider}/${model.id}` }) ?? "")) {
@@ -1199,7 +1339,7 @@ export function SettingsPanel() {
 												}
 											}}
 										>
-											<Trash2 size={13} />
+											<Trash2 size={14} />
 										</button>
 										{!current && (
 											<button
@@ -1236,6 +1376,9 @@ export function SettingsPanel() {
 						{/* Content Hub (source for skill library + presets; subsumes the
 						    legacy GitHub token) */}
 						{state.settings && <ContentHubSettings settings={state.settings} />}
+
+						{/* OCR API (Baidu PaddleOCR-VL token for image text extraction) */}
+						{state.settings && <OcrSettings settings={state.settings} />}
 
 						{/* Channels Settings */}
 						{state.settings && <ChannelsSettings settings={state.settings} />}

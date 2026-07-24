@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import type { RuntimePaths } from "../runtime.js";
 import type { WorkspaceMeta, WorkspaceRegistry } from "../workspace/workspace-registry.js";
 import type { RemoteContentSource } from "../content-source/index.js";
+import { mapWithConcurrency } from "../content-source/types.js";
 import { logger } from "../logger.js";
 
 /**
@@ -115,28 +116,29 @@ export function listPresets(paths: RuntimePaths): PresetMeta[] {
  */
 export async function listRemotePresets(source: RemoteContentSource, forceRefresh = false): Promise<PresetMeta[]> {
 	const items = await source.listItems("presets", { forceRefresh });
-	const metas = await Promise.all(
-		items.map(async (item): Promise<PresetMeta | null> => {
-			// Bundle service ships metadata inline in index.json.
-			const m = item.meta;
-			if (m && typeof m.name === "string" && m.name.trim()) {
-				return {
-					id: item.name,
-					name: m.name.trim(),
-					description: typeof m.description === "string" ? m.description.trim() : "",
-					icon: typeof m.icon === "string" && m.icon.trim() ? m.icon.trim() : undefined,
-					category: typeof m.category === "string" && m.category.trim() ? m.category.trim() : undefined,
-				};
-			}
-			// GitHub: read the preset.json file.
-			const text = await source.readItemTextFile("presets", item.name, "preset.json");
-			if (!text) {
-				logger.warn({ id: item.name }, "remote preset missing preset.json; skipping");
-				return null;
-			}
-			return parsePresetMeta(text, item.name);
-		}),
-	);
+	// GitHub reads one preset.json per item over raw.githubusercontent.com, which
+	// throttles bursts (429). Cap concurrency so a large catalog doesn't trip the
+	// limit and silently drop presets from the list.
+	const metas = await mapWithConcurrency(items, 5, async (item): Promise<PresetMeta | null> => {
+		// Bundle service ships metadata inline in index.json.
+		const m = item.meta;
+		if (m && typeof m.name === "string" && m.name.trim()) {
+			return {
+				id: item.name,
+				name: m.name.trim(),
+				description: typeof m.description === "string" ? m.description.trim() : "",
+				icon: typeof m.icon === "string" && m.icon.trim() ? m.icon.trim() : undefined,
+				category: typeof m.category === "string" && m.category.trim() ? m.category.trim() : undefined,
+			};
+		}
+		// GitHub: read the preset.json file.
+		const text = await source.readItemTextFile("presets", item.name, "preset.json");
+		if (!text) {
+			logger.warn({ id: item.name }, "remote preset missing preset.json; skipping");
+			return null;
+		}
+		return parsePresetMeta(text, item.name);
+	});
 	return metas.filter((m): m is PresetMeta => m !== null).sort((a, b) => a.name.localeCompare(b.name));
 }
 

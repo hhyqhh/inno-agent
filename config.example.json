@@ -6,11 +6,14 @@
 			"baseUrl": "https://api.innospark.cn",
 			"api": "anthropic-messages",
 			"apiKey": "replace-me",
+			"authHeader": false,
+			"bypassProxy": false,
 			"models": [
 				{
 					"id": "claude-sonnet-4-6",
 					"name": "Claude Sonnet 4.6 via InnoSpark",
 					"reasoning": true,
+					"input": ["text", "image"],
 					"contextWindow": 200000,
 					"maxTokens": 16384
 				}
@@ -25,13 +28,6 @@
 			"enabled": false,
 			"personalOnly": true,
 			"allowedUserIds": []
-		},
-		"qq": {
-			"enabled": false,
-			"mode": "bridge",
-			"personalOnly": true,
-			"allowedUserIds": [],
-			"sidecarBaseUrl": "http://127.0.0.1:4318"
 		},
 		"wechat": {
 			"enabled": false,
@@ -73,5 +69,10 @@
 		"model": "fun-asr-realtime",
 		"vocabularyId": "",
 		"maxSentenceSilenceMs": 800
+	},
+	"ocrApi": {
+		"token": "",
+		"model": "PaddleOCR-VL-1.6",
+		"baseUrl": "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
 	}
 }

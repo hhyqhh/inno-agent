@@ -3,11 +3,13 @@ import { dirname, join } from "node:path";
 import type { RuntimePaths } from "./runtime.js";
 
 export type InnoProviderApi = "openai-completions" | "openai-responses" | "anthropic-messages" | string;
+export type InnoModelInput = "text" | "image";
 
 export interface InnoModelConfig {
 	id: string;
 	name: string;
 	reasoning: boolean;
+	input: InnoModelInput[];
 	contextWindow: number;
 	maxTokens: number;
 }
@@ -16,6 +18,9 @@ export interface InnoProviderConfig {
 	baseUrl: string;
 	apiKey: string;
 	api?: InnoProviderApi;
+	headers?: Record<string, string>;
+	authHeader?: boolean;
+	bypassProxy?: boolean;
 	models: InnoModelConfig[];
 }
 
@@ -164,6 +169,17 @@ export interface InnoConfig {
 	ui?: {
 		theme: string;
 	};
+	/**
+	 * Optional OCR API config (Baidu PaddleOCR-VL). When the configured model
+	 * cannot recognize images, the agent calls the `ocr_image` tool which uses
+	 * these credentials to submit an async OCR job and poll for the markdown
+	 * result. Unconfigured → the tool returns a "not configured" hint.
+	 */
+	ocrApi?: {
+		token: string;
+		model?: string;
+		baseUrl?: string;
+	};
 }
 
 interface LegacyInnoConfig extends Partial<InnoConfig> {
@@ -185,13 +201,33 @@ export function normalizeModelConfig(model: Partial<InnoModelConfig> & { id: str
 	if (!id) throw new Error("Model id is required");
 	const contextWindow = model.contextWindow;
 	const maxTokens = model.maxTokens;
+	// Vision support is controlled by the optional `input` array. For legacy
+	// configs that predate this field, preserve the historical behavior
+	// (text+image) instead of silently downgrading vision-capable models
+	// (Claude/GPT-4o) to text-only. Only configs that explicitly set `input`
+	// without "image" are treated as text-only.
+	const hasInputField = "input" in model;
+	const supportsImages = hasInputField
+		? Array.isArray(model.input) && model.input.includes("image")
+		: true;
 	return {
 		id,
 		name: (model.name?.trim() || id),
 		reasoning: Boolean(model.reasoning),
+		input: supportsImages ? ["text", "image"] : ["text"],
 		contextWindow: contextWindow !== undefined && Number.isFinite(contextWindow) && contextWindow > 0 ? Math.trunc(contextWindow) : 128000,
 		maxTokens: maxTokens !== undefined && Number.isFinite(maxTokens) && maxTokens > 0 ? Math.trunc(maxTokens) : 8192,
 	};
+}
+
+function normalizeProviderHeaders(headers: InnoProviderConfig["headers"] | undefined): Record<string, string> | undefined {
+	if (!headers || typeof headers !== "object" || Array.isArray(headers)) return undefined;
+	const normalized = Object.fromEntries(
+		Object.entries(headers)
+			.map(([key, value]) => [key.trim(), value] as const)
+			.filter(([key, value]) => key.length > 0 && typeof value === "string"),
+	);
+	return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 export function normalizeProviderConfig(provider: Partial<InnoProviderConfig>): InnoProviderConfig {
@@ -199,10 +235,14 @@ export function normalizeProviderConfig(provider: Partial<InnoProviderConfig>): 
 	if (!baseUrl) throw new Error("Provider baseUrl is required");
 	const models = (provider.models ?? []).map((model) => normalizeModelConfig(model));
 	if (models.length === 0) throw new Error("Provider must include at least one model");
+	const headers = normalizeProviderHeaders(provider.headers);
 	return {
 		baseUrl,
 		apiKey: provider.apiKey ?? "",
 		api: provider.api?.trim() || "openai-completions",
+		...(headers ? { headers } : {}),
+		...(provider.authHeader === true ? { authHeader: true } : {}),
+		...(provider.bypassProxy === true ? { bypassProxy: true } : {}),
 		models,
 	};
 }
@@ -305,6 +345,7 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
 		meeting: normalizeMeetingConfig(config.meeting),
 		ui: config.ui,
+		ocrApi: config.ocrApi,
 	} as InnoConfig;
 }
 
@@ -354,13 +395,16 @@ export function upsertProvider(
 	config: InnoConfig,
 	providerId: string,
 	provider: InnoProviderConfig,
-	options: { makeDefault?: boolean; preserveApiKey?: boolean } = {},
+	options: { makeDefault?: boolean; preserveApiKey?: boolean; preserveHeaders?: boolean } = {},
 ): InnoConfig {
 	const id = providerId.trim();
 	if (!id) throw new Error("Provider id is required");
 	const existing = config.providers[id];
 	const normalized = normalizeProviderConfig({
 		...provider,
+		headers: options.preserveHeaders && existing && provider.headers === undefined
+			? existing.headers
+			: provider.headers,
 		apiKey:
 			options.preserveApiKey && existing && (!provider.apiKey || provider.apiKey.startsWith("****"))
 				? existing.apiKey

@@ -35,7 +35,9 @@ const TREE_CACHE_TTL_MS = 5 * 60 * 1000;
  *     for a few minutes, instead of a per-directory `contents` walk that
  *     quickly exhausts the unauthenticated 60/hour budget.
  *   - File bytes come from raw.githubusercontent.com (a CDN that does NOT count
- *     against the API rate limit).
+ *     against the API rate limit, but has its own per-IP anonymous throttle —
+ *     so raw fetches are authenticated + retried with backoff, see rawHeaders /
+ *     fetchWithRetry).
  */
 export class GitHubContentSource implements RemoteContentSource {
 	private treeCache: { entries: GitTreeEntry[]; fetchedAt: number } | null = null;
@@ -79,6 +81,48 @@ export class GitHubContentSource implements RemoteContentSource {
 		return `https://raw.githubusercontent.com/${this.hub.owner}/${this.hub.repo}/${this.hub.ref}/${encoded}`;
 	}
 
+	/**
+	 * Headers for raw.githubusercontent.com. Unlike {@link headers}, this omits
+	 * the JSON `Accept` (raw returns file bytes) but MUST still carry the token:
+	 * anonymous raw requests share a per-IP budget that a burst of preset.json
+	 * reads exhausts, returning 429. Authenticating ties them to the account's
+	 * far larger limit.
+	 */
+	private rawHeaders(): Record<string, string> {
+		const headers: Record<string, string> = { "User-Agent": "inno-agent" };
+		const token = this.hub.token?.trim() || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+		if (token) headers.Authorization = `Bearer ${token}`;
+		return headers;
+	}
+
+	/**
+	 * Fetch with bounded exponential backoff on transient throttling (429) and
+	 * server errors (5xx). Honors `Retry-After` when present. Returns the final
+	 * Response (which may still be non-ok) so callers decide how to treat it.
+	 */
+	private async fetchWithRetry(url: string, headers: Record<string, string>, attempts = 4): Promise<Response> {
+		let lastErr: unknown;
+		for (let attempt = 0; attempt < attempts; attempt++) {
+			try {
+				const res = await fetch(url, { headers });
+				if (res.status !== 429 && res.status < 500) return res;
+				if (attempt === attempts - 1) return res;
+				const retryAfter = Number(res.headers.get("retry-after"));
+				const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+					? retryAfter * 1000
+					: Math.min(2000, 250 * 2 ** attempt);
+				logger.warn({ url, status: res.status, attempt, delayMs }, "content-source: retrying throttled raw fetch");
+				await new Promise((resolve) => setTimeout(resolve, delayMs));
+			} catch (err) {
+				lastErr = err;
+				if (attempt === attempts - 1) throw err;
+				await new Promise((resolve) => setTimeout(resolve, Math.min(2000, 250 * 2 ** attempt)));
+			}
+		}
+		// Unreachable: the loop either returns or throws on the last attempt.
+		throw lastErr ?? new Error(`fetch failed for ${url}`);
+	}
+
 	private async getTree(forceRefresh = false): Promise<GitTreeEntry[]> {
 		const now = Date.now();
 		if (!forceRefresh && this.treeCache && now - this.treeCache.fetchedAt < TREE_CACHE_TTL_MS) {
@@ -117,8 +161,11 @@ export class GitHubContentSource implements RemoteContentSource {
 		if (!isSafeItemName(name)) throw new Error(`Invalid item name: ${name}`);
 		const repoPath = `${this.prefixFor(category)}${name}/${relPath}`;
 		try {
-			const res = await fetch(this.rawUrl(repoPath), { headers: { "User-Agent": "inno-agent" } });
-			if (!res.ok) return null;
+			const res = await this.fetchWithRetry(this.rawUrl(repoPath), this.rawHeaders());
+			if (!res.ok) {
+				logger.warn({ repoPath, status: res.status }, "content-source: raw file fetch not ok");
+				return null;
+			}
 			return await res.text();
 		} catch (err) {
 			logger.warn({ err, repoPath }, "content-source: failed to read item text file");
@@ -139,7 +186,7 @@ export class GitHubContentSource implements RemoteContentSource {
 			const rel = blob.path.slice(dirPrefix.length);
 			if (!rel || rel.includes("..")) continue;
 			const localPath = join(targetDir, rel);
-			const res = await fetch(this.rawUrl(blob.path), { headers: { "User-Agent": "inno-agent" } });
+			const res = await this.fetchWithRetry(this.rawUrl(blob.path), this.rawHeaders());
 			if (!res.ok) throw new Error(`Failed to download ${blob.path} (${res.status})`);
 			const buf = Buffer.from(await res.arrayBuffer());
 			ensureDir(dirname(localPath));

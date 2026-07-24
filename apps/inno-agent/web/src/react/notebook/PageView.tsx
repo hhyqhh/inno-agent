@@ -7,17 +7,21 @@ import { parseFrontmatter } from "../../utils/frontmatter.js";
 import { normalizeMarkdownMath } from "../../utils/markdown-math.js";
 import { useStoreSnapshot } from "../hooks.js";
 import { MilkdownEditor } from "./MilkdownEditor.js";
+import "@earendil-works/pi-web-ui";
+import { Spinner } from "../ui/Spinner.js";
+import "@uiw/react-md-editor/markdown-editor.css";
+import "@uiw/react-markdown-preview/markdown.css";
 
 function typeColor(type?: WikiPageType): string {
 	switch (type) {
 		case "source-summary":
-			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)] ring-1 ring-blue-100";
+			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]";
 		case "entity":
-			return "bg-green-50 text-green-700 ring-1 ring-green-100";
+			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)]";
 		case "concept":
-			return "bg-orange-50 text-orange-700 ring-1 ring-orange-100";
+			return "bg-[var(--inno-warning-bg)] text-[var(--inno-warning)]";
 		case "analysis":
-			return "bg-purple-50 text-purple-700 ring-1 ring-purple-100";
+			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]";
 		default:
 			return "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]";
 	}
@@ -59,14 +63,14 @@ function FrontmatterHeader({
 	const [tagInput, setTagInput] = useState("");
 	const [isSavingTags, setIsSavingTags] = useState(false);
 	const statusColors: Record<string, string> = {
-		draft: "bg-yellow-50 text-yellow-700 ring-1 ring-yellow-100",
-		reviewed: "bg-green-50 text-green-700 ring-1 ring-green-100",
-		outdated: "bg-red-50 text-red-700 ring-1 ring-red-100",
+		draft: "bg-[var(--inno-warning-bg)] text-[var(--inno-warning)]",
+		reviewed: "bg-[var(--inno-success-bg)] text-[var(--inno-success)]",
+		outdated: "bg-[var(--inno-danger-bg)] text-[var(--inno-danger)]",
 	};
 	const confidenceColors: Record<string, string> = {
-		low: "bg-red-50 text-red-700 ring-1 ring-red-100",
-		medium: "bg-yellow-50 text-yellow-700 ring-1 ring-yellow-100",
-		high: "bg-green-50 text-green-700 ring-1 ring-green-100",
+		low: "bg-[var(--inno-danger-bg)] text-[var(--inno-danger)]",
+		medium: "bg-[var(--inno-warning-bg)] text-[var(--inno-warning)]",
+		high: "bg-[var(--inno-success-bg)] text-[var(--inno-success)]",
 	};
 	const saveTags = async () => {
 		const tags = uniqueTags([...draftTags, ...splitTagInput(tagInput)]);
@@ -96,7 +100,7 @@ function FrontmatterHeader({
 				<span className={`rounded px-1.5 py-0.5 ${typeColor(frontmatter.type)}`}>{t(`notebook.types.${frontmatter.type}`)}</span>
 				<span className={`rounded px-1.5 py-0.5 ${statusColors[frontmatter.status] ?? ""}`}>{t(`notebook.status.${frontmatter.status}`)}</span>
 				<span className={`rounded px-1.5 py-0.5 ${confidenceColors[frontmatter.confidence] ?? ""}`}>{t(`notebook.confidence.${frontmatter.confidence}`)}</span>
-				{frontmatter.contested ? <span className="rounded bg-red-50 px-1.5 py-0.5 text-red-700 ring-1 ring-red-100">{t("notebook.contested")}</span> : null}
+				{frontmatter.contested ? <span className="rounded bg-[var(--inno-danger-bg)] px-1.5 py-0.5 text-[var(--inno-danger)]">{t("notebook.contested")}</span> : null}
 				<span className="text-[var(--inno-text-muted)]">{frontmatter.updated}</span>
 			</div>
 			<div className="mt-2">
@@ -172,6 +176,11 @@ function FrontmatterHeader({
 					</div>
 				) : (
 					<div className="flex flex-wrap items-center gap-1">
+						{frontmatter.tags.map((tag) => (
+							<span key={tag} className="rounded-full bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-xs text-[var(--inno-accent)]">
+								#{tag}
+							</span>
+						))}
 						{canEditTags ? (
 							<button
 								type="button"
@@ -247,7 +256,7 @@ export function PageView({
 	if (state.isLoading) {
 		return (
 			<div className="flex h-full items-center justify-center text-[var(--inno-text-muted)]">
-				<span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+				<Spinner size={20} />
 			</div>
 		);
 	}
@@ -277,7 +286,7 @@ export function PageView({
 					<button className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={() => void notebookStore.savePage()}>
 						{t("common.save")}
 					</button>
-					<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={() => notebookStore.cancelEditing()}>
+					<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => notebookStore.cancelEditing()}>
 						{t("common.cancel")}
 					</button>
 				</div>
@@ -312,7 +321,7 @@ export function PageView({
 						{isCurrentSourceRegenerating ? t("notebook.page.regenerating") : t("notebook.page.regenerate")}
 					</button>
 				) : null}
-				<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-slate-200 hover:text-[var(--inno-text)]" onClick={() => notebookStore.setView("graph")}>
+				<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => notebookStore.setView("graph")}>
 					{t("notebook.page.backToGraph")}
 				</button>
 			</div>

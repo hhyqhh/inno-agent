@@ -117,6 +117,11 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				this.emit("change", undefined);
 				try {
 					await new Promise((r) => setTimeout(r, 1000));
+					this.streamingText = "";
+					this.streamingThinking = "";
+					this.streamingError = "";
+					this.activeTools = [];
+					this.completedTools = [];
 					const reconnectController = new AbortController();
 					this.abortController = reconnectController;
 					for await (const event of streamSessionEvents(targetSessionId, reconnectController.signal)) {

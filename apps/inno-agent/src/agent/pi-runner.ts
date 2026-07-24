@@ -12,7 +12,7 @@ import {
 	type ExtensionFactory,
 	type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
-import { complete, type AssistantMessage, type ImageContent, type Model } from "@earendil-works/pi-ai";
+import { complete, type AssistantMessage, type ImageContent, type Model, type UserMessage } from "@earendil-works/pi-ai";
 import { basename, join, resolve } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInnoExtension, type ConfigHolder, type InnoExtensionDeps } from "./inno-extension.js";
@@ -434,6 +434,44 @@ export function appendAssistantNotification(text: string): void {
 	session.sessionManager.appendMessage(message);
 }
 
+/** Persist a user/assistant message produced by a UI-owned AI workflow. */
+export async function appendWorkflowSessionMessage(
+	role: "user" | "assistant",
+	text: string,
+	expectedSessionId?: string,
+): Promise<void> {
+	await enqueue(async () => {
+		const session = getSession();
+		const currentId = session.sessionFile ? basename(session.sessionFile) : "";
+		if (expectedSessionId && currentId !== expectedSessionId) {
+			throw new Error("The active session changed before the workflow message was saved");
+		}
+		if (role === "user") {
+			const message: UserMessage = { role: "user", content: text, timestamp: Date.now() };
+			session.sessionManager.appendMessage(message);
+			return;
+		}
+		const message: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text }],
+			api: "inno-background",
+			provider: "inno",
+			model: "note-polish-workflow",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: Date.now(),
+		};
+		session.sessionManager.appendMessage(message);
+	});
+}
+
 /**
  * Persist an interrupted first turn so it isn't lost from the sidebar.
  *
@@ -676,7 +714,7 @@ export function runPromptInSession(
  * exact "new conversation hangs, sidebar won't load" lockup. We also hard-cap it
  * with an abortable timeout so it can never wait on the provider's long default.
  */
-export async function completePromptOnce(prompt: string, maxTokens = 64, timeoutMs = 20_000): Promise<string> {
+export async function completePromptOnce(prompt: string, maxTokens = 64, timeoutMs = 20_000, signal?: AbortSignal): Promise<string> {
 	if (!_runtime) return "";
 	const session = _runtime.session;
 	const model = session.model;
@@ -686,6 +724,9 @@ export async function completePromptOnce(prompt: string, maxTokens = 64, timeout
 	if (!auth.ok || !auth.apiKey) return "";
 
 	const controller = new AbortController();
+	const handleExternalAbort = () => controller.abort();
+	if (signal?.aborted) controller.abort();
+	else signal?.addEventListener("abort", handleExternalAbort, { once: true });
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	const promptStartTime = Date.now();
 	try {
@@ -724,6 +765,7 @@ export async function completePromptOnce(prompt: string, maxTokens = 64, timeout
 		return "";
 	} finally {
 		clearTimeout(timer);
+		signal?.removeEventListener("abort", handleExternalAbort);
 	}
 }
 

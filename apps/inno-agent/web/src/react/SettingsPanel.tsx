@@ -6,7 +6,7 @@ import { getWikiStats } from "../api/wiki.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { themeStore, THEME_IDS, THEME_PREVIEW_COLORS, type ThemeId } from "../stores/theme-store.js";
 import { feishuQrRegister, feishuQrStatus, wechatQrLogin, wechatQrStatus, wechatStatus } from "../api/settings.js";
-import type { InnoModelInfo, InnoProviderModel as ProviderModel, InnoSettings, ChannelsSettingsPayload, PersonalBridgeChannelConfig } from "../types/settings.js";
+import type { InnoModelInfo, InnoProviderModel as ProviderModel, InnoSettings, ChannelsSettingsPayload, PersonalBridgeChannelConfig, MeetingSettings } from "../types/settings.js";
 import type { WikiStats } from "../types/wiki.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { setLocale } from "../i18n/index.js";
@@ -1167,6 +1167,64 @@ function SimpleModeSettings({ settings }: { settings: InnoSettings }) {
 	);
 }
 
+function MeetingSettingsCard({ settings }: { settings: InnoSettings }) {
+	const initial: MeetingSettings = settings.meeting ?? {
+		enabled: false,
+		transcriptionProvider: "dashscope",
+		language: "zh",
+		saveAudio: true,
+		summaryTemplate: "default",
+		websocketUrl: "",
+		apiKey: "",
+		model: "fun-asr-realtime",
+		vocabularyId: "",
+		maxSentenceSilenceMs: 800,
+	};
+	const [form, setForm] = useState<MeetingSettings>(initial);
+	const [saving, setSaving] = useState(false);
+	const [saved, setSaved] = useState(false);
+
+	useEffect(() => setForm(settings.meeting ?? initial), [settings.meeting]);
+
+	async function save() {
+		setSaving(true);
+		setSaved(false);
+		try {
+			await settingsStore.saveMeeting(form);
+			setSaved(true);
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	const inputClass = "w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1.5 text-xs";
+	return (
+		<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-4">
+			<div className="mb-3 flex items-center justify-between gap-3">
+				<div>
+					<h4 className="text-sm font-medium text-[var(--inno-text)]">会议转写</h4>
+					<p className="mt-1 text-xs text-[var(--inno-text-muted)]">配置实时转写 Provider；密钥仅保存在本地配置中。</p>
+				</div>
+				<label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />启用</label>
+			</div>
+			<div className="grid grid-cols-2 gap-2">
+				<label className="text-xs text-[var(--inno-text-muted)]">转写 Provider<select className={inputClass} value={form.transcriptionProvider} onChange={(e) => setForm({ ...form, transcriptionProvider: e.target.value })}><option value="dashscope">DashScope</option></select></label>
+				<label className="text-xs text-[var(--inno-text-muted)]">语言<input className={inputClass} value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} /></label>
+				<label className="col-span-2 text-xs text-[var(--inno-text-muted)]">WebSocket URL<input className={inputClass} value={form.websocketUrl} onChange={(e) => setForm({ ...form, websocketUrl: e.target.value })} /></label>
+				<label className="col-span-2 text-xs text-[var(--inno-text-muted)]">API Key<input type="password" className={inputClass} value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} placeholder={form.apiKey.startsWith("****") ? "已保存；保持不变即可" : ""} /></label>
+				<label className="text-xs text-[var(--inno-text-muted)]">模型<input className={inputClass} value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} /></label>
+				<label className="text-xs text-[var(--inno-text-muted)]">热词表 ID<input className={inputClass} value={form.vocabularyId} onChange={(e) => setForm({ ...form, vocabularyId: e.target.value })} /></label>
+				<label className="text-xs text-[var(--inno-text-muted)]">断句静默时间（毫秒）<input type="number" min={200} max={5000} className={inputClass} value={form.maxSentenceSilenceMs} onChange={(e) => setForm({ ...form, maxSentenceSilenceMs: Number(e.target.value) })} /></label>
+				<label className="text-xs text-[var(--inno-text-muted)]">纪要模板<input className={inputClass} value={form.summaryTemplate} onChange={(e) => setForm({ ...form, summaryTemplate: e.target.value })} /></label>
+			</div>
+			<div className="mt-3 flex items-center gap-3">
+				<button className="rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存会议设置"}</button>
+				{saved ? <span className="text-xs text-emerald-600">已保存</span> : null}
+			</div>
+		</div>
+	);
+}
+
 /* ---------- Main SettingsPanel ---------- */
 
 export function SettingsPanel() {
@@ -1311,6 +1369,9 @@ export function SettingsPanel() {
 
 						{/* Memory Settings (L3 cross-conversation recall) */}
 						{state.settings && <MemorySettings settings={state.settings} />}
+
+						{/* Meeting transcription provider */}
+						{state.settings && <MeetingSettingsCard settings={state.settings} />}
 
 						{/* Content Hub (source for skill library + presets; subsumes the
 						    legacy GitHub token) */}

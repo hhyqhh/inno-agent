@@ -153,6 +153,7 @@ export default defineConfig({
 						"@codemirror/lang-yaml",
 					],
 					"markdown-editor": ["@uiw/react-md-editor"],
+					milkdown: ["@milkdown/crepe", "@milkdown/kit"],
 					cytoscape: ["cytoscape", "cytoscape-cola", "cytoscape-cose-bilkent"],
 					katex: ["katex"],
 					"docx-preview": ["docx-preview"],

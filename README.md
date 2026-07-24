@@ -48,6 +48,7 @@ Inno Agent takes a different stance:
 - ⏰ **Proactive scheduler** — cron-driven background jobs created in natural language, runnable from the agent, the UI, or the cron daemon.
 - 💬 **Personal IM channels** — Feishu (native) plus WeChat (bridge mode), with a unified dispatcher that pushes reminders back out.
 - 🧪 **Practice Lab** — a workspace-scoped web terminal (xterm.js over WebSocket) with run records the agent can read.
+- 🎙️ **Meeting notes** — stream microphone audio to Alibaba Cloud Fun-ASR Realtime, keep a timestamped transcript in an L2 draft, and generate a reviewable summary with decisions and action items using the active text model.
 - 🔌 **Pluggable providers** — any `openai-completions` or `anthropic-messages` endpoint (Anthropic, OpenAI, DeepSeek, Ollama, or a local model); switch models live in the UI.
 - 🖥️ **CLI and Web UI** — same runtime, same memory, same skills.
 - 🛡️ **Optional OS-level sandbox** — gate the agent's bash and file operations via [pi-sandbox](https://github.com/carderne/pi-sandbox).
@@ -149,6 +150,25 @@ The included `restart-dev.sh` orchestrates both processes (build, start, stop, s
 ```
 
 Each provider has a `baseUrl`, an `api` (`openai-completions` or `anthropic-messages`), an `apiKey`, and a `models[]` list. The server hot-rewrites this file when you switch model in the UI.
+
+### Meeting transcription
+
+Configure the speech service only on the server in `runtime/config/config.json`:
+
+```json
+"meeting": {
+  "enabled": true,
+  "websocketUrl": "wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference/",
+  "apiKey": "your-dashscope-api-key",
+  "model": "fun-asr-realtime",
+  "vocabularyId": "",
+  "maxSentenceSilenceMs": 800
+}
+```
+
+Then open **Notebook** and choose **Record meeting**. Audio is sent as 16 kHz mono PCM while recording; the timestamped transcript is saved continuously as an L2 draft. When recording stops, the current text model generates the summary, discussion points, decisions, action items, and unresolved risks. The generated note stays a draft until you review and archive it.
+
+Microphone capture requires browser permission and a secure context (`https://` or `localhost`). Speech credentials are intentionally not exposed through the web settings API or UI.
 
 ### Runtime path resolution
 

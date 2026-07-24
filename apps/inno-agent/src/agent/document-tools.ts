@@ -2,7 +2,7 @@ import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent
 import { Type } from "typebox";
 import { existsSync } from "node:fs";
 import { resolve, isAbsolute } from "node:path";
-import { parseDocument, screenshotDocument, DocumentParseError } from "../memory/l2/document-parser.js";
+import { parseDocument, DocumentParseError } from "../memory/l2/document-parser.js";
 import { logger } from "../logger.js";
 
 /**
@@ -13,7 +13,7 @@ export function createDocumentTools(): ToolDefinition[] {
 		name: "parse_document",
 		label: "解析文档",
 		description:
-			"解析 PDF、Word、Excel、PPT 或图片文件，提取文本内容。" +
+			"解析 PDF、Word、Excel、PPT 或图片文件，提取文本内容；图片会自动执行中英文 OCR。" +
 			"用户想查看文件内容、提取文本、或需要先预览再决定是否归档时调用。" +
 			"支持格式：.pdf, .docx, .xlsx, .pptx, .png, .jpg, .jpeg, .gif, .webp, .tiff",
 		parameters: Type.Object({
@@ -23,17 +23,11 @@ export function createDocumentTools(): ToolDefinition[] {
 					description: "为 true 时返回每页的文本，默认只返回合并后的全文",
 				}),
 			),
-			includeScreenshots: Type.Optional(
-				Type.Boolean({
-					description: "为 true 时返回每页的 PNG 截图（仅 PDF 支持），默认 false",
-				}),
-			),
 		}),
 		async execute(_toolCallId, params) {
 			const typed = params as {
 				filePath: string;
 				includePageDetails?: boolean;
-				includeScreenshots?: boolean;
 			};
 
 			// Resolve path relative to workspace
@@ -83,29 +77,9 @@ export function createDocumentTools(): ToolDefinition[] {
 				}
 			}
 
-			const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [
+			const content: Array<{ type: "text"; text: string }> = [
 				{ type: "text", text: lines.join("\n") },
 			];
-
-			// Screenshots
-			if (typed.includeScreenshots) {
-				try {
-					const screenshots = await screenshotDocument(resolvedPath);
-					for (const shot of screenshots) {
-						content.push({
-							type: "image",
-							data: shot.imageBuffer.toString("base64"),
-							mimeType: "image/png",
-						});
-					}
-				} catch (err) {
-					logger.warn({ err }, "document screenshot generation failed");
-					content.push({
-						type: "text",
-						text: "\n[截图生成失败，可能不支持该文件格式的截图]",
-					});
-				}
-			}
 
 			return {
 				content,

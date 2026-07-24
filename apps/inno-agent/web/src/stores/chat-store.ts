@@ -1,10 +1,11 @@
 import { EventEmitter } from "./event-emitter.js";
 import { streamChat, abortChat, streamSessionEvents } from "../api/chat.js";
 import type { InlineImage } from "../api/chat.js";
-import type { ChatMessage, ChatStreamEvent, ChatToolRecord, PendingQuestion, QuestionnaireResult, WorkspaceFileChange } from "../types/chat.js";
+import type { ChatMessage, ChatNoteReference, ChatStreamEvent, ChatToolRecord, ChatWorkflowChoice, PendingQuestion, QuestionnaireResult, WorkspaceFileChange } from "../types/chat.js";
 import { notebookStore } from "./notebook-store.js";
 import { appStore } from "./app-store.js";
 import { workspaceStore, type StreamingWorkspacePreview } from "./workspace-store.js";
+import { appendSessionWorkflowMessage } from "../api/sessions.js";
 
 type StreamingTarget = "chat" | "workspace";
 
@@ -26,6 +27,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	streamingTarget: StreamingTarget = "chat";
 	streamingActivity = "";
 	streamingActivityDetail = "";
+	activityText = "";
 	/** Backend/model error for the in-flight turn, surfaced in the UI (collapsible). */
 	streamingError = "";
 	/** Active tool calls in progress */
@@ -35,6 +37,8 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	lastUserPrompt: string | null = null;
 	/** Images from the last send, kept so users can Retry. */
 	lastImages: InlineImage[] | undefined = undefined;
+	private lastNoteReferences: ChatNoteReference[] | undefined = undefined;
+	private lastActivityText: string | undefined = undefined;
 	/** Pending question from agent's ask_user_question tool */
 	pendingQuestion: PendingQuestion | null = null;
 	private abortController: AbortController | null = null;
@@ -47,8 +51,65 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	private completedFileToolIds = new Set<string>();
 	private previewChangeTimer: ReturnType<typeof setTimeout> | null = null;
 	private pendingPreviewUpdate: { id: string; patch: StreamingPreviewPatch } | null = null;
+	private workflowQuestionHandlers = new Map<string, (value: string) => void | Promise<void>>();
 
-	async send(prompt: string, images?: InlineImage[]): Promise<void> {
+	/**
+	 * Add a local message emitted by an in-app AI workflow, such as note polish.
+	 * The workflow owns its model request, while the chat remains the visible
+	 * place where the user can see what was requested and what happened.
+	 */
+	async appendWorkflowMessage(role: "user" | "assistant", content: string): Promise<void> {
+		const trimmed = content.trim();
+		if (!trimmed) return;
+		this.messages = [...this.messages, {
+			role,
+			content: trimmed,
+			timestamp: Date.now(),
+		}];
+		this.emit("change", undefined);
+		const { sessionsStore } = await import("./sessions-store.js");
+		const sessionId = sessionsStore.currentSessionId;
+		if (sessionId) {
+			await appendSessionWorkflowMessage(sessionId, role, trimmed);
+			void sessionsStore.refresh();
+		}
+	}
+
+	async appendWorkflowQuestion(content: string, choices: ChatWorkflowChoice[], onSelect: (value: string) => void | Promise<void>): Promise<void> {
+		const trimmed = content.trim();
+		if (!trimmed || choices.length === 0) return;
+		const id = `workflow-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+		this.workflowQuestionHandlers.set(id, onSelect);
+		this.messages = [...this.messages, {
+			role: "assistant",
+			content: trimmed,
+			timestamp: Date.now(),
+			workflowQuestion: { id, choices },
+		}];
+		this.emit("change", undefined);
+		const { sessionsStore } = await import("./sessions-store.js");
+		const sessionId = sessionsStore.currentSessionId;
+		if (sessionId) {
+			await appendSessionWorkflowMessage(sessionId, "assistant", trimmed);
+			void sessionsStore.refresh();
+		}
+	}
+
+	async answerWorkflowQuestion(id: string, value: string): Promise<void> {
+		const message = this.messages.find((item) => item.workflowQuestion?.id === id);
+		const question = message?.workflowQuestion;
+		const choice = question?.choices.find((item) => item.value === value);
+		const handler = this.workflowQuestionHandlers.get(id);
+		if (!question || question.selectedValue || !choice || !handler) return;
+		this.messages = this.messages.map((item) => item.workflowQuestion?.id === id
+			? { ...item, workflowQuestion: { ...item.workflowQuestion, selectedValue: value } }
+			: item);
+		this.workflowQuestionHandlers.delete(id);
+		await this.appendWorkflowMessage("user", choice.label);
+		await handler(value);
+	}
+
+	async send(prompt: string, images?: InlineImage[], activityText?: string, noteReferences?: ChatNoteReference[]): Promise<void> {
 		if ((!prompt.trim() && !images?.length) || this.isSending) return;
 		this.detachMode = false;
 		this.resetStreamTimers();
@@ -62,6 +123,8 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 
 		this.lastUserPrompt = prompt;
 		this.lastImages = images;
+		this.lastNoteReferences = noteReferences?.length ? noteReferences.map((note) => ({ ...note })) : undefined;
+		this.lastActivityText = activityText;
 		this.messages = [...this.messages, {
 			role: "user",
 			content: prompt,
@@ -70,11 +133,18 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				previewUrl: `data:${mimeType};base64,${data}`,
 				mimeType,
 			})),
+			noteReferences: this.lastNoteReferences,
 		}];
 		this.isSending = true;
 		this.streamingText = "";
 		this.streamingThinking = "";
-		this.setStreamingActivity("正在分析请求");
+		this.activityText = activityText ?? "";
+		if (activityText) {
+			this.streamingActivity = "";
+			this.streamingActivityDetail = "";
+		} else {
+			this.setStreamingActivity("正在分析请求");
+		}
 		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
@@ -84,7 +154,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.emit("change", undefined);
 
 		try {
-			for await (const event of streamChat(prompt, targetSessionId, controller.signal, images)) {
+			for await (const event of streamChat(prompt, targetSessionId, controller.signal, images, this.lastNoteReferences)) {
 				this._handleStreamEvent(event);
 			}
 			this.flushStreamChange();
@@ -165,6 +235,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			this.streamingTarget = "chat";
 			this.streamingActivity = "";
 			this.streamingActivityDetail = "";
+			this.activityText = "";
 			this.streamingError = "";
 			this.activeTools = [];
 			this.completedTools = [];
@@ -228,6 +299,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.streamingTarget = "chat";
 		this.streamingActivity = "正在恢复生成";
 		this.streamingActivityDetail = "";
+		this.activityText = "";
 		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
@@ -270,6 +342,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			this.streamingTarget = "chat";
 			this.streamingActivity = "";
 			this.streamingActivityDetail = "";
+			this.activityText = "";
 			this.streamingError = "";
 			this.activeTools = [];
 			this.completedTools = [];
@@ -286,12 +359,13 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	/** Re-send the last user prompt. No-op while a send is in flight. */
 	async retry(): Promise<void> {
 		if (this.isSending || !this.lastUserPrompt) return;
-		await this.send(this.lastUserPrompt, this.lastImages);
+		await this.send(this.lastUserPrompt, this.lastImages, this.lastActivityText, this.lastNoteReferences);
 	}
 
 	private _handleStreamEvent(event: ChatStreamEvent) {
 		switch (event.type) {
 			case "text_delta":
+				this.activityText = "";
 				this.streamingText += event.delta;
 				if (!this.workspacePreviewId) this.setStreamingActivity("正在组织回复");
 				this.scheduleStreamChange();
@@ -352,6 +426,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				break;
 			case "question":
 				this.flushStreamChange();
+				this.activityText = "";
 				this.pendingQuestion = {
 					questionId: event.questionId,
 					params: event.params,
@@ -360,6 +435,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				break;
 			case "done":
 				this.flushStreamChange();
+				this.activityText = "";
 				// Final message set with full content
 				if (event.fullText) {
 					this.streamingText = event.fullText;
@@ -560,6 +636,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.streamingTarget = "chat";
 		this.streamingActivity = "";
 		this.streamingActivityDetail = "";
+		this.activityText = "";
 		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
@@ -578,6 +655,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.streamingTarget = "chat";
 		this.streamingActivity = "";
 		this.streamingActivityDetail = "";
+		this.activityText = "";
 		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
@@ -600,7 +678,10 @@ export const chatStore = new ChatStoreImpl();
  * so the workspace tabs reflect agent-side writes in real time.
  */
 function mutatesWiki(toolName: string): boolean {
-	return toolName === "l2_archive" || toolName === "l2_link_pages" || toolName.startsWith("wiki_");
+	return toolName === "l2_save_draft"
+		|| toolName === "l2_archive_draft"
+		|| toolName === "l2_link_pages"
+		|| toolName.startsWith("wiki_");
 }
 
 const FILE_EXTENSIONS = [

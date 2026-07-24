@@ -28,9 +28,27 @@ const TYPE_COLORS: Record<string, string> = {
 	tag: "#8b949e",
 };
 
+function edgeKey(edge: WikiGraphEdge): string {
+	const [a, b] = [edge.source, edge.target].sort();
+	return `${edge.type}:${a}__${b}`;
+}
+
+function collapseUndirectedEdges(edges: WikiGraphEdge[]): WikiGraphEdge[] {
+	const seen = new Set<string>();
+	const collapsed: WikiGraphEdge[] = [];
+	for (const edge of edges) {
+		const key = edgeKey(edge);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		collapsed.push(edge);
+	}
+	return collapsed;
+}
+
 function buildElements(nodes: WikiGraphNode[], edges: WikiGraphEdge[]): ElementDefinition[] {
+	const visibleEdges = collapseUndirectedEdges(edges);
 	const degree = new Map<string, number>();
-	for (const e of edges) {
+	for (const e of visibleEdges) {
 		degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
 		degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
 	}
@@ -45,11 +63,11 @@ function buildElements(nodes: WikiGraphNode[], edges: WikiGraphEdge[]): ElementD
 			size: 18 + Math.min(28, (degree.get(n.id) ?? 0) * 3),
 		},
 	}));
-	for (const e of edges) {
+	for (const e of visibleEdges) {
 		if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) continue;
 		els.push({
 			data: {
-				id: `${e.source}__${e.target}__${e.type}`,
+				id: edgeKey(e),
 				source: e.source,
 				target: e.target,
 				edgeType: e.type,
@@ -314,7 +332,7 @@ export function GraphView() {
 		const visibleIds = new Set(
 			state.nodes.filter((n) => visibleCategories.has(n.type as NodeCategory)).map((n) => n.id),
 		);
-		return state.edges.filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target)).length;
+		return collapseUndirectedEdges(state.edges).filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target)).length;
 	}, [state.nodes, state.edges, visibleCategories]);
 
 	const selectedNode = useMemo(
@@ -382,11 +400,6 @@ export function GraphView() {
 						/>
 						<span className="truncate font-medium text-[var(--inno-text)]">{displayNode.title || displayNode.id}</span>
 						<span className="text-[var(--inno-text-subtle)]">{t(`notebook.types.${displayNode.type}`)}</span>
-						{displayNode.tags.length > 0 ? (
-							<span className="truncate text-[var(--inno-text-subtle)]">
-								{displayNode.tags.map((tag) => `#${tag}`).join(" ")}
-							</span>
-						) : null}
 						{displayNode.type !== "tag" ? (
 							<button
 								className="ml-auto shrink-0 rounded-md inno-primary-button px-2 py-0.5 text-xs text-white"

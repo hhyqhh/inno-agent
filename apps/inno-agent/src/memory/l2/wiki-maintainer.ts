@@ -1,5 +1,5 @@
 import { readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parse as parseYaml, Document as YamlDocument } from "yaml";
 import { ensureDir, writeText, readText, appendText, fileExists } from "../../storage/file-store.js";
 import type {
@@ -10,6 +10,8 @@ import type {
 	ManifestEntry,
 } from "./types.js";
 import { logger } from "../../logger.js";
+import { normalizeMarkdownForMilkdown } from "./markdown-normalizer.js";
+import { normalizeTagList, quoteYamlScalar, slugifyTitle } from "./l2-utils.js";
 
 const L2_SCHEMA_VERSION = "1.0";
 
@@ -251,11 +253,7 @@ export function readMaintenanceContext(l2DataDir: string): { schema: string; ind
 // ============================================================================
 
 function sourcePageFilename(title: string, id: string): string {
-	const slug = title
-		.toLowerCase()
-		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.slice(0, 50);
+	const slug = slugifyTitle(title, 50, "source");
 	return `${slug}-${id.slice(-6)}.md`;
 }
 
@@ -270,15 +268,19 @@ export function createSourcePage(
 	entry: ManifestEntry,
 	summaryBody: string,
 	extractedPath?: string,
+	preferredPath?: string,
 ): string {
-	const dir = join(l2DataDir, "wiki", "sources");
-	ensureDir(dir);
 	const filename = sourcePageFilename(entry.title, entry.id);
+	const relativePath = preferredPath?.replace(/\\/g, "/").includes("wiki/sources/")
+		? preferredPath.replace(/\\/g, "/")
+		: join("wiki", "sources", filename);
+	const absPath = join(l2DataDir, relativePath);
+	ensureDir(dirname(absPath));
 	const fm: WikiPageFrontmatter = {
 		title: entry.title,
 		created: new Date().toISOString().slice(0, 10),
 		type: "source-summary",
-		tags: mergeUniqueTags(["source-summary"], entry.tags),
+		tags: normalizeTagList(["source-summary", ...entry.tags]),
 		sources: [entry.rawPath],
 		source_ids: [entry.id],
 		updated: new Date().toISOString().slice(0, 10),
@@ -286,9 +288,10 @@ export function createSourcePage(
 		confidence: "medium",
 	};
 	const ref = extractedPath ? `\n## 来源\n\n完整提取文本: \`${extractedPath}\`\n` : "";
-	const body = `\n# ${entry.title}\n\n${summaryBody}\n${ref}`;
-	writeText(join(dir, filename), serializeFrontmatter(fm) + body);
-	return join("wiki", "sources", filename);
+	const normalizedSummary = normalizeMarkdownForMilkdown(summaryBody);
+	const body = `\n# ${entry.title}\n\n${normalizedSummary}${ref}`;
+	writeText(absPath, serializeFrontmatter(fm) + body);
+	return relativePath;
 }
 
 // ============================================================================
@@ -386,6 +389,7 @@ export function appendLog(l2DataDir: string, action: string, title: string, deta
 export function ensureL2Directories(l2DataDir: string): void {
 	const dirs = [
 		"raw/uploads",
+		"raw/notes",
 		"raw/web",
 		"raw/conversations",
 		"raw/research",
@@ -399,20 +403,6 @@ export function ensureL2Directories(l2DataDir: string): void {
 		ensureDir(join(l2DataDir, dir));
 	}
 	ensureNavigationFiles(l2DataDir);
-}
-
-function mergeUniqueTags(...tagGroups: string[][]): string[] {
-	const seen = new Set<string>();
-	const tags: string[] = [];
-	for (const group of tagGroups) {
-		for (const tag of group) {
-			const trimmed = tag.trim();
-			if (!trimmed || seen.has(trimmed)) continue;
-			seen.add(trimmed);
-			tags.push(trimmed);
-		}
-	}
-	return tags;
 }
 
 function listWikiPagesForIndex(

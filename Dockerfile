@@ -30,7 +30,7 @@ WORKDIR /app
 # python3 is required at runtime for the pptx→svg preview converter
 # (apps/inno-agent/scripts/pptx_to_svg). Stdlib-only, no pip packages.
 RUN sed -i 's|http://deb.debian.org/debian|http://mirrors.tuna.tsinghua.edu.cn/debian|g' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update && apt-get install -y ca-certificates python3 \
+    && apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg python3 \
     && sed -i 's|http://mirrors.tuna.tsinghua.edu.cn/debian|https://mirrors.tuna.tsinghua.edu.cn/debian|g' /etc/apt/sources.list.d/debian.sources \
     && rm -rf /var/lib/apt/lists/*
 

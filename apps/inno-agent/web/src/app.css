@@ -907,6 +907,22 @@ inno-workspace-panel textarea {
 	font-size: clamp(1.2rem, 1.6vw, 1.4rem);
 }
 
+.inno-milkdown-editor-shell .inno-milkdown-editor-root .milkdown .ProseMirror h3 {
+	font-size: clamp(1.1rem, 1.4vw, 1.25rem);
+}
+
+.inno-milkdown-editor-shell .inno-milkdown-editor-root .milkdown .ProseMirror h4 {
+	font-size: clamp(1.05rem, 1.3vw, 1.15rem);
+}
+
+.inno-milkdown-editor-shell .inno-milkdown-editor-root .milkdown .ProseMirror h5 {
+	font-size: clamp(1rem, 1.2vw, 1.1rem);
+}
+
+.inno-milkdown-editor-shell .inno-milkdown-editor-root .milkdown .ProseMirror h6 {
+	font-size: clamp(0.95rem, 1.1vw, 1.05rem);
+}
+
 .inno-milkdown-editor-shell .inno-milkdown-editor-root .top-bar-heading-dropdown {
 	max-width: min(280px, 70vw);
 }
@@ -924,7 +940,17 @@ inno-workspace-panel textarea {
 	margin-left: auto;
 }
 
-.inno-milkdown-editor-shell .inno-milkdown-polish-button svg {
+.inno-milkdown-editor-shell .inno-milkdown-toolbar-actions > .top-bar-item {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+}
+
+.inno-milkdown-editor-shell .inno-milkdown-polish-button svg,
+.inno-milkdown-editor-shell .inno-milkdown-meeting-button svg {
+	display: block;
+	flex: 0 0 auto;
 	width: 18px !important;
 	height: 18px !important;
 	fill: none !important;
@@ -1008,12 +1034,39 @@ inno-workspace-panel textarea {
 }
 
 .inno-milkdown-editor-shell .inno-note-properties-preview {
+	position: relative;
 	display: flex;
 	flex: 1;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
 	align-items: center;
 	gap: 6px;
 	min-width: 0;
+	overflow: hidden;
+}
+
+.inno-milkdown-editor-shell .inno-milkdown-meeting-button:disabled {
+	cursor: not-allowed;
+	opacity: 0.45;
+}
+
+.inno-milkdown-editor-shell .inno-note-properties-preview > * {
+	flex: 0 0 auto;
+}
+
+.inno-milkdown-editor-shell .inno-note-properties-preview-measure {
+	position: absolute;
+	top: 0;
+	left: 0;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: max-content;
+	visibility: hidden;
+	pointer-events: none;
+}
+
+.inno-milkdown-editor-shell .inno-note-properties-preview-measure .inno-note-property-tag-pill {
+	max-width: none;
 }
 
 .inno-milkdown-editor-shell .inno-note-properties-more {
@@ -1074,6 +1127,10 @@ inno-workspace-panel textarea {
 	overflow: visible;
 }
 
+.inno-milkdown-editor-shell .inno-note-property-value:focus-within {
+	z-index: 5;
+}
+
 .inno-milkdown-editor-shell .inno-note-property-inline-input {
 	width: 100%;
 	min-height: 24px;
@@ -1112,6 +1169,7 @@ inno-workspace-panel textarea {
 }
 
 .inno-milkdown-editor-shell .inno-note-property-tags {
+	position: relative;
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
@@ -1119,6 +1177,46 @@ inno-workspace-panel textarea {
 	width: 100%;
 	min-height: 24px;
 	padding: 2px 5px;
+}
+
+.inno-milkdown-editor-shell .inno-note-property-tag-suggestions {
+	position: absolute;
+	top: calc(100% + 4px);
+	left: 5px;
+	right: 5px;
+	z-index: 20;
+	max-height: 190px;
+	overflow-y: auto;
+	padding: 5px;
+	border: 1px solid var(--inno-border);
+	border-radius: 8px;
+	background: var(--inno-surface);
+	box-shadow: 0 8px 24px color-mix(in srgb, var(--inno-text) 12%, transparent);
+}
+
+.inno-milkdown-editor-shell .inno-note-property-tag-suggestions-label {
+	padding: 3px 7px 5px;
+	color: var(--inno-text-subtle);
+	font-size: 10px;
+}
+
+.inno-milkdown-editor-shell .inno-note-property-tag-suggestion {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	padding: 6px 7px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--inno-text);
+	font-size: 11px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.inno-milkdown-editor-shell .inno-note-property-tag-suggestion:hover {
+	background: var(--inno-surface-muted);
 }
 
 .inno-milkdown-editor-shell .inno-note-property-tag-pill {

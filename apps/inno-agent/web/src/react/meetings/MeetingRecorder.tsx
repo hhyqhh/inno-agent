@@ -4,7 +4,7 @@ import { Check, CheckCircle2, ChevronDown, LoaderCircle, Mic, MicOff, Pause, Pla
 import { useTranslation } from "react-i18next";
 import { meetingStore } from "../../stores/meeting-store.js";
 import { useStoreSnapshot } from "../hooks.js";
-import { meetingAudioUrl } from "../../api/meetings.js";
+import { getMeeting, meetingAudioUrl, type PersistedMeeting } from "../../api/meetings.js";
 
 function formatDuration(seconds: number): string {
 	const minutes = Math.floor(seconds / 60);
@@ -12,7 +12,7 @@ function formatDuration(seconds: number): string {
 	return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
 }
 
-export function MeetingRecorder() {
+export function MeetingRecorder({ toolbar = false, rawPath = "", title = "" }: { toolbar?: boolean; rawPath?: string; title?: string }) {
 	const { t } = useTranslation();
 	const [setupOpen, setSetupOpen] = useState(false);
 	const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
@@ -119,18 +119,20 @@ export function MeetingRecorder() {
 				) : null}
 			</div>
 			<p className="mt-2 text-[10px] text-[var(--inno-text-subtle)]">麦克风权限：{state.permissionState === "granted" ? "已允许" : state.permissionState === "denied" ? "已拒绝" : "将在开始时请求"}</p>
-			<button className="mt-2.5 w-full rounded-md inno-primary-button px-3 py-1.5 text-xs text-white" onClick={() => { closeSetup(); void meetingStore.start(); }}>开始录音</button>
+			<button className="mt-2.5 w-full rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!rawPath} onClick={() => { closeSetup(); void meetingStore.start(rawPath, title); }}>开始录音</button>
 		</div>,
 		document.body,
 	) : null;
 
 	return (
-		<div className="relative h-8 w-8">
+		<div className={toolbar ? "contents" : "relative h-8 w-8"}>
 			<button
 				ref={triggerRef}
 				type="button"
-				className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
-				disabled={["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(state.status)}
+				className={toolbar
+					? "top-bar-item inno-milkdown-meeting-button"
+					: "inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"}
+				disabled={!rawPath || ["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(state.status)}
 				onClick={() => { if (state.status !== "idle") meetingStore.dismiss(); setSetupOpen((open) => !open); setDeviceMenuOpen(false); void meetingStore.refreshDevices(); }}
 				title={t("notes.meeting.start")}
 				aria-label={t("notes.meeting.start")}
@@ -142,7 +144,36 @@ export function MeetingRecorder() {
 	);
 }
 
-export function MeetingProgress({ rawPath }: { rawPath: string }) {
+function PersistedMeetingAudio({ meetingId, rawPath }: { meetingId: string; rawPath: string }) {
+	const { t } = useTranslation();
+	const [meeting, setMeeting] = useState<PersistedMeeting | null>(null);
+
+	useEffect(() => {
+		const controller = new AbortController();
+		setMeeting(null);
+		void getMeeting(meetingId, controller.signal)
+			.then((result) => {
+				if (result.rawPath === rawPath) setMeeting(result);
+			})
+			.catch(() => undefined);
+		return () => controller.abort();
+	}, [meetingId, rawPath]);
+
+	if (!meeting?.audioPath) return null;
+	return (
+		<div className="border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-4 py-3">
+			<div className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-3">
+				<div className="flex items-center gap-2 text-sm font-medium text-[var(--inno-text)]">
+					<CheckCircle2 size={17} className="shrink-0 text-emerald-600" />
+					<span>{t(`notes.meeting.status.${meeting.state}`)}</span>
+				</div>
+				<audio className="mt-3 w-full" controls preload="metadata" src={meetingAudioUrl(meeting.id)} />
+			</div>
+		</div>
+	);
+}
+
+export function MeetingProgress({ rawPath, meetingId }: { rawPath: string; meetingId?: string }) {
 	const { t } = useTranslation();
 	const state = useStoreSnapshot(meetingStore, () => ({
 		status: meetingStore.state,
@@ -157,7 +188,9 @@ export function MeetingProgress({ rawPath }: { rawPath: string }) {
 		importJob: meetingStore.importJob,
 	}));
 
-	if (state.status === "idle" || state.rawPath !== rawPath) return null;
+	if (state.status === "idle" || state.rawPath !== rawPath) {
+		return meetingId ? <PersistedMeetingAudio meetingId={meetingId} rawPath={rawPath} /> : null;
+	}
 
 	return (
 		<div className="border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-4 py-3">

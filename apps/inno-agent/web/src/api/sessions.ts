@@ -62,6 +62,17 @@ export async function createSession(input: CreateSessionInput = {}): Promise<New
 	});
 }
 
+export async function appendSessionWorkflowMessage(
+	sessionId: string,
+	role: "user" | "assistant",
+	content: string,
+): Promise<void> {
+	await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}/workflow-message`, {
+		method: "POST",
+		body: JSON.stringify({ role, content }),
+	});
+}
+
 export async function updateSessionName(id: string, name: string, generated = false): Promise<SessionMeta> {
 	return apiFetch<SessionMeta>(`/api/sessions/${encodeURIComponent(id)}`, {
 		method: "PATCH",

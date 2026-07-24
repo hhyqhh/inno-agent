@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { copyFileSync } from "node:fs";
 import { ensureDir, writeText } from "../../storage/file-store.js";
 import type { RawSourceType } from "./types.js";
+import { slugifyTitle } from "./l2-utils.js";
 
 /** Map source type to subdirectory under raw/. */
 const TYPE_DIR_MAP: Record<RawSourceType, string> = {
@@ -16,11 +17,7 @@ const TYPE_DIR_MAP: Record<RawSourceType, string> = {
 
 function generateFilename(title: string, sourceType: RawSourceType): string {
 	const date = new Date().toISOString().slice(0, 10);
-	const slug = title
-		.toLowerCase()
-		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.slice(0, 50);
+	const slug = slugifyTitle(title, 50, "source");
 	const ext = sourceType === "markdown" ? "md" : "txt";
 	return `${date}-${slug}-${randomUUID().slice(0, 6)}.${ext}`;
 }
@@ -73,11 +70,7 @@ export function saveRawFile(
 	const dir = join(l2DataDir, "raw", subdir);
 	ensureDir(dir);
 	const date = new Date().toISOString().slice(0, 10);
-	const slug = title
-		.toLowerCase()
-		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.slice(0, 50);
+	const slug = slugifyTitle(title, 50, "source");
 	const ext = extname(originalFilePath);
 	const filename = `${date}-${slug}-${randomUUID().slice(0, 6)}${ext}`;
 	copyFileSync(originalFilePath, join(dir, filename));

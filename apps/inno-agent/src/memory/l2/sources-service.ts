@@ -9,12 +9,16 @@ import { parseDocument, DocumentParseError } from "./document-parser.js";
 import { convertToExtracted } from "./source-converter.js";
 import {
 	appendManifest,
+	findManifestByHash,
 	findManifestById,
 	findManifestByRawPath,
 	readManifest,
 	removeWikiPathFromManifest,
 	updateManifestEntry,
 } from "./manifest-store.js";
+import { saveRawFile } from "./raw-store.js";
+import { normalizeTagList, slugifyTitle } from "./l2-utils.js";
+import { detachSourceFromWikiPage } from "./wiki-source-references.js";
 import {
 	appendLog,
 	createSourcePage,
@@ -26,98 +30,23 @@ import {
 } from "./wiki-maintainer.js";
 import { summarizeContent } from "./summarizer.js";
 import { maintainLinkedWikiPages, readSourceKnowledgeRelations } from "./wiki-linker.js";
-import type { ManifestEntry, ManifestStatus, RawSourceType, SelectedScope, WikiPageType } from "./types.js";
+import type {
+	AddSourceRelationResult,
+	ArchiveRawResult,
+	ExtractRawFileResult,
+	ManifestEntry,
+	ManifestStatus,
+	OrphanRawFileDto,
+	RawSourceType,
+	RegenerateSourceResult,
+	RemoveSourceRelationResult,
+	SelectedScope,
+	StageL2FileResult,
+	SourceSummaryDto,
+	SourcesListResponse,
+	WikiPageType,
+} from "./types.js";
 import { logger } from "../../logger.js";
-
-export interface SourceSummaryDto {
-	sourceId: string;
-	title: string;
-	notebookType: "conversation" | "file" | "note";
-	sourceType: RawSourceType;
-	rawPath: string;
-	extractedPath?: string;
-	primaryWikiPath?: string;
-	wikiPages: string[];
-	tags: string[];
-	status: ManifestStatus;
-	origin: ManifestEntry["source"]["origin"];
-	originUrl?: string;
-	sessionId?: string;
-	selectedScope?: SelectedScope;
-	createdAt: string;
-	updatedAt: string;
-}
-
-export interface OrphanRawFileDto {
-	rawPath: string;
-	fileName: string;
-	sourceType: RawSourceType;
-	size: number;
-	modifiedAt: string;
-	isMarkdown: boolean;
-	pipelineStatus: "uploaded";
-}
-
-export interface SourcesListResponse {
-	sources: SourceSummaryDto[];
-	orphans: OrphanRawFileDto[];
-}
-
-export interface ArchiveRawResult {
-	noteId: string;
-	sourceId: string;
-	title: string;
-	rawPath: string;
-	wikiPagePath: string;
-	wikiPages: string[];
-	status: "indexed";
-}
-
-export interface ExtractRawFileResult {
-	sourceId: string;
-	rawPath: string;
-	extractedPath: string;
-	pageCount?: number;
-	textLength: number;
-	status: "extracted";
-}
-
-export interface RegenerateSourceResult {
-	sourceId: string;
-	title: string;
-	rawPath: string;
-	wikiPagePath: string;
-	wikiPages: string[];
-	status: "indexed";
-	updatedAt: string;
-}
-
-export interface AddSourceRelationResult {
-	sourceId: string;
-	title: string;
-	rawPath: string;
-	sourcePagePath: string;
-	relationPagePath: string;
-	relationTitle: string;
-	relationType: Extract<WikiPageType, "concept" | "entity">;
-	wikiPages: string[];
-	status: "indexed";
-	updatedAt: string;
-}
-
-export interface RemoveSourceRelationResult {
-	sourceId: string;
-	title: string;
-	rawPath: string;
-	sourcePagePath: string;
-	relationPagePath: string;
-	relationTitle: string;
-	relationType: Extract<WikiPageType, "concept" | "entity">;
-	wikiPages: string[];
-	status: "indexed";
-	deletedOrphanPage: boolean;
-	updatedAt: string;
-}
 
 const RAW_SCAN_DIRS = ["raw/uploads", "raw/conversations"] as const;
 
@@ -150,18 +79,8 @@ function relationDirForType(type: Extract<WikiPageType, "concept" | "entity">): 
 	return type === "entity" ? "entities" : "concepts";
 }
 
-function slugifyWikiTitle(title: string): string {
-	const slug = title
-		.toLowerCase()
-		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.slice(0, 60);
-	if (slug) return slug;
-	return createHash("sha256").update(title).digest("hex").slice(0, 12);
-}
-
 function relationPagePath(type: Extract<WikiPageType, "concept" | "entity">, title: string): string {
-	return join("wiki", relationDirForType(type), `${slugifyWikiTitle(title)}.md`).replace(/\\/g, "/");
+	return join("wiki", relationDirForType(type), `${slugifyTitle(title, 60)}.md`).replace(/\\/g, "/");
 }
 
 function findRelationPage(
@@ -183,22 +102,6 @@ function findRelationPage(
 	return preferredPath;
 }
 
-function mergeTags(...tagGroups: string[][]): string[] {
-	const seen = new Set<string>();
-	const tags: string[] = [];
-	for (const group of tagGroups) {
-		for (const rawTag of group) {
-			for (const tag of rawTag.split(/[\s,\uFF0C;\uFF1B\u3001|]+/)) {
-				const trimmed = tag.trim();
-				if (!trimmed || seen.has(trimmed)) continue;
-				seen.add(trimmed);
-				tags.push(trimmed);
-			}
-		}
-	}
-	return tags.slice(0, 12);
-}
-
 function relationReferenceBullet(source: ManifestEntry, sourcePagePath: string): string {
 	return `- [[${source.title}]] - \`${sourcePagePath}\``;
 }
@@ -216,7 +119,7 @@ function buildRelationPage(
 		title,
 		created: today,
 		type,
-		tags: mergeTags([type], source.tags),
+		tags: normalizeTagList([[type], source.tags].flat()).slice(0, 12),
 		sources: [sourcePagePath],
 		source_ids: [source.id],
 		updated: today,
@@ -261,7 +164,7 @@ function upsertRelationPage(
 
 	frontmatter.sources = [...new Set([...frontmatter.sources, sourcePagePath])];
 	frontmatter.source_ids = [...new Set([...frontmatter.source_ids, source.id])];
-	frontmatter.tags = mergeTags(frontmatter.tags, [type], source.tags);
+	frontmatter.tags = normalizeTagList([frontmatter.tags, [type], source.tags].flat()).slice(0, 12);
 	frontmatter.updated = new Date().toISOString().slice(0, 10);
 
 	let nextBody = body;
@@ -457,6 +360,8 @@ function createUploadedEntry(
 	title: string,
 	tags: string[] = [],
 	selectedScope?: SelectedScope,
+	origin?: ManifestEntry["source"]["origin"],
+	url?: string,
 ): ManifestEntry {
 	const now = new Date().toISOString();
 	const normalizedPath = rawPath.replace(/\\/g, "/");
@@ -474,7 +379,8 @@ function createUploadedEntry(
 		primary_wiki_path: undefined,
 		error_message: null,
 		source: {
-			origin: normalizedPath.startsWith("raw/conversations/") ? "conversation" : "user_upload",
+			origin: origin ?? (normalizedPath.startsWith("raw/conversations/") ? "conversation" : "user_upload"),
+			...(url ? { url } : {}),
 		},
 		createdAt: now,
 		updatedAt: now,
@@ -495,59 +401,16 @@ function updateEntryStatus(
 	}));
 }
 
-function detachSourceFromLinkedPage(
-	l2DataDir: string,
-	wikiPath: string,
-	source: ManifestEntry,
-	sourcePagePath: string | undefined,
-): "deleted" | "kept" | "unchanged" {
-	const absPath = join(l2DataDir, wikiPath);
-	if (!existsSync(absPath)) return "unchanged";
-	try {
-		const { frontmatter, body } = parseFrontmatter(readText(absPath));
-		if (!frontmatter) return "unchanged";
-
-		const nextSourceIds = frontmatter.source_ids.filter((id) => id !== source.id);
-		const referencesSource = nextSourceIds.length !== frontmatter.source_ids.length;
-		if (referencesSource && nextSourceIds.length === 0) {
-			unlinkSync(absPath);
-			return "deleted";
-		}
-
-		const nextSources = frontmatter.sources.filter((item) => item !== source.rawPath && item !== sourcePagePath);
-		let nextBody = body;
-		if (sourcePagePath) {
-			nextBody = body
-				.split("\n")
-				.filter((line) => !(line.trim().startsWith("-") && line.includes(sourcePagePath)))
-				.join("\n");
-		}
-
-		if (
-			!referencesSource &&
-			nextSources.length === frontmatter.sources.length &&
-			nextBody === body
-		) {
-			return "unchanged";
-		}
-
-		frontmatter.source_ids = nextSourceIds;
-		frontmatter.sources = nextSources;
-		frontmatter.updated = new Date().toISOString().slice(0, 10);
-		writeText(absPath, `${serializeFrontmatter(frontmatter)}\n${nextBody.replace(/^\n/, "")}`);
-		return "kept";
-	} catch (err) {
-		logger.warn({ err, wikiPath, sourceId: source.id }, "failed to detach source from linked page before regeneration");
-		return "unchanged";
-	}
-}
-
 function removePreviousGeneratedLinks(l2DataDir: string, source: ManifestEntry): string[] {
 	const removed: string[] = [];
 	const sourcePagePath = source.primary_wiki_path ?? primaryWikiPath(source.wikiPages);
 	for (const wikiPath of source.wikiPages) {
 		if (wikiPath === sourcePagePath || wikiPath.includes("wiki/sources/")) continue;
-		const outcome = detachSourceFromLinkedPage(l2DataDir, wikiPath, source, sourcePagePath);
+		const outcome = detachSourceFromWikiPage(l2DataDir, wikiPath, {
+			sourceId: source.id,
+			rawPath: source.rawPath,
+			sourcePagePath,
+		});
 		if (outcome === "deleted") {
 			removed.push(wikiPath);
 			removeWikiPathFromManifest(l2DataDir, wikiPath);
@@ -563,8 +426,14 @@ export async function extractL2RawFile(
 		title?: string;
 		tags?: string[];
 		selectedScope?: SelectedScope;
+		extractedContent?: string;
+		extractedPageCount?: number;
+		origin?: ManifestEntry["source"]["origin"];
+		url?: string;
+		signal?: AbortSignal;
 	} = {},
 ): Promise<ExtractRawFileResult> {
+	options.signal?.throwIfAborted();
 	ensureL2Directories(l2DataDir);
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	const sourceType = inferSourceType(normalizedPath);
@@ -574,7 +443,15 @@ export async function extractL2RawFile(
 		throw new Error("该文件已归档。");
 	}
 	if (!entry) {
-		entry = createUploadedEntry(normalizedPath, sourceType, title, options.tags ?? [], options.selectedScope);
+		entry = createUploadedEntry(
+			normalizedPath,
+			sourceType,
+			title,
+			options.tags ?? [],
+			options.selectedScope,
+			options.origin,
+			options.url,
+		);
 		appendManifest(l2DataDir, entry);
 	} else {
 		updateEntryStatus(l2DataDir, entry.id, "uploaded", {
@@ -588,7 +465,10 @@ export async function extractL2RawFile(
 
 	try {
 		updateEntryStatus(l2DataDir, entry.id, "extracting", { error_message: null });
-		const parsed = await extractRawContent(l2DataDir, normalizedPath, sourceType);
+		const parsed = options.extractedContent !== undefined
+			? { content: options.extractedContent, pageCount: options.extractedPageCount }
+			: await extractRawContent(l2DataDir, normalizedPath, sourceType);
+		options.signal?.throwIfAborted();
 		if (!parsed.content.trim()) {
 			throw new DocumentParseError("无法从文件中提取有效文本", "EMPTY_RESULT");
 		}
@@ -620,6 +500,58 @@ export async function extractL2RawFile(
 	}
 }
 
+/**
+ * Copy a binary source into the Notebook and register it as uploaded.
+ * This deliberately stops before extraction and archiving so new knowledge
+ * always has a reviewable pending state.
+ */
+export async function stageL2File(
+	l2DataDir: string,
+	options: {
+		title: string;
+		sourceType: Extract<RawSourceType, "pdf" | "word" | "image">;
+		filePath: string;
+		tags?: string[];
+		origin?: ManifestEntry["source"]["origin"];
+		url?: string;
+		force?: boolean;
+		signal?: AbortSignal;
+	},
+): Promise<StageL2FileResult> {
+	options.signal?.throwIfAborted();
+	ensureL2Directories(l2DataDir);
+	const parsed = await parseDocument(options.filePath);
+	const content = parsed.text;
+	if (!content.trim()) {
+		throw new DocumentParseError("无法从资料中提取有效文本", "EMPTY_RESULT");
+	}
+	const contentHash = createHash("sha256").update(content).digest("hex").slice(0, 16);
+	if (!options.force) {
+		const existing = findManifestByHash(l2DataDir, contentHash);
+		if (existing) return { duplicate: true, existing };
+	}
+
+	const rawPath = saveRawFile(l2DataDir, options.title, options.filePath, options.sourceType).replace(/\\/g, "/");
+	const entry = createUploadedEntry(
+		rawPath,
+		options.sourceType,
+		options.title,
+		options.tags,
+		undefined,
+		options.origin,
+		options.url,
+	);
+	entry.contentHash = contentHash;
+	appendManifest(l2DataDir, entry);
+	return {
+		duplicate: false,
+		sourceId: entry.id,
+		title: entry.title,
+		rawPath,
+		status: "uploaded",
+	};
+}
+
 export async function archiveRawFile(
 	l2DataDir: string,
 	rawPath: string,
@@ -629,8 +561,10 @@ export async function archiveRawFile(
 		selectedScope?: SelectedScope;
 		model?: Model<any>;
 		modelRegistry?: ModelRegistry;
+		signal?: AbortSignal;
 	},
 ): Promise<ArchiveRawResult> {
+	options.signal?.throwIfAborted();
 	ensureL2Directories(l2DataDir);
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	let entry = findManifestByRawPath(l2DataDir, normalizedPath);
@@ -641,12 +575,14 @@ export async function archiveRawFile(
 	const sourceType = inferSourceType(normalizedPath);
 	const title = options.title?.trim() || defaultTitleFromPath(normalizedPath);
 	const tags = options.tags ?? [];
+	let pendingWikiPagePath: string | undefined;
 	try {
 		if (!entry || !entry.extractedPath || entry.status === "uploaded" || entry.status === "error") {
 			await extractL2RawFile(l2DataDir, normalizedPath, {
 				title,
 				tags,
 				selectedScope: options.selectedScope,
+				signal: options.signal,
 			});
 			entry = findManifestByRawPath(l2DataDir, normalizedPath);
 		} else if (entry.status === "outdated") {
@@ -675,11 +611,13 @@ export async function archiveRawFile(
 		const extractedContent = readText(join(l2DataDir, extractedPath));
 		let summaryBody = `## 摘要\n\n${extractedContent}`;
 		if (options.model && options.modelRegistry) {
-			const summary = await summarizeContent(options.model, options.modelRegistry, title, extractedContent);
+			const summary = await summarizeContent(options.model, options.modelRegistry, title, extractedContent, options.signal);
 			if (summary) summaryBody = summary;
 		}
 
 		const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, extractedPath);
+		pendingWikiPagePath = wikiPagePath;
+		options.signal?.throwIfAborted();
 		const linkMaintenance = await maintainLinkedWikiPages(
 			l2DataDir,
 			entry,
@@ -687,7 +625,9 @@ export async function archiveRawFile(
 			summaryBody,
 			options.model,
 			options.modelRegistry,
+			{ signal: options.signal },
 		);
+		options.signal?.throwIfAborted();
 		const indexedEntry: ManifestEntry = {
 			...entry,
 			title,
@@ -702,6 +642,7 @@ export async function archiveRawFile(
 		};
 
 		updateManifestEntry(l2DataDir, indexedEntry.id, () => indexedEntry);
+		pendingWikiPagePath = undefined;
 		rebuildIndex(l2DataDir, readManifest(l2DataDir));
 		appendLog(
 			l2DataDir,
@@ -729,9 +670,18 @@ export async function archiveRawFile(
 	} catch (err) {
 		const failedEntry = findManifestByRawPath(l2DataDir, normalizedPath);
 		if (failedEntry) {
-			updateEntryStatus(l2DataDir, failedEntry.id, "error", {
-				error_message: err instanceof Error ? err.message : String(err),
-			});
+			if (options.signal?.aborted) {
+				if (pendingWikiPagePath && existsSync(join(l2DataDir, pendingWikiPagePath))) {
+					unlinkSync(join(l2DataDir, pendingWikiPagePath));
+				}
+				updateEntryStatus(l2DataDir, failedEntry.id, failedEntry.extractedPath ? "extracted" : "uploaded", {
+					error_message: null,
+				});
+			} else {
+				updateEntryStatus(l2DataDir, failedEntry.id, "error", {
+					error_message: err instanceof Error ? err.message : String(err),
+				});
+			}
 		}
 		throw err;
 	}

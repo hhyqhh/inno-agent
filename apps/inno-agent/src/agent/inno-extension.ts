@@ -21,6 +21,7 @@ import { createDocumentTools } from "./document-tools.js";
 import { createOcrTools } from "./ocr-tools.js";
 import { checkWorkspaceMutationPath } from "./workspace-path-guard.js";
 import { INNO_SYSTEM_PROMPT, ONBOARDING_GUIDE } from "./system-prompt.js";
+import { createNoteTools } from "./note-tools.js";
 import { syncProvidersForSubagents } from "./provider-sync.js";
 import { questionBridge } from "./question-bridge.js";
 import { logger } from "../logger.js";
@@ -224,7 +225,7 @@ export function createInnoExtension(
 
 		// 4. Register L2 Wiki memory tools (gated on config.memory.l2Enabled)
 		const l2Memory = getL2Memory(paths.l2DataDir);
-		const l2Tools = createL2Tools(paths.l2DataDir, isL2Enabled, l2Memory);
+		const l2Tools = createL2Tools(paths.l2DataDir, paths.codeDir, isL2Enabled, l2Memory);
 		for (const tool of l2Tools) {
 			pi.registerTool(tool);
 		}
@@ -233,6 +234,9 @@ export function createInnoExtension(
 		// but overview generation — a visible write to the knowledge base — is
 		// gated on L2 being enabled.
 		void l2Memory.backfill({ generateOverview: isL2Enabled() });
+		for (const tool of createNoteTools(paths.l2DataDir, paths.codeDir, isL2Enabled, deps?.getCurrentSessionId)) {
+			pi.registerTool(tool);
+		}
 
 		// 4a. Register L3 cross-conversation memory (sqlite-backed recall).
 		// Recall (auto-inject + the l3_recall tool) is gated at runtime on

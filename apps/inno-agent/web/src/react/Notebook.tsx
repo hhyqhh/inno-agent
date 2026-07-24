@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Network, ScrollText, PanelLeftClose, PanelLeftOpen, Trash2 } from "lucide-react";
 import { notebookStore } from "../stores/notebook-store.js";
@@ -25,9 +25,11 @@ function typeColor(type?: WikiPageType): string {
 }
 
 export function Notebook({
+	viewSelector,
 	onOpenNoteId,
 	onOpenNote,
 }: {
+	viewSelector?: ReactNode;
 	onOpenNoteId?: (noteId: string) => void;
 	onOpenNote?: (rawPath: string) => void;
 }) {
@@ -60,9 +62,10 @@ export function Notebook({
 	}, []);
 
 	return (
-		<div className={`grid h-full min-h-0 gap-3 p-3 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
-			<aside className={`flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
-				<div className="border-b border-[var(--inno-border)] p-2">
+		<div className={`grid h-full min-h-0 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[280px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
+			<aside className={`flex h-full min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-workspace-chrome)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+				<div className="space-y-2 border-b border-[var(--inno-border)] p-3">
+					{viewSelector}
 					<input
 						type="text"
 						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
@@ -97,7 +100,7 @@ export function Notebook({
 						return (
 							<div
 								key={page.path}
-								className={`group relative border-b border-[var(--inno-border)] transition-colors ${selected ? "bg-[var(--inno-accent-soft)]" : "hover:bg-[var(--inno-surface-muted)]"}`}
+								className={`group relative border-b border-l-2 border-[var(--inno-border)] transition-colors ${selected ? "border-l-[var(--inno-accent)] bg-[var(--inno-accent-soft)]" : "border-l-transparent hover:bg-[var(--inno-surface-muted)]"}`}
 							>
 								<button
 									className="w-full px-3 py-2 pr-9 text-left text-sm"
@@ -128,7 +131,7 @@ export function Notebook({
 				</div>
 			</aside>
 
-			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-surface)]">
 				<div className="@container flex items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2">
 					<div className="flex items-center gap-2">
 						<button

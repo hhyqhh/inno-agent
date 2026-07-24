@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Check, RefreshCw, Tags as TagsIcon, X } from "lucide-react";
 import { notebookStore } from "../../stores/notebook-store.js";
 import type { WikiPageFrontmatter, WikiPageType } from "../../types/wiki.js";
-import { parseFrontmatter } from "../../utils/frontmatter.js";
+import { parseFrontmatter, serializeFrontmatter } from "../../utils/frontmatter.js";
 import { normalizeMarkdownMath } from "../../utils/markdown-math.js";
 import { useStoreSnapshot } from "../hooks.js";
 import { MilkdownEditor } from "./MilkdownEditor.js";
@@ -49,11 +49,13 @@ function uniqueTags(tags: string[]): string[] {
 function FrontmatterHeader({
 	frontmatter,
 	canEditTags = true,
+	onSaveTags,
 	onOpenNoteId,
 	onOpenNote,
 }: {
 	frontmatter: WikiPageFrontmatter;
 	canEditTags?: boolean;
+	onSaveTags?: (tags: string[]) => Promise<void> | void;
 	onOpenNoteId?: (noteId: string) => void;
 	onOpenNote?: (rawPath: string) => void;
 }) {
@@ -76,7 +78,11 @@ function FrontmatterHeader({
 		const tags = uniqueTags([...draftTags, ...splitTagInput(tagInput)]);
 		setIsSavingTags(true);
 		try {
-			await notebookStore.updateCurrentPageTags(tags);
+			if (onSaveTags) {
+				await onSaveTags(tags);
+			} else {
+				await notebookStore.updateCurrentPageTags(tags);
+			}
 			setIsEditingTags(false);
 			setTagInput("");
 		} finally {
@@ -177,7 +183,10 @@ function FrontmatterHeader({
 				) : (
 					<div className="flex flex-wrap items-center gap-1">
 						{frontmatter.tags.map((tag) => (
-							<span key={tag} className="rounded-full bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-xs text-[var(--inno-accent)]">
+							<span
+								key={tag}
+								className="inline-flex items-center rounded-full bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-xs text-[var(--inno-accent)]"
+							>
 								#{tag}
 							</span>
 						))}
@@ -249,7 +258,9 @@ export function PageView({
 		regeneratingSourceId: notebookStore.regeneratingSourceId,
 		editBuffer: notebookStore.editBuffer,
 	}));
-	const parsed = state.currentPage ? parseFrontmatter(state.currentPage.content) : null;
+	const parsed = state.currentPage
+		? parseFrontmatter(state.isEditing ? state.editBuffer : state.currentPage.content)
+		: null;
 	const sourceId = parsed?.frontmatter?.type === "source-summary" ? parsed.frontmatter.source_ids[0] : undefined;
 	const isCurrentSourceRegenerating = Boolean(sourceId && state.regeneratingSourceId === sourceId);
 
@@ -265,12 +276,19 @@ export function PageView({
 	}
 
 	if (state.isEditing) {
+		const updateDraftTags = (tags: string[]) => {
+			const draft = parseFrontmatter(notebookStore.editBuffer);
+			if (!draft.frontmatter) return;
+			notebookStore.updateEditBuffer(
+				`${serializeFrontmatter({ ...draft.frontmatter, tags })}\n${draft.body}`,
+			);
+		};
 		return (
 			<div className="flex h-full flex-col" data-color-mode="light">
 				{parsed.frontmatter ? (
 					<FrontmatterHeader
 						frontmatter={parsed.frontmatter}
-						canEditTags={false}
+						onSaveTags={updateDraftTags}
 						onOpenNoteId={onOpenNoteId}
 						onOpenNote={onOpenNote}
 					/>

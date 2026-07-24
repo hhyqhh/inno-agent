@@ -2,11 +2,13 @@ import { EventEmitter } from "./event-emitter.js";
 import { getTodayRecordDate } from "../lib/note-frontmatter.js";
 import {
 	archiveNote,
+	analyzeNotePolish,
 	createNote,
 	deleteNoteAttachment,
 	deleteNoteItem,
 	fetchNoteContent,
 	fetchRawContent,
+	l2RawFileUrl,
 	listNotes,
 	polishNote,
 	saveNoteContent,
@@ -15,7 +17,7 @@ import {
 	uploadNoteAttachment,
 	uploadNoteFile,
 } from "../api/notes.js";
-import type { NoteAttachment, NoteContent, NoteListBox, NoteSummary } from "../types/notes.js";
+import type { NoteAttachment, NoteContent, NoteListBox, NoteSummary, PolishAnalysisResult } from "../types/notes.js";
 
 interface NotesStoreEvents {
 	change: void;
@@ -26,8 +28,79 @@ export interface NotesTagSummary {
 	usageCount: number;
 }
 
+export interface SaveNoteOptions {
+	announce?: boolean;
+	reason?: "autosave" | "manual";
+}
+
+export interface PolishPreview {
+	rawPath: string;
+	originalContent: string;
+	polishedContent: string;
+	originalTags: string[];
+	suggestedTags: string[];
+	templateLabel: string | null;
+}
+
+function errorDetail(error: unknown): string | null {
+	if (!(error instanceof Error)) return null;
+	const message = error.message.trim();
+	return message || null;
+}
+
+function normalizeRawPath(path: string): string {
+	const segments: string[] = [];
+	for (const segment of path.replace(/\\/g, "/").split("/")) {
+		if (!segment || segment === ".") continue;
+		if (segment === "..") {
+			segments.pop();
+		} else {
+			segments.push(segment);
+		}
+	}
+	return segments.join("/");
+}
+
+function relativeAttachmentPath(noteRawPath: string, attachmentPath: string): string {
+	const normalizedNotePath = normalizeRawPath(noteRawPath);
+	const normalizedAttachmentPath = normalizeRawPath(attachmentPath);
+	const noteDir = normalizedNotePath.slice(0, normalizedNotePath.lastIndexOf("/") + 1);
+	return normalizedAttachmentPath.startsWith(noteDir)
+		? normalizedAttachmentPath.slice(noteDir.length)
+		: normalizedAttachmentPath;
+}
+
+function resolveNoteImagePath(noteRawPath: string, imagePath: string): string | null {
+	const trimmed = imagePath.trim();
+	if (!trimmed || /^(?:https?:|data:|blob:)/i.test(trimmed) || trimmed.startsWith("/")) {
+		return null;
+	}
+	let decoded = trimmed;
+	try {
+		decoded = decodeURIComponent(trimmed);
+	} catch {
+		// Keep the original path when it is not valid URI encoding.
+	}
+	const cleanPath = decoded.split(/[?#]/, 1)[0];
+	if (!cleanPath) return null;
+	if (cleanPath.replace(/\\/g, "/").startsWith("raw/")) {
+		return normalizeRawPath(cleanPath);
+	}
+	const normalizedNotePath = normalizeRawPath(noteRawPath);
+	const noteDir = normalizedNotePath.slice(0, normalizedNotePath.lastIndexOf("/") + 1);
+	return normalizeRawPath(`${noteDir}${cleanPath}`);
+}
+
+export function noteImageUrl(noteRawPath: string, imagePath: string): string {
+	if (imagePath.startsWith("/api/l2/raw/file?")) return imagePath;
+	const resolvedPath = resolveNoteImagePath(noteRawPath, imagePath);
+	return resolvedPath ? l2RawFileUrl(resolvedPath) : imagePath;
+}
+
 class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
+	readonly aiContextLimit = 20;
 	notes: NoteSummary[] = [];
+	aiContextRawPaths = new Set<string>();
 	selected: NoteSummary | null = null;
 	editorContent = "";
 	editorTitle = "";
@@ -57,23 +130,31 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	isUploadingAttachment = false;
 	deletingAttachmentId: string | null = null;
 	error: string | null = null;
+	errorDetail: string | null = null;
 	notice: string | null = null;
 	polishTemplateLabel: string | null = null;
 	polishSuggestedTags: string[] = [];
+	polishPreview: PolishPreview | null = null;
+	polishWasStopped = false;
 	private archiveQueue: Promise<unknown> = Promise.resolve();
+	private archiveControllers = new Map<string, AbortController>();
+	private activeSave: Promise<boolean> | null = null;
+	private polishController: AbortController | null = null;
 
 	get isDirty(): boolean {
 		if (!this.selected) return false;
-		if (this.selected.kind !== "markdown" && this.selected.contentType === "markdown") {
+		if (this.selected.notebookType === "note" && this.selected.contentType === "markdown") {
+			return (
+				this.editorContent !== this.savedContent ||
+				this.editorTitle !== this.savedTitle ||
+				this.editorTags.join(",") !== this.savedTags.join(",") ||
+				this.editorRecordDate !== this.savedRecordDate
+			);
+		}
+		if (this.selected.notebookType === "file" && this.selected.contentType === "markdown") {
 			return this.previewContent !== this.savedPreviewContent;
 		}
-		if (this.selected.kind !== "markdown") return false;
-		return (
-			this.editorContent !== this.savedContent ||
-			this.editorTitle !== this.savedTitle ||
-			this.editorTags.join(",") !== this.savedTags.join(",") ||
-			this.editorRecordDate !== this.savedRecordDate
-		);
+		return false;
 	}
 
 	get filteredNotes(): NoteSummary[] {
@@ -119,8 +200,59 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		return [...byKey.values()].sort((a, b) => b.usageCount - a.usageCount || a.displayName.localeCompare(b.displayName, "zh-CN"));
 	}
 
+	get availableTags(): string[] {
+		const byKey = new Map<string, NotesTagSummary>();
+		for (const note of this.notes) {
+			for (const tag of note.tags) {
+				const displayName = tag.trim();
+				if (!displayName) continue;
+				const key = displayName.toLowerCase();
+				const current = byKey.get(key);
+				if (current) current.usageCount += 1;
+				else byKey.set(key, { displayName, usageCount: 1 });
+			}
+		}
+		return [...byKey.values()]
+			.sort((a, b) => b.usageCount - a.usageCount || a.displayName.localeCompare(b.displayName, "zh-CN"))
+			.map((tag) => tag.displayName);
+	}
+
+	get aiContextNotes(): NoteSummary[] {
+		return [...this.aiContextRawPaths]
+			.map((rawPath) => this.notes.find((note) => note.rawPath === rawPath))
+			.filter((note): note is NoteSummary => Boolean(note));
+	}
+
+	canUseAsAiContext(note: NoteSummary): boolean {
+		return !["pdf", "word", "image"].includes(note.contentType) || Boolean(note.extractedPath);
+	}
+
+	toggleAiContext(note: NoteSummary): void {
+		if (!this.canUseAsAiContext(note)) return;
+		const next = new Set(this.aiContextRawPaths);
+		if (next.has(note.rawPath)) next.delete(note.rawPath);
+		else if (next.size < this.aiContextLimit) next.add(note.rawPath);
+		this.aiContextRawPaths = next;
+		this.emit("change", undefined);
+	}
+
+	removeAiContext(rawPath: string): void {
+		if (!this.aiContextRawPaths.has(rawPath)) return;
+		const next = new Set(this.aiContextRawPaths);
+		next.delete(rawPath);
+		this.aiContextRawPaths = next;
+		this.emit("change", undefined);
+	}
+
+	clearAiContext(): void {
+		if (this.aiContextRawPaths.size === 0) return;
+		this.aiContextRawPaths = new Set();
+		this.emit("change", undefined);
+	}
+
 	clearMessages() {
 		this.error = null;
+		this.errorDetail = null;
 		this.notice = null;
 		this.polishTemplateLabel = null;
 		this.polishSuggestedTags = [];
@@ -212,28 +344,39 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		try {
 			const data = await listNotes();
 			this.notes = data.notes;
+			const availablePaths = new Set(this.notes.map((note) => note.rawPath));
+			this.aiContextRawPaths = new Set([...this.aiContextRawPaths].filter((rawPath) => availablePaths.has(rawPath)));
 			if (this.selected) {
 				const updated = this.notes.find((note) => note.rawPath === this.selected?.rawPath);
 				this.selected = updated ?? null;
 			}
-		} catch {
+		} catch (error) {
 			this.notes = [];
 			this.error = "loadFailed";
+			this.errorDetail = errorDetail(error);
 		} finally {
 			this.isLoading = false;
 			this.emit("change", undefined);
 		}
 	}
 
+	async reloadNoteIfSelected(rawPath: string): Promise<void> {
+		if (this.selected?.rawPath !== rawPath) return;
+		await this.loadAll();
+		const note = this.notes.find((entry) => entry.rawPath === rawPath);
+		if (note && this.selected?.rawPath === rawPath) await this.selectNote(note);
+	}
+
 	async selectNote(note: NoteSummary): Promise<void> {
 		this.selected = note;
+		this.polishPreview = null;
 		this.previewContent = "";
 		this.savedPreviewContent = "";
 		this.attachments = [];
 		this.clearMessages();
 		this.emit("change", undefined);
 
-		if (note.kind === "markdown") {
+		if (note.notebookType === "note" && note.contentType === "markdown") {
 			this.isLoadingContent = true;
 			this.emit("change", undefined);
 			try {
@@ -248,8 +391,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				this.savedRecordDate = detail.recordDate || getTodayRecordDate();
 				this.savedContent = detail.content;
 				this.selected = { ...note, ...detail };
-			} catch {
+			} catch (error) {
 				this.error = "loadContentFailed";
+				this.errorDetail = errorDetail(error);
 				this.editorContent = "";
 				this.attachments = [];
 			} finally {
@@ -259,10 +403,39 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			return;
 		}
 
+		if (note.notebookType === "note") {
+			this.isLoadingContent = true;
+			this.emit("change", undefined);
+			try {
+				const detail = await fetchNoteContent(note.rawPath);
+				this.attachments = detail.attachments ?? [];
+				this.selected = {
+					...note,
+					meetingId: detail.meetingId,
+					meetingStatus: detail.meetingStatus,
+				};
+			} catch (error) {
+				this.error = "loadContentFailed";
+				this.errorDetail = errorDetail(error);
+				this.attachments = [];
+			} finally {
+				this.isLoadingContent = false;
+				this.emit("change", undefined);
+			}
+		}
+
 		await this.loadPreview(note.rawPath, note.contentType);
 	}
 
+	async selectNoteSafely(note: NoteSummary): Promise<boolean> {
+		if (this.selected?.rawPath === note.rawPath) return true;
+		if (!(await this.flushSelected())) return false;
+		await this.selectNote(note);
+		return true;
+	}
+
 	async createFromTemplate(templateId: string): Promise<void> {
+		if (!(await this.flushSelected())) return;
 		this.isCreating = true;
 		this.clearMessages();
 		this.emit("change", undefined);
@@ -275,8 +448,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			if (created) {
 				await this.selectNote(created);
 			}
-		} catch {
+		} catch (error) {
 			this.error = "createFailed";
+			this.errorDetail = errorDetail(error);
 		} finally {
 			this.isCreating = false;
 			this.emit("change", undefined);
@@ -296,8 +470,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			this.notice = "uploaded";
 			this.listBox = "drafts";
 			await this.loadAll();
-		} catch {
+		} catch (error) {
 			this.error = "uploadFailed";
+			this.errorDetail = errorDetail(error);
 		} finally {
 			this.isUploading = false;
 			this.emit("change", undefined);
@@ -317,12 +492,49 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				this.attachments = [result.attachment, ...this.attachments.filter((item) => item.id !== result.attachment.id)];
 			}
 			this.notice = "attachmentUploaded";
-		} catch {
+		} catch (error) {
 			this.error = "attachmentUploadFailed";
+			this.errorDetail = errorDetail(error);
 		} finally {
 			this.isUploadingAttachment = false;
 			this.emit("change", undefined);
 		}
+	}
+
+	async uploadInlineImage(file: File): Promise<string> {
+		if (!this.selected || this.selected.kind !== "markdown") {
+			throw new Error("No editable note selected");
+		}
+		if (!file.type.startsWith("image/")) {
+			throw new Error("Only image files can be inserted into the note");
+		}
+		const noteRawPath = this.selected.rawPath;
+		this.isUploadingAttachment = true;
+		this.clearMessages();
+		this.emit("change", undefined);
+		try {
+			const result = await uploadNoteAttachment(noteRawPath, file, { placement: "inline" });
+			if (this.selected?.rawPath === noteRawPath) {
+				this.attachments = [
+					result.attachment,
+					...this.attachments.filter((item) => item.id !== result.attachment.id),
+				];
+			}
+			this.notice = "attachmentUploaded";
+			return relativeAttachmentPath(noteRawPath, result.filePath);
+		} catch (error) {
+			this.error = "attachmentUploadFailed";
+			this.errorDetail = errorDetail(error);
+			throw error;
+		} finally {
+			this.isUploadingAttachment = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	resolveInlineImageUrl(imagePath: string): string {
+		if (!this.selected) return imagePath;
+		return noteImageUrl(this.selected.rawPath, imagePath);
 	}
 
 	async deleteAttachment(attachmentId: string): Promise<void> {
@@ -334,62 +546,104 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			await deleteNoteAttachment(attachmentId);
 			this.attachments = this.attachments.filter((item) => item.id !== attachmentId);
 			this.notice = "attachmentDeleted";
-		} catch {
+		} catch (error) {
 			this.error = "attachmentDeleteFailed";
+			this.errorDetail = errorDetail(error);
 		} finally {
 			this.deletingAttachmentId = null;
 			this.emit("change", undefined);
 		}
 	}
 
-	async saveSelected(): Promise<boolean> {
+	async flushSelected(): Promise<boolean> {
+		if (this.activeSave) {
+			const saved = await this.activeSave;
+			if (!saved) return false;
+		}
+		return this.isDirty ? this.saveSelected({ announce: false }) : true;
+	}
+
+	async saveSelected(options: SaveNoteOptions = {}): Promise<boolean> {
+		if (this.activeSave) {
+			const saved = await this.activeSave;
+			if (!saved || !this.isDirty) return saved;
+		}
 		if (!this.selected || !this.isDirty) return true;
+
+		const selectedPath = this.selected.rawPath;
+		const selectedTitle = this.selected.title;
+		const isRawMarkdown = this.selected.notebookType === "file" && this.selected.contentType === "markdown";
+		const snapshot = isRawMarkdown
+			? { kind: "raw" as const, content: this.previewContent }
+			: {
+				kind: "note" as const,
+				title: this.editorTitle.trim() || selectedTitle,
+				tags: [...this.editorTags],
+				recordDate: this.editorRecordDate,
+				content: this.editorContent,
+			};
+
 		this.isSaving = true;
 		this.clearMessages();
 		this.emit("change", undefined);
-		try {
-			if (this.selected.kind !== "markdown" && this.selected.contentType === "markdown") {
-				const result = await saveRawMarkdownContent({
-					rawPath: this.selected.rawPath,
-					content: this.previewContent,
-				});
-				this.savedPreviewContent = this.previewContent;
-				this.notice = "saved";
-				await this.loadAll();
-				this.selected = this.notes.find((note) => note.rawPath === result.rawPath) ?? this.selected;
-				return true;
-			}
 
-			const result = await saveNoteContent({
-				rawPath: this.selected.rawPath,
-				title: this.editorTitle.trim() || this.selected.title,
-				tags: this.editorTags,
-				recordDate: this.editorRecordDate,
-				content: this.editorContent,
-			});
-			this.savedTitle = this.editorTitle.trim() || this.selected.title;
-			this.savedTags = [...this.editorTags];
-			this.savedRecordDate = this.editorRecordDate;
-			this.savedContent = this.editorContent;
-			this.notice = "saved";
-			await this.loadAll();
-			if (this.selected) {
-				this.selected = this.notes.find((note) => note.rawPath === result.rawPath) ?? this.selected;
+		const operation = (async (): Promise<boolean> => {
+			try {
+				const result = snapshot.kind === "raw"
+					? await saveRawMarkdownContent({ rawPath: selectedPath, content: snapshot.content })
+					: await saveNoteContent({
+						rawPath: selectedPath,
+						title: snapshot.title,
+						tags: snapshot.tags,
+						recordDate: snapshot.recordDate,
+						content: snapshot.content,
+						saveReason: options.reason ?? (options.announce === false ? "autosave" : "manual"),
+					});
+
+				if (this.selected?.rawPath === selectedPath) {
+					if (snapshot.kind === "raw") {
+						this.savedPreviewContent = snapshot.content;
+					} else {
+						this.savedTitle = snapshot.title;
+						this.savedTags = [...snapshot.tags];
+						this.savedRecordDate = snapshot.recordDate;
+						this.savedContent = snapshot.content;
+					}
+				}
+
+				await this.loadAll();
+				if (this.selected?.rawPath === selectedPath) {
+					this.selected = this.notes.find((note) => note.rawPath === result.rawPath) ?? this.selected;
+				}
+				if (options.announce !== false) this.notice = "saved";
+				return true;
+			} catch (error) {
+				this.error = "saveFailed";
+				this.errorDetail = errorDetail(error);
+				return false;
 			}
-			return true;
-		} catch {
-			this.error = "saveFailed";
-			return false;
+		})();
+
+		this.activeSave = operation;
+		try {
+			return await operation;
 		} finally {
+			if (this.activeSave === operation) this.activeSave = null;
 			this.isSaving = false;
 			this.emit("change", undefined);
 		}
 	}
 
-	async polishSelected(): Promise<void> {
-		if (!this.selected || this.selected.kind !== "markdown" || !this.editorContent.trim() || this.isPolishing) return;
+	async polishSelected(templateId?: string, suggestedTags?: string[]): Promise<boolean> {
+		if (!this.selected || this.selected.notebookType !== "note" || this.selected.contentType !== "markdown" || !this.editorContent.trim() || this.isPolishing) return false;
 		const rawPath = this.selected.rawPath;
+		const originalContent = this.editorContent;
+		const originalTags = [...this.editorTags];
+		const controller = new AbortController();
+		this.polishController = controller;
+		this.polishWasStopped = false;
 		this.isPolishing = true;
+		this.polishPreview = null;
 		this.clearMessages();
 		this.emit("change", undefined);
 		try {
@@ -397,38 +651,134 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				rawPath,
 				title: this.editorTitle.trim() || this.selected.title,
 				tags: [...this.editorTags],
-				content: this.editorContent,
-			});
-			if (this.selected?.rawPath !== rawPath) return;
-			this.editorContent = result.content;
-			this.polishTemplateLabel = result.templateLabel;
-			const tagsByKey = new Map(this.editorTags.map((tag) => [tag.trim().replace(/\s+/g, " ").toLowerCase(), tag.trim()]));
-			for (const tag of result.suggestedTags) {
-				const trimmed = tag.trim();
-				const key = trimmed.replace(/\s+/g, " ").toLowerCase();
-				if (key && !tagsByKey.has(key)) tagsByKey.set(key, trimmed);
+				content: originalContent,
+				templateId,
+				suggestedTags,
+			}, controller.signal);
+			if (this.selected?.rawPath !== rawPath) return false;
+			if (this.editorContent !== originalContent) {
+				this.error = "polishSourceChanged";
+				return false;
 			}
-			this.editorTags = [...tagsByKey.values()].slice(0, 12);
-			this.polishSuggestedTags = result.suggestedTags;
-			this.notice = result.suggestedTags.length > 0
-				? (result.templateLabel ? "polishedWithTemplateAndTags" : "polishedWithTags")
-				: (result.templateLabel ? "polishedWithTemplate" : "polished");
-		} catch {
-			if (this.selected?.rawPath === rawPath) this.error = "polishFailed";
+			this.polishPreview = {
+				rawPath,
+				originalContent,
+				polishedContent: result.content,
+				originalTags,
+				suggestedTags: result.suggestedTags,
+				templateLabel: result.templateLabel,
+			};
+			return true;
+		} catch (error) {
+			if (controller.signal.aborted) {
+				this.polishWasStopped = true;
+				return false;
+			}
+			if (this.selected?.rawPath === rawPath) {
+				this.error = "polishFailed";
+				this.errorDetail = errorDetail(error);
+			}
+			return false;
 		} finally {
+			if (this.polishController === controller) this.polishController = null;
 			this.isPolishing = false;
 			this.emit("change", undefined);
 		}
 	}
 
+	async analyzeSelectedPolish(): Promise<PolishAnalysisResult | null> {
+		if (!this.selected || this.selected.notebookType !== "note" || this.selected.contentType !== "markdown" || !this.editorContent.trim() || this.isPolishing) return null;
+		const rawPath = this.selected.rawPath;
+		const originalContent = this.editorContent;
+		const controller = new AbortController();
+		this.polishController = controller;
+		this.polishWasStopped = false;
+		this.isPolishing = true;
+		this.clearMessages();
+		this.emit("change", undefined);
+		try {
+			const result = await analyzeNotePolish({
+				rawPath,
+				title: this.editorTitle.trim() || this.selected.title,
+				tags: [...this.editorTags],
+				content: originalContent,
+			}, controller.signal);
+			if (this.selected?.rawPath !== rawPath || this.editorContent !== originalContent) {
+				this.error = "polishSourceChanged";
+				return null;
+			}
+			return result;
+		} catch (error) {
+			if (controller.signal.aborted) {
+				this.polishWasStopped = true;
+				return null;
+			}
+			if (this.selected?.rawPath === rawPath) {
+				this.error = "polishFailed";
+				this.errorDetail = errorDetail(error);
+			}
+			return null;
+		} finally {
+			if (this.polishController === controller) this.polishController = null;
+			this.isPolishing = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	stopPolish(): void {
+		if (!this.polishController) return;
+		this.polishWasStopped = true;
+		this.polishController.abort();
+	}
+
+	applyPolishPreview(): void {
+		const preview = this.polishPreview;
+		if (!preview || this.selected?.rawPath !== preview.rawPath) return;
+		if (this.editorContent !== preview.originalContent) {
+			this.polishPreview = null;
+			this.error = "polishSourceChanged";
+			this.emit("change", undefined);
+			return;
+		}
+		this.editorContent = preview.polishedContent;
+		this.polishTemplateLabel = preview.templateLabel;
+		const tagsByKey = new Map(preview.originalTags.map((tag) => [tag.trim().replace(/\s+/g, " ").toLowerCase(), tag.trim()]));
+		for (const tag of preview.suggestedTags) {
+			const trimmed = tag.trim();
+			const key = trimmed.replace(/\s+/g, " ").toLowerCase();
+			if (key && !tagsByKey.has(key)) tagsByKey.set(key, trimmed);
+		}
+		this.editorTags = [...tagsByKey.values()].slice(0, 12);
+		this.polishSuggestedTags = preview.suggestedTags;
+		this.notice = preview.suggestedTags.length > 0
+			? (preview.templateLabel ? "polishedWithTemplateAndTags" : "polishedWithTags")
+			: (preview.templateLabel ? "polishedWithTemplate" : "polished");
+		this.polishPreview = null;
+		this.emit("change", undefined);
+	}
+
+	discardPolishPreview(): void {
+		if (!this.polishPreview) return;
+		this.polishPreview = null;
+		this.emit("change", undefined);
+	}
+
 	async archiveSelected(): Promise<string | null> {
 		if (!this.selected) return null;
+		if (this.selected.kind === "markdown" && !this.editorContent.trim() && this.attachments.length === 0) {
+			this.clearMessages();
+			this.error = "emptyCannotArchive";
+			this.emit("change", undefined);
+			return null;
+		}
 		if (this.selected.kind === "markdown" && this.isDirty) {
 			const saved = await this.saveSelected();
 			if (!saved) return null;
 		}
 		const rawPath = this.selected.rawPath;
 		if (this.archivingRawPaths.includes(rawPath)) return null;
+		const controller = new AbortController();
+		this.archiveControllers.set(rawPath, controller);
 		const title = this.selected.kind === "markdown" ? this.editorTitle.trim() || this.selected.title : undefined;
 		const tags = this.selected.kind === "markdown" ? [...this.editorTags] : undefined;
 		this.isArchiving = true;
@@ -439,10 +789,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		const run = async (): Promise<string | null> => {
 			this.archivingRawPath = rawPath;
 			this.emit("change", undefined);
+			controller.signal.throwIfAborted();
 			const result = await archiveNote(rawPath, {
 				title,
 				tags,
-			});
+			}, controller.signal);
 			this.notice = "archived";
 			this.listBox = "archived";
 			await this.loadAll();
@@ -456,11 +807,17 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		const task = this.archiveQueue
 			.catch(() => undefined)
 			.then(run)
-			.catch(() => {
+			.catch((error) => {
+				if (controller.signal.aborted) {
+					this.notice = "archiveStopped";
+					return null;
+				}
 				this.error = "archiveFailed";
+				this.errorDetail = errorDetail(error);
 				return null;
 			})
 			.finally(() => {
+				this.archiveControllers.delete(rawPath);
 				this.archivingRawPaths = this.archivingRawPaths.filter((path) => path !== rawPath);
 				this.archivingRawPath = this.archivingRawPaths[0] ?? null;
 				this.isArchiving = this.archivingRawPaths.length > 0;
@@ -472,6 +829,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		} finally {
 			this.emit("change", undefined);
 		}
+	}
+
+	stopArchive(rawPath: string | null = this.archivingRawPath): void {
+		if (!rawPath) return;
+		this.archiveControllers.get(rawPath)?.abort();
 	}
 
 	async deleteSelected(): Promise<boolean> {
@@ -490,8 +852,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			this.notice = "deleted";
 			await this.loadAll();
 			return true;
-		} catch {
+		} catch (error) {
 			this.error = "deleteFailed";
+			this.errorDetail = errorDetail(error);
 			return false;
 		} finally {
 			this.isDeleting = false;
@@ -518,8 +881,9 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				this.selected = null;
 			}
 			return true;
-		} catch {
+		} catch (error) {
 			this.error = "unarchiveFailed";
+			this.errorDetail = errorDetail(error);
 			return false;
 		} finally {
 			this.isArchiving = false;

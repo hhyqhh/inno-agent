@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 
@@ -7,32 +6,18 @@ import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 import { ensureDir, readText, writeText } from "../../storage/file-store.js";
-import type { ManifestEntry, WikiPageType, WikiPageFrontmatter } from "./types.js";
+import type {
+	LinkablePageType,
+	LinkedItem,
+	ManifestEntry,
+	WikiPageFrontmatter,
+	WikiLinkMaintenanceOptions,
+	WikiLinkMaintenanceResult,
+} from "./types.js";
 import { parseFrontmatter, serializeFrontmatter } from "./wiki-maintainer.js";
 import { logger } from "../../logger.js";
 import { normalizeMarkdownForMilkdown } from "./markdown-normalizer.js";
-
-type LinkablePageType = Extract<WikiPageType, "entity" | "concept">;
-
-interface LinkedItem {
-	title: string;
-	type: LinkablePageType;
-	description: string;
-}
-
-export interface WikiLinkMaintenanceResult {
-	created: string[];
-	updated: string[];
-	unchanged: string[];
-	/** Pages where a contradiction with the new source was recorded. */
-	contested: string[];
-	pages: string[];
-}
-
-export interface WikiLinkMaintenanceOptions {
-	createMissing?: boolean;
-	currentRelations?: string;
-}
+import { normalizeTagList, slugifyTitle } from "./l2-utils.js";
 
 const LINK_MAINTAIN_PROMPT = `你是一个学习 Wiki 知识库维护助手。
 
@@ -116,16 +101,6 @@ export function readSourceKnowledgeRelations(l2DataDir: string, wikiPages: strin
 		: context;
 }
 
-function slugifyTitle(title: string): string {
-	const slug = title
-		.toLowerCase()
-		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.slice(0, 60);
-	if (slug) return slug;
-	return createHash("sha256").update(title).digest("hex").slice(0, 12);
-}
-
 function cleanTitle(title: string): string {
 	return title
 		.split("|")[0]
@@ -205,7 +180,9 @@ async function extractLinkedItems(
 	title: string,
 	content: string,
 	currentRelations?: string,
+	signal?: AbortSignal,
 ): Promise<LinkedItem[]> {
+	signal?.throwIfAborted();
 	const fallback = fallbackItems(content);
 	if (!model || !modelRegistry) return fallback;
 
@@ -237,6 +214,7 @@ async function extractLinkedItems(
 				apiKey: auth.apiKey,
 				headers: auth.headers,
 				maxTokens: 4096,
+				signal,
 			},
 		);
 		if (response.stopReason === "error") return fallback;
@@ -247,6 +225,7 @@ async function extractLinkedItems(
 		const extracted = parseLinkedItemsJson(text);
 		return extracted.length > 0 ? extracted : fallback;
 	} catch (err) {
+		if (signal?.aborted) throw err;
 		logger.warn({ err }, "LLM wiki link extraction failed, using fallback");
 		return fallback;
 	}
@@ -262,7 +241,7 @@ function relativePagePath(type: LinkablePageType, filename: string): string {
 
 function findExistingPage(l2DataDir: string, item: LinkedItem): { path: string; exists: boolean } {
 	const dir = join(l2DataDir, "wiki", pageDirForType(item.type));
-	const slugPath = relativePagePath(item.type, `${slugifyTitle(item.title)}.md`);
+	const slugPath = relativePagePath(item.type, `${slugifyTitle(item.title, 60)}.md`);
 	const slugAbsPath = join(l2DataDir, slugPath);
 	if (existsSync(slugAbsPath)) return { path: slugPath, exists: true };
 	if (!existsSync(dir)) return { path: slugPath, exists: false };
@@ -278,29 +257,13 @@ function findExistingPage(l2DataDir: string, item: LinkedItem): { path: string; 
 	return { path: slugPath, exists: false };
 }
 
-function mergeTags(...tagGroups: string[][]): string[] {
-	const seen = new Set<string>();
-	const tags: string[] = [];
-	for (const group of tagGroups) {
-		for (const rawTag of group) {
-			for (const tag of rawTag.split(/[\s,\uFF0C;\uFF1B\u3001|]+/)) {
-			const trimmed = tag.trim();
-			if (!trimmed || seen.has(trimmed)) continue;
-			seen.add(trimmed);
-			tags.push(trimmed);
-			}
-		}
-	}
-	return tags.slice(0, 12);
-}
-
 function buildNewPage(item: LinkedItem, entry: ManifestEntry, sourcePagePath: string): string {
 	const today = new Date().toISOString().slice(0, 10);
 	const frontmatter = serializeFrontmatter({
 		title: item.title,
 		created: today,
 		type: item.type,
-		tags: mergeTags([item.type], entry.tags),
+		tags: normalizeTagList([item.type, ...entry.tags]).slice(0, 12),
 		sources: [sourcePagePath],
 		source_ids: [entry.id],
 		updated: today,
@@ -427,7 +390,8 @@ export async function maintainLinkedWikiPages(
 	options: WikiLinkMaintenanceOptions = {},
 ): Promise<WikiLinkMaintenanceResult> {
 	const result: WikiLinkMaintenanceResult = { created: [], updated: [], unchanged: [], contested: [], pages: [] };
-	const items = await extractLinkedItems(model, modelRegistry, entry.title, sourcePageBody, options.currentRelations);
+	const items = await extractLinkedItems(model, modelRegistry, entry.title, sourcePageBody, options.currentRelations, options.signal);
+	options.signal?.throwIfAborted();
 
 	// Stage 1: read existing definitions for all candidates, build plan.
 	const candidates = items.map((it) => ({
@@ -440,6 +404,7 @@ export async function maintainLinkedWikiPages(
 	if (plan) {
 		// Stage 2: write/merge according to plan.
 		for (const p of plan) {
+			options.signal?.throwIfAborted();
 			const page = upsertPlannedPage(l2DataDir, p, entry, sourcePagePath, options);
 			if (options.createMissing === false && page.status === "unchanged" && !existsSync(join(l2DataDir, page.path))) {
 				continue;
@@ -451,6 +416,7 @@ export async function maintainLinkedWikiPages(
 	} else {
 		// Fallback: original non-destructive create-or-append-reference.
 		for (const item of items) {
+			options.signal?.throwIfAborted();
 			const page = upsertLinkedPage(l2DataDir, item, entry, sourcePagePath, options);
 			if (options.createMissing === false && page.status === "unchanged" && !existsSync(join(l2DataDir, page.path))) {
 				continue;

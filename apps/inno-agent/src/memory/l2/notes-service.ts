@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
@@ -19,9 +19,6 @@ import {
 	parseNoteFrontmatter,
 	recordDateFromIso,
 	serializeNoteFile,
-	type NoteFrontmatter,
-	type NoteStatus,
-	type MeetingStatus,
 } from "./note-frontmatter.js";
 import { resolveNoteTemplateContent } from "./note-templates.js";
 import {
@@ -29,9 +26,27 @@ import {
 	inferNotebookType,
 	primaryWikiPath,
 	scanOrphans,
-	type ArchiveRawResult,
 } from "./sources-service.js";
-import type { ManifestEntry, ManifestStatus, RawSourceType, SelectedScope } from "./types.js";
+import type {
+	ArchiveRawResult,
+	ConversationCaptureMode,
+	DeleteNotebookItemResult,
+	ManifestEntry,
+	MeetingStatus,
+	NoteAttachmentRecord,
+	NoteContentDto,
+	NoteFrontmatter,
+	NoteStatus,
+	NoteVersionDto,
+	NoteVersionReason,
+	NoteVersionSummaryDto,
+	NoteSummaryDto,
+	NotesListResponse,
+	NotebookType,
+	SaveRawMarkdownResult,
+	SelectedScope,
+	UnarchiveResult,
+} from "./types.js";
 import {
 	appendLog,
 	createSourcePage,
@@ -43,98 +58,101 @@ import {
 } from "./wiki-maintainer.js";
 import { summarizeContent } from "./summarizer.js";
 import { maintainLinkedWikiPages, readSourceKnowledgeRelations } from "./wiki-linker.js";
+import { isSupportedFormat, parseDocument } from "./document-parser.js";
 import { logger } from "../../logger.js";
+import { slugifyTitle, uniqueUploadName } from "./l2-utils.js";
+import { detachSourceFromWikiPage } from "./wiki-source-references.js";
 import {
 	deleteAttachmentsForNote,
 	listNoteAttachments,
-	type NoteAttachmentRecord,
+	updateNoteAttachmentStatus,
 } from "./note-attachments-service.js";
+import { deleteNoteHistory, listNoteVersions, readNoteVersion, recordNoteVersion } from "./note-history-service.js";
 
-export type NotebookItemKind = "markdown" | "orphan" | "archived";
-export type NotebookType = "conversation" | "file" | "note";
-export type NotebookItemStatus = NoteStatus | ManifestStatus | "uploaded";
+const TEXT_ATTACHMENT_EXTENSIONS = new Set([
+	".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".xml", ".yaml", ".yml",
+	".html", ".css", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".java", ".go",
+	".rs", ".sql", ".sh", ".log",
+]);
+const IMAGE_REFERENCE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".tif"]);
 
-export interface NoteSummaryDto {
-	noteId: string;
-	rawPath: string;
-	title: string;
-	tags: string[];
-	notebookType: NotebookType;
-	contentType: RawSourceType;
-	status: NotebookItemStatus;
-	kind: NotebookItemKind;
-	wikiPagePath?: string;
-	wikiPages?: string[];
-	origin?: ManifestEntry["source"]["origin"];
-	extractedPath?: string;
-	size?: number;
-	createdAt: string;
-	updatedAt: string;
-	meetingId?: string;
-	meetingStatus?: MeetingStatus;
+interface MarkdownImageReference {
+	alt: string;
+	target: string;
 }
 
-export interface NoteContentDto {
-	rawPath: string;
-	noteId: string;
-	title: string;
-	tags: string[];
-	recordDate: string;
-	status: NoteStatus;
-	sourceId?: string;
-	content: string;
-	attachments: NoteAttachmentRecord[];
-	createdAt: string;
-	updatedAt: string;
-	meetingId?: string;
-	meetingStatus?: MeetingStatus;
+function markdownImageReferences(markdown: string): MarkdownImageReference[] {
+	const references: MarkdownImageReference[] = [];
+	const inlineImage = /!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\s*\)/g;
+	for (const match of markdown.matchAll(inlineImage)) {
+		const target = (match[2] || match[3] || "").trim();
+		if (target) references.push({ alt: match[1].trim(), target });
+	}
+	const htmlImage = /<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1[^>]*>/gi;
+	for (const match of markdown.matchAll(htmlImage)) {
+		const target = match[2].trim();
+		if (target) references.push({ alt: "", target });
+	}
+	return references;
 }
 
-export interface NotesListResponse {
-	notes: NoteSummaryDto[];
+function isPathInside(root: string, candidate: string): boolean {
+	const pathFromRoot = relative(root, candidate);
+	return pathFromRoot === "" || (!pathFromRoot.startsWith("..") && !isAbsolute(pathFromRoot));
+}
+
+function resolveLocalNoteImage(
+	l2DataDir: string,
+	notePath: string,
+	reference: MarkdownImageReference,
+): { path: string; source: string; alt: string } | null {
+	const rawTarget = reference.target.trim();
+	if (/^(?:https?:|data:|blob:|mailto:)/i.test(rawTarget) || rawTarget.startsWith("#")) {
+		return null;
+	}
+
+	let decodedTarget: string;
+	try {
+		decodedTarget = decodeURIComponent(rawTarget);
+	} catch {
+		decodedTarget = rawTarget;
+	}
+
+	let candidate: string;
+	if (decodedTarget.startsWith("/api/l2/raw/file?")) {
+		const rawPath = new URL(decodedTarget, "http://localhost").searchParams.get("path");
+		if (!rawPath) return null;
+		candidate = resolve(l2DataDir, rawPath);
+	} else {
+		const cleanTarget = decodedTarget.split(/[?#]/, 1)[0].replace(/\\/g, "/");
+		if (!cleanTarget) return null;
+		candidate = cleanTarget.startsWith("raw/")
+			? resolve(l2DataDir, cleanTarget)
+			: resolve(dirname(notePath), cleanTarget);
+	}
+
+	if (!IMAGE_REFERENCE_EXTENSIONS.has(extname(candidate).toLowerCase())) {
+		return null;
+	}
+	if (!existsSync(candidate) || !statSync(candidate).isFile()) {
+		throw new Error(`笔记引用图片不存在: ${reference.target}`);
+	}
+	const realRoot = realpathSync(resolve(l2DataDir));
+	const realCandidate = realpathSync(candidate);
+	if (!isPathInside(realRoot, realCandidate)) {
+		throw new Error(`笔记引用图片超出知识库目录，无法归档: ${reference.target}`);
+	}
+	return { path: realCandidate, source: reference.target, alt: reference.alt };
+}
+
+function isTextAttachment(attachment: NoteAttachmentRecord): boolean {
+	return attachment.mimeType.startsWith("text/") ||
+		["application/json", "application/xml", "application/javascript", "application/x-yaml"].includes(attachment.mimeType) ||
+		TEXT_ATTACHMENT_EXTENSIONS.has(extname(attachment.fileName).toLowerCase());
 }
 
 function noteFileName(title: string, noteId: string): string {
-	const slug = title
-		.toLowerCase()
-		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.slice(0, 40);
-	return `${slug || "note"}-${noteId.slice(-8)}.md`;
-}
-
-function sanitizeUploadName(name: string): string {
-	const cleaned = name
-		.replace(/[/\\?%*:|"<>]/g, "-")
-		.replace(/\s+/g, " ")
-		.trim();
-	return cleaned || "upload";
-}
-
-function uploadExtension(fileName: string, mimeType: string): string {
-	const ext = extname(fileName);
-	if (ext) return ext;
-	if (mimeType === "application/pdf") return ".pdf";
-	if (mimeType.includes("wordprocessingml")) return ".docx";
-	if (mimeType.includes("spreadsheetml")) return ".xlsx";
-	if (mimeType.includes("presentationml")) return ".pptx";
-	if (mimeType === "text/markdown") return ".md";
-	if (mimeType.startsWith("image/")) return `.${mimeType.slice("image/".length).replace("jpeg", "jpg")}`;
-	if (mimeType.startsWith("text/")) return ".txt";
-	return ".bin";
-}
-
-function uniqueUploadName(dir: string, fileName: string, mimeType: string): string {
-	const safeName = sanitizeUploadName(fileName);
-	const ext = uploadExtension(safeName, mimeType);
-	const base = basename(safeName, ext).slice(0, 120) || "upload";
-	let candidate = `${base}${ext}`;
-	let index = 1;
-	while (existsSync(join(dir, candidate))) {
-		index += 1;
-		candidate = `${base} (${index})${ext}`;
-	}
-	return candidate;
+	return `${slugifyTitle(title, 40, "note")}-${noteId.slice(-8)}.md`;
 }
 
 function readNoteFile(l2DataDir: string, rawPath: string): { absPath: string; frontmatter: NoteFrontmatter; body: string } {
@@ -171,6 +189,8 @@ function noteSummaryFromFile(l2DataDir: string, rawPath: string): NoteSummaryDto
 			updatedAt: frontmatter.updated || frontmatter.created || statSync(join(l2DataDir, rawPath)).mtime.toISOString(),
 			meetingId: frontmatter.meeting_id,
 			meetingStatus: frontmatter.meeting_status,
+			sourceSessionId: frontmatter.source_session_id,
+			captureMode: frontmatter.capture_mode,
 		};
 	} catch (err) {
 		logger.warn({ err, rawPath }, "failed to read note file");
@@ -192,6 +212,8 @@ function manifestToNoteSummary(entry: ManifestEntry): NoteSummaryDto {
 		wikiPagePath: primaryWikiPath(entry.wikiPages),
 		wikiPages: entry.wikiPages,
 		origin: entry.source.origin,
+		sourceSessionId: entry.source.sessionId,
+		captureMode: entry.capture_mode,
 		extractedPath: entry.extractedPath,
 		createdAt: entry.createdAt,
 		updatedAt: entry.updatedAt,
@@ -273,7 +295,7 @@ export function uploadL2NoteFile(
 	ensureL2Directories(l2DataDir);
 	const dir = join(l2DataDir, "raw", "uploads");
 	mkdirSync(dir, { recursive: true });
-	const outputName = uniqueUploadName(dir, options.fileName, options.mimeType);
+	const outputName = uniqueUploadName(dir, options.fileName, options.mimeType, "upload");
 	const outputPath = join(dir, outputName);
 	const data = Buffer.from(options.dataBase64, "base64");
 	writeFileSync(outputPath, data);
@@ -297,6 +319,7 @@ export async function archiveL2NotebookItem(
 		selectedScope?: SelectedScope;
 		model?: Model<any>;
 		modelRegistry?: ModelRegistry;
+		signal?: AbortSignal;
 	},
 ): Promise<ArchiveRawResult> {
 	const normalizedPath = rawPath.replace(/\\/g, "/");
@@ -331,6 +354,8 @@ export function readNoteContent(l2DataDir: string, rawPath: string): NoteContent
 		updatedAt: frontmatter.updated,
 		meetingId: frontmatter.meeting_id,
 		meetingStatus: frontmatter.meeting_status,
+		sourceSessionId: frontmatter.source_session_id,
+		captureMode: frontmatter.capture_mode,
 	};
 }
 
@@ -341,17 +366,31 @@ export function saveL2MeetingDraft(
 ): { rawPath: string; status: NoteStatus; meetingStatus: MeetingStatus } {
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	const { absPath, frontmatter } = readNoteFile(l2DataDir, normalizedPath);
+	const manifest = findManifestByRawPath(l2DataDir, normalizedPath);
+	const wasIndexed = frontmatter.status === "indexed" || Boolean(frontmatter.source_id) || manifest?.status === "indexed" || manifest?.status === "outdated";
+	const nextStatus: NoteStatus = wasIndexed ? "outdated" : "draft";
+	const now = new Date().toISOString();
 	const nextFrontmatter: NoteFrontmatter = {
 		...frontmatter,
 		title: options.title?.trim() || frontmatter.title,
 		tags: options.tags ?? frontmatter.tags,
-		status: "draft",
+		status: nextStatus,
 		meeting_id: options.meetingId,
 		meeting_status: options.meetingStatus,
-		updated: new Date().toISOString(),
+		updated: now,
 	};
 	writeText(absPath, serializeNoteFile(nextFrontmatter, options.content));
-	return { rawPath: normalizedPath, status: "draft", meetingStatus: options.meetingStatus };
+	if (manifest) {
+		updateManifestEntry(l2DataDir, manifest.id, (current) => ({
+			...current,
+			title: nextFrontmatter.title,
+			tags: [...nextFrontmatter.tags],
+			contentHash: createHash("sha256").update(options.content).digest("hex").slice(0, 16),
+			status: "outdated",
+			updatedAt: now,
+		}));
+	}
+	return { rawPath: normalizedPath, status: nextStatus, meetingStatus: options.meetingStatus };
 }
 
 export function createL2Note(
@@ -362,10 +401,12 @@ export function createL2Note(
 		templateId?: string;
 		tags?: string[];
 		content?: string;
+		sourceSessionId?: string;
+		captureMode?: ConversationCaptureMode;
 	},
 ): { rawPath: string; status: NoteStatus; noteId: string; title: string } {
 	ensureL2Directories(l2DataDir);
-	const { title, tags, body } = resolveNoteTemplateContent(codeDir, options);
+	const { title, tags, body } = resolveNoteTemplateContent(codeDir, dirname(l2DataDir), options);
 	const noteId = `note_${randomUUID().slice(0, 8)}`;
 	const now = new Date().toISOString();
 	const fileName = noteFileName(title, noteId);
@@ -376,23 +417,50 @@ export function createL2Note(
 		tags,
 		record_date: getTodayRecordDate(),
 		status: "draft",
+		source_session_id: options.sourceSessionId,
+		capture_mode: options.captureMode,
 		created: now,
 		updated: now,
 	};
 	writeText(join(l2DataDir, rawPath), serializeNoteFile(frontmatter, body));
+	recordNoteVersion(l2DataDir, {
+		noteId,
+		title,
+		tags,
+		recordDate: frontmatter.record_date,
+		content: body.replace(/^<!--\s*inno-meeting:[^:\r\n]+:(?:start|end)\s*-->\r?\n?/gm, ""),
+		reason: "created",
+	});
 	return { rawPath, status: "draft", noteId, title };
 }
 
 export function saveL2NoteContent(
 	l2DataDir: string,
 	rawPath: string,
-	options: { title: string; tags?: string[]; recordDate?: string; content: string },
+	options: {
+		title: string;
+		tags?: string[];
+		recordDate?: string;
+		content: string;
+		saveReason?: Exclude<NoteVersionReason, "created">;
+	},
 ): { rawPath: string; status: NoteStatus } {
 	const normalizedPath = rawPath.replace(/\\/g, "/");
-	const { absPath, frontmatter, body: _oldBody } = readNoteFile(l2DataDir, normalizedPath);
-	const wasIndexed = frontmatter.status === "indexed" || Boolean(frontmatter.source_id);
+	const { absPath, frontmatter, body: oldBody } = readNoteFile(l2DataDir, normalizedPath);
+	const manifest = findManifestByRawPath(l2DataDir, normalizedPath);
+	const wasIndexed = frontmatter.status === "indexed" || Boolean(frontmatter.source_id) || manifest?.status === "indexed" || manifest?.status === "outdated";
 	const nextStatus: NoteStatus = wasIndexed ? "outdated" : "draft";
 	const now = new Date().toISOString();
+	if (listNoteVersions(l2DataDir, frontmatter.note_id).length === 0) {
+		recordNoteVersion(l2DataDir, {
+			noteId: frontmatter.note_id,
+			title: frontmatter.title,
+			tags: frontmatter.tags,
+			recordDate: frontmatter.record_date || recordDateFromIso(frontmatter.created),
+			content: oldBody,
+			reason: "created",
+		});
+	}
 	const nextFrontmatter: NoteFrontmatter = {
 		...frontmatter,
 		title: options.title.trim() || frontmatter.title,
@@ -401,8 +469,54 @@ export function saveL2NoteContent(
 		status: nextStatus,
 		updated: now,
 	};
-	writeText(absPath, serializeNoteFile(nextFrontmatter, options.content));
+	const serializedContent = serializeNoteFile(nextFrontmatter, options.content);
+	writeText(absPath, serializedContent);
+	if (manifest) {
+		updateManifestEntry(l2DataDir, manifest.id, (current) => ({
+			...current,
+			title: nextFrontmatter.title,
+			tags: [...nextFrontmatter.tags],
+			contentHash: createHash("sha256").update(options.content).digest("hex").slice(0, 16),
+			status: "outdated",
+			updatedAt: now,
+		}));
+	}
+	recordNoteVersion(l2DataDir, {
+		noteId: nextFrontmatter.note_id,
+		title: nextFrontmatter.title,
+		tags: nextFrontmatter.tags,
+		recordDate: nextFrontmatter.record_date,
+		content: options.content,
+		reason: options.saveReason ?? "manual",
+	});
 	return { rawPath: normalizedPath, status: nextStatus };
+}
+
+export function listL2NoteVersions(l2DataDir: string, rawPath: string): NoteVersionSummaryDto[] {
+	const { frontmatter } = readNoteFile(l2DataDir, rawPath.replace(/\\/g, "/"));
+	return listNoteVersions(l2DataDir, frontmatter.note_id);
+}
+
+export function readL2NoteVersion(l2DataDir: string, rawPath: string, versionId: string): NoteVersionDto {
+	const { frontmatter } = readNoteFile(l2DataDir, rawPath.replace(/\\/g, "/"));
+	return readNoteVersion(l2DataDir, frontmatter.note_id, versionId);
+}
+
+export function restoreL2NoteVersion(
+	l2DataDir: string,
+	rawPath: string,
+	versionId: string,
+): { rawPath: string; status: NoteStatus; versionId: string } {
+	const normalizedPath = rawPath.replace(/\\/g, "/");
+	const version = readL2NoteVersion(l2DataDir, normalizedPath, versionId);
+	const result = saveL2NoteContent(l2DataDir, normalizedPath, {
+		title: version.title,
+		tags: version.tags,
+		recordDate: version.recordDate,
+		content: version.content,
+		saveReason: "restore",
+	});
+	return { ...result, versionId };
 }
 
 export async function archiveL2Note(
@@ -412,8 +526,10 @@ export async function archiveL2Note(
 		tags?: string[];
 		model?: Model<any>;
 		modelRegistry?: ModelRegistry;
+		signal?: AbortSignal;
 	},
 ): Promise<ArchiveRawResult> {
+	options.signal?.throwIfAborted();
 	ensureL2Directories(l2DataDir);
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	if (!normalizedPath.startsWith("raw/notes/")) {
@@ -438,11 +554,77 @@ export async function archiveL2Note(
 	const title = frontmatter.title || extractNoteTitle(body, basename(normalizedPath, ".md"));
 	const tags = options.tags ?? frontmatter.tags;
 	const content = body.trim();
-	if (!content) {
+	const attachments = listNoteAttachments(l2DataDir, normalizedPath);
+	if (!content && attachments.length === 0) {
 		throw new Error("笔记内容为空，无法归档");
 	}
+	const originalAttachmentStatuses = new Map(attachments.map((attachment) => [attachment.id, attachment.status]));
+	let pendingWikiPagePath: string | undefined;
+	try {
+	const attachmentSections: string[] = [];
+	const processedImagePaths = new Set<string>();
+	for (const attachment of attachments) {
+		options.signal?.throwIfAborted();
+		updateNoteAttachmentStatus(l2DataDir, attachment.id, "extracting");
+		try {
+			const attachmentPath = join(l2DataDir, attachment.filePath);
+			if (IMAGE_REFERENCE_EXTENSIONS.has(extname(attachmentPath).toLowerCase())) {
+				processedImagePaths.add(realpathSync(attachmentPath));
+			}
+			let extractedContent: string;
+			if (isSupportedFormat(attachmentPath)) {
+				extractedContent = (await parseDocument(attachmentPath)).text.trim();
+			} else if (isTextAttachment(attachment)) {
+				extractedContent = readText(attachmentPath).trim();
+			} else {
+				throw new Error(`不支持的附件格式: ${extname(attachment.fileName) || attachment.mimeType}`);
+			}
+			options.signal?.throwIfAborted();
+			if (!extractedContent) {
+				throw new Error("附件内容为空");
+			}
+			attachmentSections.push([
+				`## 附件：${attachment.fileName}`,
+				"",
+				`> 来源：[${attachment.fileName}](${attachment.filePath})`,
+				"",
+				extractedContent,
+			].join("\n"));
+			updateNoteAttachmentStatus(l2DataDir, attachment.id, "extracted");
+		} catch (error) {
+			if (options.signal?.aborted) throw error;
+			updateNoteAttachmentStatus(l2DataDir, attachment.id, "error");
+			const detail = error instanceof Error ? error.message : String(error);
+			throw new Error(`附件“${attachment.fileName}”内容解析失败: ${detail}`);
+		}
+	}
+	const referencedImageSections: string[] = [];
+	for (const reference of markdownImageReferences(body)) {
+		options.signal?.throwIfAborted();
+		const image = resolveLocalNoteImage(l2DataDir, absPath, reference);
+		if (!image || processedImagePaths.has(image.path)) continue;
+		processedImagePaths.add(image.path);
+		try {
+			const extractedContent = (await parseDocument(image.path)).text.trim();
+			if (!extractedContent) {
+				throw new Error("OCR 结果为空");
+			}
+			referencedImageSections.push([
+				`## 引用图片：${image.alt || basename(image.path)}`,
+				"",
+				`> 来源：${image.source}`,
+				"",
+				extractedContent,
+			].join("\n"));
+		} catch (error) {
+			if (options.signal?.aborted) throw error;
+			const detail = error instanceof Error ? error.message : String(error);
+			throw new Error(`引用图片“${image.alt || image.source}”内容解析失败: ${detail}`);
+		}
+	}
+	const archiveContent = [content, ...attachmentSections, ...referencedImageSections].filter(Boolean).join("\n\n");
 
-	const contentHash = createHash("sha256").update(content).digest("hex").slice(0, 16);
+	const contentHash = createHash("sha256").update(archiveContent).digest("hex").slice(0, 16);
 	const id = frontmatter.source_id ?? `l2src_${randomUUID().slice(0, 8)}`;
 	const maintenanceContext = readMaintenanceContext(l2DataDir);
 
@@ -455,15 +637,27 @@ export async function archiveL2Note(
 		tags,
 		contentHash,
 		status: "extracted",
-		source: { origin: "user_upload" },
+		capture_mode: frontmatter.capture_mode,
+		source: frontmatter.source_session_id
+			? { origin: "conversation", sessionId: frontmatter.source_session_id }
+			: { origin: "user_upload" },
 		createdAt: frontmatter.created || new Date().toISOString(),
 		updatedAt: new Date().toISOString(),
 	};
 
-	let summaryBody = content;
+	let summaryBody = archiveContent;
 	if (!existing && options.model && options.modelRegistry) {
-		const summary = await summarizeContent(options.model, options.modelRegistry, title, content);
-		if (summary) summaryBody = summary;
+		const summary = await summarizeContent(options.model, options.modelRegistry, title, archiveContent, options.signal);
+		if (summary) {
+			const attachmentSources = attachments.length > 0
+				? [
+					"## 附件来源",
+					"",
+					...attachments.map((attachment) => `- [${attachment.fileName}](${attachment.filePath})`),
+				].join("\n")
+				: "";
+			summaryBody = [summary, attachmentSources].filter(Boolean).join("\n\n");
+		}
 	}
 
 	const existingSourcePagePath = existing?.primary_wiki_path ?? primaryWikiPath(existing?.wikiPages ?? []);
@@ -471,17 +665,20 @@ export async function archiveL2Note(
 	const wikiPagePath = existing
 		? existingSourcePagePath ?? ""
 		: createSourcePage(l2DataDir, entry, summaryBody, undefined, existingSourcePagePath);
+	if (!existing) pendingWikiPagePath = wikiPagePath;
+	options.signal?.throwIfAborted();
 	const graphReferencePath = wikiPagePath || normalizedPath;
 	const currentRelations = readSourceKnowledgeRelations(l2DataDir, existing?.wikiPages ?? []);
 	const linkMaintenance = await maintainLinkedWikiPages(
 		l2DataDir,
 		entry,
 		graphReferencePath,
-		existing ? content : summaryBody,
+		existing ? archiveContent : summaryBody,
 		options.model,
 		options.modelRegistry,
-		existing ? { currentRelations } : undefined,
+		existing ? { currentRelations, signal: options.signal } : { signal: options.signal },
 	);
+	options.signal?.throwIfAborted();
 	const linkedPages = existing
 		? [...new Set([...existingLinkedPages, ...linkMaintenance.pages])]
 		: linkMaintenance.pages;
@@ -495,6 +692,7 @@ export async function archiveL2Note(
 	} else {
 		appendManifest(l2DataDir, entry);
 	}
+	pendingWikiPagePath = undefined;
 	rebuildIndex(l2DataDir, readManifest(l2DataDir));
 
 	const now = new Date().toISOString();
@@ -507,6 +705,9 @@ export async function archiveL2Note(
 		updated: now,
 	};
 	writeText(absPath, serializeNoteFile(nextFrontmatter, body));
+	for (const attachment of attachments) {
+		updateNoteAttachmentStatus(l2DataDir, attachment.id, "indexed");
+	}
 
 	appendLog(
 		l2DataDir,
@@ -531,16 +732,18 @@ export async function archiveL2Note(
 		wikiPages: entry.wikiPages,
 		status: "indexed",
 	};
-}
-
-export interface DeleteNotebookItemResult {
-	rawPath: string;
-	title: string;
-}
-
-export interface SaveRawMarkdownResult {
-	rawPath: string;
-	status: ManifestStatus | "uploaded";
+	} catch (error) {
+		if (options.signal?.aborted) {
+			if (pendingWikiPagePath && existsSync(join(l2DataDir, pendingWikiPagePath))) {
+				unlinkSync(join(l2DataDir, pendingWikiPagePath));
+			}
+			for (const attachment of attachments) {
+				const originalStatus = originalAttachmentStatuses.get(attachment.id);
+				if (originalStatus) updateNoteAttachmentStatus(l2DataDir, attachment.id, originalStatus);
+			}
+		}
+		throw error;
+	}
 }
 
 export function saveL2RawMarkdownContent(
@@ -562,10 +765,10 @@ export function saveL2RawMarkdownContent(
 		throw new Error("文件不存在");
 	}
 
+	const entry = findManifestByRawPath(l2DataDir, normalizedPath);
 	const nextContent = content.endsWith("\n") ? content : `${content}\n`;
 	writeText(absPath, nextContent);
 
-	const entry = findManifestByRawPath(l2DataDir, normalizedPath);
 	if (!entry) {
 		return { rawPath: normalizedPath, status: "uploaded" };
 	}
@@ -591,13 +794,7 @@ export function saveL2RawMarkdownContent(
 	return { rawPath: normalizedPath, status: "outdated" };
 }
 
-/**
- * Permanently delete a notebook item.
- *
- * If the item has already been archived, first undo the archive so generated
- * wiki pages, concept/entity source references, manifest rows, and indexes are
- * cleaned up before the raw file is removed.
- */
+/** Permanently delete a notebook item and its private note data. */
 export function deleteL2NotebookItem(l2DataDir: string, rawPath: string): DeleteNotebookItemResult {
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	if (!normalizedPath.startsWith("raw/")) {
@@ -611,100 +808,29 @@ export function deleteL2NotebookItem(l2DataDir: string, rawPath: string): Delete
 	}
 	const absPath = join(l2DataDir, normalizedPath);
 	if (!existsSync(absPath)) {
-		if (entry) {
-			appendLog(
-				l2DataDir,
-				"delete",
-				title,
-				[
-					`- 原始文件: ${normalizedPath}`,
-					`- Raw file was already missing after archive cleanup`,
-					`- UI delete from Notes panel`,
-				].join("\n"),
-			);
-			return { rawPath: normalizedPath, title };
-		}
+		if (entry) return { rawPath: normalizedPath, title };
 		throw new Error("文件不存在");
 	}
-
+	let noteId: string | undefined;
 	if (normalizedPath.startsWith("raw/notes/")) {
 		try {
 			const { frontmatter, body } = readNoteFile(l2DataDir, normalizedPath);
 			title = frontmatter.title || extractNoteTitle(body, title);
+			noteId = frontmatter.note_id;
 		} catch (err) {
 			logger.warn({ err, rawPath: normalizedPath }, "failed to read note before delete");
 		}
 		deleteAttachmentsForNote(l2DataDir, normalizedPath);
 	}
-
+	if (noteId) deleteNoteHistory(l2DataDir, noteId);
 	unlinkSync(absPath);
 	appendLog(
 		l2DataDir,
 		"delete",
 		title,
-		[`- 原始文件: ${normalizedPath}`, `- UI delete from Notes panel`].join("\n"),
+		[`- 原始文件: ${normalizedPath}`, `- Permanently deleted from Notes panel`].join("\n"),
 	);
 	return { rawPath: normalizedPath, title };
-}
-
-export interface UnarchiveResult {
-	rawPath: string;
-	title: string;
-	removedWikiPages: string[];
-	status: "draft" | "uploaded";
-}
-
-/**
- * Remove a source's reference (source_id + source paths) from a linked wiki
- * page. If the page was extracted solely from this source (its `source_ids`
- * becomes empty), the whole page is deleted — the knowledge point came from
- * nowhere else, so unarchiving must take it back too. Pages that aggregate
- * other sources are kept with just this reference detached.
- */
-function detachSourceFromWikiPage(
-	l2DataDir: string,
-	wikiPath: string,
-	sourceId: string,
-	rawPath: string,
-	sourcePagePath: string | undefined,
-): "deleted" | "kept" | "unchanged" {
-	const absPath = join(l2DataDir, wikiPath);
-	if (!existsSync(absPath)) return "unchanged";
-	try {
-		const { frontmatter, body } = parseFrontmatter(readText(absPath));
-		if (!frontmatter) return "unchanged";
-
-		const referencesSource = frontmatter.source_ids.includes(sourceId);
-		const nextSourceIds = frontmatter.source_ids.filter((id) => id !== sourceId);
-		if (referencesSource && nextSourceIds.length === 0) {
-			unlinkSync(absPath);
-			return "deleted";
-		}
-
-		const nextSources = frontmatter.sources.filter((s) => s !== rawPath && s !== sourcePagePath);
-		let nextBody = body;
-		if (sourcePagePath) {
-			nextBody = body
-				.split("\n")
-				.filter((line) => !(line.trim().startsWith("-") && line.includes(sourcePagePath)))
-				.join("\n");
-		}
-		if (
-			!referencesSource &&
-			nextSources.length === frontmatter.sources.length &&
-			nextBody === body
-		) {
-			return "unchanged";
-		}
-		frontmatter.source_ids = nextSourceIds;
-		frontmatter.sources = nextSources;
-		frontmatter.updated = new Date().toISOString().slice(0, 10);
-		writeText(absPath, `${serializeFrontmatter(frontmatter)}\n${nextBody.replace(/^\n/, "")}`);
-		return "kept";
-	} catch (err) {
-		logger.warn({ err, wikiPath }, "failed to detach source from wiki page");
-		return "unchanged";
-	}
 }
 
 function wikiPathExists(l2DataDir: string, wikiPath: string): boolean {
@@ -769,7 +895,11 @@ export function unarchiveL2NotebookItem(l2DataDir: string, rawPath: string): Una
 				removedWikiPages.push(wikiPath);
 			}
 		} else {
-			const outcome = detachSourceFromWikiPage(l2DataDir, wikiPath, entry.id, normalizedPath, sourcePage);
+			const outcome = detachSourceFromWikiPage(l2DataDir, wikiPath, {
+				sourceId: entry.id,
+				rawPath: normalizedPath,
+				sourcePagePath: sourcePage,
+			});
 			if (outcome === "deleted") removedWikiPages.push(wikiPath);
 		}
 	}

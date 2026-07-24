@@ -142,6 +142,17 @@
 		}
 	},
 	"notes": {
+		"context": {
+			"add": "添加到 AI 引用",
+			"unavailable": "请先归档并提取该文件后再引用",
+			"selected": "已选择 {{count}} / {{limit}} 篇",
+			"clear": "清除",
+			"clearAll": "清除全部",
+			"useInChat": "在对话中总结",
+			"referencing": "正在引用 {{count}} 篇笔记",
+			"remove": "移除 {{title}}",
+			"defaultPrompt": "请总结我勾选的内容，提炼核心观点和行动项，并标明信息来源。"
+		},
 		"meeting": {
 			"start": "会议录音",
 			"stop": "结束录音",
@@ -189,6 +200,7 @@
 			"title": "标题",
 			"tags": "标签",
 			"addTag": "添加标签",
+			"existingTags": "选择已有标签",
 			"recordDate": "记录日期",
 			"recordDateKey": "记录日期",
 			"chooseDate": "选择记录日期",
@@ -205,11 +217,21 @@
 			"delete": "删除",
 			"confirmDelete": "删除？",
 			"confirm": "确定",
-			"cancel": "取消"
+			"cancel": "取消",
+			"temporaryImageWarning": "此笔记包含旧的临时图片引用，图片可能已失效。请删除该图片并重新粘贴或上传。"
 		},
 		"download": "下载",
+		"unarchiveDialogTitle": "撤回归档",
 		"unarchiveConfirm": "撤回归档「{{title}}」？将删除其生成的 Wiki 摘要页面和仅由它提取的知识点，内容退回草稿箱。",
+		"deleteDialogTitle": "删除笔记",
 		"deleteConfirm": "删除「{{title}}」？此操作不可撤回。",
+		"templates": {
+			"discardDialogTitle": "放弃模板修改",
+			"discardConfirm": "当前模板尚未保存，是否放弃修改？",
+			"discardChanges": "放弃修改",
+			"deleteDialogTitle": "删除模板",
+			"deleteConfirm": "删除模板「{{title}}」？此操作不可撤回。"
+		},
 		"previewBinaryHint": "该文件为二进制格式，请下载或归档后查看 Wiki 摘要。",
 		"itemType": {
 			"markdown": "笔记",
@@ -227,7 +249,8 @@
 			"error": "失败",
 			"uploaded": "待归档",
 			"pending": "待处理",
-			"extracted": "已提取"
+			"extracted": "已提取",
+			"archiving": "归档中"
 		},
 		"actions": {
 			"createDraft": "新建草稿",
@@ -236,12 +259,60 @@
 			"save": "保存",
 			"polish": "AI 润色",
 			"polishing": "AI 正在分析并润色…",
+			"stopPolishing": "停止 AI 润色",
+			"polishingNote": "正在对“{{title}}”笔记进行 AI 润色…",
 			"archive": "归档到 Wiki",
+			"stopArchiving": "停止归档",
 			"rearchive": "重新归档",
 			"unarchive": "撤回归档",
 			"delete": "删除",
 			"openWiki": "查看 Wiki 摘要",
 			"viewNote": "查看原始笔记"
+		},
+		"saveStatus": {
+			"unsaved": "有未保存修改",
+			"saving": "正在自动保存…",
+			"saved": "已自动保存",
+			"failed": "自动保存失败"
+		},
+		"polishDiff": {
+			"title": "AI 润色差异预览",
+			"summary": "+{{additions}} 行 · −{{deletions}} 行",
+			"template": "模板：{{template}}",
+			"tags": "建议标签：{{tags}}",
+			"apply": "应用修改",
+			"discard": "放弃润色"
+		},
+		"polishChat": {
+			"request": "请对笔记“{{title}}”进行 AI 润色，先生成修改建议，不要直接改写原文。",
+			"analyzingTemplate": "我会先根据笔记内容判断适合的模板；如果判断不够明确，再请你选择。",
+			"detectedTemplate": "根据内容判断，这篇笔记明确适合“{{template}}”模板。我将按此模板生成润色建议。",
+			"detectedNoTemplate": "根据内容判断，这篇笔记不需要套用固定模板。我将保留原有结构进行润色。",
+			"askTemplate": "目前无法从内容中确定合适的模板，你希望使用哪一种？",
+			"askTemplateWithSuggestion": "目前的模板判断不够确定，较可能是“{{template}}”。请确认要使用哪一种模板：",
+			"autoTemplate": "智能选择（推荐）",
+			"autoTemplateDescription": "由 AI 根据笔记内容选择最合适的结构",
+			"noTemplate": "不使用固定模板",
+			"noTemplateDescription": "保留原有结构，只改善表达和排版",
+			"ready": "润色建议已生成，右侧正在显示 Diff 差异。确认应用前，原笔记不会被修改。",
+			"failed": "这次没有生成润色建议。错误信息已显示在右侧笔记区，可以调整后重试。",
+			"noteChanged": "当前笔记已经切换，本次润色已取消。请在需要润色的笔记中重新发起。",
+			"stopped": "已停止本次 AI 润色，原笔记没有被修改。"
+		},
+		"history": {
+			"title": "版本历史",
+			"empty": "暂无历史版本",
+			"characters": "字",
+			"restore": "恢复此版本",
+			"restoreTitle": "恢复历史版本",
+			"restoreConfirm": "当前内容会保留在版本历史中，然后恢复所选版本。",
+			"unarchiveToRestore": "请先撤回归档，再恢复历史版本。",
+			"reason": {
+				"created": "创建",
+				"autosave": "自动保存",
+				"manual": "手动保存",
+				"restore": "版本恢复"
+			}
 		},
 		"flash": {
 			"created": "草稿已创建，不会进入知识图谱",
@@ -252,7 +323,9 @@
 			"polishedWithTags": "AI 润色已应用，并推荐标签：{{tags}}；请检查后保存",
 			"polishedWithTemplateAndTags": "已按“{{template}}”模板润色，并推荐标签：{{tags}}；请检查后保存",
 			"archived": "归档成功",
+			"archiveStopped": "已停止归档",
 			"unarchived": "已撤回归档，内容回到草稿箱",
+			"archiving": "正在归档到 Wiki…",
 			"deleted": "已删除",
 			"uploaded": "上传成功",
 			"loadFailed": "加载笔记失败",
@@ -260,14 +333,18 @@
 			"createFailed": "创建笔记失败",
 			"saveFailed": "保存失败",
 			"polishFailed": "AI 润色失败，请检查当前文本模型配置后重试",
+			"polishSourceChanged": "润色期间笔记内容发生了变化，请重新执行 AI 润色",
 			"archiveFailed": "归档失败",
+			"emptyCannotArchive": "笔记正文和附件均为空，无法归档",
 			"unarchiveFailed": "撤回归档失败",
 			"deleteFailed": "删除失败",
 			"uploadFailed": "上传失败",
 			"attachmentUploaded": "附件上传成功",
 			"attachmentUploadFailed": "附件上传失败",
 			"attachmentDeleted": "附件已删除",
-			"attachmentDeleteFailed": "附件删除失败"
+			"attachmentDeleteFailed": "附件删除失败",
+			"errorDetail": "错误详情：{{message}}",
+			"dismissError": "关闭错误提示"
 		}
 	},
 	"preview": {

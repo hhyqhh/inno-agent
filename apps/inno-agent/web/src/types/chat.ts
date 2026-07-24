@@ -1,3 +1,8 @@
+export interface ChatNoteReference {
+	rawPath: string;
+	title: string;
+}
+
 export interface ChatMessage {
 	role: "user" | "assistant";
 	content: string;
@@ -6,8 +11,24 @@ export interface ChatMessage {
 	tools?: ChatToolRecord[];
 	channel?: string;
 	images?: Array<{ previewUrl: string; mimeType: string }>;
+	/** Notebook items explicitly attached to this user turn. */
+	noteReferences?: ChatNoteReference[];
 	/** Backend/model error surfaced for this turn (e.g. HTTP 413 over-long context). */
 	error?: string;
+	/** Local interactive question emitted by an in-app AI workflow. */
+	workflowQuestion?: ChatWorkflowQuestion;
+}
+
+export interface ChatWorkflowChoice {
+	value: string;
+	label: string;
+	description?: string;
+}
+
+export interface ChatWorkflowQuestion {
+	id: string;
+	choices: ChatWorkflowChoice[];
+	selectedValue?: string;
 }
 
 export interface ChatToolRecord {

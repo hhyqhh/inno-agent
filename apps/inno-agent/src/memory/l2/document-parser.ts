@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
-import type { LiteParse, ParseResult, ScreenshotResult } from "@llamaindex/liteparse";
+import type { LiteParse, ParseResult } from "@llamaindex/liteparse";
+import sharp from "sharp";
+import { createWorker, type WorkerOptions } from "tesseract.js";
+import type { ParsedDocumentResult } from "./types.js";
 
 // ============================================================================
 // LiteParse Wrapper - Lazy-loaded document parsing
@@ -23,11 +26,24 @@ const SUPPORTED_EXTENSIONS = new Set([
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".tif"]);
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100MB
+// The official chi_sim model references chi_sim_vert as a sub-language.
+// Load both to avoid a non-fatal "Error opening data file" warning.
+const DEFAULT_OCR_LANGUAGES = "chi_sim+chi_sim_vert+eng";
 
-export interface ParsedDocumentResult {
-	text: string;
-	pageCount: number;
-	pages: Array<{ pageNumber: number; text: string }>;
+function ocrLanguages(): string {
+	return process.env.INNO_OCR_LANGUAGES?.trim() || DEFAULT_OCR_LANGUAGES;
+}
+
+function tessdataPath(): string | undefined {
+	return process.env.INNO_TESSDATA_PATH?.trim() || process.env.TESSDATA_PREFIX?.trim() || undefined;
+}
+
+function ocrCachePath(): string {
+	const configured = process.env.INNO_OCR_CACHE_DIR?.trim();
+	const dataDir = process.env.INNO_DATA_DIR?.trim();
+	const cacheDir = resolve(configured || (dataDir ? resolve(dataDir, "ocr") : resolve("runtime", "data", "ocr")));
+	mkdirSync(cacheDir, { recursive: true });
+	return cacheDir;
 }
 
 export class DocumentParseError extends Error {
@@ -46,6 +62,7 @@ async function getParser(): Promise<LiteParse> {
 	if (!parserInstance) {
 		const { LiteParse: LiteParseClass } = await import("@llamaindex/liteparse");
 		parserInstance = new LiteParseClass({
+			// Image OCR is handled below with explicit preprocessing and language/cache controls.
 			ocrEnabled: false,
 			outputFormat: "text",
 			preciseBoundingBox: false,
@@ -183,26 +200,76 @@ function getImageDimensions(buffer: Buffer, ext: string): { width: number; heigh
 	}
 }
 
-function parseImageMetadata(filePath: string): ParsedDocumentResult {
+async function preprocessImageForOcr(filePath: string): Promise<Buffer> {
+	return sharp(filePath, { animated: false })
+		.rotate()
+		.flatten({ background: "#ffffff" })
+		.grayscale()
+		.normalize()
+		.sharpen()
+		.png()
+		.toBuffer();
+}
+
+async function parseImageWithOcr(filePath: string): Promise<ParsedDocumentResult> {
 	const buffer = readFileSync(filePath);
 	const stat = statSync(filePath);
 	const ext = extname(filePath).toLowerCase();
 	const dimensions = getImageDimensions(buffer, ext);
+	const languages = ocrLanguages();
+	const localTessdata = tessdataPath();
+	const workerOptions: Partial<WorkerOptions> = {
+		cachePath: localTessdata || ocrCachePath(),
+		errorHandler: () => undefined,
+	};
+	if (localTessdata) {
+		workerOptions.langPath = localTessdata;
+		workerOptions.cachePath = localTessdata;
+		workerOptions.gzip = false;
+	}
+
+	let worker: Awaited<ReturnType<typeof createWorker>> | undefined;
+	let ocrText = "";
+	let confidence = 0;
+	try {
+		const image = await preprocessImageForOcr(filePath);
+		worker = await createWorker(languages, undefined, workerOptions);
+		// sharp.rotate() above already applies the image's EXIF orientation.
+		// Tesseract's rotateAuto can trigger a second orientation pass and emit
+		// spurious traineddata loading errors for combined language models.
+		const result = await worker.recognize(image);
+		ocrText = result.data.text.trim();
+		confidence = result.data.confidence;
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		throw new DocumentParseError(
+			`图片 OCR 失败: ${message}。首次识别需要下载 ${languages} 语言数据；离线环境可通过 INNO_TESSDATA_PATH 指定本地 traineddata 目录。`,
+			"PARSE_ERROR",
+		);
+	} finally {
+		await worker?.terminate().catch(() => undefined);
+	}
+
+	if (!ocrText) {
+		throw new DocumentParseError("图片 OCR 未识别到文字", "EMPTY_RESULT");
+	}
+
+	const dimensionText = dimensions ? `${dimensions.width} x ${dimensions.height}` : "unknown";
 	const sha256 = createHash("sha256").update(buffer).digest("hex");
-	const dimensionText = dimensions ? `${dimensions.width} x ${dimensions.height}` : "未知";
 	const text = [
-		`# 图片资料：${basename(filePath)}`,
+		`# 图片 OCR：${basename(filePath)}`,
 		"",
-		"## 文件信息",
-		`- 文件名：${basename(filePath)}`,
-		`- 格式：${ext.replace(".", "").toUpperCase() || "未知"}`,
-		`- 大小：${stat.size} bytes`,
-		`- 尺寸：${dimensionText}`,
+		"## 识别结果",
+		"",
+		ocrText,
+		"",
+		"## OCR 信息",
+		`- 语言：${languages}`,
+		`- 平均置信度：${confidence.toFixed(1)}%`,
+		`- 图片尺寸：${dimensionText}`,
+		`- 文件格式：${ext.replace(".", "").toUpperCase() || "unknown"}`,
+		`- 文件大小：${stat.size} bytes`,
 		`- SHA-256：${sha256}`,
-		`- 本地路径：${filePath}`,
-		"",
-		"## 提取说明",
-		"该图片已作为原始资料保存到 L2 raw 层。当前环境未执行 OCR 或视觉语义识别，因此正文只包含可稳定读取的文件元数据；如需更完整的知识摘要，请在归档时补充图片内容说明，或使用具备视觉能力的模型分析后再归档。",
 	].join("\n");
 	return {
 		text,
@@ -220,7 +287,7 @@ export async function parseDocument(filePath: string): Promise<ParsedDocumentRes
 
 	const ext = extname(resolved).toLowerCase();
 	if (IMAGE_EXTENSIONS.has(ext)) {
-		return parseImageMetadata(resolved);
+		return parseImageWithOcr(resolved);
 	}
 
 	const parser = await getParser();
@@ -251,25 +318,6 @@ export async function parseDocument(filePath: string): Promise<ParsedDocumentRes
 			text: p.text,
 		})),
 	};
-}
-
-/**
- * Generate PNG screenshots of document pages.
- */
-export async function screenshotDocument(filePath: string, pageNumbers?: number[]): Promise<ScreenshotResult[]> {
-	const resolved = resolve(filePath);
-	validateFile(resolved);
-
-	const parser = await getParser();
-
-	try {
-		return await parser.screenshot(resolved, pageNumbers, true);
-	} catch (err) {
-		throw new DocumentParseError(
-			`截图生成失败: ${err instanceof Error ? err.message : String(err)}`,
-			"PARSE_ERROR",
-		);
-	}
 }
 
 /** Check if a file extension is supported for parsing. */

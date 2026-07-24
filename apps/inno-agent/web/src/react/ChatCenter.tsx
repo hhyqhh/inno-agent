@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search, FileCode2, Sparkles } from "lucide-react";
+import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search, FileCode2, Sparkles, BookOpen } from "lucide-react";
 import { Spinner } from "./ui/Spinner.js";
 import type { ChatMessage, ChatToolRecord } from "../types/chat.js";
 import type { InlineImage } from "../api/chat.js";
@@ -13,6 +13,7 @@ import { workspacesStore } from "../stores/workspaces-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { appStore } from "../stores/app-store.js";
+import { notesStore } from "../stores/notes-store.js";
 import type { CreateSessionInput } from "../api/sessions.js";
 import { listRemotePresets } from "../api/presets.js";
 import type { PresetMeta } from "../types/presets.js";
@@ -172,8 +173,28 @@ function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; classNam
 	);
 }
 
+function visibleUserMessage(content: string): string {
+	return content
+		.replace(/\s*<inno-internal-context>[\s\S]*?<\/inno-internal-context>\s*/g, "")
+		.trim();
+}
+
+function visibleToolDetails(tool: ChatToolRecord): string {
+	if (tool.toolName === "note_read") {
+		return tool.isError ? "读取笔记失败" : "笔记内容已安全传递给 Agent";
+	}
+	if (tool.toolName === "note_read_many") {
+		return tool.isError ? "批量读取笔记失败" : "选中的笔记内容已安全传递给 Agent";
+	}
+	if (tool.toolName === "note_polish") {
+		return tool.isError ? "笔记润色保存失败" : "笔记已完成润色并保存";
+	}
+	return JSON.stringify({ args: tool.args, result: tool.result }, null, 2);
+}
+
 function MessageBubble({ message, showChannel }: { message: ChatMessage; showChannel?: boolean }) {
 	const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+	const visibleContent = message.role === "user" ? visibleUserMessage(message.content) : message.content;
 
 	if (message.role === "user") {
 		return (
@@ -201,7 +222,17 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 						</div>
 					) : null}
 					{lightboxSrc ? <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} /> : null}
-					{message.content.trim()}
+					{message.noteReferences?.length ? (
+						<div className="mb-2 flex flex-wrap justify-end gap-1">
+							{message.noteReferences.map((note) => (
+								<span key={note.rawPath} className="inline-flex max-w-[220px] items-center gap-1 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-0.5 text-[10px] text-[var(--inno-text-muted)]" title={note.title}>
+									<BookOpen size={10} className="shrink-0" />
+									<span className="truncate">{note.title}</span>
+								</span>
+							))}
+						</div>
+					) : null}
+					{visibleContent}
 				</div>
 			</motion.div>
 		);
@@ -235,6 +266,27 @@ function MessageBubble({ message, showChannel }: { message: ChatMessage; showCha
 					</details>
 				) : null}
 				<AssistantContent content={message.content} />
+				{message.workflowQuestion ? (
+					<div className="mt-3 flex flex-wrap gap-2">
+						{message.workflowQuestion.choices.map((choice) => {
+							const selected = message.workflowQuestion?.selectedValue === choice.value;
+							const answered = Boolean(message.workflowQuestion?.selectedValue);
+							return (
+								<button
+									key={choice.value}
+									type="button"
+									disabled={answered}
+									title={choice.description}
+									className={`rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${selected ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] bg-[var(--inno-surface)] hover:border-[var(--inno-accent)] hover:bg-[var(--inno-accent-soft)]"} disabled:cursor-default disabled:opacity-60`}
+									onClick={() => void chatStore.answerWorkflowQuestion(message.workflowQuestion!.id, choice.value)}
+								>
+									<span className="block font-medium">{choice.label}</span>
+									{choice.description ? <span className="mt-0.5 block max-w-56 text-[10px] text-[var(--inno-text-muted)]">{choice.description}</span> : null}
+								</button>
+							);
+						})}
+					</div>
+				) : null}
 				{message.error ? (
 					<div className={message.content.trim() ? "mt-2" : ""}>
 						<ErrorBlock error={message.error} />
@@ -455,6 +507,7 @@ export function ChatCenter() {
 		streamingTarget: chatStore.streamingTarget,
 		streamingActivity: chatStore.streamingActivity,
 		streamingActivityDetail: chatStore.streamingActivityDetail,
+		activityText: chatStore.activityText,
 		streamingError: chatStore.streamingError,
 		activeTools: chatStore.activeTools,
 		completedTools: chatStore.completedTools,
@@ -464,10 +517,6 @@ export function ChatCenter() {
 	const sessions = useStoreSnapshot(sessionsStore, () => ({
 		currentSessionId: sessionsStore.currentSessionId,
 		preselectedWorkspaceId: sessionsStore.preselectedWorkspaceId,
-		// Single source of truth for the welcome-vs-session view (see store).
-		// Depends on chatStore too, but ChatCenter subscribes to chatStore via
-		// the `chat` snapshot above, so this re-evaluates on chat changes.
-		isWelcome: sessionsStore.isWelcomeView,
 	}));
 	const workspaces = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
@@ -477,6 +526,10 @@ export function ChatCenter() {
 	// pre-seeded by the useEffect below when the welcome screen's "existing"
 	// workspace picker selects one.
 	const activeWorkspaceId = useStoreSnapshot(workspaceStore, () => workspaceStore.activeWorkspaceId);
+	const noteState = useStoreSnapshot(notesStore, () => ({
+		selectedNotes: notesStore.aiContextNotes,
+		isPolishing: notesStore.isPolishing,
+	}));
 
 	// Workspace preselected from the sidebar ("+ 新建对话" on a group), if any.
 	const preselectedWs = useMemo(
@@ -495,8 +548,9 @@ export function ChatCenter() {
 		[workspaces.list],
 	);
 
-	// Welcome state: derived once in the sessions store (single source of truth).
-	const isWelcome = sessions.isWelcome;
+	// Read the live getter because workflow messages can change the welcome state
+	// without changing the session snapshot.
+	const isWelcome = sessionsStore.isWelcomeView;
 	const turnIndexByStartMessage = useMemo(
 		() => new Map(buildConversationTurns(chat.messages).map((turn) => [turn.startMessageIndex, turn.index])),
 		[chat.messages],
@@ -557,7 +611,7 @@ export function ChatCenter() {
 			const el = scrollRef.current;
 			if (el && shouldStickToBottomRef.current) el.scrollTop = el.scrollHeight;
 		});
-	}, [chat.messages, scrollTextKey, chat.streamingThinking, chat.activeTools.length, chat.completedTools.length, chat.pendingQuestion]);
+	}, [chat.messages, scrollTextKey, chat.streamingThinking, chat.activityText, chat.activeTools.length, chat.completedTools.length, chat.pendingQuestion]);
 
 	const handleChatScroll = useCallback(() => {
 		const el = scrollRef.current;
@@ -636,7 +690,7 @@ export function ChatCenter() {
 			return s.replace(/«[^»]*»/g, pasteBlock.text);
 		};
 		const input = expandPaste(rawValue).trim();
-		if ((!input && uploads.length === 0 && inlineImages.length === 0) || chat.isSending || isUploading) return;
+		if ((!input && uploads.length === 0 && inlineImages.length === 0) || chat.isSending || noteState.isPolishing || isUploading) return;
 		shouldStickToBottomRef.current = true;
 
 		const uploadNote = uploads.length > 0
@@ -646,6 +700,7 @@ export function ChatCenter() {
 		const imagesToSend = (inlineImages.length > 0 && currentModelSupportsImages)
 			? inlineImages.map(({ data, mimeType }) => ({ data, mimeType }))
 			: undefined;
+		const noteReferences = noteState.selectedNotes.map((note) => ({ rawPath: note.rawPath, title: note.title }));
 
 		const resetComposer = () => {
 			draftRef.current = "";
@@ -672,7 +727,7 @@ export function ChatCenter() {
 			void (async () => {
 				try {
 					await sessionsStore.createSessionWith(wsInput);
-					void chatStore.send(messageContent, imagesToSend);
+					void chatStore.send(messageContent, imagesToSend, undefined, noteReferences);
 				} catch (err) {
 					setWsError(err instanceof Error ? err.message : t("chat.errCreateSession"));
 				}
@@ -683,8 +738,8 @@ export function ChatCenter() {
 		resetComposer();
 		setUploads([]);
 		setInlineImages([]);
-		void chatStore.send(messageContent, imagesToSend);
-	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, pasteBlock, currentModelSupportsImages, t]);
+		void chatStore.send(messageContent, imagesToSend, undefined, noteReferences);
+	}, [isWelcome, buildSessionInput, uploads, inlineImages, noteState, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, pasteBlock, currentModelSupportsImages, t]);
 
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		// Don't fire Send while the user is composing with an IME (e.g. picking
@@ -848,6 +903,30 @@ export function ChatCenter() {
 		) : null
 	);
 
+	const renderNoteReferences = () => (
+		noteState.selectedNotes.length > 0 ? (
+			<div className="mb-2 rounded-md border border-blue-100 bg-[var(--inno-accent-soft)] px-2.5 py-2">
+				<div className="mb-1.5 flex items-center gap-2 text-xs text-[var(--inno-text-muted)]">
+					<BookOpen size={13} className="shrink-0 text-[var(--inno-accent)]" />
+					<span>{t("notes.context.referencing", { count: noteState.selectedNotes.length })}</span>
+					<button type="button" className="ml-auto text-[11px] text-[var(--inno-accent)] hover:underline" onClick={() => notesStore.clearAiContext()}>
+						{t("notes.context.clearAll")}
+					</button>
+				</div>
+				<div className="flex flex-wrap gap-1.5">
+					{noteState.selectedNotes.map((note) => (
+						<span key={note.rawPath} className="inline-flex max-w-[240px] items-center gap-1 rounded-full border border-blue-100 bg-[var(--inno-surface)] px-2 py-0.5 text-xs text-[var(--inno-text-muted)]" title={note.title}>
+							<span className="truncate">{note.title}</span>
+							<button type="button" className="shrink-0 rounded-full hover:text-[var(--inno-text)]" onClick={() => notesStore.removeAiContext(note.rawPath)} aria-label={t("notes.context.remove", { title: note.title })}>
+								<X size={11} />
+							</button>
+						</span>
+					))}
+				</div>
+			</div>
+		) : null
+	);
+
 	const renderQuestionHint = () => (
 		chat.pendingQuestion ? (
 			<div className="mb-2 flex items-center gap-2 rounded-md border border-[var(--inno-border)] bg-[var(--inno-accent-soft)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)]">
@@ -896,13 +975,22 @@ export function ChatCenter() {
 				>
 					<Square size={16} />
 				</button>
+			) : noteState.isPolishing ? (
+				<button
+					type="button"
+					className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-red-600 text-white transition-colors hover:bg-red-700"
+					title={t("notes.actions.stopPolishing")}
+					onClick={() => notesStore.stopPolish()}
+				>
+					<Square size={16} />
+				</button>
 			) : (
 				<>
 					{chat.lastUserPrompt ? (
 						<button
 							className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50"
 							title={t("chat.retryLast")}
-							disabled={isUploading}
+							disabled={noteState.isPolishing || isUploading}
 							onClick={handleRetry}
 						>
 							<RotateCcw size={16} />
@@ -972,6 +1060,7 @@ export function ChatCenter() {
 
 						{renderUploadChips()}
 						{renderInlineImagePreviews()}
+						{renderNoteReferences()}
 						{renderQuestionHint()}
 						{renderComposer(t("chat.welcomePlaceholder"))}
 
@@ -1114,6 +1203,20 @@ export function ChatCenter() {
 						</motion.div>
 					) : null}
 
+					{chat.activityText && !chat.pendingQuestion && !chat.streamingText && chat.activeTools.length === 0 ? (
+						<motion.div
+							className="flex justify-start"
+							initial={{ opacity: 0, y: 8 }}
+							animate={{ opacity: 1, y: 0 }}
+							transition={{ duration: 0.2, ease: "easeOut" }}
+						>
+							<div className="inno-message inline-flex max-w-[78%] items-center gap-2 rounded-lg border border-blue-100 bg-[var(--inno-accent-soft)] px-3.5 py-2.5 text-[13px] text-[var(--inno-text)]">
+								<span className="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-[var(--inno-accent)] border-t-transparent" />
+								<span>{chat.activityText}</span>
+							</div>
+						</motion.div>
+					) : null}
+
 					{chat.streamingThinking ? (
 						<motion.div
 							className="flex justify-start"
@@ -1186,7 +1289,7 @@ export function ChatCenter() {
 						</motion.div>
 					) : null}
 
-					{chat.isSending && !chat.pendingQuestion && !chat.streamingText && !chat.streamingError && chat.activeTools.length === 0 ? (
+					{chat.isSending && !chat.activityText && !chat.pendingQuestion && !chat.streamingText && !chat.streamingError && chat.activeTools.length === 0 ? (
 						<motion.div
 							className="flex justify-start"
 							initial={{ opacity: 0 }}
@@ -1219,6 +1322,7 @@ export function ChatCenter() {
 				<div className="mx-auto max-w-3xl">
 					{renderUploadChips()}
 					{renderInlineImagePreviews()}
+					{renderNoteReferences()}
 					{renderQuestionHint()}
 					{renderComposer(t("chat.composerPlaceholder"))}
 				</div>

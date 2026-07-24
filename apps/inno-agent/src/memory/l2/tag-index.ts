@@ -3,56 +3,16 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { ensureDir, readJson, readText, writeJson, writeText } from "../../storage/file-store.js";
 import { readManifest, updateManifestEntry } from "./manifest-store.js";
+import type { L2PageTagRecord, L2TagIndexFile, L2TagRecord, WikiPageTagSource } from "./types.js";
 import { parseFrontmatter, serializeFrontmatter } from "./wiki-maintainer.js";
+import { canonicalizeTag, normalizeTagList } from "./l2-utils.js";
 
-export interface L2TagRecord {
-	id: string;
-	canonicalKey: string;
-	displayName: string;
-	usageCount: number;
-	createdAt: string;
-	updatedAt: string;
-}
-
-export interface L2PageTagRecord {
-	wikiPath: string;
-	tagId: string;
-	sourceId?: string;
-	createdAt: string;
-}
-
-interface L2TagIndexFile {
-	tags: L2TagRecord[];
-	pageTags: L2PageTagRecord[];
-	updatedAt: string;
-}
-
-export interface WikiPageTagSource {
-	wikiPath: string;
-	tags: string[];
-	sourceIds: string[];
-}
+export { canonicalizeTag, normalizeTagList } from "./l2-utils.js";
 
 const TAG_INDEX_FILE = join("index", "tags.json");
 
 function tagIndexPath(l2DataDir: string): string {
 	return join(l2DataDir, TAG_INDEX_FILE);
-}
-
-export function canonicalizeTag(tag: string): string {
-	return tag.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
-export function normalizeTagList(tags: string[]): string[] {
-	const byKey = new Map<string, string>();
-	for (const rawTag of tags) {
-		for (const tag of rawTag.split(/[\s,\uFF0C;\uFF1B\u3001|]+/)) {
-			const displayName = tag.trim();
-			if (!displayName) continue;
-			byKey.set(canonicalizeTag(displayName), displayName);
-		}
-	}
-	return [...byKey.values()];
 }
 
 function emptyTagIndex(): L2TagIndexFile {

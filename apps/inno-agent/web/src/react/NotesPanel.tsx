@@ -349,6 +349,7 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 	const isEmptyNoteForArchive = Boolean(
 		isMarkdownNote && !state.editorContent.trim() && state.attachments.length === 0,
 	);
+	const hasTemporaryImageReference = Boolean(isMarkdownNote && state.editorContent.includes("blob:"));
 	const tagSearchQuery = state.searchQuery.trim().toLowerCase();
 	const visibleTagSummaries = tagSearchQuery
 		? state.tagSummaries.filter((tag) => tag.displayName.toLowerCase().includes(tagSearchQuery))
@@ -748,11 +749,18 @@ export function NotesPanel({ viewSelector, onOpenWiki }: NotesPanelProps) {
 										onTagsChange={(tags) => notesStore.updateEditorTags(tags)}
 										onRecordDateChange={(recordDate) => notesStore.updateEditorRecordDate(recordDate)}
 									/>
+									{hasTemporaryImageReference ? (
+										<div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800" role="alert">
+											{t("notes.attachments.temporaryImageWarning")}
+										</div>
+									) : null}
 									<MilkdownEditor
 										key={selected.rawPath}
 										editorKey={selected.rawPath}
 										value={state.editorContent}
 										onChange={(value) => notesStore.updateEditorContent(value)}
+										onUploadImage={(file) => notesStore.uploadInlineImage(file)}
+										resolveImageUrl={(url) => notesStore.resolveInlineImageUrl(url)}
 										toolbarAction={
 											<>
 											<MeetingRecorder toolbar rawPath={selected.rawPath} title={state.editorTitle || selected.title} />

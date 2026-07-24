@@ -12,7 +12,7 @@ export function createDocumentTools(): ToolDefinition[] {
 		name: "parse_document",
 		label: "解析文档",
 		description:
-			"解析 PDF、Word、Excel、PPT 或图片文件，提取文本内容。" +
+			"解析 PDF、Word、Excel、PPT 或图片文件，提取文本内容；图片会自动执行中英文 OCR。" +
 			"用户想查看文件内容、提取文本、或需要先预览再决定是否归档时调用。" +
 			"支持格式：.pdf, .docx, .xlsx, .pptx, .png, .jpg, .jpeg, .gif, .webp, .tiff",
 		parameters: Type.Object({

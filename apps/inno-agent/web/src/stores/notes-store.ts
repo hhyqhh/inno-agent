@@ -8,6 +8,7 @@ import {
 	deleteNoteItem,
 	fetchNoteContent,
 	fetchRawContent,
+	l2RawFileUrl,
 	listNotes,
 	polishNote,
 	saveNoteContent,
@@ -45,6 +46,55 @@ function errorDetail(error: unknown): string | null {
 	if (!(error instanceof Error)) return null;
 	const message = error.message.trim();
 	return message || null;
+}
+
+function normalizeRawPath(path: string): string {
+	const segments: string[] = [];
+	for (const segment of path.replace(/\\/g, "/").split("/")) {
+		if (!segment || segment === ".") continue;
+		if (segment === "..") {
+			segments.pop();
+		} else {
+			segments.push(segment);
+		}
+	}
+	return segments.join("/");
+}
+
+function relativeAttachmentPath(noteRawPath: string, attachmentPath: string): string {
+	const normalizedNotePath = normalizeRawPath(noteRawPath);
+	const normalizedAttachmentPath = normalizeRawPath(attachmentPath);
+	const noteDir = normalizedNotePath.slice(0, normalizedNotePath.lastIndexOf("/") + 1);
+	return normalizedAttachmentPath.startsWith(noteDir)
+		? normalizedAttachmentPath.slice(noteDir.length)
+		: normalizedAttachmentPath;
+}
+
+function resolveNoteImagePath(noteRawPath: string, imagePath: string): string | null {
+	const trimmed = imagePath.trim();
+	if (!trimmed || /^(?:https?:|data:|blob:)/i.test(trimmed) || trimmed.startsWith("/")) {
+		return null;
+	}
+	let decoded = trimmed;
+	try {
+		decoded = decodeURIComponent(trimmed);
+	} catch {
+		// Keep the original path when it is not valid URI encoding.
+	}
+	const cleanPath = decoded.split(/[?#]/, 1)[0];
+	if (!cleanPath) return null;
+	if (cleanPath.replace(/\\/g, "/").startsWith("raw/")) {
+		return normalizeRawPath(cleanPath);
+	}
+	const normalizedNotePath = normalizeRawPath(noteRawPath);
+	const noteDir = normalizedNotePath.slice(0, normalizedNotePath.lastIndexOf("/") + 1);
+	return normalizeRawPath(`${noteDir}${cleanPath}`);
+}
+
+export function noteImageUrl(noteRawPath: string, imagePath: string): string {
+	if (imagePath.startsWith("/api/l2/raw/file?")) return imagePath;
+	const resolvedPath = resolveNoteImagePath(noteRawPath, imagePath);
+	return resolvedPath ? l2RawFileUrl(resolvedPath) : imagePath;
 }
 
 class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
@@ -449,6 +499,42 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			this.isUploadingAttachment = false;
 			this.emit("change", undefined);
 		}
+	}
+
+	async uploadInlineImage(file: File): Promise<string> {
+		if (!this.selected || this.selected.kind !== "markdown") {
+			throw new Error("No editable note selected");
+		}
+		if (!file.type.startsWith("image/")) {
+			throw new Error("Only image files can be inserted into the note");
+		}
+		const noteRawPath = this.selected.rawPath;
+		this.isUploadingAttachment = true;
+		this.clearMessages();
+		this.emit("change", undefined);
+		try {
+			const result = await uploadNoteAttachment(noteRawPath, file, { placement: "inline" });
+			if (this.selected?.rawPath === noteRawPath) {
+				this.attachments = [
+					result.attachment,
+					...this.attachments.filter((item) => item.id !== result.attachment.id),
+				];
+			}
+			this.notice = "attachmentUploaded";
+			return relativeAttachmentPath(noteRawPath, result.filePath);
+		} catch (error) {
+			this.error = "attachmentUploadFailed";
+			this.errorDetail = errorDetail(error);
+			throw error;
+		} finally {
+			this.isUploadingAttachment = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	resolveInlineImageUrl(imagePath: string): string {
+		if (!this.selected) return imagePath;
+		return noteImageUrl(this.selected.rawPath, imagePath);
 	}
 
 	async deleteAttachment(attachmentId: string): Promise<void> {

@@ -175,7 +175,11 @@ export async function listNoteAttachments(rawPath: string): Promise<NoteAttachme
 	return data.attachments;
 }
 
-export async function uploadNoteAttachment(rawPath: string, file: File): Promise<UploadNoteAttachmentResult> {
+export async function uploadNoteAttachment(
+	rawPath: string,
+	file: File,
+	options: { placement?: "attachment" | "inline" } = {},
+): Promise<UploadNoteAttachmentResult> {
 	const dataBase64 = arrayBufferToBase64(await file.arrayBuffer());
 	return apiFetch<UploadNoteAttachmentResult>("/api/l2/notes/attachments", {
 		method: "POST",
@@ -184,6 +188,7 @@ export async function uploadNoteAttachment(rawPath: string, file: File): Promise
 			fileName: file.name,
 			mimeType: file.type || "application/octet-stream",
 			dataBase64,
+			placement: options.placement ?? "attachment",
 		}),
 	});
 }

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
@@ -74,6 +74,76 @@ const TEXT_ATTACHMENT_EXTENSIONS = new Set([
 	".html", ".css", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".java", ".go",
 	".rs", ".sql", ".sh", ".log",
 ]);
+const IMAGE_REFERENCE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".tif"]);
+
+interface MarkdownImageReference {
+	alt: string;
+	target: string;
+}
+
+function markdownImageReferences(markdown: string): MarkdownImageReference[] {
+	const references: MarkdownImageReference[] = [];
+	const inlineImage = /!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\s*\)/g;
+	for (const match of markdown.matchAll(inlineImage)) {
+		const target = (match[2] || match[3] || "").trim();
+		if (target) references.push({ alt: match[1].trim(), target });
+	}
+	const htmlImage = /<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1[^>]*>/gi;
+	for (const match of markdown.matchAll(htmlImage)) {
+		const target = match[2].trim();
+		if (target) references.push({ alt: "", target });
+	}
+	return references;
+}
+
+function isPathInside(root: string, candidate: string): boolean {
+	const pathFromRoot = relative(root, candidate);
+	return pathFromRoot === "" || (!pathFromRoot.startsWith("..") && !isAbsolute(pathFromRoot));
+}
+
+function resolveLocalNoteImage(
+	l2DataDir: string,
+	notePath: string,
+	reference: MarkdownImageReference,
+): { path: string; source: string; alt: string } | null {
+	const rawTarget = reference.target.trim();
+	if (/^(?:https?:|data:|blob:|mailto:)/i.test(rawTarget) || rawTarget.startsWith("#")) {
+		return null;
+	}
+
+	let decodedTarget: string;
+	try {
+		decodedTarget = decodeURIComponent(rawTarget);
+	} catch {
+		decodedTarget = rawTarget;
+	}
+
+	let candidate: string;
+	if (decodedTarget.startsWith("/api/l2/raw/file?")) {
+		const rawPath = new URL(decodedTarget, "http://localhost").searchParams.get("path");
+		if (!rawPath) return null;
+		candidate = resolve(l2DataDir, rawPath);
+	} else {
+		const cleanTarget = decodedTarget.split(/[?#]/, 1)[0].replace(/\\/g, "/");
+		if (!cleanTarget) return null;
+		candidate = cleanTarget.startsWith("raw/")
+			? resolve(l2DataDir, cleanTarget)
+			: resolve(dirname(notePath), cleanTarget);
+	}
+
+	if (!IMAGE_REFERENCE_EXTENSIONS.has(extname(candidate).toLowerCase())) {
+		return null;
+	}
+	if (!existsSync(candidate) || !statSync(candidate).isFile()) {
+		throw new Error(`笔记引用图片不存在: ${reference.target}`);
+	}
+	const realRoot = realpathSync(resolve(l2DataDir));
+	const realCandidate = realpathSync(candidate);
+	if (!isPathInside(realRoot, realCandidate)) {
+		throw new Error(`笔记引用图片超出知识库目录，无法归档: ${reference.target}`);
+	}
+	return { path: realCandidate, source: reference.target, alt: reference.alt };
+}
 
 function isTextAttachment(attachment: NoteAttachmentRecord): boolean {
 	return attachment.mimeType.startsWith("text/") ||
@@ -492,11 +562,15 @@ export async function archiveL2Note(
 	let pendingWikiPagePath: string | undefined;
 	try {
 	const attachmentSections: string[] = [];
+	const processedImagePaths = new Set<string>();
 	for (const attachment of attachments) {
 		options.signal?.throwIfAborted();
 		updateNoteAttachmentStatus(l2DataDir, attachment.id, "extracting");
 		try {
 			const attachmentPath = join(l2DataDir, attachment.filePath);
+			if (IMAGE_REFERENCE_EXTENSIONS.has(extname(attachmentPath).toLowerCase())) {
+				processedImagePaths.add(realpathSync(attachmentPath));
+			}
 			let extractedContent: string;
 			if (isSupportedFormat(attachmentPath)) {
 				extractedContent = (await parseDocument(attachmentPath)).text.trim();
@@ -524,7 +598,31 @@ export async function archiveL2Note(
 			throw new Error(`附件“${attachment.fileName}”内容解析失败: ${detail}`);
 		}
 	}
-	const archiveContent = [content, ...attachmentSections].filter(Boolean).join("\n\n");
+	const referencedImageSections: string[] = [];
+	for (const reference of markdownImageReferences(body)) {
+		options.signal?.throwIfAborted();
+		const image = resolveLocalNoteImage(l2DataDir, absPath, reference);
+		if (!image || processedImagePaths.has(image.path)) continue;
+		processedImagePaths.add(image.path);
+		try {
+			const extractedContent = (await parseDocument(image.path)).text.trim();
+			if (!extractedContent) {
+				throw new Error("OCR 结果为空");
+			}
+			referencedImageSections.push([
+				`## 引用图片：${image.alt || basename(image.path)}`,
+				"",
+				`> 来源：${image.source}`,
+				"",
+				extractedContent,
+			].join("\n"));
+		} catch (error) {
+			if (options.signal?.aborted) throw error;
+			const detail = error instanceof Error ? error.message : String(error);
+			throw new Error(`引用图片“${image.alt || image.source}”内容解析失败: ${detail}`);
+		}
+	}
+	const archiveContent = [content, ...attachmentSections, ...referencedImageSections].filter(Boolean).join("\n\n");
 
 	const contentHash = createHash("sha256").update(archiveContent).digest("hex").slice(0, 16);
 	const id = frontmatter.source_id ?? `l2src_${randomUUID().slice(0, 8)}`;

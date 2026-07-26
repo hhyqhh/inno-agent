@@ -554,6 +554,11 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.abortController?.abort();
 		this.abortController = null;
 		this.messages = [];
+		// Retry state belongs to the conversation being cleared. Keeping it
+		// would expose the previous conversation's Retry button on a new chat
+		// and could resend that old prompt into the newly-created session.
+		this.lastUserPrompt = null;
+		this.lastImages = undefined;
 		this.isSending = false;
 		this.streamingText = "";
 		this.streamingThinking = "";

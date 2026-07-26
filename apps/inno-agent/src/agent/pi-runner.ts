@@ -330,6 +330,189 @@ export function getSession(): AgentSession {
 	return _runtime.session;
 }
 
+function nativeImagesForSession(
+	session: AgentSession,
+	images?: ImageContent[],
+): ImageContent[] | undefined {
+	if (!images?.length) return undefined;
+	if (modelAllowsNativeImages(session)) return images;
+	logger.info(
+		{
+			provider: session.model?.provider,
+			model: session.model?.id,
+			imageCount: images.length,
+		},
+		"native image payload omitted for text-only model; workspace OCR fallback remains available",
+	);
+	return undefined;
+}
+
+const rejectedNativeImageModels = new WeakMap<AgentSession, Set<string>>();
+
+export function nativeImageModelKey(session: AgentSession): string {
+	return JSON.stringify([
+		session.model?.provider ?? "unknown",
+		session.model?.baseUrl ?? "unknown",
+		session.model?.id ?? "unknown",
+	]);
+}
+
+function hasRejectedNativeImages(session: AgentSession): boolean {
+	return rejectedNativeImageModels.get(session)?.has(nativeImageModelKey(session)) ?? false;
+}
+
+function rememberNativeImageRejection(session: AgentSession): void {
+	const rejected = rejectedNativeImageModels.get(session) ?? new Set<string>();
+	rejected.add(nativeImageModelKey(session));
+	rejectedNativeImageModels.set(session, rejected);
+}
+
+function modelAllowsNativeImages(session: AgentSession): boolean {
+	return Boolean(
+		session.model?.input.includes("image") &&
+		!hasRejectedNativeImages(session),
+	);
+}
+
+type AgentMessages = AgentSession["agent"]["state"]["messages"];
+
+const NATIVE_IMAGE_OMITTED_NOTICE = [
+	"[当前 Provider 无法接收图片内容，因此这张图片没有发送给模型。",
+	"你并没有看到图片；不要猜测或声称已经看到。",
+	"如需识别，请使用对话中提供的工作区图片路径调用 ocr_image。",
+	"read 工具返回“Read image file”也不代表你看到了图片。",
+	"如果 OCR 无法提供足够信息，请明确说明限制。]",
+].join("");
+
+function withoutNativeImageBlocks(messages: AgentMessages): AgentMessages {
+	return messages.map((message) => {
+		const content = (message as { content?: unknown }).content;
+		if (!Array.isArray(content)) return message;
+		const filtered = content.filter((item) =>
+			!(item && typeof item === "object" &&
+				["image", "image_url"].includes(String((item as { type?: unknown }).type))));
+		if (filtered.length === content.length) return message;
+		return {
+			...message,
+			content: filtered.length > 0
+				? [...filtered, { type: "text", text: NATIVE_IMAGE_OMITTED_NOTICE }]
+				: [{ type: "text", text: NATIVE_IMAGE_OMITTED_NOTICE }],
+		};
+	}) as AgentMessages;
+}
+
+async function promptWithoutNativeImages(
+	session: AgentSession,
+	prompt: string,
+): Promise<void> {
+	const originalTransform = session.agent.transformContext;
+	session.agent.transformContext = async (messages, signal) => {
+		const transformed = originalTransform
+			? await originalTransform(messages, signal)
+			: messages;
+		return withoutNativeImageBlocks(transformed);
+	};
+	try {
+		await session.prompt(prompt);
+	} finally {
+		session.agent.transformContext = originalTransform;
+	}
+}
+
+export function isNativeImagePayloadError(message: string | undefined): boolean {
+	if (!message) return false;
+	const normalized = message.toLowerCase();
+	const mentionsImagePayload = /image_url|image message|image input|image content|vision/.test(normalized);
+	const rejectsPayload = /unknown variant|expected [`'"]?text|unsupported|not support|does not support|invalid|malformed|decode failed|too large/.test(normalized);
+	return mentionsImagePayload && rejectsPayload;
+}
+
+export function isNativeImageCapabilityError(message: string | undefined): boolean {
+	if (!message) return false;
+	const normalized = message.toLowerCase();
+	if (/unknown variant.{0,80}image_url|image_url.{0,80}unknown variant/.test(normalized)) return true;
+	if (/expected [`'"]?text.{0,80}(?:image|vision)|(?:image|vision).{0,80}expected [`'"]?text/.test(normalized)) {
+		return true;
+	}
+	return /(?:image|vision).{0,80}(?:unsupported|not support|does not support)|(?:unsupported|not support|does not support).{0,80}(?:image|vision)/.test(normalized) &&
+		!/format|mime|base64|decode|dimension|resolution|too large|file size/.test(normalized);
+}
+
+function eventErrorMessage(event: AgentSessionEvent): string | undefined {
+	if (event.type === "message_update" && event.assistantMessageEvent.type === "error") {
+		return event.assistantMessageEvent.error.errorMessage;
+	}
+	if (
+		event.type === "message_end" &&
+		event.message.role === "assistant" &&
+		event.message.stopReason === "error"
+	) {
+		return event.message.errorMessage;
+	}
+	return undefined;
+}
+
+function lastAssistantError(session: AgentSession): string | undefined {
+	for (let index = session.messages.length - 1; index >= 0; index--) {
+		const message = session.messages[index];
+		if (message.role !== "assistant") continue;
+		return message.stopReason === "error" ? message.errorMessage : undefined;
+	}
+	return undefined;
+}
+
+function restoreSessionBeforeFailedPrompt(session: AgentSession, previousLeafId: string | null): void {
+	if (previousLeafId) {
+		session.sessionManager.branch(previousLeafId);
+	} else {
+		session.sessionManager.resetLeaf();
+	}
+	session.agent.state.messages = session.sessionManager.buildSessionContext().messages;
+}
+
+async function promptWithNativeImageFallback(
+	session: AgentSession,
+	prompt: string,
+	nativeImages: ImageContent[] | undefined,
+	onFallback: (errorMessage: string) => void,
+): Promise<void> {
+	const allowsNativeImages = modelAllowsNativeImages(session);
+	if (!allowsNativeImages) {
+		await promptWithoutNativeImages(session, prompt);
+		return;
+	}
+
+	const previousLeafId = session.sessionManager.getLeafId();
+	let thrownError: unknown;
+	try {
+		await session.prompt(prompt, nativeImages ? { images: nativeImages } : undefined);
+	} catch (error) {
+		thrownError = error;
+	}
+	const errorMessage = thrownError instanceof Error
+		? thrownError.message
+		: lastAssistantError(session);
+	if (!isNativeImagePayloadError(errorMessage)) {
+		if (thrownError) throw thrownError;
+		return;
+	}
+
+	if (isNativeImageCapabilityError(errorMessage)) {
+		rememberNativeImageRejection(session);
+	}
+	logger.warn(
+		{
+			provider: session.model?.provider,
+			model: session.model?.id,
+			errorMessage,
+		},
+		"provider rejected native image payload; retrying the turn with workspace OCR fallback",
+	);
+	restoreSessionBeforeFailedPrompt(session, previousLeafId);
+	onFallback(errorMessage ?? "Provider rejected the native image payload.");
+	await promptWithoutNativeImages(session, prompt);
+}
+
 /**
  * Abort the currently running agent prompt, releasing the enqueue queue.
  * Safe to call even when no prompt is running.
@@ -648,7 +831,11 @@ export async function runPrompt(prompt: string, images?: ImageContent[]): Promis
 	});
 
 	try {
-		await session.prompt(prompt, images?.length ? { images } : undefined);
+		const nativeImages = nativeImagesForSession(session, images);
+		await promptWithNativeImageFallback(session, prompt, nativeImages, () => {
+			output = "";
+			streamError = undefined;
+		});
 	} finally {
 		unsubscribe();
 		obsUnsub();
@@ -770,13 +957,24 @@ export function runPromptStreaming(
 		let output = "";
 		let streamError: string | undefined;
 		const promptStartTime = Date.now();
+		const nativeImages = nativeImagesForSession(session, images);
+		let nativeAttemptRejected = false;
+		let retryingWithoutNativeImages = false;
 
 		// Observability: agent lifecycle + tool-call details
 		const promptObserver = createPromptObserver({ promptStartTime });
 		const obsUnsub = session.subscribe(promptObserver);
 
 		const unsubscribe = session.subscribe((event) => {
-			onEvent(event);
+			if (
+				!retryingWithoutNativeImages &&
+				isNativeImagePayloadError(eventErrorMessage(event))
+			) {
+				nativeAttemptRejected = true;
+			}
+			if (!nativeAttemptRejected || retryingWithoutNativeImages) {
+				onEvent(event);
+			}
 			if (event.type === "message_update") {
 				const ev = event.assistantMessageEvent;
 				if (ev.type === "text_delta") {
@@ -812,7 +1010,11 @@ export function runPromptStreaming(
 			}
 		});
 		try {
-			await session.prompt(prompt, images?.length ? { images } : undefined);
+			await promptWithNativeImageFallback(session, prompt, nativeImages, () => {
+				retryingWithoutNativeImages = true;
+				output = "";
+				streamError = undefined;
+			});
 		} finally {
 			unsubscribe();
 			obsUnsub();
@@ -854,10 +1056,21 @@ export function runPromptStreamingInSession(
 				await lifecycle?.onStart?.();
 				const session = getSession();
 				const promptStartTime = Date.now();
+				const nativeImages = nativeImagesForSession(session, images);
+				let nativeAttemptRejected = false;
+				let retryingWithoutNativeImages = false;
 				const promptObserver = createPromptObserver({ promptStartTime });
 				const obsUnsub = session.subscribe(promptObserver);
 				const unsubscribe = session.subscribe((event) => {
-					onEvent(event);
+					if (
+						!retryingWithoutNativeImages &&
+						isNativeImagePayloadError(eventErrorMessage(event))
+					) {
+						nativeAttemptRejected = true;
+					}
+					if (!nativeAttemptRejected || retryingWithoutNativeImages) {
+						onEvent(event);
+					}
 					if (event.type === "message_update") {
 						const ev = event.assistantMessageEvent;
 						if (ev.type === "text_delta") output += ev.delta;
@@ -868,7 +1081,11 @@ export function runPromptStreamingInSession(
 					}
 				});
 				try {
-					await session.prompt(prompt, images?.length ? { images } : undefined);
+					await promptWithNativeImageFallback(session, prompt, nativeImages, () => {
+						retryingWithoutNativeImages = true;
+						output = "";
+						streamError = undefined;
+					});
 				} finally {
 					unsubscribe();
 					obsUnsub();

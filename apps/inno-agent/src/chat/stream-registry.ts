@@ -44,6 +44,22 @@ export interface StreamPersistence {
 	finalSessionRevision?: string;
 }
 
+export function hasCompleteTurnAfterBaseline(
+	messages: ReadonlyArray<{ role: string }>,
+	baselineMessageCount: number,
+): boolean {
+	const tail = messages.slice(baselineMessageCount);
+	let latestUserIndex = -1;
+	for (let index = tail.length - 1; index >= 0; index--) {
+		if (tail[index]?.role === "user") {
+			latestUserIndex = index;
+			break;
+		}
+	}
+	return latestUserIndex >= 0 &&
+		tail.slice(latestUserIndex + 1).some((message) => message.role === "assistant");
+}
+
 export interface SessionStreamState {
 	sessionId: string;
 	turnId: string;

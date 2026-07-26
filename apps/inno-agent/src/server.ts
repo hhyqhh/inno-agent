@@ -54,7 +54,7 @@ import { randomUUID } from "node:crypto";
 import { logger } from "./logger.js";
 import { applyRuntimeEnvironment, parseRuntimeArgs, resolveRuntimePaths } from "./runtime.js";
 import { questionBridge, type QuestionBridgeResult } from "./agent/question-bridge.js";
-import { streamRegistry, type SessionStreamState, type StreamPersistence } from "./chat/stream-registry.js";
+import { hasCompleteTurnAfterBaseline, streamRegistry, type SessionStreamState, type StreamPersistence } from "./chat/stream-registry.js";
 import { DEFAULT_WORKSPACE_ID, TEMP_WORKSPACE_ID, WorkspaceRegistry } from "./workspace/workspace-registry.js";
 import { listPresets, listRemotePresets, ensurePresetCached, instantiatePreset } from "./presets/preset-store.js";
 import { createContentSource, type RemoteContentSource } from "./content-source/index.js";
@@ -488,8 +488,10 @@ function confirmTurnPersistence(
 	const parsed = parseSessionFile(sessionPath);
 	const revision = sessionRevision(sessionPath);
 	if (!parsed) return { persisted: false, finalSessionRevision: revision };
-	const tail = parsed.messages.slice(state.baselineMessageCount);
-	const structurallyComplete = tail[0]?.role === "user" && tail[1]?.role === "assistant";
+	const structurallyComplete = hasCompleteTurnAfterBaseline(
+		parsed.messages,
+		state.baselineMessageCount,
+	);
 	const revisionChanged = revision !== state.baselineSessionRevision;
 	const persisted = structurallyComplete && revisionChanged && parsed.messages.length > state.baselineMessageCount;
 	if (!persisted) {

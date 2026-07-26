@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { StreamRegistry } from "./stream-registry.js";
+import { hasCompleteTurnAfterBaseline, StreamRegistry } from "./stream-registry.js";
 
 function create(registry: StreamRegistry, sessionId = "session.jsonl") {
 	return registry.createTurn({
@@ -112,5 +112,43 @@ describe("StreamRegistry", () => {
 		expect(snapshot).not.toHaveProperty("workspaceRoot");
 		expect(snapshot.inputSnapshot.images[0].previewUrl).toContain("/api/workspace/raw?");
 		expect(snapshot.inputSnapshot.images[0].previewUrl).not.toContain("/private/workspace");
+	});
+});
+
+describe("turn persistence confirmation", () => {
+	it("accepts a normal user-assistant turn after the baseline", () => {
+		expect(hasCompleteTurnAfterBaseline([
+			{ role: "user" },
+			{ role: "assistant" },
+			{ role: "user" },
+			{ role: "assistant" },
+		], 2)).toBe(true);
+	});
+
+	it("accepts the successful retry after an orphaned failed image attempt", () => {
+		expect(hasCompleteTurnAfterBaseline([
+			{ role: "user" },
+			{ role: "assistant" },
+			{ role: "user" },
+			{ role: "user" },
+			{ role: "assistant" },
+		], 2)).toBe(true);
+	});
+
+	it("rejects a retry whose latest user message has no assistant", () => {
+		expect(hasCompleteTurnAfterBaseline([
+			{ role: "user" },
+			{ role: "assistant" },
+			{ role: "user" },
+			{ role: "assistant" },
+			{ role: "user" },
+		], 2)).toBe(false);
+	});
+
+	it("rejects unchanged history", () => {
+		expect(hasCompleteTurnAfterBaseline([
+			{ role: "user" },
+			{ role: "assistant" },
+		], 2)).toBe(false);
 	});
 });

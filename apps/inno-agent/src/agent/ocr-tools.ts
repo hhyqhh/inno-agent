@@ -67,8 +67,7 @@ function isHttpUrl(value: string): boolean {
  * Resolve a workspace-relative or absolute local path. Returns null for paths
  * that escape the workspace root via `..`.
  */
-function resolveLocalPath(filePath: string): string | null {
-	const workspaceDir = process.env.INNO_WORKSPACE_DIR || process.cwd();
+function resolveLocalPath(filePath: string, workspaceDir: string): string | null {
 	const root = resolve(workspaceDir);
 	const cleaned = isAbsolute(filePath) ? filePath : filePath.replace(/^\/+/, "");
 	const resolved = resolve(root, cleaned);
@@ -78,7 +77,12 @@ function resolveLocalPath(filePath: string): string | null {
 }
 
 /** Submit an OCR job. Returns the jobId. */
-async function submitJob(cfg: OcrApiConfig, filePath: string, signal: AbortSignal): Promise<string> {
+async function submitJob(
+	cfg: OcrApiConfig,
+	filePath: string,
+	workspaceDir: string,
+	signal: AbortSignal,
+): Promise<string> {
 	const headers = authHeaders(cfg.token);
 	const endpoint = cfg.baseUrl;
 
@@ -103,7 +107,7 @@ async function submitJob(cfg: OcrApiConfig, filePath: string, signal: AbortSigna
 	}
 
 	// Local file mode — multipart/form-data with file, model, optionalPayload.
-	const localPath = resolveLocalPath(filePath);
+	const localPath = resolveLocalPath(filePath, workspaceDir);
 	if (!localPath || !existsSync(localPath) || !statSync(localPath).isFile()) {
 		throw new Error(`找不到图片文件：${filePath}`);
 	}
@@ -202,7 +206,7 @@ export function createOcrTools(configHolder: ConfigHolder): ToolDefinition[] {
 				description: "要识别的图片路径（工作区相对路径、绝对路径或 http(s) URL）",
 			}),
 		}),
-		async execute(_toolCallId, params) {
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const typed = params as { filePath: string };
 			const filePath = String(typed.filePath ?? "").trim();
 			if (!filePath) {
@@ -230,7 +234,7 @@ export function createOcrTools(configHolder: ConfigHolder): ToolDefinition[] {
 			try {
 				let jobId: string;
 				try {
-					jobId = await submitJob(cfg, filePath, AbortSignal.timeout(REQUEST_TIMEOUT_MS));
+					jobId = await submitJob(cfg, filePath, ctx.cwd, AbortSignal.timeout(REQUEST_TIMEOUT_MS));
 				} catch (err) {
 					logger.warn({ err, filePath }, "ocr_image: submit failed");
 					const msg = err instanceof Error ? err.message : String(err);

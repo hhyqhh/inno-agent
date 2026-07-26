@@ -182,6 +182,7 @@ function ModelEditForm({ model, settings, onClose }: {
 				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
 				<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.preserveApiKey} onChange={(e) => setForm({ ...form, preserveApiKey: e.target.checked })} /> {t("settings.form.preserveApiKey")}</label>
 			</div>
+			<p className="mt-1 text-[10px] text-[var(--inno-text-subtle)]">{t("settings.form.supportsImagesHint")}</p>
 			{formError ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div> : null}
 			<div className="mt-2 flex gap-2">
 				<button className="rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void handleSave()}>
@@ -333,6 +334,7 @@ function NewProviderForm() {
 						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
 						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} /> {t("settings.form.makeDefault")}</label>
 					</div>
+					<p className="mt-1 text-[10px] text-[var(--inno-text-subtle)]">{t("settings.form.supportsImagesHint")}</p>
 					{formError ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div> : null}
 					{saveMessage ? <div className="mt-2 rounded bg-[var(--inno-success-bg)] px-2 py-1 text-xs text-[var(--inno-success)]">{saveMessage}</div> : null}
 					<button className="mt-3 rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void handleSave()}>

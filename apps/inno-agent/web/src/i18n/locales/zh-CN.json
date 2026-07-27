@@ -624,7 +624,7 @@
 		},
 		"ocr": {
 			"title": "OCR API (图片文字识别)",
-			"desc": "当接入的模型不支持图片识别时，调用百度 vl-ocr (PaddleOCR-VL) API 提取图片文字。需在百度 AI Studio 获取 token。",
+			"desc": "聊天识图、文档解析和笔记归档统一调用百度 PaddleOCR-VL API 提取图片文字。需在百度 AI Studio 获取 token。",
 			"tokenPlaceholder": "bearer token",
 			"modelPlaceholder": "PaddleOCR-VL-1.6",
 			"baseUrlPlaceholder": "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs",

@@ -573,7 +573,7 @@ export async function archiveL2Note(
 			}
 			let extractedContent: string;
 			if (isSupportedFormat(attachmentPath)) {
-				extractedContent = (await parseDocument(attachmentPath)).text.trim();
+				extractedContent = (await parseDocument(attachmentPath, { signal: options.signal })).text.trim();
 			} else if (isTextAttachment(attachment)) {
 				extractedContent = readText(attachmentPath).trim();
 			} else {
@@ -605,7 +605,7 @@ export async function archiveL2Note(
 		if (!image || processedImagePaths.has(image.path)) continue;
 		processedImagePaths.add(image.path);
 		try {
-			const extractedContent = (await parseDocument(image.path)).text.trim();
+			const extractedContent = (await parseDocument(image.path, { signal: options.signal })).text.trim();
 			if (!extractedContent) {
 				throw new Error("OCR 结果为空");
 			}

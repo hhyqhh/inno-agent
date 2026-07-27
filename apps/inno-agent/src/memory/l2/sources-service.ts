@@ -336,13 +336,14 @@ async function extractRawContent(
 	l2DataDir: string,
 	rawPath: string,
 	sourceType: RawSourceType,
+	signal?: AbortSignal,
 ): Promise<{ content: string; pageCount?: number }> {
 	const absPath = join(l2DataDir, rawPath);
 	if (!existsSync(absPath)) {
 		throw new Error(`Raw file not found: ${rawPath}`);
 	}
 	if (sourceType === "pdf" || sourceType === "word" || sourceType === "image") {
-		const parsed = await parseDocument(absPath);
+		const parsed = await parseDocument(absPath, { signal });
 		return { content: parsed.text, pageCount: parsed.pageCount };
 	}
 	return { content: readText(absPath) };
@@ -467,7 +468,7 @@ export async function extractL2RawFile(
 		updateEntryStatus(l2DataDir, entry.id, "extracting", { error_message: null });
 		const parsed = options.extractedContent !== undefined
 			? { content: options.extractedContent, pageCount: options.extractedPageCount }
-			: await extractRawContent(l2DataDir, normalizedPath, sourceType);
+			: await extractRawContent(l2DataDir, normalizedPath, sourceType, options.signal);
 		options.signal?.throwIfAborted();
 		if (!parsed.content.trim()) {
 			throw new DocumentParseError("无法从文件中提取有效文本", "EMPTY_RESULT");
@@ -520,7 +521,7 @@ export async function stageL2File(
 ): Promise<StageL2FileResult> {
 	options.signal?.throwIfAborted();
 	ensureL2Directories(l2DataDir);
-	const parsed = await parseDocument(options.filePath);
+	const parsed = await parseDocument(options.filePath, { signal: options.signal });
 	const content = parsed.text;
 	if (!content.trim()) {
 		throw new DocumentParseError("无法从资料中提取有效文本", "EMPTY_RESULT");

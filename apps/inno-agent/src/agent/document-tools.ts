@@ -24,7 +24,7 @@ export function createDocumentTools(): ToolDefinition[] {
 				}),
 			),
 		}),
-		async execute(_toolCallId, params) {
+		async execute(_toolCallId, params, signal) {
 			const typed = params as {
 				filePath: string;
 				includePageDetails?: boolean;
@@ -47,7 +47,7 @@ export function createDocumentTools(): ToolDefinition[] {
 			// Parse document
 			let parsed;
 			try {
-				parsed = await parseDocument(resolvedPath);
+				parsed = await parseDocument(resolvedPath, { signal });
 			} catch (err) {
 				logger.warn({ err, filePath: resolvedPath }, "parse_document tool: document parsing failed");
 				const msg = err instanceof DocumentParseError

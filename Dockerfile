@@ -18,6 +18,7 @@ RUN npm config set registry https://registry.npmmirror.com && npm ci
 # Copy source code
 COPY apps/inno-agent/src apps/inno-agent/src/
 COPY apps/inno-agent/scripts apps/inno-agent/scripts/
+COPY apps/inno-agent/note-templates apps/inno-agent/note-templates/
 COPY apps/inno-agent/web/src apps/inno-agent/web/src/
 COPY apps/inno-agent/web/vite.config.ts apps/inno-agent/web/index.html apps/inno-agent/web/
 
@@ -52,6 +53,7 @@ COPY --from=build /app/apps/inno-agent/node_modules ./apps/inno-agent/node_modul
 # Copy compiled artifacts from build stage
 COPY --from=build /app/apps/inno-agent/dist ./apps/inno-agent/dist
 COPY --from=build /app/apps/inno-agent/web/dist ./apps/inno-agent/web/dist
+COPY --from=build /app/apps/inno-agent/note-templates ./apps/inno-agent/note-templates
 # Vendored Python pptx→svg converter (not compiled by tsc, copied verbatim)
 COPY --from=build /app/apps/inno-agent/scripts ./apps/inno-agent/scripts
 

@@ -975,7 +975,7 @@ function OcrSettings({ settings }: { settings: InnoSettings }) {
 				<div className="min-w-0 flex-1">
 					<h4 className="break-words text-sm font-medium text-[var(--inno-text)]">{t("settings.ocr.title", "OCR API (图片文字识别)")}</h4>
 					<p className="mt-1 max-w-full break-words text-xs leading-relaxed text-[var(--inno-text-muted)]">
-						{t("settings.ocr.desc", "当接入的模型不支持图片识别时，调用百度 vl-ocr API 提取图片文字。需在百度 AI Studio 获取 token。")}
+						{t("settings.ocr.desc", "聊天识图、文档解析和笔记归档统一调用百度 PaddleOCR-VL API。需在百度 AI Studio 获取 token。")}
 					</p>
 					{!open && (
 						<p className="mt-1 break-all text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">

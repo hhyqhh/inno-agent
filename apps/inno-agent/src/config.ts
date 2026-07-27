@@ -170,10 +170,8 @@ export interface InnoConfig {
 		theme: string;
 	};
 	/**
-	 * Optional OCR API config (Baidu PaddleOCR-VL). When the configured model
-	 * cannot recognize images, the agent calls the `ocr_image` tool which uses
-	 * these credentials to submit an async OCR job and poll for the markdown
-	 * result. Unconfigured → the tool returns a "not configured" hint.
+	 * Optional OCR API config (Baidu PaddleOCR-VL). Shared by the `ocr_image`
+	 * tool, parse_document, and Notebook/L2 image archival.
 	 */
 	ocrApi?: {
 		token: string;

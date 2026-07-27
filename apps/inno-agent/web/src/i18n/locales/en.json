@@ -624,7 +624,7 @@
 		},
 		"ocr": {
 			"title": "OCR API (image text recognition)",
-			"desc": "When the configured model cannot recognize images, calls the Baidu vl-ocr (PaddleOCR-VL) API to extract text from images. Get a token from Baidu AI Studio.",
+			"desc": "Chat image OCR, document parsing, and note archival use the Baidu PaddleOCR-VL API. Get a token from Baidu AI Studio.",
 			"tokenPlaceholder": "bearer token",
 			"modelPlaceholder": "PaddleOCR-VL-1.6",
 			"baseUrlPlaceholder": "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs",

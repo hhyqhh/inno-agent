@@ -128,6 +128,8 @@ npm run web:dev        # 终端 2 — Vite :5173（代理 /api 到 :3000）
 
 **想换 provider？** 改 `runtime/config/config.json` 的 `defaultProvider` 和 `defaultModel`，或者在 Web UI 顶部模型选择器里切——切换会自动写回 config 文件。
 
+**如何生成会议纪要？** 在 `runtime/config/config.json` 的 `meeting` 配置中启用 Fun-ASR Realtime，并填写百炼工作空间的 WebSocket 地址和 API Key；语音凭据不会出现在前端设置中。重启服务后进入“笔记”，点击“会议录音”。结束录音后，逐字稿会持续保存在草稿中，并由当前文本模型自动整理摘要、决策和待办。浏览器需要麦克风权限，并通过 `https://` 或 `localhost` 访问。
+
 **想看 backend 日志？** `tail -f runtime/logs/server.log`（用 `restart-dev.sh` 启动的话日志在这里）。
 
 ---

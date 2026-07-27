@@ -37,7 +37,7 @@ export interface InnoMemoryConfig {
 	 */
 	l1Enabled: boolean;
 	/**
-	 * When true (default), L2 Wiki memory is active: the `l2_archive` /
+	 * When true (default), L2 Wiki memory is active: the `l2_save_draft`, `l2_archive_draft` /
 	 * `l2_query` tools can write and read the knowledge base. When false, those
 	 * tools become no-ops that report L2 is disabled.
 	 */
@@ -60,6 +60,19 @@ export interface InnoMemoryConfig {
  */
 export interface InnoSimpleModeConfig {
 	enabled: boolean;
+}
+
+export interface InnoMeetingConfig {
+	enabled: boolean;
+	transcriptionProvider: "dashscope" | string;
+	language: string;
+	saveAudio: boolean;
+	summaryTemplate: string;
+	websocketUrl: string;
+	apiKey: string;
+	model: string;
+	vocabularyId: string;
+	maxSentenceSilenceMs: number;
 }
 
 /**
@@ -152,14 +165,13 @@ export interface InnoConfig {
 	subagents?: InnoSubagentsConfig;
 	memory?: InnoMemoryConfig;
 	simpleMode?: InnoSimpleModeConfig;
+	meeting?: InnoMeetingConfig;
 	ui?: {
 		theme: string;
 	};
 	/**
-	 * Optional OCR API config (Baidu PaddleOCR-VL). When the configured model
-	 * cannot recognize images, the agent calls the `ocr_image` tool which uses
-	 * these credentials to submit an async OCR job and poll for the markdown
-	 * result. Unconfigured → the tool returns a "not configured" hint.
+	 * Optional OCR API config (Baidu PaddleOCR-VL). Shared by the `ocr_image`
+	 * tool, parse_document, and Notebook/L2 image archival.
 	 */
 	ocrApi?: {
 		token: string;
@@ -249,6 +261,24 @@ export function normalizeSimpleModeConfig(simpleMode: Partial<InnoSimpleModeConf
 	};
 }
 
+export function normalizeMeetingConfig(meeting: Partial<InnoMeetingConfig> | undefined): InnoMeetingConfig {
+	const silence = meeting?.maxSentenceSilenceMs;
+	return {
+		enabled: meeting?.enabled === true,
+		transcriptionProvider: meeting?.transcriptionProvider?.trim() || "dashscope",
+		language: meeting?.language?.trim() || "zh",
+		saveAudio: meeting?.saveAudio !== false,
+		summaryTemplate: meeting?.summaryTemplate?.trim() || "default",
+		websocketUrl: meeting?.websocketUrl?.trim() ?? "",
+		apiKey: meeting?.apiKey ?? "",
+		model: meeting?.model?.trim() || "fun-asr-realtime",
+		vocabularyId: meeting?.vocabularyId?.trim() ?? "",
+		maxSentenceSilenceMs: typeof silence === "number" && Number.isFinite(silence)
+			? Math.max(200, Math.min(5000, Math.trunc(silence)))
+			: 800,
+	};
+}
+
 /**
  * Normalize the Content Hub config, filling missing fields from the built-in
  * public-hub defaults. `legacyGithubToken` lets us migrate the older
@@ -311,6 +341,7 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		subagents: config.subagents,
 		memory: normalizeMemoryConfig(config.memory),
 		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
+		meeting: normalizeMeetingConfig(config.meeting),
 		ui: config.ui,
 		ocrApi: config.ocrApi,
 	} as InnoConfig;

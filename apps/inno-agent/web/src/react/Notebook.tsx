@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Network, FileText, PanelLeftClose, PanelLeftOpen, Trash2 } from "lucide-react";
+import { Network, ScrollText, PanelLeftClose, PanelLeftOpen, Trash2 } from "lucide-react";
 import { notebookStore } from "../stores/notebook-store.js";
 import type { WikiPageType } from "../types/wiki.js";
 import { useStoreSnapshot } from "./hooks.js";
@@ -24,7 +24,15 @@ function typeColor(type?: WikiPageType): string {
 	}
 }
 
-export function Notebook() {
+export function Notebook({
+	viewSelector,
+	onOpenNoteId,
+	onOpenNote,
+}: {
+	viewSelector?: ReactNode;
+	onOpenNoteId?: (noteId: string) => void;
+	onOpenNote?: (rawPath: string) => void;
+}) {
 	const { t } = useTranslation();
 	const [sidebarOpen, setSidebarOpen] = useState(true);
 	const state = useStoreSnapshot(notebookStore, () => ({
@@ -36,6 +44,7 @@ export function Notebook() {
 		selectedNodeId: notebookStore.selectedNodeId,
 		isLoadingPages: notebookStore.isLoadingPages,
 		isDeletingPage: notebookStore.isDeletingPage,
+		deletingPagePath: notebookStore.deletingPagePath,
 	}));
 
 	async function handleDelete(path: string, title: string) {
@@ -53,9 +62,10 @@ export function Notebook() {
 	}, []);
 
 	return (
-		<div className={`grid h-full min-h-0 gap-3 p-3 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
-			<aside className={`flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
-				<div className="border-b border-[var(--inno-border)] p-2">
+		<div className={`grid h-full min-h-0 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[280px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
+			<aside className={`flex h-full min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-workspace-chrome)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+				<div className="space-y-2 border-b border-[var(--inno-border)] p-3">
+					{viewSelector}
 					<input
 						type="text"
 						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
@@ -85,11 +95,12 @@ export function Notebook() {
 					) : null}
 					{state.pages.map((page) => {
 						const selected = state.currentPagePath === page.path || state.selectedNodeId === page.path;
+						const isThisPageDeleting = state.deletingPagePath === page.path;
 						const title = page.frontmatter?.title || page.path;
 						return (
 							<div
 								key={page.path}
-								className={`group relative border-b border-[var(--inno-border)] transition-colors ${selected ? "bg-[var(--inno-accent-soft)]" : "hover:bg-[var(--inno-surface-muted)]"}`}
+								className={`group relative border-b border-l-2 border-[var(--inno-border)] transition-colors ${selected ? "border-l-[var(--inno-accent)] bg-[var(--inno-accent-soft)]" : "border-l-transparent hover:bg-[var(--inno-surface-muted)]"}`}
 							>
 								<button
 									className="w-full px-3 py-2 pr-9 text-left text-sm"
@@ -104,7 +115,7 @@ export function Notebook() {
 									</div>
 								</button>
 								<button
-									className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-muted)] hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)] disabled:opacity-50 ${state.isDeletingPage ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+									className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-muted)] hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)] disabled:opacity-50 ${isThisPageDeleting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
 									title={t("notebook.delete.button")}
 									disabled={state.isDeletingPage}
 									onClick={(e) => {
@@ -120,7 +131,7 @@ export function Notebook() {
 				</div>
 			</aside>
 
-			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-surface)]">
 				<div className="@container flex items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2">
 					<div className="flex items-center gap-2">
 						<button
@@ -144,15 +155,15 @@ export function Notebook() {
 								onClick={() => notebookStore.setView("page")}
 								title={t("notebook.view.page")}
 							>
-								<FileText size={14} />
+								<ScrollText size={13} />
 								<span className="hidden @[680px]:inline">{t("notebook.view.page")}</span>
 							</button>
 						</div>
 					</div>
 					<div className="text-xs text-[var(--inno-text-muted)]">{state.currentPagePath ?? ""}</div>
 				</div>
-				<div className="min-h-0 flex-1 overflow-auto">
-					{state.view === "graph" ? <GraphView /> : <PageView />}
+				<div className="min-h-0 flex-1 overflow-hidden">
+					{state.view === "graph" ? <GraphView /> : <PageView onOpenNoteId={onOpenNoteId} onOpenNote={onOpenNote} />}
 				</div>
 			</section>
 		</div>

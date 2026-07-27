@@ -1,243 +1,193 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { randomUUID, createHash } from "node:crypto";
-import { join, isAbsolute, resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
-import type { ManifestEntry, RawSourceType } from "./types.js";
-import { saveRaw, saveRawFile } from "./raw-store.js";
-import { convertToExtracted } from "./source-converter.js";
-import { appendManifest, readManifest, findManifestByHash } from "./manifest-store.js";
-import {
-	createSourcePage,
-	rebuildIndex,
-	appendLog,
-	ensureL2Directories,
-	readMaintenanceContext,
-} from "./wiki-maintainer.js";
+import type { RawSourceType } from "./types.js";
+import { appendLog, ensureL2Directories } from "./wiki-maintainer.js";
 import { queryWikiHybrid } from "./wiki-query.js";
-import { summarizeContent } from "./summarizer.js";
-import { maintainLinkedWikiPages } from "./wiki-linker.js";
-import { readText } from "../../storage/file-store.js";
-import { parseDocument, DocumentParseError } from "./document-parser.js";
+import { DocumentParseError } from "./document-parser.js";
+import { stageL2File, regenerateL2Source } from "./sources-service.js";
+import { archiveL2NotebookItem, createL2Note } from "./notes-service.js";
 import { getL2Memory, type L2Memory } from "./l2-memory.js";
-import { regenerateOverview } from "./overview.js";
 import { logger } from "../../logger.js";
 
 /**
  * Create L2 Wiki memory tools for the Inno Agent.
  * When `isEnabled` is provided and returns false, the archive/query tools
  * short-circuit to a disabled notice without touching the knowledge base.
- * `l2Memory` keeps the retrieval index in sync; defaults to the per-dir
- * singleton so callers that don't pass one still get index maintenance.
  */
 export function createL2Tools(
 	l2DataDir: string,
+	codeDir: string,
 	isEnabled?: () => boolean,
 	l2Memory: L2Memory = getL2Memory(l2DataDir),
 ): ToolDefinition[] {
 	const l2DisabledResult = () => ({
 		content: [{ type: "text" as const, text: "L2 Wiki 知识库已在设置中关闭，当前不归档也不检索知识库内容。" }],
-		details: { disabled: true },
+		details: { disabled: true } as Record<string, unknown>,
 	});
 
-	// ---- Tool 1: l2_archive ----
-	const archiveTool = defineTool({
-		name: "l2_archive",
-		label: "归档到 L2 Wiki",
+	// ---- Tool 1: l2_save_draft ----
+	const saveDraftTool = defineTool({
+		name: "l2_save_draft",
+		label: "保存为 L2 草稿",
 		description:
-			"将学习资料归档到 L2 Wiki 知识库。用户说「归档」「保存到知识库」「帮我记下来」或上传资料要求学习/总结时调用。" +
-			"支持文本(text)、Markdown(markdown)、对话片段(conversation)、PDF(pdf)、Word 文档(word)、图片(image)。" +
+			"将用户明确要求加入知识库的学习资料先保存到 Notebook 草稿区，不生成 Wiki 页面。新增知识必须先调用本工具，不得跳过草稿直接归档。" +
+			"支持文本(text)、Markdown(markdown)、PDF(pdf)、Word 文档(word)、图片(image)。" +
 			"文本类内容传 content 参数；文件类内容传 filePath 参数。",
 		parameters: Type.Object({
 			title: Type.String({ description: "资料标题" }),
-			content: Type.Optional(Type.String({ description: "要归档的文本内容（与 filePath 二选一）" })),
-			filePath: Type.Optional(Type.String({ description: "要归档的文件路径（PDF/Word/Image），与 content 二选一" })),
-			sourceType: StringEnum(["text", "markdown", "conversation", "pdf", "word", "image"] as const, {
-				description: "资料类型：text（纯文本）、markdown、conversation（对话片段）、pdf、word、image",
+			content: Type.Optional(Type.String({ description: "要保存为草稿的文本内容（与 filePath 二选一）" })),
+			filePath: Type.Optional(Type.String({ description: "要保存到待处理区的文件路径（PDF/Word/Image），与 content 二选一" })),
+			sourceType: StringEnum(["text", "markdown", "pdf", "word", "image"] as const, {
+				description: "资料类型：text（纯文本）、markdown、pdf、word、image",
 			}),
 			tags: Type.Optional(Type.Array(Type.String(), { description: "标签列表，如 ['python', 'async']" })),
 			origin: Type.Optional(
-				StringEnum(["user_upload", "conversation", "web", "research", "agent_inferred"] as const, {
+				StringEnum(["user_upload", "web", "research", "agent_inferred"] as const, {
 					description: "来源类型，默认根据 sourceType 自动推断",
 				}),
 			),
 			url: Type.Optional(Type.String({ description: "来源 URL（网页、论文链接等）" })),
-			sessionId: Type.Optional(Type.String({ description: "关联的会话 ID" })),
-			force: Type.Optional(Type.Boolean({ description: "为 true 时跳过重复检查，强制归档" })),
+			force: Type.Optional(Type.Boolean({ description: "文件为 true 时跳过重复检查，强制创建待处理副本" })),
 		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, _signal) {
 			if (isEnabled && !isEnabled()) return l2DisabledResult();
-			ensureL2Directories(l2DataDir);
-			const maintenanceContext = readMaintenanceContext(l2DataDir);
-
 			const sourceType = params.sourceType as RawSourceType;
 			const isFileType = sourceType === "pdf" || sourceType === "word" || sourceType === "image";
-
-			// Resolve content: either from params.content or by parsing a file
-			let content: string;
-			let resolvedFilePath: string | undefined;
-
-			if (isFileType && params.filePath) {
-				// File-based: parse with LiteParse
-				const workspaceDir = process.env.INNO_WORKSPACE_DIR || process.cwd();
-				resolvedFilePath = isAbsolute(params.filePath)
-					? params.filePath
-					: resolve(workspaceDir, params.filePath);
-
-				let parsed;
-				try {
-					parsed = await parseDocument(resolvedFilePath);
-				} catch (err) {
-					logger.warn({ err, filePath: resolvedFilePath }, "l2_archive: failed to parse document");
-					const msg = err instanceof DocumentParseError ? err.message : String(err);
-					return {
-						content: [{ type: "text" as const, text: `文件解析失败: ${msg}` }],
-						details: { error: err instanceof DocumentParseError ? err.code : "parse_error" },
-					};
-				}
-
-				content = parsed.text;
-			} else if (params.content) {
-				// Text-based: use content directly
-				content = params.content;
-			} else {
+			if ((isFileType && !params.filePath) || (!isFileType && params.content === undefined)) {
 				return {
 					content: [{ type: "text" as const, text: "参数错误：必须提供 content（文本内容）或 filePath（文件路径）。" }],
 					details: { error: "missing_content" },
 				};
 			}
 
-			const contentHash = createHash("sha256").update(content).digest("hex").slice(0, 16);
-
-			// Dedup: check if same content already archived
-			if (!params.force) {
-				const existing = findManifestByHash(l2DataDir, contentHash);
-				if (existing) {
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text:
-									`该内容已归档，无需重复保存。\n\n` +
-									`- ID: ${existing.id}\n` +
-									`- 标题: ${existing.title}\n` +
-									`- Wiki 页面: ${existing.wikiPages.join(", ") || "无"}\n\n` +
-									`如需强制归档，请设置 force: true。`,
-							},
-						],
-						details: { id: existing.id, duplicate: true },
-					};
-				}
-			}
-
-			const rawPath = resolvedFilePath
-				? saveRawFile(l2DataDir, params.title, resolvedFilePath, sourceType)
-				: saveRaw(l2DataDir, params.title, content, sourceType, params.url);
-
-			const id = `l2src_${randomUUID().slice(0, 8)}`;
-			const tags = params.tags ?? [];
-
-			// Convert to extracted markdown
-			const extractedPath = convertToExtracted(l2DataDir, params.title, content, sourceType);
-
-			// Build manifest entry
-			const inferredOrigin = sourceType === "conversation" ? "conversation" : "user_upload";
-			const entry: ManifestEntry = {
-				id,
-				title: params.title,
-				sourceType,
-				rawPath,
-				extractedPath,
-				wikiPages: [],
-				tags,
-				contentHash,
-				status: "extracted",
-				source: {
-					origin: (params.origin ?? inferredOrigin) as ManifestEntry["source"]["origin"],
-					...(params.url && { url: params.url }),
-					...(params.sessionId && { sessionId: params.sessionId }),
-				},
-				createdAt: new Date().toISOString(),
-				updatedAt: new Date().toISOString(),
-			};
-
-			// Create wiki source page (with LLM summary)
-			const extractedContent = readText(join(l2DataDir, extractedPath));
-			let summaryBody = `## 摘要\n\n${extractedContent}`;
-			if (ctx.model) {
-				const summary = await summarizeContent(ctx.model, ctx.modelRegistry, params.title, extractedContent);
-				if (summary) summaryBody = summary;
-			}
-			const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, extractedPath);
-			const linkMaintenance = await maintainLinkedWikiPages(
-				l2DataDir,
-				entry,
-				wikiPagePath,
-				summaryBody,
-				ctx.model,
-				ctx.modelRegistry,
-			);
-			entry.wikiPages = [wikiPagePath, ...linkMaintenance.pages];
-			entry.status = "indexed";
-
-			// Write manifest
-			appendManifest(l2DataDir, entry);
-
-			// Rebuild index
-			const allEntries = readManifest(l2DataDir);
-			rebuildIndex(l2DataDir, allEntries);
-
-			// Keep the retrieval index in sync with the touched pages.
-			for (const wikiPath of entry.wikiPages) {
-				await l2Memory.indexPageByPath(wikiPath);
-			}
-
-			// Regenerate the knowledge-base overview (best-effort; never fails archive).
-			try {
-				const overviewPath = await regenerateOverview(l2DataDir, ctx.model, ctx.modelRegistry);
-				if (overviewPath) await l2Memory.indexPageByPath(overviewPath);
-			} catch (err) {
-				logger.warn({ err }, "l2_archive: overview regeneration failed");
-			}
-
-			// Append log
-			appendLog(
-				l2DataDir,
-				"ingest",
-				params.title,
-				[
-					`- ID: ${id}`,
-					`- 类型: ${sourceType}`,
-					`- 原始文件: ${rawPath}`,
-					`- 提取文本: ${extractedPath}`,
-					`- Source 页面: ${wikiPagePath}`,
-					`- concepts/entities: 新建 ${linkMaintenance.created.length}, 更新 ${linkMaintenance.updated.length}, 不变 ${linkMaintenance.unchanged.length}, 争议 ${linkMaintenance.contested.length}`,
-					`- 维护前上下文: schema ${maintenanceContext.schema.length} chars, index ${maintenanceContext.index.length} chars, recent log ${maintenanceContext.recentLog.length} chars`,
-				].join("\n"),
-			);
-
-			return {
-				content: [
-					{
+			if (!isFileType) {
+				const note = createL2Note(l2DataDir, codeDir, {
+					title: params.title,
+					tags: params.tags,
+					content: params.content,
+				});
+				return {
+					content: [{
 						type: "text" as const,
 						text:
-							`资料已归档到 L2 Wiki。\n\n` +
-							`- ID: ${id}\n` +
-							`- 标题: ${params.title}\n` +
-							`- 原始文件: ${rawPath}\n` +
-							`- Wiki 页面: ${wikiPagePath}\n` +
-							`- 自动维护: 新建 ${linkMaintenance.created.length} 个概念/实体页，更新 ${linkMaintenance.updated.length} 个\n` +
-							`- 标签: ${tags.join(", ") || "无"}\n\n` +
-							`Wiki 索引已更新。`,
-					},
-				],
-				details: { id, rawPath, wikiPagePath, linkedPages: linkMaintenance.pages },
+							"资料已保存为 Notebook 草稿，尚未归档到 Wiki。\n\n" +
+							"- ID: " + note.noteId + "\n" +
+							"- 标题: " + note.title + "\n" +
+							"- 草稿路径: " + note.rawPath + "\n" +
+							"- 状态: " + note.status + "\n\n" +
+							"请先审阅或编辑；只有再次明确要求归档该草稿时才会生成 Wiki 页面。",
+					}],
+					details: { id: note.noteId, rawPath: note.rawPath, status: note.status },
+				};
+			}
+
+			const workspaceDir = process.env.INNO_WORKSPACE_DIR || process.cwd();
+			const filePath = isAbsolute(params.filePath!)
+				? params.filePath!
+				: resolve(workspaceDir, params.filePath!);
+			let result;
+			try {
+				result = await stageL2File(l2DataDir, {
+					title: params.title,
+					sourceType: sourceType as Extract<RawSourceType, "pdf" | "word" | "image">,
+					filePath,
+					tags: params.tags,
+					origin: params.origin,
+					url: params.url,
+					force: params.force,
+					signal: _signal,
+				});
+			} catch (err) {
+				if (err instanceof DocumentParseError) {
+					logger.warn({ err, filePath }, "l2_save_draft: failed to parse document");
+					return {
+						content: [{ type: "text" as const, text: `文件解析失败: ${err.message}` }],
+						details: { error: err.code },
+					};
+				}
+				throw err;
+			}
+
+			if (result.duplicate) {
+				const existing = result.existing;
+				return {
+					content: [{
+						type: "text" as const,
+						text:
+							`该文件内容已存在，无需重复保存。\n\n` +
+							`- ID: ${existing.id}\n` +
+							`- 标题: ${existing.title}\n` +
+							`- 状态: ${existing.status}\n` +
+							`- 路径: ${existing.rawPath}\n\n` +
+							`如需创建待处理副本，请设置 force: true。`,
+					}],
+					details: { id: existing.id, duplicate: true },
+				};
+			}
+
+			return {
+				content: [{
+					type: "text" as const,
+					text:
+						`文件已保存到 Notebook 待处理区，尚未归档到 Wiki。\n\n` +
+						`- ID: ${result.sourceId}\n` +
+						`- 标题: ${result.title}\n` +
+						`- 文件路径: ${result.rawPath}\n` +
+						`- 状态: ${result.status}\n\n` +
+						`只有再次明确要求归档该文件时才会生成 Wiki 页面。`,
+				}],
+				details: {
+					id: result.sourceId,
+					rawPath: result.rawPath,
+					status: result.status,
+				},
 			};
 		},
 	});
 
-	// ---- Tool 2: l2_query ----
+	// ---- Tool 2: l2_archive_draft ----
+	const archiveDraftTool = defineTool({
+		name: "l2_archive_draft",
+		label: "归档 L2 草稿",
+		description:
+			"将 Notebook 中已经存在的草稿或待处理文件归档为 L2 Wiki 页面。" +
+			"只有用户在草稿已创建后，再次明确要求归档该草稿时才调用；rawPath 必须来自 l2_save_draft 或 Notebook。",
+		parameters: Type.Object({
+			rawPath: Type.String({ description: "Notebook 草稿或待处理文件的相对路径，例如 raw/notes/xxx.md" }),
+			title: Type.Optional(Type.String({ description: "归档标题；省略时使用草稿标题" })),
+			tags: Type.Optional(Type.Array(Type.String(), { description: "归档标签；省略时使用草稿标签" })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (isEnabled && !isEnabled()) return l2DisabledResult();
+			const result = await archiveL2NotebookItem(l2DataDir, params.rawPath, {
+				title: params.title,
+				tags: params.tags,
+				model: ctx.model,
+				modelRegistry: ctx.modelRegistry,
+				signal: _signal,
+			});
+			for (const wikiPath of result.wikiPages) {
+				await l2Memory.indexPageByPath(wikiPath);
+			}
+			return {
+				content: [{
+					type: "text" as const,
+					text:
+						`草稿已归档到 L2 Wiki。\n\n` +
+						`- ID: ${result.sourceId}\n` +
+						`- 标题: ${result.title}\n` +
+						`- 原始内容: ${result.rawPath}\n` +
+						`- Wiki 页面: ${result.wikiPagePath}`,
+				}],
+				details: result,
+			};
+		},
+	});
+
+	// ---- Tool 3: l2_query ----
 	const queryTool = defineTool({
 		name: "l2_query",
 		label: "查询 L2 Wiki",
@@ -267,5 +217,44 @@ export function createL2Tools(
 		},
 	});
 
-	return [archiveTool, queryTool];
+	const regenerateTool = defineTool({
+		name: "l2_regenerate",
+		label: "Regenerate L2 knowledge",
+		description:
+			"Regenerate an existing L2 source from its original extracted content. " +
+			"Use this when the user asks to regenerate knowledge points, adjust the knowledge structure, rebuild concepts/entities, or refresh the source summary based on an existing source. " +
+			"This tool keeps the original raw material and SourceID; it must not be used to create a new material/source.",
+		parameters: Type.Object({
+			sourceId: Type.String({ description: "Existing L2 source id, for example l2src_xxxxxxxx." }),
+			regenerateTags: Type.Optional(Type.Boolean({ default: true, description: "Whether to recalculate source tags when supported." })),
+			regenerateLinks: Type.Optional(Type.Boolean({ default: true, description: "Whether to rebuild concept/entity links." })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (isEnabled && !isEnabled()) return l2DisabledResult();
+			ensureL2Directories(l2DataDir);
+			const result = await regenerateL2Source(l2DataDir, params.sourceId, {
+				regenerateTags: params.regenerateTags ?? true,
+				regenerateLinks: params.regenerateLinks ?? true,
+				model: ctx.model,
+				modelRegistry: ctx.modelRegistry,
+			});
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text:
+							`Regenerated existing L2 source without creating a new material.\n\n` +
+							`- ID: ${result.sourceId}\n` +
+							`- Title: ${result.title}\n` +
+							`- Raw material: ${result.rawPath}\n` +
+							`- Source summary: ${result.wikiPagePath}\n` +
+							`- Knowledge pages: ${result.wikiPages.join(", ") || "none"}`,
+					},
+				],
+				details: result,
+			};
+		},
+	});
+
+	return [saveDraftTool, archiveDraftTool, queryTool, regenerateTool];
 }

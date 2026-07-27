@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 
@@ -7,26 +6,18 @@ import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 import { ensureDir, readText, writeText } from "../../storage/file-store.js";
-import type { ManifestEntry, WikiPageType, WikiPageFrontmatter } from "./types.js";
+import type {
+	LinkablePageType,
+	LinkedItem,
+	ManifestEntry,
+	WikiPageFrontmatter,
+	WikiLinkMaintenanceOptions,
+	WikiLinkMaintenanceResult,
+} from "./types.js";
 import { parseFrontmatter, serializeFrontmatter } from "./wiki-maintainer.js";
 import { logger } from "../../logger.js";
-
-type LinkablePageType = Extract<WikiPageType, "entity" | "concept">;
-
-interface LinkedItem {
-	title: string;
-	type: LinkablePageType;
-	description: string;
-}
-
-export interface WikiLinkMaintenanceResult {
-	created: string[];
-	updated: string[];
-	unchanged: string[];
-	/** Pages where a contradiction with the new source was recorded. */
-	contested: string[];
-	pages: string[];
-}
+import { normalizeMarkdownForMilkdown } from "./markdown-normalizer.js";
+import { normalizeTagList, slugifyTitle } from "./l2-utils.js";
 
 const LINK_MAINTAIN_PROMPT = `你是一个学习 Wiki 知识库维护助手。
 
@@ -50,15 +41,64 @@ const LINK_MAINTAIN_PROMPT = `你是一个学习 Wiki 知识库维护助手。
 {"items":[{"title":"条目名","type":"concept","description":"一句话定义或说明"}]}`;
 
 const MAX_LINK_PROMPT_LENGTH = 30000;
+const MAX_RELATION_CONTEXT_LENGTH = 20000;
 
-function slugifyTitle(title: string): string {
-	const slug = title
-		.toLowerCase()
-		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.slice(0, 60);
-	if (slug) return slug;
-	return createHash("sha256").update(title).digest("hex").slice(0, 12);
+const RELATION_AWARE_LINK_MAINTAIN_PROMPT = `你是一个学习 Wiki 知识图谱维护助手。
+
+你的任务不是重新生成资料文档，而是根据「原资料」和「当前这份资料已有的知识关系」决定应该新增或更新哪些实体/概念知识点。
+
+规则：
+- 可以保留当前已有关系，也可以补充原资料中明显缺失的重要实体/概念。
+- 不要创建 source-summary / 资料页；只返回 entity 或 concept。
+- 避免过泛词，例如“方法”“系统”“内容”“模板”。
+- 如果当前关系已经覆盖得很好，返回这些已有关系即可，不要为了变化而制造新节点。
+- 最多返回 20 个条目。
+
+资料标题：{title}
+
+原资料：
+---
+{content}
+---
+
+当前知识关系：
+---
+{currentRelations}
+---
+
+只返回 JSON，不要代码块：
+{"items":[{"title":"条目名","type":"concept","description":"一句话定义或说明"}]}`;
+
+export function readSourceKnowledgeRelations(l2DataDir: string, wikiPages: string[]): string {
+	const sections: string[] = [];
+	for (const wikiPath of wikiPages) {
+		const normalizedPath = wikiPath.replace(/\\/g, "/");
+		if (!normalizedPath.includes("wiki/entities/") && !normalizedPath.includes("wiki/concepts/")) continue;
+		const absPath = join(l2DataDir, normalizedPath);
+		if (!existsSync(absPath)) continue;
+		try {
+			const content = readText(absPath);
+			const { frontmatter, body } = parseFrontmatter(content);
+			const title = frontmatter?.title || basename(normalizedPath, extname(normalizedPath));
+			const type = frontmatter?.type || (normalizedPath.includes("wiki/entities/") ? "entity" : "concept");
+			const sourceIds = frontmatter?.source_ids?.join(", ") || "";
+			const preview = body.trim().slice(0, 2000);
+			sections.push([
+				`Path: ${normalizedPath}`,
+				`Title: ${title}`,
+				`Type: ${type}`,
+				`Source IDs: ${sourceIds}`,
+				"Content:",
+				preview || "(empty)",
+			].join("\n"));
+		} catch (err) {
+			logger.warn({ err, wikiPath: normalizedPath }, "failed to read linked wiki relation context");
+		}
+	}
+	const context = sections.length > 0 ? sections.join("\n\n---\n\n") : "(no current entity/concept relations)";
+	return context.length > MAX_RELATION_CONTEXT_LENGTH
+		? `${context.slice(0, MAX_RELATION_CONTEXT_LENGTH)}\n\n...(relations truncated)`
+		: context;
 }
 
 function cleanTitle(title: string): string {
@@ -139,7 +179,10 @@ async function extractLinkedItems(
 	modelRegistry: ModelRegistry | undefined,
 	title: string,
 	content: string,
+	currentRelations?: string,
+	signal?: AbortSignal,
 ): Promise<LinkedItem[]> {
+	signal?.throwIfAborted();
 	const fallback = fallbackItems(content);
 	if (!model || !modelRegistry) return fallback;
 
@@ -147,7 +190,11 @@ async function extractLinkedItems(
 		content.length > MAX_LINK_PROMPT_LENGTH
 			? content.slice(0, MAX_LINK_PROMPT_LENGTH) + "\n\n...(内容已截断)"
 			: content;
-	const prompt = LINK_MAINTAIN_PROMPT.replace("{title}", title).replace("{content}", truncated);
+	const promptTemplate = currentRelations ? RELATION_AWARE_LINK_MAINTAIN_PROMPT : LINK_MAINTAIN_PROMPT;
+	const prompt = promptTemplate
+		.replace("{title}", title)
+		.replace("{content}", truncated)
+		.replace("{currentRelations}", currentRelations ?? "");
 
 	try {
 		const auth = await modelRegistry.getApiKeyAndHeaders(model);
@@ -167,6 +214,7 @@ async function extractLinkedItems(
 				apiKey: auth.apiKey,
 				headers: auth.headers,
 				maxTokens: 4096,
+				signal,
 			},
 		);
 		if (response.stopReason === "error") return fallback;
@@ -177,6 +225,7 @@ async function extractLinkedItems(
 		const extracted = parseLinkedItemsJson(text);
 		return extracted.length > 0 ? extracted : fallback;
 	} catch (err) {
+		if (signal?.aborted) throw err;
 		logger.warn({ err }, "LLM wiki link extraction failed, using fallback");
 		return fallback;
 	}
@@ -190,12 +239,12 @@ function relativePagePath(type: LinkablePageType, filename: string): string {
 	return join("wiki", pageDirForType(type), filename);
 }
 
-function findExistingPage(l2DataDir: string, item: LinkedItem): string {
+function findExistingPage(l2DataDir: string, item: LinkedItem): { path: string; exists: boolean } {
 	const dir = join(l2DataDir, "wiki", pageDirForType(item.type));
-	const slugPath = relativePagePath(item.type, `${slugifyTitle(item.title)}.md`);
+	const slugPath = relativePagePath(item.type, `${slugifyTitle(item.title, 60)}.md`);
 	const slugAbsPath = join(l2DataDir, slugPath);
-	if (existsSync(slugAbsPath)) return slugPath;
-	if (!existsSync(dir)) return slugPath;
+	if (existsSync(slugAbsPath)) return { path: slugPath, exists: true };
+	if (!existsSync(dir)) return { path: slugPath, exists: false };
 
 	for (const file of readdirSync(dir)) {
 		if (!file.endsWith(".md")) continue;
@@ -203,23 +252,9 @@ function findExistingPage(l2DataDir: string, item: LinkedItem): string {
 		const content = readText(join(l2DataDir, relativePath));
 		const { frontmatter } = parseFrontmatter(content);
 		const title = frontmatter?.title || basename(file, extname(file));
-		if (title === item.title) return relativePath;
+		if (title === item.title) return { path: relativePath, exists: true };
 	}
-	return slugPath;
-}
-
-function mergeTags(...tagGroups: string[][]): string[] {
-	const seen = new Set<string>();
-	const tags: string[] = [];
-	for (const group of tagGroups) {
-		for (const tag of group) {
-			const trimmed = tag.trim();
-			if (!trimmed || seen.has(trimmed)) continue;
-			seen.add(trimmed);
-			tags.push(trimmed);
-		}
-	}
-	return tags.slice(0, 12);
+	return { path: slugPath, exists: false };
 }
 
 function buildNewPage(item: LinkedItem, entry: ManifestEntry, sourcePagePath: string): string {
@@ -228,14 +263,14 @@ function buildNewPage(item: LinkedItem, entry: ManifestEntry, sourcePagePath: st
 		title: item.title,
 		created: today,
 		type: item.type,
-		tags: mergeTags([item.type], entry.tags),
+		tags: normalizeTagList([item.type, ...entry.tags]).slice(0, 12),
 		sources: [sourcePagePath],
 		source_ids: [entry.id],
 		updated: today,
 		status: "draft",
 		confidence: "medium",
 	});
-	return `${frontmatter}
+	return normalizeMarkdownForMilkdown(`${frontmatter}
 # ${item.title}
 
 ## 定义
@@ -245,7 +280,7 @@ ${item.description}
 ## 相关资料
 
 - [[${entry.title}]] — \`${sourcePagePath}\`
-`;
+`);
 }
 
 function referenceBullet(entry: ManifestEntry, sourcePagePath: string): string {
@@ -310,10 +345,16 @@ function upsertLinkedPage(
 	item: LinkedItem,
 	entry: ManifestEntry,
 	sourcePagePath: string,
+	options: WikiLinkMaintenanceOptions = {},
 ): { path: string; status: "created" | "updated" | "unchanged" } {
-	const relativePath = findExistingPage(l2DataDir, item);
+	const found = findExistingPage(l2DataDir, item);
+	const relativePath = found.path;
 	const absPath = join(l2DataDir, relativePath);
 	ensureDir(join(l2DataDir, "wiki", pageDirForType(item.type)));
+
+	if (!found.exists && options.createMissing === false) {
+		return { path: relativePath, status: "unchanged" };
+	}
 
 	if (!existsSync(absPath)) {
 		writeText(absPath, buildNewPage(item, entry, sourcePagePath));
@@ -346,9 +387,11 @@ export async function maintainLinkedWikiPages(
 	sourcePageBody: string,
 	model?: Model<any>,
 	modelRegistry?: ModelRegistry,
+	options: WikiLinkMaintenanceOptions = {},
 ): Promise<WikiLinkMaintenanceResult> {
 	const result: WikiLinkMaintenanceResult = { created: [], updated: [], unchanged: [], contested: [], pages: [] };
-	const items = await extractLinkedItems(model, modelRegistry, entry.title, sourcePageBody);
+	const items = await extractLinkedItems(model, modelRegistry, entry.title, sourcePageBody, options.currentRelations, options.signal);
+	options.signal?.throwIfAborted();
 
 	// Stage 1: read existing definitions for all candidates, build plan.
 	const candidates = items.map((it) => ({
@@ -361,7 +404,11 @@ export async function maintainLinkedWikiPages(
 	if (plan) {
 		// Stage 2: write/merge according to plan.
 		for (const p of plan) {
-			const page = upsertPlannedPage(l2DataDir, p, entry, sourcePagePath);
+			options.signal?.throwIfAborted();
+			const page = upsertPlannedPage(l2DataDir, p, entry, sourcePagePath, options);
+			if (options.createMissing === false && page.status === "unchanged" && !existsSync(join(l2DataDir, page.path))) {
+				continue;
+			}
 			result.pages.push(page.path);
 			result[page.status].push(page.path);
 			if (page.contested) result.contested.push(page.path);
@@ -369,7 +416,11 @@ export async function maintainLinkedWikiPages(
 	} else {
 		// Fallback: original non-destructive create-or-append-reference.
 		for (const item of items) {
-			const page = upsertLinkedPage(l2DataDir, item, entry, sourcePagePath);
+			options.signal?.throwIfAborted();
+			const page = upsertLinkedPage(l2DataDir, item, entry, sourcePagePath, options);
+			if (options.createMissing === false && page.status === "unchanged" && !existsSync(join(l2DataDir, page.path))) {
+				continue;
+			}
 			result.pages.push(page.path);
 			result[page.status].push(page.path);
 		}
@@ -448,8 +499,9 @@ function parsePlanItems(text: string): PlanItem[] {
 }
 
 function readExistingDefinition(l2DataDir: string, item: LinkedItem): string | undefined {
-	const rel = findExistingPage(l2DataDir, item);
-	const abs = join(l2DataDir, rel);
+	const found = findExistingPage(l2DataDir, item);
+	if (!found.exists) return undefined;
+	const abs = join(l2DataDir, found.path);
 	if (!existsSync(abs)) return undefined;
 	const { body } = parseFrontmatter(readText(abs));
 	const idx = body.indexOf("## 定义");
@@ -571,11 +623,16 @@ function upsertPlannedPage(
 	item: PlanItem,
 	entry: ManifestEntry,
 	sourcePagePath: string,
+	options: WikiLinkMaintenanceOptions = {},
 ): { path: string; status: "created" | "updated" | "unchanged"; contested: boolean } {
 	const linked: LinkedItem = { title: item.title, type: item.type, description: item.definition };
-	const relativePath = findExistingPage(l2DataDir, linked);
+	const found = findExistingPage(l2DataDir, linked);
+	const relativePath = found.path;
 	const absPath = join(l2DataDir, relativePath);
 	ensureDir(join(l2DataDir, "wiki", pageDirForType(item.type)));
+	if (!found.exists && options.createMissing === false) {
+		return { path: relativePath, status: "unchanged", contested: false };
+	}
 	if (!existsSync(absPath)) {
 		writeText(absPath, buildNewPage(linked, entry, sourcePagePath));
 		return { path: relativePath, status: "created", contested: false };

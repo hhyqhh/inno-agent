@@ -46,8 +46,45 @@ export interface WikiGraphEdge {
 	type: "link" | "tag";
 }
 
+export interface WikiTagSummary {
+	id: string;
+	canonicalKey: string;
+	displayName: string;
+	usageCount: number;
+	updatedAt: string;
+}
+
+export interface WikiRelatedSource {
+	id: string;
+	title: string;
+	rawPath: string;
+	primaryWikiPath: string;
+	wikiPages: string[];
+	tags: string[];
+	status: string;
+	notebookType: string;
+	updatedAt: string;
+}
+
+export interface WikiGraphNodeDetail {
+	nodeId: string;
+	title: string;
+	type: WikiPageType | "tag";
+	relatedPages: WikiPageSummary[];
+	relatedSources: WikiRelatedSource[];
+	bodyPreview?: string;
+}
+
 export interface WikiStats {
 	pageCount: number;
 	totalSize: number;
 	entryCount: number;
+}
+
+export interface RegenerateSourceResult {
+	sourceId: string;
+	wikiPagePath: string;
+	wikiPages: string[];
+	status: "indexed";
+	updatedAt: string;
 }

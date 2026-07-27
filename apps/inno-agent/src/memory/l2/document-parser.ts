@@ -1,9 +1,15 @@
 import { existsSync, statSync } from "node:fs";
 import { extname, resolve } from "node:path";
-import type { LiteParse, ParseResult, ScreenshotResult } from "@llamaindex/liteparse";
+import type { LiteParse, ParseResult } from "@llamaindex/liteparse";
+import {
+	loadRuntimePaddleOcrConfig,
+	PaddleOcrError,
+	recognizeWithPaddleOcr,
+} from "../../ocr/paddle-ocr.js";
+import type { ParsedDocumentResult } from "./types.js";
 
 // ============================================================================
-// LiteParse Wrapper — Lazy-loaded document parsing
+// LiteParse Wrapper - Lazy-loaded document parsing
 // ============================================================================
 
 const SUPPORTED_EXTENSIONS = new Set([
@@ -17,15 +23,11 @@ const SUPPORTED_EXTENSIONS = new Set([
 	".gif",
 	".webp",
 	".tiff",
+	".tif",
 ]);
 
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".tif"]);
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100MB
-
-export interface ParsedDocumentResult {
-	text: string;
-	pageCount: number;
-	pages: Array<{ pageNumber: number; text: string }>;
-}
 
 export class DocumentParseError extends Error {
 	constructor(
@@ -43,6 +45,7 @@ async function getParser(): Promise<LiteParse> {
 	if (!parserInstance) {
 		const { LiteParse: LiteParseClass } = await import("@llamaindex/liteparse");
 		parserInstance = new LiteParseClass({
+			// Images are handled below by the shared PaddleOCR-VL client.
 			ocrEnabled: false,
 			outputFormat: "text",
 			preciseBoundingBox: false,
@@ -75,18 +78,54 @@ function validateFile(filePath: string): void {
 	}
 }
 
+async function parseImageWithOcr(
+	filePath: string,
+	options: { signal?: AbortSignal } = {},
+): Promise<ParsedDocumentResult> {
+	const config = loadRuntimePaddleOcrConfig();
+	if (!config) {
+		throw new DocumentParseError(
+			"尚未配置百度 PaddleOCR-VL API token，请先在设置面板的「OCR API」中完成配置。",
+			"PARSE_ERROR",
+		);
+	}
+	try {
+		const result = await recognizeWithPaddleOcr(filePath, config, { signal: options.signal });
+		return {
+			text: result.markdown,
+			pageCount: result.pages.length,
+			pages: result.pages.map((text, index) => ({ pageNumber: index + 1, text })),
+		};
+	} catch (error) {
+		throw new DocumentParseError(
+			`百度 PaddleOCR-VL 识别失败：${error instanceof Error ? error.message : String(error)}`,
+			error instanceof PaddleOcrError && error.code === "EMPTY_RESULT" ? "EMPTY_RESULT" : "PARSE_ERROR",
+		);
+	}
+}
+
 /**
  * Parse a document and extract text content.
  */
-export async function parseDocument(filePath: string): Promise<ParsedDocumentResult> {
+export async function parseDocument(
+	filePath: string,
+	options: { signal?: AbortSignal } = {},
+): Promise<ParsedDocumentResult> {
+	options.signal?.throwIfAborted();
 	const resolved = resolve(filePath);
 	validateFile(resolved);
+
+	const ext = extname(resolved).toLowerCase();
+	if (IMAGE_EXTENSIONS.has(ext)) {
+		return parseImageWithOcr(resolved, options);
+	}
 
 	const parser = await getParser();
 	let result: ParseResult;
 
 	try {
 		result = await parser.parse(resolved, true);
+		options.signal?.throwIfAborted();
 	} catch (err) {
 		throw new DocumentParseError(
 			`解析失败: ${err instanceof Error ? err.message : String(err)}`,
@@ -110,25 +149,6 @@ export async function parseDocument(filePath: string): Promise<ParsedDocumentRes
 			text: p.text,
 		})),
 	};
-}
-
-/**
- * Generate PNG screenshots of document pages.
- */
-export async function screenshotDocument(filePath: string, pageNumbers?: number[]): Promise<ScreenshotResult[]> {
-	const resolved = resolve(filePath);
-	validateFile(resolved);
-
-	const parser = await getParser();
-
-	try {
-		return await parser.screenshot(resolved, pageNumbers, true);
-	} catch (err) {
-		throw new DocumentParseError(
-			`截图生成失败: ${err instanceof Error ? err.message : String(err)}`,
-			"PARSE_ERROR",
-		);
-	}
 }
 
 /** Check if a file extension is supported for parsing. */

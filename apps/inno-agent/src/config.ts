@@ -166,6 +166,13 @@ export interface InnoConfig {
 		model?: string;
 		baseUrl?: string;
 	};
+	/**
+	 * Optional Tavily config. The `web_search` tool uses this API key for
+	 * internet search. Unconfigured → the tool returns a "not configured" hint.
+	 */
+	tavily?: {
+		apiKey: string;
+	};
 }
 
 interface LegacyInnoConfig extends Partial<InnoConfig> {
@@ -313,6 +320,7 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
 		ui: config.ui,
 		ocrApi: config.ocrApi,
+		tavily: config.tavily,
 	} as InnoConfig;
 }
 

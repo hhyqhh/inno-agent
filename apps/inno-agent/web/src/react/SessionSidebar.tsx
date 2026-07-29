@@ -524,11 +524,6 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 	const workspaceFiltering = Boolean(state.searchQuery || state.channelFilter);
 
 	useEffect(() => {
-		void sessionsStore.load();
-		void workspacesStore.load();
-	}, []);
-
-	useEffect(() => {
 		if (!sortMenuOpen) return;
 		const closeOnEscape = (event: KeyboardEvent) => {
 			if (event.key === "Escape") setSortMenuOpen(false);

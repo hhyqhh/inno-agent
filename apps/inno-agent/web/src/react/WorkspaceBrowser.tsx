@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Tree, type NodeRendererProps, type TreeApi, type CreateHandler, type RenameHandler, type DeleteHandler, type MoveHandler } from "react-arborist";
 import MDEditor from "@uiw/react-md-editor";
@@ -17,7 +17,7 @@ import { cpp } from "@codemirror/lang-cpp";
 import { rust } from "@codemirror/lang-rust";
 import { go } from "@codemirror/lang-go";
 import type { Extension } from "@codemirror/state";
-import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, FileCode2, Presentation, FileSpreadsheet, Copy, Check } from "lucide-react";
+import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, FileCode2, Presentation, FileSpreadsheet, Copy, Check, ListChecks, Trash2 } from "lucide-react";
 import { workspaceStore, type StreamingWorkspacePreview } from "../stores/workspace-store.js";
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
@@ -668,9 +668,24 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 
 /* ---------- Custom Node Renderer ---------- */
 
+interface WorkspaceMultiSelectState {
+	enabled: boolean;
+	selectedIds: ReadonlySet<string>;
+	toggleFile: (path: string) => void;
+	addFile: (path: string) => void;
+}
+
+const WorkspaceMultiSelectContext = createContext<WorkspaceMultiSelectState>({
+	enabled: false,
+	selectedIds: new Set(),
+	toggleFile: () => undefined,
+	addFile: () => undefined,
+});
+
 function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
-	const selected = node.isSelected;
 	const isDir = !node.isLeaf;
+	const multiSelect = useContext(WorkspaceMultiSelectContext);
+	const selected = multiSelect.enabled ? multiSelect.selectedIds.has(node.data.path) : node.isSelected;
 
 	return (
 		<div
@@ -685,6 +700,10 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 				e.stopPropagation();
 				if (isDir) node.toggle();
 				else {
+					if (multiSelect.enabled) {
+						multiSelect.toggleFile(node.data.path);
+						return;
+					}
 					node.select();
 					workspaceStore.clearStreamingPreview();
 					if (appStore.workspaceWidth < CONTENT_REVEAL_WIDTH) {
@@ -699,11 +718,28 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 			onContextMenu={(e) => {
 				e.preventDefault();
 				e.stopPropagation();
-				node.select();
+				if (!isDir && !selected) {
+					if (multiSelect.enabled) multiSelect.addFile(node.data.path);
+					else node.select();
+				}
 				const ev = new CustomEvent("workspace-ctx", { detail: { x: e.clientX, y: e.clientY, node: node.data }, bubbles: true });
 				e.currentTarget.dispatchEvent(ev);
 			}}
 		>
+			{multiSelect.enabled && !isDir ? (
+				<span
+					className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+						selected
+							? "border-[var(--inno-accent)] bg-[var(--inno-accent)] text-white"
+							: "border-[var(--inno-border)] bg-[var(--inno-surface)]"
+					}`}
+					role="checkbox"
+					aria-checked={selected}
+					aria-label={node.data.name}
+				>
+					{selected ? <Check size={11} strokeWidth={3} /> : null}
+				</span>
+			) : null}
 			<span className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--inno-text-subtle)]">
 				{nodeIcon(node.data.name, isDir, node.isOpen)}
 			</span>
@@ -824,6 +860,8 @@ export function WorkspaceBrowser() {
 	const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
 	const [deleteConfirm, setDeleteConfirm] = useState<{ ids: string[] } | null>(null);
 	const [isDragOver, setIsDragOver] = useState(false);
+	const [multiSelectMode, setMultiSelectMode] = useState(false);
+	const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
 
 	const state = useStoreSnapshot(workspaceStore, () => ({
 		tree: workspaceStore.tree,
@@ -953,8 +991,34 @@ export function WorkspaceBrowser() {
 		for (const id of deleteConfirm.ids) {
 			await workspaceStore.deleteItem(id);
 		}
+		treeRef.current?.deselectAll();
+		setSelectedFileIds([]);
+		setMultiSelectMode(false);
 		setDeleteConfirm(null);
 	}, [deleteConfirm]);
+
+	const toggleMultiSelectMode = useCallback(() => {
+		treeRef.current?.deselectAll();
+		setSelectedFileIds([]);
+		setMultiSelectMode((enabled) => !enabled);
+	}, []);
+
+	const toggleSelectedFile = useCallback((path: string) => {
+		setSelectedFileIds((current) => current.includes(path)
+			? current.filter((id) => id !== path)
+			: [...current, path]);
+	}, []);
+
+	const addSelectedFile = useCallback((path: string) => {
+		setSelectedFileIds((current) => current.includes(path) ? current : [...current, path]);
+	}, []);
+
+	const multiSelectState = useMemo<WorkspaceMultiSelectState>(() => ({
+		enabled: multiSelectMode,
+		selectedIds: new Set(selectedFileIds),
+		toggleFile: toggleSelectedFile,
+		addFile: addSelectedFile,
+	}), [multiSelectMode, selectedFileIds, toggleSelectedFile, addSelectedFile]);
 
 	/* --- Upload handlers --- */
 
@@ -1019,6 +1083,20 @@ export function WorkspaceBrowser() {
 							{activeWorkspaceName || t("workspace.title")}
 						</span>
 					</div>
+					<button
+						disabled={busy}
+						className={`flex h-6 w-6 items-center justify-center rounded transition-colors disabled:opacity-40 ${
+							multiSelectMode
+								? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
+								: "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-accent)]"
+						}`}
+						title={multiSelectMode ? t("files.exitMultiSelect", "Exit multi-select") : t("files.multiSelect", "Select multiple files")}
+						aria-label={multiSelectMode ? t("files.exitMultiSelect", "Exit multi-select") : t("files.multiSelect", "Select multiple files")}
+						aria-pressed={multiSelectMode}
+						onClick={toggleMultiSelectMode}
+					>
+						<ListChecks size={14} />
+					</button>
 					<button disabled={busy} className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-accent)] disabled:opacity-40" title={t("files.uploadSkill", "Upload skill package (.zip/.md) to .skills")} onClick={() => skillUploadRef.current?.click()}>
 						<Sparkles size={14} />
 					</button>
@@ -1027,6 +1105,25 @@ export function WorkspaceBrowser() {
 					</button>
 					<input ref={skillUploadRef} type="file" multiple accept=".zip,application/zip,.md,text/markdown" className="hidden" onChange={handleSkillUploadChange} />
 				</div>
+
+				{multiSelectMode ? (
+					<div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-accent-soft)] px-2">
+						<span className="min-w-0 flex-1 truncate text-[11px] text-[var(--inno-accent)]">
+							{selectedFileIds.length
+								? t("files.selectedCount", "Selected {{count}} files", { count: selectedFileIds.length })
+								: t("files.fileSelectionOnly", "Select files (folders cannot be selected)")}
+						</span>
+						<button
+							disabled={selectedFileIds.length === 0 || busy}
+							className="flex h-6 items-center gap-1 rounded px-1.5 text-[11px] text-[var(--inno-danger)] transition-colors hover:bg-[var(--inno-surface)] disabled:cursor-not-allowed disabled:opacity-40"
+							title={t("files.deleteSelected", "Delete selected files")}
+							onClick={() => setDeleteConfirm({ ids: selectedFileIds })}
+						>
+							<Trash2 size={12} />
+							{t("common.delete", "Delete")}
+						</button>
+					</div>
+				) : null}
 
 				{/* Tree */}
 				<div
@@ -1044,23 +1141,26 @@ export function WorkspaceBrowser() {
 						<>
 							{/* Always mount the Tree (even when empty) so treeRef is available
 							    for root-level create actions from the context menu. */}
-							<Tree<ArboristNode>
-								ref={treeRef}
-								data={arboristData}
-								width={treeWidth}
-								height={treeHeight}
-								indent={16}
-								rowHeight={28}
-								openByDefault={false}
-								disableDrag={busy}
-								disableDrop={busy}
-								onCreate={onCreate}
-								onRename={onRename}
-								onDelete={onDelete}
-								onMove={onMove}
-							>
-								{Node}
-							</Tree>
+							<WorkspaceMultiSelectContext.Provider value={multiSelectState}>
+								<Tree<ArboristNode>
+									ref={treeRef}
+									data={arboristData}
+									width={treeWidth}
+									height={treeHeight}
+									indent={16}
+									rowHeight={28}
+									openByDefault={false}
+									disableSelect={(node) => !node.isLeaf}
+									disableDrag={busy}
+									disableDrop={busy}
+									onCreate={onCreate}
+									onRename={onRename}
+									onDelete={onDelete}
+									onMove={onMove}
+								>
+									{Node}
+								</Tree>
+							</WorkspaceMultiSelectContext.Provider>
 							{!arboristData.length && (
 								<div className="pointer-events-none absolute left-0 top-0 p-3 text-xs text-[var(--inno-text-muted)]">
 									{t("preview.empty", "Empty workspace")}

@@ -12,7 +12,7 @@ import {
 	type ExtensionFactory,
 	type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
-import { complete, type AssistantMessage, type ImageContent, type Model } from "@earendil-works/pi-ai";
+import { complete, type AssistantMessage, type ImageContent, type Model, type UserMessage } from "@earendil-works/pi-ai";
 import { basename, join, resolve } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInnoExtension, type ConfigHolder, type InnoExtensionDeps } from "./inno-extension.js";
@@ -30,6 +30,7 @@ let _currentCwd = "";
 let _config: InnoConfig | null = null;
 let _configHolder: ConfigHolder | null = null;
 let _cwdResolver: ((sessionPath: string) => string | null) | null = null;
+let _activePromptToken: string | null = null;
 /** Provider IDs registered into the active model registry by Inno's config. */
 const _registeredProviderIds = new Set<string>();
 
@@ -57,11 +58,11 @@ function resolveCwdFor(sessionPath: string | null | undefined): string {
 	return _workspaceDir;
 }
 
-async function switchToSession(sessionPath: string, opts?: { force?: boolean }): Promise<void> {
+async function switchToSession(sessionPath: string, opts?: { force?: boolean; cwdOverride?: string }): Promise<void> {
 	if (!_runtime) throw new Error("Session not initialized");
 	const target = resolve(sessionPath);
 	const current = _runtime.session.sessionFile ? resolve(_runtime.session.sessionFile) : null;
-	const desiredCwd = resolveCwdFor(target);
+	const desiredCwd = opts?.cwdOverride ? resolve(opts.cwdOverride) : resolveCwdFor(target);
 	const needsPathSwitch = current !== target;
 	const needsCwdSwitch = desiredCwd !== _currentCwd;
 	if (!needsPathSwitch && !needsCwdSwitch && !opts?.force) return;
@@ -343,6 +344,13 @@ export async function abortCurrentPrompt(): Promise<void> {
 	}
 }
 
+/** Abort only when the caller owns the prompt currently executing in the PI runtime. */
+export async function abortPromptForTurnToken(token: string): Promise<boolean> {
+	if (!token || _activePromptToken !== token) return false;
+	await abortCurrentPrompt();
+	return true;
+}
+
 /**
  * Return current runtime session id.
  */
@@ -468,14 +476,12 @@ export function persistPendingUserTurn(expectedSessionId?: string): boolean {
 		// user message. If an assistant message already exists the SDK has (or
 		// will) flush normally, so there is nothing to rescue.
 		let lastMessageRole: string | undefined;
-		let hasAssistant = false;
 		for (const entry of entries) {
 			if (entry.type !== "message") continue;
 			const role = (entry as { message?: { role?: string } }).message?.role;
-			if (role === "assistant") hasAssistant = true;
 			lastMessageRole = role;
 		}
-		if (hasAssistant || lastMessageRole !== "user") return false;
+		if (lastMessageRole !== "user") return false;
 
 		const placeholder: AssistantMessage = {
 			role: "assistant",
@@ -499,6 +505,24 @@ export function persistPendingUserTurn(expectedSessionId?: string): boolean {
 	} catch (err) {
 		logger.warn({ err }, "persistPendingUserTurn failed (best-effort)");
 		// best-effort — never let a persistence hiccup break the abort path
+		return false;
+	}
+}
+
+/** Persist a queued turn that was cancelled before Session.prompt() received it. */
+export function persistCancelledQueuedTurn(prompt: string, expectedSessionId: string, images?: ImageContent[]): boolean {
+	try {
+		const session = getSession();
+		if (!session.sessionFile || basename(session.sessionFile) !== expectedSessionId) return false;
+		const user: UserMessage = {
+			role: "user",
+			content: [{ type: "text", text: prompt }, ...(images ?? [])],
+			timestamp: Date.now(),
+		};
+		session.sessionManager.appendMessage(user);
+		return persistPendingUserTurn(expectedSessionId);
+	} catch (err) {
+		logger.warn({ err, expectedSessionId }, "persistCancelledQueuedTurn failed");
 		return false;
 	}
 }
@@ -814,69 +838,100 @@ export function runPromptStreamingInSession(
 	prompt: string,
 	onEvent: StreamEventCallback,
 	images?: ImageContent[],
+	lifecycle?: PromptRunLifecycle,
+	cwdOverride?: string,
 ): Promise<string> {
 	return enqueue(async () => {
-		await switchToSession(sessionPath);
-		const session = getSession();
 		let output = "";
 		let streamError: string | undefined;
-		const promptStartTime = Date.now();
-
-		// Observability: agent lifecycle + tool-call details
-		const promptObserver = createPromptObserver({ promptStartTime });
-		const obsUnsub = session.subscribe(promptObserver);
-
-		const unsubscribe = session.subscribe((event) => {
-			onEvent(event);
-			if (event.type === "message_update") {
-				const ev = event.assistantMessageEvent;
-				if (ev.type === "text_delta") {
-					output += ev.delta;
-				} else if (ev.type === "error") {
-					streamError = ev.error.errorMessage || `LLM API error (stopReason: ${ev.error.stopReason})`;
-					logger.error({ errorMessage: streamError, stopReason: ev.error.stopReason, sessionPath, elapsedMs: Date.now() - promptStartTime }, "LLM API stream error in runPromptStreamingInSession");
+		let outcome: PromptRunOutcome = { type: "error", error: new Error("Prompt did not start") };
+		try {
+			await switchToSession(sessionPath, { cwdOverride });
+			if (lifecycle?.shouldStart && !(await lifecycle.shouldStart())) {
+				outcome = { type: "aborted", reason: "cancelled_before_start", fullText: "" };
+			} else {
+				_activePromptToken = lifecycle?.token ?? null;
+				await lifecycle?.onStart?.();
+				const session = getSession();
+				const promptStartTime = Date.now();
+				const promptObserver = createPromptObserver({ promptStartTime });
+				const obsUnsub = session.subscribe(promptObserver);
+				const unsubscribe = session.subscribe((event) => {
+					onEvent(event);
+					if (event.type === "message_update") {
+						const ev = event.assistantMessageEvent;
+						if (ev.type === "text_delta") output += ev.delta;
+						else if (ev.type === "error") {
+							streamError = ev.error.errorMessage || `LLM API error (stopReason: ${ev.error.stopReason})`;
+							logger.error({ errorMessage: streamError, stopReason: ev.error.stopReason, sessionPath, elapsedMs: Date.now() - promptStartTime }, "LLM API stream error in runPromptStreamingInSession");
+						}
+					}
+				});
+				try {
+					await session.prompt(prompt, images?.length ? { images } : undefined);
+				} finally {
+					unsubscribe();
+					obsUnsub();
 				}
-			} else if (event.type === "auto_retry_start") {
-				obsLogger.warn({
-					event: "auto_retry_start",
-					attempt: event.attempt,
-					maxAttempts: event.maxAttempts,
-					delayMs: event.delayMs,
-					errorMessage: event.errorMessage,
-					elapsedMs: Date.now() - promptStartTime,
-				}, "LLM API call failed, auto-retrying...");
-			} else if (event.type === "auto_retry_end") {
-				if (event.success) {
-					obsLogger.info({
-						event: "auto_retry_end",
-						success: true,
-						attempt: event.attempt,
-					}, "LLM API auto-retry succeeded");
+				if (lifecycle?.isCancellationRequested?.()) {
+					outcome = { type: "aborted", reason: "cancelled", fullText: output.trim() };
+				} else if (streamError) {
+					outcome = { type: "error", error: new Error(streamError), fullText: output.trim() };
 				} else {
-					obsLogger.error({
-						event: "auto_retry_end",
-						success: false,
-						finalError: event.finalError,
-						elapsedMs: Date.now() - promptStartTime,
-					}, "LLM API auto-retry failed");
+					outcome = { type: "completed", fullText: output.trim() };
 				}
 			}
-		});
+		} catch (error) {
+			outcome = lifecycle?.isCancellationRequested?.()
+				? { type: "aborted", reason: "cancelled", error, fullText: output.trim() }
+				: { type: "error", error, fullText: output.trim() };
+		}
+
+		// Finalization is deliberately inside the enqueue slot. The active token
+		// remains bound until persistence confirmation, resource teardown and the
+		// unique terminal event have all completed.
 		try {
-			await session.prompt(prompt, images?.length ? { images } : undefined);
+			await finalizePromptRun(outcome, lifecycle, sessionPath);
 		} finally {
-			unsubscribe();
-			obsUnsub();
+			if (_activePromptToken === lifecycle?.token) _activePromptToken = null;
 		}
-
-		if (streamError) {
-			throw new Error(streamError);
-		}
-
-		if (!output.trim()) {
-			obsLogger.warn({ event: "empty_output", fn: "runPromptStreamingInSession", sessionPath }, "runPromptStreamingInSession returned empty output — the model may have produced no text or an API error may have been swallowed");
-		}
-
-		return output.trim();
+		if (outcome.type === "error") throw outcome.error instanceof Error ? outcome.error : new Error("Prompt failed");
+		return outcome.fullText ?? "";
 	});
+}
+
+export type PromptRunOutcome =
+	| { type: "completed"; fullText: string }
+	| { type: "error"; error: unknown; fullText?: string }
+	| { type: "aborted"; reason: string; error?: unknown; fullText?: string };
+
+export interface PromptRunLifecycle {
+	token?: string;
+	shouldStart?: () => boolean | Promise<boolean>;
+	isCancellationRequested?: () => boolean;
+	onStart?: () => void | Promise<void>;
+	onFinish: (outcome: PromptRunOutcome) => void | Promise<void>;
+	onFinalizeFailure: (outcome: PromptRunOutcome, error: unknown) => void | Promise<void>;
+}
+
+/** Complete primary/fallback finalization before the caller releases its queue slot. */
+export async function finalizePromptRun(
+	outcome: PromptRunOutcome,
+	lifecycle: PromptRunLifecycle | undefined,
+	sessionPath = "",
+): Promise<void> {
+	if (!lifecycle) return;
+	try {
+		await lifecycle.onFinish(outcome);
+	} catch (error) {
+		try {
+			await lifecycle.onFinalizeFailure(outcome, error);
+		} catch (finalizeError) {
+			try {
+				logger.error({ error, finalizeError, sessionPath }, "prompt finalization fallback failed");
+			} catch {
+				// Logging must not widen the serialized finalization boundary.
+			}
+		}
+	}
 }

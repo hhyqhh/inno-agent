@@ -412,6 +412,13 @@
 			"saved": "已保存",
 			"clear": "清除"
 		},
+		"tavily": {
+			"title": "联网搜索 (Tavily)",
+			"desc": "为 agent 提供联网检索能力。需在 tavily.com 获取 API Key（形如 tvly-…）。未配置时 web_search 工具不可用。",
+			"placeholder": "tvly-…",
+			"saved": "已保存",
+			"clear": "清除"
+		},
 		"form": {
 			"providerId": "提供方 ID",
 			"baseUrl": "Base URL",
@@ -645,6 +652,11 @@
 		"newFileHere": "在此新建文件",
 		"newFolderHere": "在此新建文件夹",
 		"confirmDelete": "确认删除？",
+		"multiSelect": "多选文件",
+		"exitMultiSelect": "退出多选",
+		"selectedCount": "已选择 {{count}} 个文件",
+		"fileSelectionOnly": "请选择文件（文件夹不可选）",
+		"deleteSelected": "删除已选文件",
 		"uploadSkill": "上传技能包 (.zip/.md) 到 .skills",
 		"dropToUpload": "拖放文件以上传"
 	},

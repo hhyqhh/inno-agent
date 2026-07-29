@@ -70,7 +70,13 @@ L2 目录边界（重要，违反会破坏知识库引用）：
 - filePath 也可以是工作区相对路径或 http(s) URL。
 - 工具调用百度 vl-ocr（PaddleOCR-VL）API，返回 markdown 文本。
 - 如果当前模型原生支持图片识别且能正常读取图片，直接处理即可，无需调用此工具。
-- 若未配置 OCR API token，工具会返回提示——此时直接告诉用户「尚未配置 OCR API，请在设置里填入 token 后重试」。`;
+- 若未配置 OCR API token，工具会返回提示——此时直接告诉用户「尚未配置 OCR API，请在设置里填入 token 后重试」。
+
+联网搜索（web_search）：
+- 当问题涉及时事、最新资讯、价格波动、软件版本等超出你知识截止日期的信息，或用户明确要求「查一下」「搜一下」「联网」时，调用 web_search 工具（Tavily）。
+- 优先用用户的语言构造 query；需要更全面的结果时把 searchDepth 设为 advanced，查新闻可把 topic 设为 news。
+- 回答时基于搜索结果作答，并标注关键信息的来源（标题/链接）。
+- 若未配置 Tavily API Key，工具会返回提示——此时直接告诉用户「尚未配置 Tavily API Key，请在设置里填入后重试」，不要编造搜索结果。`;
 
 export const ONBOARDING_GUIDE = `
 ## 新手引导（仅在用户画像为空时生效）

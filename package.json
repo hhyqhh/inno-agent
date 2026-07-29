@@ -11,6 +11,7 @@
 	],
 	"main": "electron/main.js",
 	"scripts": {
+		"test": "vitest run",
 		"build": "npm --workspace inno-agent run build && npm --workspace inno-agent-web run build",
 		"start": "npm --workspace inno-agent run start --",
 		"sandbox": "npm --workspace inno-agent run start -- --sandbox",

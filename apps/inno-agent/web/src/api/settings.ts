@@ -79,6 +79,13 @@ export async function saveOcrSettings(payload: OcrSettingsPayload): Promise<Inno
 	});
 }
 
+export async function saveTavilySettings(apiKey: string): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>("/api/settings/tavily", {
+		method: "PUT",
+		body: JSON.stringify({ apiKey }),
+	});
+}
+
 export interface ContentHubPayload {
 	type: "github" | "bundle";
 	owner?: string;

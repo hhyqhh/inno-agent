@@ -412,6 +412,13 @@
 			"saved": "Saved",
 			"clear": "Clear"
 		},
+		"tavily": {
+			"title": "Web Search (Tavily)",
+			"desc": "Gives the agent internet search capability. Get an API key from tavily.com (starts with tvly-). The web_search tool is unavailable until configured.",
+			"placeholder": "tvly-…",
+			"saved": "Saved",
+			"clear": "Clear"
+		},
 		"form": {
 			"providerId": "Provider id",
 			"baseUrl": "Base URL",
@@ -645,6 +652,11 @@
 		"newFileHere": "New File Here",
 		"newFolderHere": "New Folder Here",
 		"confirmDelete": "Delete?",
+		"multiSelect": "Select multiple files",
+		"exitMultiSelect": "Exit multi-select",
+		"selectedCount": "Selected {{count}} files",
+		"fileSelectionOnly": "Select files (folders cannot be selected)",
+		"deleteSelected": "Delete selected files",
 		"uploadSkill": "Upload skill package (.zip/.md) to .skills",
 		"dropToUpload": "Drop files to upload"
 	},

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import { appStore, type RightPanelTab, type WorkspaceMode } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { themeStore, type ThemeId } from "../stores/theme-store.js";
+import { sessionsStore } from "../stores/sessions-store.js";
+import { workspacesStore } from "../stores/workspaces-store.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { ChatCenter } from "./ChatCenter.js";
 import { SessionSidebar } from "./SessionSidebar.js";
@@ -11,6 +13,18 @@ import { WorkspacePanel } from "./WorkspacePanel.js";
 const SIDEBAR_COLLAPSE_BP = 960;
 const WORKSPACE_COLLAPSE_BP = 820;
 
+let initializationPromise: Promise<void> | null = null;
+
+function initializeApp(): Promise<void> {
+	if (initializationPromise) return initializationPromise;
+	initializationPromise = (async () => {
+		await Promise.all([sessionsStore.load(), workspacesStore.load()]);
+		const requestedSession = new URL(window.location.href).searchParams.get("session");
+		if (requestedSession) await sessionsStore.openSession(requestedSession, { historyMode: "none" });
+	})();
+	return initializationPromise;
+}
+
 export function App() {
 	const app = useStoreSnapshot(appStore, () => ({
 		rightPanelTab: appStore.rightPanelTab,
@@ -18,6 +32,17 @@ export function App() {
 		workspaceMode: appStore.workspaceMode,
 		workspaceWidth: appStore.workspaceWidth,
 	}));
+
+	useEffect(() => {
+		void initializeApp();
+		const onPopState = () => {
+			const sessionId = new URL(window.location.href).searchParams.get("session");
+			if (!sessionId) sessionsStore.showWelcomeFromHistory();
+			else if (sessionId !== sessionsStore.currentSessionId) void sessionsStore.openSession(sessionId, { historyMode: "none" });
+		};
+		window.addEventListener("popstate", onPopState);
+		return () => window.removeEventListener("popstate", onPopState);
+	}, []);
 
 	// Load settings once at boot so Simple Mode (tab hiding, preset cards) is
 	// available app-wide before the user ever opens the Settings panel.

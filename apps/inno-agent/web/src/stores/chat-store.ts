@@ -1,7 +1,7 @@
 import { EventEmitter } from "./event-emitter.js";
-import { streamChat, abortChat, streamSessionEvents } from "../api/chat.js";
+import { streamChat, abortChat, getChatStatus, streamSessionEvents, submitChatQuestion } from "../api/chat.js";
 import type { InlineImage } from "../api/chat.js";
-import type { ChatMessage, ChatStreamEvent, ChatToolRecord, PendingQuestion, QuestionnaireResult, WorkspaceFileChange } from "../types/chat.js";
+import type { ChatMessage, ChatStreamEvent, ChatToolRecord, PendingQuestion, QuestionnaireResult, StreamEventEnvelope, StreamSnapshot, WorkspaceFileChange } from "../types/chat.js";
 import { notebookStore } from "./notebook-store.js";
 import { appStore } from "./app-store.js";
 import { workspaceStore, type StreamingWorkspacePreview } from "./workspace-store.js";
@@ -16,7 +16,23 @@ interface ChatStoreEvents {
 	change: void;
 }
 
-class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
+interface ActiveStreamOwner {
+	sessionId: string;
+	clientRequestId: string;
+	turnId: string | null;
+	generation: number;
+	controller: AbortController;
+	lastAppliedEventId: number;
+	cancellationRequested: boolean;
+	terminalEvent?: TerminalChatStreamEvent;
+	phase: "submitting" | "streaming" | "cancelling" | "reconnecting" | "reloading_history";
+}
+
+type TerminalChatStreamEvent = Extract<ChatStreamEvent, { type: "done" | "error" | "aborted" }>;
+
+const RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000] as const;
+
+export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	messages: ChatMessage[] = [];
 	isSending = false;
 	/** Set while fetching persisted history for a session. */
@@ -37,6 +53,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	lastImages: InlineImage[] | undefined = undefined;
 	/** Pending question from agent's ask_user_question tool */
 	pendingQuestion: PendingQuestion | null = null;
+	canReconnect = false;
 	private abortController: AbortController | null = null;
 	private detachMode = false;
 	private wikiInvalidated = false;
@@ -47,19 +64,20 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	private completedFileToolIds = new Set<string>();
 	private previewChangeTimer: ReturnType<typeof setTimeout> | null = null;
 	private pendingPreviewUpdate: { id: string; patch: StreamingPreviewPatch } | null = null;
+	private activeOwner: ActiveStreamOwner | null = null;
+	private ownerGeneration = 0;
+	private currentSessionContext: string | null = null;
+	private retryInputBySession = new Map<string, { prompt: string; images?: InlineImage[] }>();
 
 	async send(prompt: string, images?: InlineImage[]): Promise<void> {
 		if ((!prompt.trim() && !images?.length) || this.isSending) return;
-		this.detachMode = false;
-		this.resetStreamTimers();
-		this.streamingTarget = "chat";
-		this.resetWorkspaceStreamState();
-
-		// Capture the target session at send time to prevent misalignment
-		// if the user switches sessions while the request is queued.
 		const { sessionsStore } = await import("./sessions-store.js");
 		const targetSessionId = sessionsStore.currentSessionId;
+		if (!targetSessionId || this.isSending) return;
 
+		this.detachMode = false;
+		this.currentSessionContext = targetSessionId;
+		this.retryInputBySession.set(targetSessionId, { prompt, images });
 		this.lastUserPrompt = prompt;
 		this.lastImages = images;
 		this.messages = [...this.messages, {
@@ -70,124 +88,46 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				previewUrl: `data:${mimeType};base64,${data}`,
 				mimeType,
 			})),
+			transient: true,
+			complete: false,
 		}];
+		this.resetTransientStreamState();
 		this.isSending = true;
-		this.streamingText = "";
-		this.streamingThinking = "";
 		this.setStreamingActivity("正在分析请求");
-		this.streamingError = "";
-		this.activeTools = [];
-		this.completedTools = [];
 		this.wikiInvalidated = false;
 		const controller = new AbortController();
 		this.abortController = controller;
+		const owner: ActiveStreamOwner = {
+			sessionId: targetSessionId,
+			clientRequestId: crypto.randomUUID(),
+			turnId: null,
+			generation: ++this.ownerGeneration,
+			controller,
+			lastAppliedEventId: 0,
+			cancellationRequested: false,
+			phase: "submitting",
+		};
+		this.activeOwner = owner;
 		this.emit("change", undefined);
 
 		try {
-			for await (const event of streamChat(prompt, targetSessionId, controller.signal, images)) {
-				this._handleStreamEvent(event);
+			for await (const envelope of streamChat(prompt, targetSessionId, owner.clientRequestId, controller.signal, images)) {
+				await this._handleStreamEnvelope(owner, envelope);
 			}
-			this.flushStreamChange();
-			const aborted = controller.signal.aborted;
-
-			// Finalize: add accumulated text as assistant message. Also finalize
-			// when the turn produced only an error (no text), so the error is
-			// preserved in history instead of vanishing when streaming state resets.
-			if (this.detachMode) {
-				// skip — backend still running, loadHistory will show final result
-			} else if (this.streamingText || this.streamingError || aborted) {
-				this.messages = [
-					...this.messages,
-					{
-						role: "assistant",
-						content: aborted && !this.streamingText
-							? "[Stopped by user]"
-							: this.streamingText + (aborted ? "\n\n[Stopped by user]" : ""),
-						timestamp: Date.now(),
-						thinking: this.streamingThinking || undefined,
-						tools: this.completedTools.length > 0 ? this.completedTools : undefined,
-						error: this.streamingError || undefined,
-					},
-				];
+			if (this.owns(owner) && !owner.terminalEvent) {
+				await this.reconnectOwner(owner, new Error("实时连接提前结束"));
 			}
 		} catch (err) {
-			if (!controller.signal.aborted && !this.detachMode && targetSessionId) {
-				console.warn("[chat-store] SSE stream disconnected, attempting reconnect...");
-				this.setStreamingActivity("连接中断，正在重连");
-				this.emit("change", undefined);
-				try {
-					await new Promise((r) => setTimeout(r, 1000));
-					this.streamingText = "";
-					this.streamingThinking = "";
-					this.streamingError = "";
-					this.activeTools = [];
-					this.completedTools = [];
-					const reconnectController = new AbortController();
-					this.abortController = reconnectController;
-					for await (const event of streamSessionEvents(targetSessionId, reconnectController.signal)) {
-						this._handleStreamEvent(event);
-					}
-					this.flushStreamChange();
-					if (!this.detachMode && (this.streamingText || this.streamingError)) {
-						this.messages = [
-							...this.messages,
-							{
-								role: "assistant",
-								content: this.streamingText,
-								timestamp: Date.now(),
-								thinking: this.streamingThinking || undefined,
-								tools: this.completedTools.length > 0 ? this.completedTools : undefined,
-								error: this.streamingError || undefined,
-							},
-						];
-					}
-				} catch (reconnectErr) {
-					if (!this.abortController?.signal.aborted) {
-						const message = reconnectErr instanceof Error ? reconnectErr.message : "Unknown error";
-						this.messages = [
-							...this.messages,
-							{ role: "assistant", content: "", timestamp: Date.now(), error: `Reconnect failed: ${message}` },
-						];
-					}
-				}
-			} else if (!controller.signal.aborted) {
-				const message = err instanceof Error ? err.message : "Unknown error";
-				this.messages = [
-					...this.messages,
-					{ role: "assistant", content: "", timestamp: Date.now(), error: message },
-				];
+			if (!this.owns(owner) || owner.controller.signal.aborted || owner.terminalEvent) return;
+			const bound = await this.bindOwnerFromStatus(owner);
+			if (!this.owns(owner)) return;
+			if (!bound) {
+				const message = err instanceof Error ? err.message : "提交请求失败";
+				this.materializeTransientTurn(owner, message);
+				this.finalizeOwner(owner);
+				return;
 			}
-		} finally {
-			this.flushStreamChange();
-			this.isSending = false;
-			this.streamingText = "";
-			this.streamingThinking = "";
-			this.streamingTarget = "chat";
-			this.streamingActivity = "";
-			this.streamingActivityDetail = "";
-			this.streamingError = "";
-			this.activeTools = [];
-			this.completedTools = [];
-			this.abortController = null;
-			this.detachMode = false;
-			this.pendingQuestion = null;
-			this.resetStreamTimers();
-			this.resetWorkspaceStreamState({ flushPreview: true });
-			const shouldRefreshWiki = this.wikiInvalidated;
-			this.wikiInvalidated = false;
-			this.emit("change", undefined);
-			if (shouldRefreshWiki) {
-				// L2 tools mutated the wiki — refresh pages + graph so the
-				// Notebook tab reflects the new state without manual reload.
-				void notebookStore.loadAll();
-			}
-			// Refresh the sessions sidebar so the current conversation
-			// (especially a freshly-created one) appears with its updated
-			// preview / message count without a manual page reload.
-			//
-			// Dynamic import avoids a hard circular-import dependency with
-			// sessions-store (which already imports chat-store).
-			void import("./sessions-store.js").then((m) => m.sessionsStore.refresh());
+			await this.reconnectOwner(owner, err);
 		}
 	}
 
@@ -196,13 +136,14 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	 * the only path that actually stops the backend task.
 	 */
 	cancel(): void {
-		const wasSending = this.isSending;
-		this.abortController?.abort();
-		// Aborting the local fetch may not promptly close the upstream connection
-		// (dev proxy buffering), so explicitly tell the backend to stop the run.
-		// This releases the server's shared prompt queue immediately, preventing
-		// new-session / switch-session from blocking behind a still-running turn.
-		if (wasSending) void abortChat();
+		const owner = this.activeOwner;
+		if (!owner) return;
+		owner.cancellationRequested = true;
+		owner.phase = "cancelling";
+		this.canReconnect = false;
+		this.setStreamingActivity("正在取消");
+		this.emit("change", undefined);
+		void this.cancelOwnedTurn(owner);
 	}
 
 	/**
@@ -211,86 +152,264 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	 */
 	detach(): void {
 		this.detachMode = true;
-		this.abortController?.abort();
+		this.activeOwner?.controller.abort();
+		this.activeOwner = null;
+		this.ownerGeneration++;
 		this.abortController = null;
+		this.isSending = false;
+		this.canReconnect = false;
+		this.currentSessionContext = null;
+		this.lastUserPrompt = null;
+		this.lastImages = undefined;
+		this.resetTransientStreamState();
+		this.emit("change", undefined);
+	}
+
+	private async cancelOwnedTurn(owner: ActiveStreamOwner): Promise<void> {
+		try {
+			if (!owner.turnId) await this.bindOwnerFromStatus(owner);
+			if (!this.owns(owner)) return;
+			if (!owner.turnId) throw new Error("尚未确认服务端任务，请重试停止操作");
+			await abortChat(owner.sessionId, owner.turnId);
+			if (!this.owns(owner)) return;
+			this.setStreamingActivity("正在等待任务停止");
+			this.emit("change", undefined);
+		} catch (err) {
+			if (this.owns(owner)) {
+				this.canReconnect = true;
+				this.streamingError = err instanceof Error ? err.message : "无法停止该任务";
+				this.emit("change", undefined);
+			}
+		}
 	}
 
 	/**
 	 * Reconnect to an in-progress session's backend event stream.
 	 * Replays history and continues receiving live events.
 	 */
-	async resumeStream(sessionId: string): Promise<void> {
+	async resumeStream(sessionId: string, snapshot?: StreamSnapshot): Promise<void> {
 		if (this.isSending) return;
-		this.resetStreamTimers();
+		const stream = snapshot ?? (await getChatStatus(sessionId)).stream;
+		if (!stream || !["queued", "running"].includes(stream.status)) return;
+		if (!Number.isInteger(stream.baselineMessageCount) || stream.baselineMessageCount < 0) {
+			this.streamingError = "该任务缺少恢复基线，无法安全恢复实时内容";
+			this.emit("change", undefined);
+			return;
+		}
+		this.currentSessionContext = sessionId;
+		this.resetTransientStreamState();
 		this.isSending = true;
-		this.streamingText = "";
-		this.streamingThinking = "";
-		this.streamingTarget = "chat";
 		this.streamingActivity = "正在恢复生成";
-		this.streamingActivityDetail = "";
-		this.streamingError = "";
-		this.activeTools = [];
-		this.completedTools = [];
 		this.detachMode = false;
-		this.resetWorkspaceStreamState();
 		const controller = new AbortController();
 		this.abortController = controller;
+		const owner: ActiveStreamOwner = {
+			sessionId,
+			clientRequestId: stream.clientRequestId,
+			turnId: stream.turnId,
+			generation: ++this.ownerGeneration,
+			controller,
+			lastAppliedEventId: 0,
+			cancellationRequested: stream.cancelRequested,
+			phase: "reconnecting",
+		};
+		this.activeOwner = owner;
+		this.messages = [
+			...this.messages.slice(0, stream.baselineMessageCount),
+			{
+				role: "user",
+				content: stream.inputSnapshot.prompt,
+				timestamp: Date.parse(stream.inputSnapshot.submittedAt) || Date.now(),
+				images: stream.inputSnapshot.images
+					.filter((image) => image.previewUrl)
+					.map((image) => ({ previewUrl: image.previewUrl!, mimeType: image.mimeType })),
+				turnId: stream.turnId,
+				transient: true,
+				complete: false,
+			},
+		];
 		this.emit("change", undefined);
 
 		try {
-			for await (const event of streamSessionEvents(sessionId, controller.signal)) {
-				this._handleStreamEvent(event);
+			for await (const envelope of streamSessionEvents(sessionId, stream.turnId, 0, controller.signal)) {
+				await this._handleStreamEnvelope(owner, envelope);
 			}
-			this.flushStreamChange();
-			// Finalize assistant message from accumulated streaming text
-			if (this.detachMode) {
-				// detached again — skip finalize
-			} else if (this.streamingText || this.streamingError) {
-				this.messages = [
-					...this.messages,
-					{
-						role: "assistant",
-						content: this.streamingText,
-						timestamp: Date.now(),
-						thinking: this.streamingThinking || undefined,
-						tools: this.completedTools.length > 0 ? this.completedTools : undefined,
-						error: this.streamingError || undefined,
-					},
-				];
+			if (this.owns(owner) && !owner.terminalEvent) {
+				await this.reconnectOwner(owner, new Error("恢复连接提前结束"));
 			}
 		} catch (err) {
-			if (!controller.signal.aborted) {
-				console.warn("[chat-store] resumeStream error:", err);
+			if (this.owns(owner) && !controller.signal.aborted && !owner.terminalEvent) {
+				await this.reconnectOwner(owner, err);
 			}
-		} finally {
-			this.flushStreamChange();
-			this.isSending = false;
-			this.streamingText = "";
-			this.streamingThinking = "";
-			this.streamingTarget = "chat";
-			this.streamingActivity = "";
-			this.streamingActivityDetail = "";
-			this.streamingError = "";
-			this.activeTools = [];
-			this.completedTools = [];
-			this.abortController = null;
-			this.detachMode = false;
-			this.pendingQuestion = null;
-			this.resetStreamTimers();
-			this.resetWorkspaceStreamState({ flushPreview: true });
-			this.emit("change", undefined);
-			void import("./sessions-store.js").then((m) => m.sessionsStore.refresh());
 		}
 	}
 
 	/** Re-send the last user prompt. No-op while a send is in flight. */
 	async retry(): Promise<void> {
-		if (this.isSending || !this.lastUserPrompt) return;
-		await this.send(this.lastUserPrompt, this.lastImages);
+		if (this.isSending || !this.currentSessionContext) return;
+		const input = this.retryInputBySession.get(this.currentSessionContext);
+		if (!input) return;
+		await this.send(input.prompt, input.images);
 	}
 
-	private _handleStreamEvent(event: ChatStreamEvent) {
+	/** Retry a failed event reconnect or final-history confirmation. */
+	async reconnect(): Promise<void> {
+		const owner = this.activeOwner;
+		if (!owner || !this.canReconnect) return;
+		this.canReconnect = false;
+		this.streamingError = "";
+		if (owner.terminalEvent) {
+			await this.handleTerminal(owner, owner.terminalEvent);
+		} else {
+			await this.reconnectOwner(owner, new Error("用户请求重新连接"));
+		}
+	}
+
+	private owns(owner: ActiveStreamOwner): boolean {
+		return this.activeOwner === owner && this.activeOwner.generation === owner.generation;
+	}
+
+	private async bindOwnerFromStatus(owner: ActiveStreamOwner): Promise<boolean> {
+		for (let attempt = 0; attempt < RECONNECT_DELAYS_MS.length; attempt++) {
+			if (!this.owns(owner)) return false;
+			try {
+				const status = await getChatStatus(owner.sessionId);
+				if (status.stream?.clientRequestId === owner.clientRequestId) {
+					owner.turnId = status.stream.turnId;
+					return true;
+				}
+			} catch {
+				// A just-submitted request may not be visible yet; retry below.
+			}
+			if (attempt < RECONNECT_DELAYS_MS.length - 1) await delay(RECONNECT_DELAYS_MS[attempt]);
+		}
+		return false;
+	}
+
+	private async reconnectOwner(owner: ActiveStreamOwner, cause: unknown): Promise<void> {
+		if (!this.owns(owner) || owner.terminalEvent) return;
+		owner.phase = "reconnecting";
+		this.setStreamingActivity("连接中断，正在重连");
+		this.emit("change", undefined);
+		let lastError = cause;
+		for (let attempt = 0; attempt < RECONNECT_DELAYS_MS.length; attempt++) {
+			if (!this.owns(owner) || owner.terminalEvent) return;
+			if (attempt > 0) await delay(RECONNECT_DELAYS_MS[attempt - 1]);
+			try {
+				if (!owner.turnId && !(await this.bindOwnerFromStatus(owner))) continue;
+				if (!owner.turnId || !this.owns(owner)) return;
+				const status = await getChatStatus(owner.sessionId);
+				if (!status.stream || status.stream.turnId !== owner.turnId || status.stream.clientRequestId !== owner.clientRequestId) {
+					throw new Error("服务端任务状态已不可用");
+				}
+				const reconnectController = new AbortController();
+				owner.controller = reconnectController;
+				this.abortController = reconnectController;
+				for await (const envelope of streamSessionEvents(owner.sessionId, owner.turnId, owner.lastAppliedEventId, reconnectController.signal)) {
+					await this._handleStreamEnvelope(owner, envelope);
+				}
+				if (!this.owns(owner) || owner.terminalEvent) return;
+				lastError = new Error("重连后事件流提前结束");
+			} catch (error) {
+				if (!this.owns(owner) || owner.controller.signal.aborted) return;
+				lastError = error;
+			}
+		}
+		this.failRecovery(owner, lastError, "实时连接恢复失败，请重新连接");
+	}
+
+	private async _handleStreamEnvelope(owner: ActiveStreamOwner, envelope: StreamEventEnvelope): Promise<void> {
+		if (!this.owns(owner) || envelope.sessionId !== owner.sessionId || envelope.clientRequestId !== owner.clientRequestId) return;
+		if (owner.turnId === null) owner.turnId = envelope.turnId;
+		if (owner.turnId !== envelope.turnId || envelope.eventId <= owner.lastAppliedEventId) return;
+		owner.lastAppliedEventId = envelope.eventId;
+		if (envelope.event.type === "stream_state" && envelope.event.status === "running") owner.phase = "streaming";
+		this._handleStreamEvent(envelope.event, owner);
+		if (!["done", "error", "aborted"].includes(envelope.event.type)) return;
+		await this.handleTerminal(owner, envelope.event as TerminalChatStreamEvent);
+	}
+
+	private async handleTerminal(owner: ActiveStreamOwner, terminal: TerminalChatStreamEvent): Promise<void> {
+		if (!this.owns(owner)) return;
+		owner.terminalEvent = terminal;
+		owner.phase = "reloading_history";
+		if (!terminal.persisted) {
+			const message = terminal.type === "error" ? terminal.message : terminal.message ?? "最终记录尚未确认";
+			this.materializeTransientTurn(owner, message);
+			this.finalizeOwner(owner);
+			return;
+		}
+		const loaded = await this.reloadCanonicalHistory(owner, terminal.finalMessageCount, terminal.finalSessionRevision);
+		if (loaded) this.finalizeOwner(owner);
+		else this.failRecovery(owner, new Error("最终记录尚未确认"), "最终记录尚未确认，请重新加载");
+	}
+
+	private async reloadCanonicalHistory(owner: ActiveStreamOwner, finalMessageCount?: number, finalRevision?: string): Promise<boolean> {
+		const { getSession } = await import("../api/sessions.js");
+		for (let attempt = 0; attempt < RECONNECT_DELAYS_MS.length; attempt++) {
+			try {
+				const session = await getSession(owner.sessionId);
+				if (!this.owns(owner)) return false;
+				const countMatches = finalMessageCount !== undefined && session.messageCount >= finalMessageCount;
+				const revisionMatches = Boolean(finalRevision) && session.sessionRevision === finalRevision;
+				if (countMatches || revisionMatches) {
+					this.messages = session.messages.map((message) => ({ ...message, complete: true, transient: false }));
+					this.emit("change", undefined);
+					return true;
+				}
+			} catch {
+				// The JSONL write may not be visible to this request yet.
+			}
+			if (attempt < RECONNECT_DELAYS_MS.length - 1) await delay(RECONNECT_DELAYS_MS[attempt]);
+		}
+		return false;
+	}
+
+	private materializeTransientTurn(owner: ActiveStreamOwner, error: string): void {
+		if (!this.owns(owner)) return;
+		this.messages = [...this.messages, {
+			role: "assistant",
+			content: this.streamingText,
+			timestamp: Date.now(),
+			thinking: this.streamingThinking || undefined,
+			tools: this.completedTools.length ? this.completedTools : undefined,
+			error,
+			turnId: owner.turnId ?? undefined,
+			transient: true,
+			complete: false,
+		}];
+	}
+
+	private failRecovery(owner: ActiveStreamOwner, error: unknown, prefix: string): void {
+		if (!this.owns(owner)) return;
+		this.canReconnect = true;
+		const detail = error instanceof Error ? error.message : String(error);
+		this.streamingError = detail && detail !== prefix ? `${prefix}：${detail}` : prefix;
+		this.emit("change", undefined);
+	}
+
+	private finalizeOwner(owner: ActiveStreamOwner): void {
+		if (!this.owns(owner)) return;
+		this.flushStreamChange();
+		this.activeOwner = null;
+		this.abortController = null;
+		this.isSending = false;
+		this.canReconnect = false;
+		this.detachMode = false;
+		this.resetTransientStreamState();
+		const shouldRefreshWiki = this.wikiInvalidated;
+		this.wikiInvalidated = false;
+		this.emit("change", undefined);
+		if (shouldRefreshWiki) void notebookStore.loadAll();
+		void import("./sessions-store.js").then((module) => module.sessionsStore.refresh());
+	}
+
+	private _handleStreamEvent(event: ChatStreamEvent, owner: ActiveStreamOwner) {
 		switch (event.type) {
+			case "stream_state":
+				this.setStreamingActivity(event.status === "queued" ? "等待执行" : "正在分析请求");
+				this.emit("change", undefined);
+				break;
 			case "text_delta":
 				this.streamingText += event.delta;
 				if (!this.workspacePreviewId) this.setStreamingActivity("正在组织回复");
@@ -306,7 +425,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			case "tool_start":
 				this.flushStreamChange();
 				this.maybeStartFileToolPreview(event.toolCallId, event.toolName, event.args);
-				this.activeTools = [...this.activeTools, {
+				this.activeTools = [...this.activeTools.filter((tool) => tool.toolCallId !== event.toolCallId), {
 					toolCallId: event.toolCallId,
 					toolName: event.toolName,
 					args: compactToolPayload(event.args),
@@ -315,9 +434,9 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				break;
 			case "tool_end":
 				this.flushStreamChange();
-				this.maybeFinishFileToolPreview(event.toolCallId, event.toolName, event.result, event.isError);
+				this.maybeFinishFileToolPreview(event.toolCallId, event.toolName, event.result, event.isError, owner);
 				this.completedTools = [
-					...this.completedTools,
+					...this.completedTools.filter((tool) => tool.toolCallId !== event.toolCallId),
 					{
 						...(this.activeTools.find((t) => t.toolCallId === event.toolCallId) ?? {
 							toolCallId: event.toolCallId,
@@ -337,7 +456,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				this.emit("change", undefined);
 				break;
 			case "workspace_change":
-				this.handleWorkspaceChange(event);
+				this.handleWorkspaceChange(event, owner);
 				break;
 			case "error":
 				this.flushStreamChange();
@@ -358,12 +477,20 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				};
 				this.emit("change", undefined);
 				break;
+			case "question_resolved":
+				if (this.pendingQuestion?.questionId === event.questionId) this.pendingQuestion = null;
+				this.emit("change", undefined);
+				break;
 			case "done":
 				this.flushStreamChange();
 				// Final message set with full content
 				if (event.fullText) {
 					this.streamingText = event.fullText;
 				}
+				this.emit("change", undefined);
+				break;
+			case "aborted":
+				this.streamingError = event.message ?? "Stopped by user";
 				this.emit("change", undefined);
 				break;
 		}
@@ -385,6 +512,21 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	private resetStreamTimers(): void {
 		if (this.streamChangeTimer) clearTimeout(this.streamChangeTimer);
 		this.streamChangeTimer = null;
+	}
+
+	private resetTransientStreamState(): void {
+		this.resetStreamTimers();
+		this.streamingText = "";
+		this.streamingThinking = "";
+		this.streamingTarget = "chat";
+		this.streamingActivity = "";
+		this.streamingActivityDetail = "";
+		this.streamingError = "";
+		this.activeTools = [];
+		this.completedTools = [];
+		this.pendingQuestion = null;
+		if (this.workspacePreviewId) workspaceStore.clearStreamingPreview(this.workspacePreviewId);
+		this.resetWorkspaceStreamState();
 	}
 
 	private setStreamingActivity(label: string, detail = ""): void {
@@ -455,7 +597,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		}
 	}
 
-	private maybeFinishFileToolPreview(toolCallId: string, toolName: string, result: unknown, isError: boolean): void {
+	private maybeFinishFileToolPreview(toolCallId: string, toolName: string, result: unknown, isError: boolean, owner: ActiveStreamOwner): void {
 		if (!isFileWritingTool(toolName)) return;
 		this.flushPreviewChange();
 		const rawArgsText = this.fileToolArgText.get(toolCallId);
@@ -473,11 +615,11 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		if (!isError && filePath) {
 			this.completedFileToolIds.add(toolCallId);
 			this.setStreamingActivity("正在刷新文件预览", filePath);
-			void openChangedWorkspacePath(filePath, isActivePreview ? previewId : undefined);
+			void openChangedWorkspacePath(filePath, isActivePreview ? previewId : undefined, () => this.owns(owner));
 		}
 	}
 
-	private handleWorkspaceChange(event: Extract<ChatStreamEvent, { type: "workspace_change" }>): void {
+	private handleWorkspaceChange(event: Extract<ChatStreamEvent, { type: "workspace_change" }>, owner: ActiveStreamOwner): void {
 		if (!event.changes.length || (event.toolCallId && this.completedFileToolIds.has(event.toolCallId))) return;
 		const eventPreviewId = event.toolCallId ? `tool-${event.toolCallId}` : null;
 		const previewId = eventPreviewId && this.workspacePreviewId === eventPreviewId ? eventPreviewId : null;
@@ -488,7 +630,7 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			this.streamingTarget = "chat";
 			this.workspacePreviewId = null;
 		}
-		void openChangedWorkspacePath(target?.path, previewId ?? undefined);
+		void openChangedWorkspacePath(target?.path, previewId ?? undefined, () => this.owns(owner));
 	}
 
 	private updateToolArgText(toolCallId: string, argsDelta?: string): string {
@@ -530,16 +672,15 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	}
 
 	async submitQuestionResponse(questionId: string, result: QuestionnaireResult): Promise<void> {
-		this.pendingQuestion = null;
-		this.emit("change", undefined);
+		const owner = this.activeOwner;
+		if (!owner?.turnId || this.pendingQuestion?.questionId !== questionId) return;
 		try {
-			await fetch("/api/chat/question-response", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ questionId, result }),
-			});
-		} catch {
-			// best-effort — the agent will time out or get cancelled if this fails
+			await submitChatQuestion(owner.sessionId, owner.turnId, questionId, result);
+		} catch (err) {
+			if (this.owns(owner)) {
+				this.streamingError = err instanceof Error ? err.message : "提交回答失败";
+				this.emit("change", undefined);
+			}
 		}
 	}
 
@@ -548,46 +689,33 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	}
 
 	clear() {
-		// If a stream is still running, abort it so its finally{} can run and
-		// release isSending (otherwise the next .send / new-session attempt
-		// is locked behind a permanent isSending=true).
-		this.abortController?.abort();
-		this.abortController = null;
+		this.detach();
 		this.messages = [];
 		// Retry state belongs to the conversation being cleared. Keeping it
 		// would expose the previous conversation's Retry button on a new chat
 		// and could resend that old prompt into the newly-created session.
+		this.currentSessionContext = null;
 		this.lastUserPrompt = null;
 		this.lastImages = undefined;
-		this.isSending = false;
-		this.streamingText = "";
-		this.streamingThinking = "";
-		this.streamingTarget = "chat";
-		this.streamingActivity = "";
-		this.streamingActivityDetail = "";
-		this.streamingError = "";
-		this.activeTools = [];
-		this.completedTools = [];
-		this.pendingQuestion = null;
-		this.resetStreamTimers();
-		this.resetWorkspaceStreamState();
+		this.resetTransientStreamState();
 		this.emit("change", undefined);
 	}
 
-	loadHistory(messages: ChatMessage[]) {
+	loadHistory(messages: ChatMessage[], sessionId?: string) {
 		this.isLoadingHistory = false;
 		this.messages = messages;
 		this.isSending = false;
-		this.streamingText = "";
-		this.streamingThinking = "";
-		this.streamingTarget = "chat";
-		this.streamingActivity = "";
-		this.streamingActivityDetail = "";
-		this.streamingError = "";
-		this.activeTools = [];
-		this.completedTools = [];
-		this.resetStreamTimers();
-		this.resetWorkspaceStreamState();
+		this.canReconnect = false;
+		this.currentSessionContext = sessionId ?? null;
+		const retryInput = sessionId ? this.retryInputBySession.get(sessionId) : undefined;
+		this.lastUserPrompt = retryInput?.prompt ?? null;
+		this.lastImages = retryInput?.images;
+		this.resetTransientStreamState();
+		this.emit("change", undefined);
+	}
+
+	showError(message: string): void {
+		this.streamingError = message;
 		this.emit("change", undefined);
 	}
 
@@ -598,6 +726,10 @@ class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 }
 
 export const chatStore = new ChatStoreImpl();
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Tools that modify the L2 wiki/graph. When any of these complete during a
@@ -812,14 +944,16 @@ function pickOpenableWorkspaceChange(changes: WorkspaceFileChange[]): WorkspaceF
 		?? changes.find((change) => change.change !== "deleted");
 }
 
-async function openChangedWorkspacePath(filePath?: string, previewId?: string): Promise<void> {
+async function openChangedWorkspacePath(filePath?: string, previewId?: string, isCurrent: () => boolean = () => true): Promise<void> {
 	try {
+		if (!isCurrent()) return;
 		revealWorkspacePreview();
 		if (previewId) workspaceStore.clearStreamingPreview(previewId);
-		await workspaceStore.loadTree();
-		if (filePath) await workspaceStore.selectFile(filePath);
+		await workspaceStore.loadTree(isCurrent);
+		if (!isCurrent()) return;
+		if (filePath) await workspaceStore.selectFile(filePath, isCurrent);
 	} catch {
-		if (previewId) workspaceStore.finishStreamingPreview(previewId, "error");
+		if (previewId && isCurrent()) workspaceStore.finishStreamingPreview(previewId, "error");
 	}
 }
 

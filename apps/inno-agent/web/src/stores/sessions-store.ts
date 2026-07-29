@@ -14,6 +14,7 @@ import {
 	type SessionMeta,
 } from "../api/sessions.js";
 import { getSessionWorkspace } from "../api/workspaces.js";
+import { getChatStatus } from "../api/chat.js";
 import { chatStore } from "./chat-store.js";
 import { workspaceStore } from "./workspace-store.js";
 import { workspacesStore } from "./workspaces-store.js";
@@ -23,7 +24,9 @@ interface SessionsStoreEvents {
 	change: void;
 }
 
-class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
+export type HistoryMode = "push" | "replace" | "none";
+
+export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	sessions: SessionMeta[] = [];
 	currentSessionId: string | null = null;
 	isLoading = false;
@@ -121,7 +124,7 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		this.emit("change", undefined);
 	}
 
-	async openSession(id: string): Promise<void> {
+	async openSession(id: string, options: { historyMode?: HistoryMode } = {}): Promise<void> {
 		const requestId = ++this._openRequestId;
 		const prevSessionId = this.currentSessionId;
 
@@ -139,6 +142,7 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		this.currentSessionId = id;
 		this.openingSessionId = id;
 		this.pendingNewSession = false;
+		this.syncSessionUrl(id, options.historyMode ?? "push");
 		this.emit("change", undefined);
 
 		// Detach from the current stream without stopping the backend task.
@@ -148,9 +152,9 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 
 		const cached = this._messageCache.get(id);
 		if (cached) {
-			chatStore.loadHistory(cached);
+			chatStore.loadHistory(cached, id);
 		} else {
-			chatStore.loadHistory([]);
+			chatStore.loadHistory([], id);
 			chatStore.setLoadingHistory(true);
 		}
 
@@ -167,26 +171,32 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 
 		try {
 			const session = await getSession(id);
+			const chatStatus = await getChatStatus(id).catch((error) => {
+				console.warn(`[sessions] failed to load chat status for ${id}:`, error instanceof Error ? error.message : error);
+				return { found: false } as Awaited<ReturnType<typeof getChatStatus>>;
+			});
 			if (requestId !== this._openRequestId) return;
 
-			const isBackground = this._backgroundRunningSessions.has(id);
-			const cachedMessages = this._messageCache.get(id);
-
-			if (isBackground && cachedMessages && cachedMessages.length > session.messages.length) {
-				chatStore.loadHistory(cachedMessages);
-			} else {
-				this._messageCache.set(id, session.messages);
-				chatStore.loadHistory(session.messages);
-			}
+			this._messageCache.set(id, session.messages);
+			chatStore.loadHistory(session.messages, id);
 
 			void activateSession(id).catch((err) => {
 				console.warn(`[sessions] failed to activate ${id}: ${err instanceof Error ? err.message : String(err)}`);
 			});
 
-			if (isBackground) {
-				this._backgroundRunningSessions.delete(id);
-				void chatStore.resumeStream(id);
+			this._backgroundRunningSessions.delete(id);
+			if (chatStatus.stream && ["queued", "running"].includes(chatStatus.stream.status)) {
+				void chatStore.resumeStream(id, chatStatus.stream);
 			}
+		} catch (error) {
+			if (requestId !== this._openRequestId) return;
+			this.currentSessionId = null;
+			this.pendingNewSession = true;
+			this._messageCache.delete(id);
+			chatStore.detach();
+			chatStore.loadHistory([]);
+			chatStore.showError(error instanceof Error ? `无法打开会话：${error.message}` : "无法打开会话");
+			this.syncSessionUrl(null, "replace");
 		} finally {
 			if (requestId === this._openRequestId) {
 				this.openingSessionId = null;
@@ -194,6 +204,30 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 				this.emit("change", undefined);
 			}
 		}
+	}
+
+	/** Apply a browser back/forward navigation to the welcome page. */
+	showWelcomeFromHistory(): void {
+		this._openRequestId++;
+		this.currentSessionId = null;
+		this.openingSessionId = null;
+		this.pendingNewSession = true;
+		this.preselectedWorkspaceId = null;
+		chatStore.detach();
+		chatStore.loadHistory([]);
+		void terminalStore.disconnect();
+		this.emit("change", undefined);
+	}
+
+	private syncSessionUrl(sessionId: string | null, mode: HistoryMode): void {
+		if (mode === "none" || typeof window === "undefined") return;
+		const nextUrl = new URL(window.location.href);
+		if (sessionId) nextUrl.searchParams.set("session", sessionId);
+		else nextUrl.searchParams.delete("session");
+		const current = new URL(window.location.href);
+		if (nextUrl.href === current.href) return;
+		if (mode === "push") window.history.pushState({}, "", nextUrl);
+		else window.history.replaceState({}, "", nextUrl);
 	}
 
 	/**
@@ -211,6 +245,7 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 			this._messageCache.delete(this.currentSessionId);
 		}
 		this.currentSessionId = null;
+		this.syncSessionUrl(null, "replace");
 		this.pendingNewSession = true;
 		this.preselectedWorkspaceId = null;
 		chatStore.detach();
@@ -259,6 +294,7 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 			void workspacesStore.load();
 			await this.load();
 			this.currentSessionId = created.id;
+			this.syncSessionUrl(created.id, "replace");
 			if (created.workspaceId) {
 				void workspaceStore.setActiveWorkspace(created.workspaceId);
 			}
@@ -304,8 +340,12 @@ class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		this._backgroundRunningSessions.delete(id);
 		this.sessions = this.sessions.filter((session) => session.id !== id);
 		if (this.currentSessionId === id) {
-			this.currentSessionId = result.newActiveId;
-			chatStore.clear();
+			if (result.newActiveId) {
+				await this.openSession(result.newActiveId, { historyMode: "replace" });
+			} else {
+				this.syncSessionUrl(null, "replace");
+				this.showWelcomeFromHistory();
+			}
 		}
 		this.emit("change", undefined);
 		if (result.newActiveId) {

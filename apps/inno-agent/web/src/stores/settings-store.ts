@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveGithubSettings, saveOcrSettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
 import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
 interface SettingsStoreEvents {
@@ -15,6 +15,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingMemory = false;
 	isSavingGithub = false;
 	isSavingOcr = false;
+	isSavingTavily = false;
 	isSavingContentHub = false;
 	isSavingSimpleMode = false;
 	error: string | null = null;
@@ -183,6 +184,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			throw err;
 		} finally {
 			this.isSavingOcr = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveTavily(apiKey: string): Promise<void> {
+		this.isSavingTavily = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveTavilySettings(apiKey);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save Tavily settings";
+			this.emit("change", undefined);
+			throw err;
+		} finally {
+			this.isSavingTavily = false;
 			this.emit("change", undefined);
 		}
 	}

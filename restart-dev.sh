@@ -217,7 +217,11 @@ start_services() {
 
 	if [[ "$MODE" == "dev" ]]; then
 		info "starting Vite dev on :${WEB_PORT}"
-		nohup npm run web:dev -- --port "$WEB_PORT" >"$VITE_LOG" 2>&1 &
+		# NOTE: invoke the workspace dev script directly with an explicit `--` so
+		# `--port` reaches vite. Going through `npm run web:dev -- --port` drops
+		# the separator in the nested npm call and vite treats the port as its
+		# project root (serving 404 for everything).
+		nohup npm --workspace inno-agent-web run dev -- --port "$WEB_PORT" >"$VITE_LOG" 2>&1 &
 		echo $! >"$VITE_PID_FILE"
 	fi
 

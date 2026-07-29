@@ -108,7 +108,7 @@ export async function* streamSSE<T>(url: string, body: unknown, signal?: AbortSi
  * SSE stream via GET. Returns silently on 404 (no active stream).
  * Yields parsed JSON objects from `data:` lines.
  */
-export async function* streamSSEGet<T>(url: string, signal?: AbortSignal): AsyncGenerator<T> {
+export async function* streamSSEGet<T>(url: string, signal?: AbortSignal, options: { allowNotFound?: boolean } = {}): AsyncGenerator<T> {
 	let res: Response;
 	try {
 		res = await fetch(url, { method: "GET", signal });
@@ -121,7 +121,8 @@ export async function* streamSSEGet<T>(url: string, signal?: AbortSignal): Async
 		// rather than lingering until GC. A 404 here is expected (no active
 		// backend stream for this session) but the response still holds a socket.
 		void res.body?.cancel().catch(() => {});
-		return;
+		if (options.allowNotFound !== false) return;
+		throw new ApiError(404, "Stream not found");
 	}
 	if (!res.ok) {
 		const errBody = await res.json().catch(() => ({}));

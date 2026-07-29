@@ -92,6 +92,9 @@ export interface InnoSettings {
 		model?: string;
 		baseUrl?: string;
 	};
+	tavily?: {
+		apiKey: string; // masked
+	};
 	contentHub?: {
 		type: "github" | "bundle";
 		owner: string;

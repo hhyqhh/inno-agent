@@ -18,6 +18,8 @@ export interface SessionMeta {
 
 export interface SessionDetail extends SessionMeta {
 	messages: ChatMessage[];
+	messageCount: number;
+	sessionRevision: string;
 }
 
 export interface SessionActivationResult {

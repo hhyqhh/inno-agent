@@ -8,6 +8,9 @@ export interface ChatMessage {
 	images?: Array<{ previewUrl: string; mimeType: string }>;
 	/** Backend/model error surfaced for this turn (e.g. HTTP 413 over-long context). */
 	error?: string;
+	turnId?: string;
+	transient?: boolean;
+	complete?: boolean;
 }
 
 export interface ChatToolRecord {
@@ -59,8 +62,46 @@ export interface QuestionnaireResult {
 	error?: string;
 }
 
-// Phase 2 SSE event types
+export type StreamStatus = "queued" | "running" | "completed" | "error" | "aborted";
+
+export interface StreamInputSnapshot {
+	prompt: string;
+	submittedAt: string;
+	images: Array<{ mimeType: string; workspacePath: string; previewUrl?: string }>;
+}
+
+export interface StreamSnapshot {
+	sessionId: string;
+	turnId: string;
+	clientRequestId: string;
+	workspaceId: string;
+	status: StreamStatus;
+	createdAt: string;
+	startedAt?: string;
+	finishedAt?: string;
+	inputSnapshot: StreamInputSnapshot;
+	activeTools: ChatToolRecord[];
+	pendingQuestion?: PendingQuestion;
+	lastEventId: number;
+	cancelRequested: boolean;
+	baselineMessageCount: number;
+	baselineSessionRevision: string;
+	persisted: boolean;
+	finalMessageCount?: number;
+	finalSessionRevision?: string;
+}
+
+export interface StreamEventEnvelope {
+	eventId: number;
+	sessionId: string;
+	turnId: string;
+	clientRequestId: string;
+	event: ChatStreamEvent;
+}
+
+// Turn-scoped SSE event types
 export type ChatStreamEvent =
+	| { type: "stream_state"; status: "queued" | "running" }
 	| { type: "text_delta"; delta: string }
 	| { type: "thinking_delta"; delta: string }
 	| { type: "tool_call_delta"; toolCallId: string; toolName: string; args?: unknown; argsDelta?: string }
@@ -68,5 +109,7 @@ export type ChatStreamEvent =
 	| { type: "tool_end"; toolCallId: string; toolName: string; result: unknown; isError: boolean }
 	| { type: "workspace_change"; changes: WorkspaceFileChange[]; toolCallId?: string; toolName?: string; workspaceId?: string; truncated?: boolean }
 	| { type: "question"; questionId: string; params: { questions: QuestionData[] } }
-	| { type: "done"; fullText: string }
-	| { type: "error"; message: string };
+	| { type: "question_resolved"; questionId: string; cancelled?: boolean; error?: string }
+	| { type: "done"; fullText: string; persisted: true; finalMessageCount: number; finalSessionRevision: string }
+	| { type: "error"; message: string; code?: string; persisted: boolean; finalMessageCount?: number; finalSessionRevision?: string }
+	| { type: "aborted"; message?: string; persisted: boolean; finalMessageCount?: number; finalSessionRevision?: string };

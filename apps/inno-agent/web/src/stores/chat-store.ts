@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { streamChat, abortChat, getChatStatus, streamSessionEvents, submitChatQuestion } from "../api/chat.js";
+import { streamChat, abortChat, getChatStatus, streamSessionEvents, submitChatQuestion, formatQuestionnaireAsPrompt } from "../api/chat.js";
 import type { InlineImage } from "../api/chat.js";
 import type { ChatMessage, ChatStreamEvent, ChatToolRecord, PendingQuestion, QuestionnaireResult, StreamEventEnvelope, StreamSnapshot, WorkspaceFileChange } from "../types/chat.js";
 import { notebookStore } from "./notebook-store.js";
@@ -53,6 +53,10 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	lastImages: InlineImage[] | undefined = undefined;
 	/** Pending question from agent's ask_user_question tool */
 	pendingQuestion: PendingQuestion | null = null;
+	/** Question IDs the user has already answered. Suppresses stale replays
+	 *  (backend may re-push a question event before the answer POST lands) and
+	 *  guards restored cards against reappearing from a stale cache. */
+	private answeredQuestionIds = new Set<string>();
 	canReconnect = false;
 	private abortController: AbortController | null = null;
 	private detachMode = false;
@@ -401,7 +405,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.wikiInvalidated = false;
 		this.emit("change", undefined);
 		if (shouldRefreshWiki) void notebookStore.loadAll();
-		void import("./sessions-store.js").then((module) => module.sessionsStore.refresh());
+		void import("./sessions-store.js").then((module) => module.sessionsStore.refreshUntilTopic(owner.sessionId));
 	}
 
 	private _handleStreamEvent(event: ChatStreamEvent, owner: ActiveStreamOwner) {
@@ -470,10 +474,15 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				if (this.workspacePreviewId) workspaceStore.finishStreamingPreview(this.workspacePreviewId, "error");
 				break;
 			case "question":
+				// Skip replays of questions the user already answered (the backend
+				// may still hold the pending question briefly after the answer POST).
+				if (this.answeredQuestionIds.has(event.questionId)) break;
 				this.flushStreamChange();
 				this.pendingQuestion = {
 					questionId: event.questionId,
 					params: event.params,
+					sessionId: owner.sessionId,
+					turnId: owner.turnId ?? undefined,
 				};
 				this.emit("change", undefined);
 				break;
@@ -672,12 +681,27 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	}
 
 	async submitQuestionResponse(questionId: string, result: QuestionnaireResult): Promise<void> {
-		const owner = this.activeOwner;
-		if (!owner?.turnId || this.pendingQuestion?.questionId !== questionId) return;
+		const pending = this.pendingQuestion;
+		if (pending?.questionId !== questionId) return;
+		// Live cards take the scope from the active stream owner; restored cards
+		// (persisted across a restart) carry their own stale scope — the backend
+		// detects the dead turn and asks us to resend the answer as a new turn.
+		const sessionId = this.activeOwner?.sessionId ?? pending.sessionId;
+		const turnId = this.activeOwner?.turnId ?? pending.turnId;
+		if (!sessionId || !turnId) return;
+		this.answeredQuestionIds.add(questionId);
 		try {
-			await submitChatQuestion(owner.sessionId, owner.turnId, questionId, result);
+			const response = await submitChatQuestion(sessionId, turnId, questionId, result);
+			if (response.expired) {
+				// The original turn is gone: consume the card and resubmit the
+				// answer as a normal user prompt so the agent resumes from the
+				// session history.
+				this.pendingQuestion = null;
+				this.emit("change", undefined);
+				await this.send(formatQuestionnaireAsPrompt(result));
+			}
 		} catch (err) {
-			if (this.owns(owner)) {
+			if (!this.activeOwner || this.owns(this.activeOwner)) {
 				this.streamingError = err instanceof Error ? err.message : "提交回答失败";
 				this.emit("change", undefined);
 			}
@@ -691,6 +715,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	clear() {
 		this.detach();
 		this.messages = [];
+		this.answeredQuestionIds.clear();
 		this.emit("change", undefined);
 	}
 
@@ -714,6 +739,17 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 
 	setLoadingHistory(loading: boolean) {
 		this.isLoadingHistory = loading;
+		this.emit("change", undefined);
+	}
+
+	/** Restore a previously-shown question card after switching back to a
+	 *  session (from the local per-session cache or the server-persisted
+	 *  record). No-op if a newer question is already shown — the live stream
+	 *  replay wins. Skips cards the user already answered. */
+	restorePendingQuestion(question: PendingQuestion | null): void {
+		if (this.pendingQuestion) return;
+		if (!question || this.answeredQuestionIds.has(question.questionId)) return;
+		this.pendingQuestion = question;
 		this.emit("change", undefined);
 	}
 }

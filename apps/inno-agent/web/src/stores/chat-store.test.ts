@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 	submitChatQuestion: vi.fn(),
 	getSession: vi.fn(),
 	refresh: vi.fn(),
+	refreshUntilTopic: vi.fn(),
 }));
 
 vi.mock("../api/chat.js", () => ({
@@ -19,7 +20,7 @@ vi.mock("../api/chat.js", () => ({
 }));
 
 vi.mock("../api/sessions.js", () => ({ getSession: mocks.getSession }));
-vi.mock("./sessions-store.js", () => ({ sessionsStore: { currentSessionId: "session.jsonl", refresh: mocks.refresh } }));
+vi.mock("./sessions-store.js", () => ({ sessionsStore: { currentSessionId: "session.jsonl", refresh: mocks.refresh, refreshUntilTopic: mocks.refreshUntilTopic } }));
 vi.mock("./notebook-store.js", () => ({ notebookStore: { loadAll: vi.fn() } }));
 vi.mock("./app-store.js", () => ({
 	appStore: {

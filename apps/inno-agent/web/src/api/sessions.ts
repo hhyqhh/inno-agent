@@ -14,12 +14,25 @@ export interface SessionMeta {
 	/** Immutable birthplace of the session (web/cli/feishu/wechat/scheduler). */
 	origin?: SessionChannel;
 	archived?: boolean;
+	/** True once a topic (manual or auto-generated) has been recorded server-side. */
+	hasTopic?: boolean;
+}
+
+export interface PendingQuestionData {
+	questionId: string;
+	sessionId: string;
+	turnId: string;
+	params: unknown;
+	createdAt: string;
 }
 
 export interface SessionDetail extends SessionMeta {
 	messages: ChatMessage[];
 	messageCount: number;
 	sessionRevision: string;
+	/** A pending question card restored from server-side persistence (e.g.
+	 *  after a process restart killed the in-memory turn). */
+	pendingQuestion?: PendingQuestionData;
 }
 
 export interface SessionActivationResult {

@@ -39,9 +39,28 @@ export async function getChatStatus(sessionId: string): Promise<{ found: boolean
 	return apiFetch(`/api/chat/status/${encodeURIComponent(sessionId)}`);
 }
 
-export async function submitChatQuestion(sessionId: string, turnId: string, questionId: string, result: QuestionnaireResult): Promise<void> {
-	await apiFetch("/api/chat/question-response", {
+export interface SubmitChatQuestionResponse {
+	accepted: boolean;
+	/** The owning turn is gone (server restarted). The persisted card was
+	 *  consumed; the client should resend the answer as a fresh chat turn. */
+	expired?: boolean;
+	sessionId?: string;
+}
+
+export async function submitChatQuestion(sessionId: string, turnId: string, questionId: string, result: QuestionnaireResult): Promise<SubmitChatQuestionResponse> {
+	return apiFetch<SubmitChatQuestionResponse>("/api/chat/question-response", {
 		method: "POST",
 		body: JSON.stringify({ sessionId, turnId, questionId, result }),
 	});
+}
+
+/** Render a questionnaire result as a plain user message. Used when the
+ *  original turn no longer exists and the answer must start a fresh turn. */
+export function formatQuestionnaireAsPrompt(result: QuestionnaireResult): string {
+	return result.answers
+		.map((a) => {
+			if (a.kind === "multi" && a.selected?.length) return `${a.question}: ${a.selected.join(", ")}`;
+			return `${a.question}: ${a.answer ?? a.selected?.join(", ") ?? ""}`;
+		})
+		.join("\n");
 }

@@ -27,8 +27,26 @@ interface PendingQuestion {
 	questionId: string;
 	sessionId: string;
 	turnId: string;
+	params: unknown;
 	resolve: (result: QuestionBridgeResult) => void;
 	timer: ReturnType<typeof setTimeout>;
+}
+
+/** A persistable pending question (no resolve callback), so the card can be
+ *  restored after a full process restart. */
+export interface PersistedQuestion {
+	questionId: string;
+	sessionId: string;
+	turnId: string;
+	params: unknown;
+	createdAt: string;
+}
+
+/** Callbacks injected by the server to persist/restore pending questions
+ *  across process restarts. */
+export interface QuestionBridgePersistence {
+	save: (sessionId: string, question: PersistedQuestion) => void;
+	remove: (sessionId: string) => void;
 }
 
 export type QuestionResponseStatus = "accepted" | "not_found" | "scope_mismatch" | "already_resolved";
@@ -37,6 +55,11 @@ export class QuestionBridge {
 	private binding: TurnBinding | null = null;
 	private pending: PendingQuestion | null = null;
 	private lastResolved: Pick<PendingQuestion, "questionId" | "sessionId" | "turnId"> | null = null;
+	private persistence: QuestionBridgePersistence | null = null;
+
+	setPersistence(p: QuestionBridgePersistence | null): void {
+		this.persistence = p;
+	}
 
 	bindTurn(binding: TurnBinding): void {
 		if (this.binding && (this.binding.sessionId !== binding.sessionId || this.binding.turnId !== binding.turnId)) {
@@ -51,12 +74,19 @@ export class QuestionBridge {
 		if (this.pending) this.resolvePending({ answers: [], cancelled: true, error: "superseded" }, false);
 
 		const questionId = randomUUID();
+		this.persistence?.save(binding.sessionId, {
+			questionId,
+			sessionId: binding.sessionId,
+			turnId: binding.turnId,
+			params,
+			createdAt: new Date().toISOString(),
+		});
 		return new Promise<QuestionBridgeResult>((resolve) => {
 			const timer = setTimeout(() => {
 				if (this.pending?.questionId !== questionId) return;
 				this.resolvePending({ answers: [], cancelled: true, error: "timeout" }, true);
 			}, binding.timeoutMs);
-			this.pending = { questionId, sessionId: binding.sessionId, turnId: binding.turnId, resolve, timer };
+			this.pending = { questionId, sessionId: binding.sessionId, turnId: binding.turnId, params, resolve, timer };
 			binding.emit({ type: "question", questionId, params });
 		});
 	}
@@ -89,6 +119,9 @@ export class QuestionBridge {
 		clearTimeout(pending.timer);
 		this.pending = null;
 		this.lastResolved = { questionId: pending.questionId, sessionId: pending.sessionId, turnId: pending.turnId };
+		// Any resolution (answer, timeout, abort, turn end) ends the card's
+		// lifecycle — drop the restart-safe record with it.
+		this.persistence?.remove(pending.sessionId);
 		if (emitResolved && this.binding?.sessionId === pending.sessionId && this.binding.turnId === pending.turnId) {
 			this.binding.emit({ type: "question_resolved", questionId: pending.questionId, cancelled: result.cancelled, error: result.error });
 		}

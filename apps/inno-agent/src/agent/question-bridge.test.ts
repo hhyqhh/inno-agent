@@ -39,4 +39,37 @@ describe("QuestionBridge", () => {
 		await expect(firstAnswer).resolves.toMatchObject({ cancelled: true, error: "superseded" });
 		expect(bridge.respond({ sessionId: "s2", turnId: "t2", questionId: oldQuestionId, result: { answers: [], cancelled: false } })).toBe("not_found");
 	});
+
+	it("persists a pending question on ask and removes it on any resolution", async () => {
+		const bridge = new QuestionBridge();
+		const saved = new Map<string, unknown>();
+		bridge.setPersistence({
+			save: (sessionId, question) => saved.set(sessionId, question),
+			remove: (sessionId) => saved.delete(sessionId),
+		});
+		bridge.bindTurn({ sessionId: "s1", turnId: "t1", emit: () => {}, timeoutMs: 10_000 });
+		const answerPromise = bridge.ask({ questions: [{ question: "q?" }] });
+		expect(saved.has("s1")).toBe(true);
+		expect(saved.get("s1")).toMatchObject({ turnId: "t1", params: { questions: [{ question: "q?" }] } });
+
+		bridge.respond({ sessionId: "s1", turnId: "t1", questionId: (saved.get("s1") as { questionId: string }).questionId, result: { answers: [], cancelled: false } });
+		await answerPromise;
+		expect(saved.has("s1")).toBe(false);
+	});
+
+	it("removes the persisted record when the turn is unbound (abort)", async () => {
+		const bridge = new QuestionBridge();
+		const saved = new Map<string, unknown>();
+		bridge.setPersistence({
+			save: (sessionId, question) => saved.set(sessionId, question),
+			remove: (sessionId) => saved.delete(sessionId),
+		});
+		bridge.bindTurn({ sessionId: "s1", turnId: "t1", emit: () => {}, timeoutMs: 10_000 });
+		const answerPromise = bridge.ask({ questions: [] });
+		expect(saved.has("s1")).toBe(true);
+
+		bridge.unbindTurn({ sessionId: "s1", turnId: "t1", reason: "cancelled" });
+		await expect(answerPromise).resolves.toMatchObject({ cancelled: true, error: "cancelled" });
+		expect(saved.has("s1")).toBe(false);
+	});
 });

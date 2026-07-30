@@ -16,6 +16,7 @@ import {
 import { getSessionWorkspace } from "../api/workspaces.js";
 import { getChatStatus } from "../api/chat.js";
 import { chatStore } from "./chat-store.js";
+import type { PendingQuestion } from "../types/chat.js";
 import { workspaceStore } from "./workspace-store.js";
 import { workspacesStore } from "./workspaces-store.js";
 import { terminalStore } from "./terminal-store.js";
@@ -25,6 +26,9 @@ interface SessionsStoreEvents {
 }
 
 export type HistoryMode = "push" | "replace" | "none";
+
+/** Backoff for refreshUntilTopic (~62s total, covering slow topic models). */
+const TOPIC_REFRESH_DELAYS_MS = [2_000, 4_000, 8_000, 16_000, 32_000] as const;
 
 export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	sessions: SessionMeta[] = [];
@@ -39,6 +43,10 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	preselectedWorkspaceId: string | null = null;
 	private _openRequestId = 0;
 	private _messageCache = new Map<string, Awaited<ReturnType<typeof getSession>>["messages"]>();
+	/** Caches an unanswered question card across session switches so it can be
+	 *  restored instantly when switching back (the backend replay/persistence
+	 *  reconciles it afterwards). Keyed by session id. */
+	private _pendingQuestionCache = new Map<string, PendingQuestion>();
 	private _backgroundRunningSessions = new Set<string>();
 
 	/**
@@ -119,6 +127,24 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		}
 	}
 
+	/**
+	 * Refresh the sidebar until the session's auto-generated topic lands.
+	 *
+	 * Topic generation is fire-and-forget on the server (an extra LLM call
+	 * after the turn's `done` event), so the refresh that runs at turn end
+	 * usually sees the untitled fallback name. Poll with bounded backoff and
+	 * stop as soon as `hasTopic` flips (or the session disappears).
+	 */
+	async refreshUntilTopic(sessionId: string): Promise<void> {
+		await this.refresh();
+		for (const delayMs of TOPIC_REFRESH_DELAYS_MS) {
+			const entry = this.sessions.find((session) => session.id === sessionId);
+			if (!entry || entry.hasTopic) return;
+			await new Promise((resolve) => setTimeout(resolve, delayMs));
+			await this.refresh();
+		}
+	}
+
 	selectSession(id: string) {
 		this.currentSessionId = id;
 		this.emit("change", undefined);
@@ -136,6 +162,14 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 				this._messageCache.set(prevSessionId, chatStore.messages);
 			} else {
 				this._messageCache.delete(prevSessionId);
+			}
+			// Preserve an unanswered question card so it can be restored on
+			// return. This applies to streaming sessions (live card) and to
+			// restored-but-unanswered cards alike.
+			if (chatStore.pendingQuestion) {
+				this._pendingQuestionCache.set(prevSessionId, chatStore.pendingQuestion);
+			} else {
+				this._pendingQuestionCache.delete(prevSessionId);
 			}
 		}
 
@@ -186,7 +220,25 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 
 			this._backgroundRunningSessions.delete(id);
 			if (chatStatus.stream && ["queued", "running"].includes(chatStatus.stream.status)) {
+				// The turn is live: its question event (if any) replays through the
+				// resumed stream, so no manual card restore is needed here.
 				void chatStore.resumeStream(id, chatStatus.stream);
+			} else {
+				// No live turn (e.g. after a full restart): restore the card from
+				// the local switch cache first, falling back to the server-persisted
+				// record.
+				const cached = this._pendingQuestionCache.get(id);
+				if (cached) {
+					chatStore.restorePendingQuestion(cached);
+				} else if (session.pendingQuestion) {
+					chatStore.restorePendingQuestion({
+						questionId: session.pendingQuestion.questionId,
+						params: session.pendingQuestion.params as PendingQuestion["params"],
+						sessionId: session.pendingQuestion.sessionId,
+						turnId: session.pendingQuestion.turnId,
+						restored: true,
+					});
+				}
 			}
 		} catch (error) {
 			if (requestId !== this._openRequestId) return;
@@ -337,6 +389,7 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	async deleteSession(id: string): Promise<void> {
 		const result = await deleteSession(id);
 		this._messageCache.delete(id);
+		this._pendingQuestionCache.delete(id);
 		this._backgroundRunningSessions.delete(id);
 		this.sessions = this.sessions.filter((session) => session.id !== id);
 		if (this.currentSessionId === id) {

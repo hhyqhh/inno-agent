@@ -44,6 +44,14 @@ export interface QuestionData {
 export interface PendingQuestion {
 	questionId: string;
 	params: { questions: QuestionData[] };
+	/** Scope of the turn that asked the question. Present on restored cards so
+	 *  the answer can still be submitted after a restart (the backend consumes
+	 *  the persisted card and asks the client to resend it as a fresh turn). */
+	sessionId?: string;
+	turnId?: string;
+	/** True when the card was restored from server-side persistence rather
+	 *  than received from a live stream. */
+	restored?: boolean;
 }
 
 export interface QuestionAnswer {

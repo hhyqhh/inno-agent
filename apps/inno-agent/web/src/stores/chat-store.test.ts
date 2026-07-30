@@ -156,4 +156,46 @@ describe("ChatStore stream ownership", () => {
 			vi.useRealTimers();
 		}
 	});
+
+	it("pins a welcome-screen send and its images to the newly created session", async () => {
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => { release = resolve; });
+		mocks.streamChat.mockImplementation(async function* () {
+			await gate;
+		});
+		const images = [{ data: "aW1hZ2U=", mimeType: "image/png" }];
+		const store = new ChatStoreImpl();
+		const sending = store.send("describe", images, "created-session.jsonl");
+
+		await vi.waitFor(() => expect(mocks.streamChat).toHaveBeenCalled());
+		expect(mocks.streamChat).toHaveBeenCalledWith(
+			"describe",
+			"created-session.jsonl",
+			CLIENT_REQUEST_ID,
+			expect.any(AbortSignal),
+			images,
+		);
+
+		store.detach();
+		release();
+		await sending;
+	});
+
+	it("rechecks isSending after the async session-store import", async () => {
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => { release = resolve; });
+		mocks.streamChat.mockImplementation(async function* () {
+			await gate;
+		});
+		const store = new ChatStoreImpl();
+		const first = store.send("first");
+		const second = store.send("second");
+
+		await vi.waitFor(() => expect(mocks.streamChat).toHaveBeenCalledTimes(1));
+		expect(store.messages.filter((message) => message.role === "user")).toHaveLength(1);
+
+		store.detach();
+		release();
+		await Promise.all([first, second]);
+	});
 });

@@ -73,10 +73,12 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	private currentSessionContext: string | null = null;
 	private retryInputBySession = new Map<string, { prompt: string; images?: InlineImage[] }>();
 
-	async send(prompt: string, images?: InlineImage[]): Promise<void> {
+	async send(prompt: string, images?: InlineImage[], sessionIdOverride?: string | null): Promise<void> {
 		if ((!prompt.trim() && !images?.length) || this.isSending) return;
 		const { sessionsStore } = await import("./sessions-store.js");
-		const targetSessionId = sessionsStore.currentSessionId;
+		const targetSessionId = sessionIdOverride === undefined
+			? sessionsStore.currentSessionId
+			: sessionIdOverride;
 		if (!targetSessionId || this.isSending) return;
 
 		this.detachMode = false;

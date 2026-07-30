@@ -33,6 +33,12 @@ const PASTE_COLLAPSE_CHARS = 2000;
 const LONG_ASSISTANT_CHARS = 6000;
 const LONG_ASSISTANT_LINES = 140;
 
+interface PendingUpload {
+	fileName: string;
+	path: string;
+	file: File;
+}
+
 const CHANNEL_BADGE_CLASS: Record<string, string> = {
 	cli: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]",
 	web: "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]",
@@ -402,7 +408,7 @@ export function ChatCenter() {
 	const imageInputRef = useRef<HTMLInputElement | null>(null);
 	const scrollRef = useRef<HTMLDivElement | null>(null);
 	const shouldStickToBottomRef = useRef(true);
-	const [uploads, setUploads] = useState<{ fileName: string; path: string }[]>([]);
+	const [uploads, setUploads] = useState<PendingUpload[]>([]);
 	const [isUploading, setIsUploading] = useState(false);
 	const [inlineImages, setInlineImages] = useState<(InlineImage & { name: string; previewUrl: string })[]>([]);
 	// When the user pastes a large block of text (many lines / chars), we
@@ -422,10 +428,10 @@ export function ChatCenter() {
 
 	// Simple Mode surfaces preset workspaces for one-click start.
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
-	// Whether the currently selected model accepts image input. Drives the
-	// paste/upload gate so users on text-only custom providers don't get
-	// silently-dropped images. Unknown/missing model → keep allowed (legacy).
-	const currentModelSupportsImages = useStoreSnapshot(settingsStore, () => {
+	// Whether the selected Provider accepts native image message blocks.
+	// Attachments remain available either way: text-only models receive the
+	// persisted workspace path and can use the OCR tool instead.
+	const currentModelSupportsNativeImages = useStoreSnapshot(settingsStore, () => {
 		const s = settingsStore.settings;
 		if (!s) return true;
 		const list = s.availableModels ?? s.configuredModels ?? [];
@@ -498,6 +504,16 @@ export function ChatCenter() {
 
 	// Welcome state: derived once in the sessions store (single source of truth).
 	const isWelcome = sessions.isWelcome;
+	// Workspace that will receive pending attachments when Send is clicked.
+	// File selection itself never writes to this workspace, so attachments may
+	// safely follow the composer across session switches.
+	const uploadWorkspaceId: string | undefined | null = isWelcome
+		? (simpleMode || wsMode === "temp"
+			? undefined
+			: wsMode === "existing" && wsExistingId
+				? wsExistingId
+				: null)
+		: activeWorkspaceId;
 	const turnIndexByStartMessage = useMemo(
 		() => new Map(buildConversationTurns(chat.messages).map((turn) => [turn.startMessageIndex, turn.index])),
 		[chat.messages],
@@ -639,14 +655,8 @@ export function ChatCenter() {
 		const input = expandPaste(rawValue).trim();
 		if ((!input && uploads.length === 0 && inlineImages.length === 0) || chat.isSending || isUploading) return;
 		shouldStickToBottomRef.current = true;
-
-		const uploadNote = uploads.length > 0
-			? `\n\n${t("chat.uploadedToWorkspace")}\n${uploads.map((file) => `- ${file.fileName}: ${file.path}`).join("\n")}`
-			: "";
-		const messageContent = `${input}${uploadNote}` || (inlineImages.length > 0 ? t("chat.describeImage") : "");
-		const imagesToSend = (inlineImages.length > 0 && currentModelSupportsImages)
-			? inlineImages.map(({ data, mimeType }) => ({ data, mimeType }))
-			: undefined;
+		const pendingUploads = [...uploads];
+		const pendingImages = [...inlineImages];
 
 		const resetComposer = () => {
 			draftRef.current = "";
@@ -658,34 +668,74 @@ export function ChatCenter() {
 			setPasteBlock(null);
 		};
 
-		if (isWelcome) {
-			const wsInput = buildSessionInput();
-			if ("__error" in wsInput) {
-				setWsError(wsInput.__error);
-				return;
-			}
-			setWsError("");
-			// Remember the workspace choice so the next new chat resumes it (P3).
-			if (!simpleMode) rememberWsChoice(wsMode, wsExistingId);
-			resetComposer();
-			setUploads([]);
-			setInlineImages([]);
-			void (async () => {
-				try {
+		void (async () => {
+			setIsUploading(true);
+			try {
+				let targetSessionId = sessions.currentSessionId;
+				if (isWelcome) {
+					const wsInput = buildSessionInput();
+					if ("__error" in wsInput) {
+						setWsError(wsInput.__error);
+						return;
+					}
+					setWsError("");
+					// Remember the workspace choice so the next new chat resumes it (P3).
+					if (!simpleMode) rememberWsChoice(wsMode, wsExistingId);
 					await sessionsStore.createSessionWith(wsInput);
-					void chatStore.send(messageContent, imagesToSend);
-				} catch (err) {
-					setWsError(err instanceof Error ? err.message : t("chat.errCreateSession"));
+					targetSessionId = sessionsStore.currentSessionId;
 				}
-			})();
-			return;
-		}
 
-		resetComposer();
-		setUploads([]);
-		setInlineImages([]);
-		void chatStore.send(messageContent, imagesToSend);
-	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, pasteBlock, currentModelSupportsImages, t]);
+				const targetWorkspaceId = workspaceStore.activeWorkspaceId
+					?? (isWelcome ? undefined : uploadWorkspaceId ?? undefined);
+				if (pendingUploads.length > 0 && targetWorkspaceId === undefined) {
+					throw new Error(t("chat.uploadHint"));
+				}
+
+				let uploadedFiles: Array<{ fileName: string; path: string }> = [];
+				if (pendingUploads.length > 0) {
+					const uploadItems = await Promise.all(
+						pendingUploads.map(async ({ path, file }) => ({
+							path,
+							dataBase64: arrayBufferToBase64(await file.arrayBuffer()),
+						})),
+					);
+					const result = await uploadWorkspaceFiles(
+						uploadItems,
+						targetWorkspaceId,
+					);
+					uploadedFiles = (result.uploaded ?? []).map((node) => ({
+						fileName: node.name,
+						path: node.path,
+					}));
+					appStore.setRightPanelTab("preview");
+					if (appStore.workspaceMode === "collapsed") appStore.setWorkspaceMode("quarter");
+					if (workspaceStore.activeWorkspaceId !== targetWorkspaceId) {
+						await workspaceStore.setActiveWorkspace(targetWorkspaceId ?? null);
+					} else {
+						await workspaceStore.loadTree();
+					}
+				}
+
+				const uploadNote = uploadedFiles.length > 0
+					? `\n\n${t("chat.uploadedToWorkspace")}\n${uploadedFiles.map((file) => `- ${file.fileName}: ${file.path}`).join("\n")}`
+					: "";
+				const messageContent = `${input}${uploadNote}` || (pendingImages.length > 0 ? t("chat.describeImage") : "");
+				const imagesToSend = pendingImages.length > 0
+					? pendingImages.map(({ data, mimeType }) => ({ data, mimeType }))
+					: undefined;
+
+				resetComposer();
+				setUploads([]);
+				setInlineImages([]);
+				setWsError("");
+				void chatStore.send(messageContent, imagesToSend, targetSessionId);
+			} catch (err) {
+				setWsError(err instanceof Error ? err.message : t("chat.errCreateSession"));
+			} finally {
+				setIsUploading(false);
+			}
+		})();
+	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, uploadWorkspaceId, pasteBlock, sessions.currentSessionId, t]);
 
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		// Don't fire Send while the user is composing with an IME (e.g. picking
@@ -732,7 +782,6 @@ export function ChatCenter() {
 		const imageItems = Array.from(e.clipboardData.items).filter((item) => item.type.startsWith("image/"));
 		if (imageItems.length > 0) {
 			e.preventDefault();
-			if (!currentModelSupportsImages) return; // text-only model: drop silently
 			const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
 			addImageFiles(files);
 			return;
@@ -768,15 +817,14 @@ export function ChatCenter() {
 				});
 			}
 		}
-	}, [addImageFiles, currentModelSupportsImages, t]);
+	}, [addImageFiles, t]);
 
 	const handleImageFiles = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-		if (!currentModelSupportsImages) return; // text-only model: ignore picker
 		const files = Array.from(event.target.files ?? []).filter((f) => f.type.startsWith("image/"));
 		if (files.length === 0) return;
 		addImageFiles(files);
 		if (event.target) event.target.value = "";
-	}, [addImageFiles, currentModelSupportsImages]);
+	}, [addImageFiles]);
 
 	const removeInlineImage = useCallback((index: number) => {
 		setInlineImages((prev) => prev.filter((_, i) => i !== index));
@@ -785,33 +833,14 @@ export function ChatCenter() {
 	const handleFiles = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
 		const files = Array.from(event.target.files ?? []);
 		if (files.length === 0) return;
-		const wsId = workspaceStore.activeWorkspaceId;
-		if (!wsId) return;
-		setIsUploading(true);
-		void (async () => {
-			try {
-				const items = await Promise.all(files.map(async (file: File) => ({
-					path: file.name.replace(/[\\/?%*:|"<>]/g, "_").trim() || `upload-${Date.now()}`,
-					dataBase64: arrayBufferToBase64(await file.arrayBuffer()),
-				})));
-				const result = await uploadWorkspaceFiles(items, wsId);
-				const uploadedNodes = result.uploaded ?? [];
-				setUploads((current) => [...current, ...uploadedNodes.map((n) => ({ fileName: n.name, path: n.path }))]);
-				// Reveal the workspace panel so the new file is visible in the tree.
-				appStore.setRightPanelTab("preview");
-				if (appStore.workspaceMode === "collapsed") appStore.setWorkspaceMode("quarter");
-				void workspaceStore.loadTree();
-			} catch (err) {
-				const message = err instanceof Error ? err.message : "Unknown upload error";
-				setUploads((current) => [
-					...current,
-					{ fileName: "Upload failed", path: message },
-				]);
-			} finally {
-				setIsUploading(false);
-				if (event.target) event.target.value = "";
-			}
-		})();
+		setWsError("");
+		const items = files.map((file) => ({
+			fileName: file.name,
+			path: file.name.replace(/[\\/?%*:|"<>]/g, "_").trim() || `upload-${Date.now()}`,
+			file,
+		}));
+		setUploads((current) => [...current, ...items]);
+		if (event.target) event.target.value = "";
 	}, []);
 
 	const removeUpload = useCallback((index: number) => {
@@ -875,10 +904,10 @@ export function ChatCenter() {
 		<div className="inno-composer flex items-end gap-2 rounded-lg p-2">
 			<input ref={fileInputRef} id="file-input" type="file" className="hidden" multiple onChange={handleFiles} />
 			<input ref={imageInputRef} id="image-input" type="file" className="hidden" multiple accept="image/*" onChange={handleImageFiles} />
-			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={activeWorkspaceId ? t("chat.uploadFiles") : t("chat.uploadHint")} disabled={chat.isSending || isUploading || !activeWorkspaceId} onClick={() => fileInputRef.current?.click()}>
+			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={t("chat.uploadFiles")} disabled={chat.isSending || isUploading} onClick={() => fileInputRef.current?.click()}>
 				{isUploading ? <Spinner size={16} /> : <Paperclip size={16} />}
 			</button>
-			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={currentModelSupportsImages ? t("chat.attachImage") : t("chat.imageNotSupported")} disabled={chat.isSending || !currentModelSupportsImages} onClick={() => imageInputRef.current?.click()}>
+			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={currentModelSupportsNativeImages ? t("chat.attachImage") : t("chat.attachImageViaOcr")} disabled={chat.isSending || isUploading} onClick={() => imageInputRef.current?.click()}>
 				<Image size={16} />
 			</button>
 			<textarea
@@ -1236,6 +1265,7 @@ export function ChatCenter() {
 					{renderUploadChips()}
 					{renderInlineImagePreviews()}
 					{renderQuestionHint()}
+					{wsError ? <p className="mb-2 text-xs text-[var(--inno-danger)]">{wsError}</p> : null}
 					{renderComposer(t("chat.composerPlaceholder"))}
 				</div>
 			</div>

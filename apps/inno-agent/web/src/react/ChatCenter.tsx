@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
@@ -21,7 +21,8 @@ import { uploadWorkspaceFiles } from "../api/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { splitStreamingMarkdown } from "../utils/markdown-blocks.js";
 import { groupByCategory, matchesQuery } from "../utils/category-grouping.js";
-import { answeredQuestionnaireFromTool } from "../utils/questionnaire.js";
+import { answeredQuestionnaireFromTool, buildAnsweredQuestionnaireTimeline } from "../utils/questionnaire.js";
+import type { AnsweredQuestionnaireView } from "../utils/questionnaire.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { AnsweredQuestionCard, QuestionDialog } from "./QuestionDialog.js";
 import { buildConversationTurns, ConversationMinimap } from "./ConversationMinimap.js";
@@ -254,6 +255,27 @@ function AssistantContent({ content }: { content: string }) {
 	);
 }
 
+/** Keep a completed questionnaire anchored where its tool call interrupted the
+ * assistant text. Session history merges the text before and after a tool call
+ * into one message, so rendering every tool above the message moves the card
+ * away from the point at which the learner originally answered it. */
+function AssistantTimelineContent({ content, questionnaires }: { content: string; questionnaires: AnsweredQuestionnaireView[] }) {
+	const timeline = buildAnsweredQuestionnaireTimeline(content, questionnaires);
+	return (
+		<>
+			{timeline.entries.map(({ tool, questionnaire, before }) => (
+				<Fragment key={tool.toolCallId}>
+					<AssistantContent content={before} />
+					<div className="my-2">
+						<AnsweredQuestionCard questionnaire={questionnaire} />
+					</div>
+				</Fragment>
+			))}
+			<AssistantContent content={timeline.tail} />
+		</>
+	);
+}
+
 function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; className: string }) {
 	const [open, setOpen] = useState(false);
 	const detail = useMemo(() => {
@@ -344,14 +366,10 @@ const MessageBubble = memo(function MessageBubble({ message, showChannel }: { me
 						) : null}
 					</details>
 				) : null}
-				{answeredQuestionnaires.length ? (
-					<div className="mb-2 space-y-2">
-						{answeredQuestionnaires.map(({ tool, questionnaire }) => (
-							<AnsweredQuestionCard key={tool.toolCallId} questionnaire={questionnaire!} />
-						))}
-					</div>
-				) : null}
-				<AssistantContent content={message.content} />
+				<AssistantTimelineContent
+					content={message.content}
+					questionnaires={answeredQuestionnaires as AnsweredQuestionnaireView[]}
+				/>
 				{message.error ? (
 					<div className={message.content.trim() ? "mt-2" : ""}>
 						<ErrorBlock error={message.error} />
@@ -364,23 +382,9 @@ const MessageBubble = memo(function MessageBubble({ message, showChannel }: { me
 
 function CompletedToolRecords({ tools }: { tools: ChatToolRecord[] }) {
 	const views = tools.map((tool) => ({ tool, questionnaire: answeredQuestionnaireFromTool(tool) }));
-	const questionnaires = views.filter((item) => item.questionnaire !== null);
 	const regularTools = views.filter((item) => item.questionnaire === null).map((item) => item.tool);
 
-	return (
-		<>
-			{questionnaires.map(({ tool, questionnaire }) => (
-				<motion.div
-					key={tool.toolCallId}
-					className="flex max-w-[76%] justify-start"
-					initial={{ opacity: 0 }}
-					animate={{ opacity: 1 }}
-					transition={{ duration: 0.2 }}
-				>
-					<AnsweredQuestionCard questionnaire={questionnaire!} />
-				</motion.div>
-			))}
-			{regularTools.length ? (
+	return regularTools.length ? (
 				<motion.div
 					className="flex justify-start"
 					initial={{ opacity: 0 }}
@@ -396,9 +400,7 @@ function CompletedToolRecords({ tools }: { tools: ChatToolRecord[] }) {
 						</div>
 					</details>
 				</motion.div>
-			) : null}
-		</>
-	);
+	) : null;
 }
 
 /**
@@ -429,9 +431,18 @@ function StreamingBubbles() {
 		hasError: chatStore.streamingError !== "",
 		hasPendingQuestion: chatStore.pendingQuestion !== null,
 		activeToolCount: chatStore.activeTools.length,
+		completedTools: chatStore.completedTools,
 	}));
 
-	const normalized = useMemo(() => normalizeMarkdownMath(stream.text), [stream.text]);
+	const questionnaires = useMemo(() => stream.completedTools.flatMap((tool): AnsweredQuestionnaireView[] => {
+		const questionnaire = answeredQuestionnaireFromTool(tool);
+		return questionnaire ? [{ tool, questionnaire }] : [];
+	}), [stream.completedTools]);
+	const timeline = useMemo(
+		() => buildAnsweredQuestionnaireTimeline(stream.text, questionnaires),
+		[stream.text, questionnaires],
+	);
+	const normalized = useMemo(() => normalizeMarkdownMath(timeline.tail), [timeline.tail]);
 	const { blocks, tail } = useMemo(() => splitStreamingMarkdown(normalized), [normalized]);
 
 	// Shrink guard: while a reply streams, the tail <markdown-artifact> re-parses
@@ -490,7 +501,7 @@ function StreamingBubbles() {
 						</div>
 					</div>
 				</motion.div>
-			) : stream.text ? (
+			) : stream.text || questionnaires.length ? (
 				<motion.div
 					className="flex justify-start"
 					initial={{ opacity: 0, y: 8 }}
@@ -498,6 +509,14 @@ function StreamingBubbles() {
 					transition={{ duration: 0.2, ease: "easeOut" }}
 				>
 					<div ref={streamingBubbleRef} className="inno-message inno-streaming-blocks max-w-[78%] rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3.5 py-2.5 text-[13px] leading-relaxed text-[var(--inno-text)]">
+						{timeline.entries.map(({ tool, questionnaire, before }) => (
+							<Fragment key={tool.toolCallId}>
+								{before.trim() ? <StableStreamingMarkdown content={normalizeMarkdownMath(before.trim())} /> : null}
+								<div className="my-2">
+									<AnsweredQuestionCard questionnaire={questionnaire} />
+								</div>
+							</Fragment>
+						))}
 						{blocks.map((block, index) => (
 							<StableStreamingMarkdown key={index} content={block} />
 						))}
@@ -509,7 +528,7 @@ function StreamingBubbles() {
 				</motion.div>
 			) : null}
 
-			{stream.isSending && !stream.hasPendingQuestion && !stream.text && !stream.hasError && stream.activeToolCount === 0 ? (
+			{stream.isSending && !stream.hasPendingQuestion && !stream.text && questionnaires.length === 0 && !stream.hasError && stream.activeToolCount === 0 ? (
 				<motion.div
 					className="flex justify-start"
 					initial={{ opacity: 0 }}

@@ -5,6 +5,31 @@ export interface AnsweredQuestionnaire {
 	result: QuestionnaireResult;
 }
 
+export interface AnsweredQuestionnaireView {
+	tool: ChatToolRecord;
+	questionnaire: AnsweredQuestionnaire;
+}
+
+/** Split merged assistant text at the original positions of completed
+ * questionnaires. Older API responses did not expose an offset, so those
+ * cards safely fall back to the end of the message instead of jumping above
+ * text that was already visible when the question was asked. */
+export function buildAnsweredQuestionnaireTimeline(content: string, views: AnsweredQuestionnaireView[]) {
+	let cursor = 0;
+	const ordered = [...views].sort((left, right) => {
+		const leftOffset = left.tool.contentOffset ?? content.length;
+		const rightOffset = right.tool.contentOffset ?? content.length;
+		return leftOffset - rightOffset;
+	});
+	const entries = ordered.map((view) => {
+		const offset = Math.max(cursor, Math.min(content.length, view.tool.contentOffset ?? content.length));
+		const before = content.slice(cursor, offset);
+		cursor = offset;
+		return { ...view, before };
+	});
+	return { entries, tail: content.slice(cursor) };
+}
+
 /**
  * Recover a completed ask_user_question interaction from either a live tool
  * result ({ content, details }) or the human-readable result stored by older

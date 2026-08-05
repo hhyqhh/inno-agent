@@ -17,6 +17,8 @@ export interface ChatToolRecord {
 	toolCallId: string;
 	toolName: string;
 	args: unknown;
+	/** Character offset in the assistant text at which the tool was called. */
+	contentOffset?: number;
 	result?: unknown;
 	isError?: boolean;
 }

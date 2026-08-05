@@ -438,22 +438,28 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				this.activeTools = [...this.activeTools.filter((tool) => tool.toolCallId !== event.toolCallId), {
 					toolCallId: event.toolCallId,
 					toolName: event.toolName,
-					args: compactToolPayload(event.args),
+					// Questionnaire options sit one level deeper than the generic tool
+					// payload compactor keeps. Preserve this small, bounded payload so
+					// the completed card can render every option immediately.
+					args: event.toolName === "ask_user_question" ? event.args : compactToolPayload(event.args),
+					contentOffset: this.streamingText.length,
 				}];
 				this.emit("change", undefined);
 				break;
 			case "tool_end":
 				this.flushStreamChange();
 				this.maybeFinishFileToolPreview(event.toolCallId, event.toolName, event.result, event.isError, owner);
+				const existingTool = this.completedTools.find((tool) => tool.toolCallId === event.toolCallId)
+					?? this.activeTools.find((tool) => tool.toolCallId === event.toolCallId);
 				this.completedTools = [
 					...this.completedTools.filter((tool) => tool.toolCallId !== event.toolCallId),
 					{
-						...(this.activeTools.find((t) => t.toolCallId === event.toolCallId) ?? {
+						...(existingTool ?? {
 							toolCallId: event.toolCallId,
-							toolName: "tool",
+							toolName: event.toolName,
 							args: undefined,
 						}),
-						result: compactToolPayload(event.result),
+						result: event.toolName === "ask_user_question" ? event.result : compactToolPayload(event.result),
 						isError: event.isError,
 					},
 				];
@@ -696,6 +702,25 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		const turnId = this.activeOwner?.turnId ?? pending.turnId;
 		if (!sessionId || !turnId) return;
 		this.answeredQuestionIds.add(questionId);
+		const activeQuestionTool = this.activeTools.find((tool) => tool.toolName === "ask_user_question");
+		const optimisticToolCallId = !result.cancelled ? activeQuestionTool?.toolCallId : undefined;
+		// Swap the editable card for a complete read-only card immediately. The
+		// eventual tool_end event reuses this record and replaces only its result,
+		// so subsequent streamed text grows below it without changing the card.
+		this.pendingQuestion = null;
+		if (activeQuestionTool && !result.cancelled) {
+			this.activeTools = this.activeTools.filter((tool) => tool.toolCallId !== activeQuestionTool.toolCallId);
+			this.completedTools = [
+				...this.completedTools.filter((tool) => tool.toolCallId !== activeQuestionTool.toolCallId),
+				{
+					...activeQuestionTool,
+					args: pending.params,
+					result,
+					isError: false,
+				},
+			];
+		}
+		this.emit("change", undefined);
 		try {
 			const response = await submitChatQuestion(sessionId, turnId, questionId, result);
 			if (response.expired) {
@@ -708,6 +733,12 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			}
 		} catch (err) {
 			if (!this.activeOwner || this.owns(this.activeOwner)) {
+				if (optimisticToolCallId) {
+					this.completedTools = this.completedTools.filter((tool) => tool.toolCallId !== optimisticToolCallId);
+					if (activeQuestionTool) this.activeTools = [...this.activeTools, activeQuestionTool];
+				}
+				this.pendingQuestion = pending;
+				this.answeredQuestionIds.delete(questionId);
 				this.streamingError = err instanceof Error ? err.message : "提交回答失败";
 				this.emit("change", undefined);
 			}

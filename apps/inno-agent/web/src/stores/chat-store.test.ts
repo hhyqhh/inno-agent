@@ -44,7 +44,8 @@ vi.mock("./workspace-store.js", () => ({
 }));
 
 import { ChatStoreImpl } from "./chat-store.js";
-import type { ChatStreamEvent, StreamEventEnvelope } from "../types/chat.js";
+import type { ChatStreamEvent, QuestionnaireResult, StreamEventEnvelope } from "../types/chat.js";
+import { answeredQuestionnaireFromTool } from "../utils/questionnaire.js";
 
 const CLIENT_REQUEST_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -84,6 +85,7 @@ describe("ChatStore stream ownership", () => {
 		vi.clearAllMocks();
 		vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(CLIENT_REQUEST_ID);
 		mocks.abortChat.mockResolvedValue(undefined);
+		mocks.submitChatQuestion.mockResolvedValue({ accepted: true });
 		mocks.getChatStatus.mockResolvedValue(activeSnapshot());
 		mocks.getSession.mockResolvedValue({ messages: [], messageCount: 0, sessionRevision: "0:0" });
 	});
@@ -125,6 +127,68 @@ describe("ChatStore stream ownership", () => {
 		await store.send("hello");
 		expect(mocks.streamSessionEvents).toHaveBeenCalledWith("session.jsonl", "turn-1", 3, expect.any(AbortSignal));
 		expect(store.messages.at(-1)).toMatchObject({ role: "assistant", content: "AB", transient: true });
+	});
+
+	it("records where a tool call interrupted the assistant text", async () => {
+		mocks.streamChat.mockImplementation(async function* () {
+			yield envelope(1, { type: "stream_state", status: "running" });
+			yield envelope(2, { type: "text_delta", delta: "before" });
+			yield envelope(3, { type: "tool_start", toolCallId: "question-1", toolName: "ask_user_question", args: { questions: [] } });
+			yield envelope(4, { type: "tool_end", toolCallId: "question-1", toolName: "ask_user_question", result: {}, isError: false });
+			yield envelope(5, { type: "aborted", message: "Stopped", persisted: false });
+		});
+
+		const store = new ChatStoreImpl();
+		await store.send("hello");
+
+		expect(store.messages.at(-1)?.tools?.[0]).toMatchObject({
+			toolCallId: "question-1",
+			contentOffset: 6,
+		});
+	});
+
+	it("materializes the full answered questionnaire as soon as it is submitted", async () => {
+		let releaseTool!: () => void;
+		const toolFinished = new Promise<void>((resolve) => { releaseTool = resolve; });
+		const params = {
+			questions: [{
+				question: "Choose one",
+				header: "Choice",
+				options: [
+					{ label: "A", description: "First" },
+					{ label: "B", description: "Second" },
+				],
+			}],
+		};
+		const result: QuestionnaireResult = {
+			answers: [{ questionIndex: 0, question: "Choose one", kind: "option", answer: "B" }],
+			cancelled: false,
+		};
+		mocks.streamChat.mockImplementation(async function* () {
+			yield envelope(1, { type: "stream_state", status: "running" });
+			yield envelope(2, { type: "text_delta", delta: "before" });
+			yield envelope(3, { type: "tool_start", toolCallId: "question-tool", toolName: "ask_user_question", args: params });
+			yield envelope(4, { type: "question", questionId: "question-card", params });
+			await toolFinished;
+			yield envelope(5, { type: "tool_end", toolCallId: "question-tool", toolName: "ask_user_question", result, isError: false });
+			yield envelope(6, { type: "aborted", message: "Stopped", persisted: false });
+		});
+
+		const store = new ChatStoreImpl();
+		const sending = store.send("hello");
+		await vi.waitFor(() => expect(store.pendingQuestion?.questionId).toBe("question-card"));
+		await store.submitQuestionResponse("question-card", result);
+
+		expect(store.pendingQuestion).toBeNull();
+		expect(store.activeTools).toHaveLength(0);
+		expect(store.completedTools).toHaveLength(1);
+		expect(answeredQuestionnaireFromTool(store.completedTools[0]!)).toEqual({
+			questions: params.questions,
+			result,
+		});
+
+		releaseTool();
+		await sending;
 	});
 
 	it("does not replace a transient turn with stale canonical history", async () => {

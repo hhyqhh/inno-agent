@@ -1839,6 +1839,7 @@ interface SessionMessageSummary {
 		toolCallId: string;
 		toolName: string;
 		args: unknown;
+		contentOffset?: number;
 		result?: unknown;
 		isError?: boolean;
 	}>;
@@ -2080,7 +2081,12 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 							const toolName = typeof block.name === "string" ? block.name : "tool";
 							const args = block.arguments;
 							pending.tools = pending.tools ?? [];
-							pending.tools.push({ toolCallId, toolName, args });
+							pending.tools.push({
+								toolCallId,
+								toolName,
+								args,
+								contentOffset: pending.content.length,
+							});
 						}
 					}
 				} else if (typeof content === "string" && content) {

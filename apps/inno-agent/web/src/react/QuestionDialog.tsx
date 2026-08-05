@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
 import type { PendingQuestion, QuestionAnswer, QuestionData, QuestionnaireResult } from "../types/chat.js";
+import type { AnsweredQuestionnaire } from "../utils/questionnaire.js";
 import { chatStore } from "../stores/chat-store.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 
@@ -12,21 +13,25 @@ function OptionRow({
 	multi,
 	onSelect,
 	onFocus,
+	readOnly = false,
 }: {
 	label: string;
 	description: string;
 	selected: boolean;
 	multi: boolean;
-	onSelect: () => void;
-	onFocus: () => void;
+	onSelect?: () => void;
+	onFocus?: () => void;
+	readOnly?: boolean;
 }) {
 	return (
 		<button
+			aria-pressed={selected}
 			className={`flex w-full items-start gap-2.5 rounded-md border px-3 py-2 text-left text-[13px] transition-colors ${
 				selected
 					? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-text)]"
-					: "border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text)] hover:border-[var(--inno-border-strong)] hover:bg-[var(--inno-surface-muted)]"
+					: `border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text)] ${readOnly ? "opacity-60" : "hover:border-[var(--inno-border-strong)] hover:bg-[var(--inno-surface-muted)]"}`
 			}`}
+			disabled={readOnly}
 			onClick={onSelect}
 			onMouseEnter={onFocus}
 		>
@@ -40,6 +45,51 @@ function OptionRow({
 				{description ? <markdown-block className="mt-0.5 text-xs text-[var(--inno-text-muted)]" content={normalizeMarkdownMath(description)} /> : null}
 			</span>
 		</button>
+	);
+}
+
+/** Read-only counterpart to the pending questionnaire. It deliberately keeps
+ * the original options visible so the selected state remains part of the
+ * conversation instead of disappearing into generic tool-call details. */
+export function AnsweredQuestionCard({ questionnaire }: { questionnaire: AnsweredQuestionnaire }) {
+	const { t } = useTranslation();
+
+	return (
+		<div className="w-full rounded-lg border border-[var(--inno-accent-soft)] bg-[var(--inno-surface)] px-4 py-3 shadow-sm">
+			<div className="mb-3 text-xs font-medium text-[var(--inno-accent)]">{t("question.answered")}</div>
+			<div className="space-y-4">
+				{questionnaire.questions.map((question, questionIndex) => {
+					const answer = questionnaire.result.answers.find((item) => item.questionIndex === questionIndex);
+					if (!answer) return null;
+					const selectedLabels = new Set(answer.selected ?? (answer.kind === "option" && answer.answer ? [answer.answer] : []));
+					return (
+						<div key={`${question.question}-${questionIndex}`} className="space-y-2">
+							{questionnaire.questions.length > 1 ? (
+								<div className="text-xs font-medium text-[var(--inno-text-muted)]">{question.header}</div>
+							) : null}
+							<markdown-block className="text-sm font-medium text-[var(--inno-text)]" content={normalizeMarkdownMath(question.question)} />
+							<div className="space-y-1.5">
+								{question.options.map((option) => (
+									<OptionRow
+										key={option.label}
+										label={option.label}
+										description={option.description}
+										selected={selectedLabels.has(option.label)}
+										multi={question.multiSelect === true}
+										readOnly
+									/>
+								))}
+								{answer.kind === "custom" && answer.answer ? (
+									<div className="rounded-md border border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] px-3 py-2 text-[13px] text-[var(--inno-text)]">
+										{answer.answer}
+									</div>
+								) : null}
+							</div>
+						</div>
+					);
+				})}
+			</div>
+		</div>
 	);
 }
 

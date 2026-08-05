@@ -609,7 +609,8 @@
 		"chatAboutThis": "Chat about this",
 		"submit": "Submit",
 		"submitNext": "Next",
-		"optionSelectedHint": "Option selected; deselect to enter custom text"
+		"optionSelectedHint": "Option selected; deselect to enter custom text",
+		"answered": "Selected"
 	},
 	"sidebar": {
 		"expand": "Expand",

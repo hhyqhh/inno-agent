@@ -21,8 +21,9 @@ import { uploadWorkspaceFiles } from "../api/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { splitStreamingMarkdown } from "../utils/markdown-blocks.js";
 import { groupByCategory, matchesQuery } from "../utils/category-grouping.js";
+import { answeredQuestionnaireFromTool } from "../utils/questionnaire.js";
 import { useStoreSnapshot } from "./hooks.js";
-import { QuestionDialog } from "./QuestionDialog.js";
+import { AnsweredQuestionCard, QuestionDialog } from "./QuestionDialog.js";
 import { buildConversationTurns, ConversationMinimap } from "./ConversationMinimap.js";
 import { MarkdownArtifact } from "./MarkdownArtifact.js";
 
@@ -277,6 +278,12 @@ function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; classNam
 
 const MessageBubble = memo(function MessageBubble({ message, showChannel }: { message: ChatMessage; showChannel?: boolean }) {
 	const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+	const toolViews = (message.tools ?? []).map((tool) => ({
+		tool,
+		questionnaire: answeredQuestionnaireFromTool(tool),
+	}));
+	const answeredQuestionnaires = toolViews.filter((item) => item.questionnaire !== null);
+	const regularTools = toolViews.filter((item) => item.questionnaire === null).map((item) => item.tool);
 
 	if (message.role === "user") {
 		return (
@@ -321,21 +328,28 @@ const MessageBubble = memo(function MessageBubble({ message, showChannel }: { me
 				{showChannel && message.channel ? (
 					<div className="mb-1"><ChannelBadge channel={message.channel} /></div>
 				) : null}
-				{message.thinking || message.tools?.length ? (
+				{message.thinking || regularTools.length ? (
 					<details className="mb-2 min-w-0 max-w-full overflow-hidden rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2 py-1.5 text-xs text-[var(--inno-text-muted)]">
 						<summary className="cursor-pointer select-none break-words font-medium text-[var(--inno-text-muted)] [overflow-wrap:anywhere]">
 							Thinking & tool calls
-							{message.tools?.length ? ` · ${message.tools.length}` : ""}
+							{regularTools.length ? ` · ${regularTools.length}` : ""}
 						</summary>
 						{message.thinking ? <pre className="mt-2 max-h-44 max-w-full overflow-auto whitespace-pre-wrap break-words font-mono [overflow-wrap:anywhere]">{message.thinking}</pre> : null}
-						{message.tools?.length ? (
+						{regularTools.length ? (
 							<div className="mt-2 grid min-w-0 max-w-full gap-1.5">
-								{message.tools.map((tool) => (
+								{regularTools.map((tool) => (
 									<ToolRecordDetails key={tool.toolCallId} tool={tool} className="min-w-0 max-w-full overflow-hidden rounded border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1" />
 								))}
 							</div>
 						) : null}
 					</details>
+				) : null}
+				{answeredQuestionnaires.length ? (
+					<div className="mb-2 space-y-2">
+						{answeredQuestionnaires.map(({ tool, questionnaire }) => (
+							<AnsweredQuestionCard key={tool.toolCallId} questionnaire={questionnaire!} />
+						))}
+					</div>
 				) : null}
 				<AssistantContent content={message.content} />
 				{message.error ? (
@@ -347,6 +361,45 @@ const MessageBubble = memo(function MessageBubble({ message, showChannel }: { me
 		</motion.div>
 	);
 });
+
+function CompletedToolRecords({ tools }: { tools: ChatToolRecord[] }) {
+	const views = tools.map((tool) => ({ tool, questionnaire: answeredQuestionnaireFromTool(tool) }));
+	const questionnaires = views.filter((item) => item.questionnaire !== null);
+	const regularTools = views.filter((item) => item.questionnaire === null).map((item) => item.tool);
+
+	return (
+		<>
+			{questionnaires.map(({ tool, questionnaire }) => (
+				<motion.div
+					key={tool.toolCallId}
+					className="flex max-w-[76%] justify-start"
+					initial={{ opacity: 0 }}
+					animate={{ opacity: 1 }}
+					transition={{ duration: 0.2 }}
+				>
+					<AnsweredQuestionCard questionnaire={questionnaire!} />
+				</motion.div>
+			))}
+			{regularTools.length ? (
+				<motion.div
+					className="flex justify-start"
+					initial={{ opacity: 0 }}
+					animate={{ opacity: 1 }}
+					transition={{ duration: 0.2 }}
+				>
+					<details className="inno-message min-w-0 max-w-[78%] overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-xs text-[var(--inno-text-muted)]">
+						<summary className="cursor-pointer break-words [overflow-wrap:anywhere]">Completed tool calls · {regularTools.length}</summary>
+						<div className="mt-2 grid min-w-0 max-w-full gap-1.5">
+							{regularTools.map((tool) => (
+								<ToolRecordDetails key={tool.toolCallId} tool={tool} className="min-w-0 max-w-full overflow-hidden rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2 py-1" />
+							))}
+						</div>
+					</details>
+				</motion.div>
+			) : null}
+		</>
+	);
+}
 
 /**
  * Memoized artifact for one closed block of a streaming reply. Closed blocks
@@ -1427,23 +1480,7 @@ export function ChatCenter() {
 						</motion.div>
 					) : null}
 
-					{chat.completedTools.length > 0 ? (
-						<motion.div
-							className="flex justify-start"
-							initial={{ opacity: 0 }}
-							animate={{ opacity: 1 }}
-							transition={{ duration: 0.2 }}
-						>
-							<details className="inno-message min-w-0 max-w-[78%] overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-xs text-[var(--inno-text-muted)]">
-								<summary className="cursor-pointer break-words [overflow-wrap:anywhere]">Completed tool calls · {chat.completedTools.length}</summary>
-								<div className="mt-2 grid min-w-0 max-w-full gap-1.5">
-									{chat.completedTools.map((tool) => (
-										<ToolRecordDetails key={tool.toolCallId} tool={tool} className="min-w-0 max-w-full overflow-hidden rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2 py-1" />
-									))}
-								</div>
-							</details>
-						</motion.div>
-					) : null}
+					{chat.completedTools.length > 0 ? <CompletedToolRecords tools={chat.completedTools} /> : null}
 
 					{/* Thinking + reply text bubbles — own store subscription, see above */}
 					<StreamingBubbles />

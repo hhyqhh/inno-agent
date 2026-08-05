@@ -610,7 +610,8 @@
 		"submit": "提交",
 		"submitNext": "下一题",
 		"optionSelectedHint": "已选择选项，如需自定义请先取消选择",
-		"answered": "已选择"
+		"answered": "已选择",
+		"answeredViaChat": "已通过对话回答"
 	},
 	"sidebar": {
 		"expand": "展开",

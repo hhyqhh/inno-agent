@@ -132,6 +132,8 @@ function resolveRelPath(htmlFilePath: string, relativeRef: string): string {
 }
 
 function rewriteCssUrls(css: string, cssFilePath: string, wsId?: string): string {
+  // Known limitation: the [^"')]+ body cannot match a quoted URL containing
+  // ")" — those are left untouched (relative, likely broken in preview).
   return css.replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi, (match, quote: string, ref: string) => {
     const trimmedRef = ref.trim();
     if (!isRelUrl(trimmedRef)) return match;
@@ -158,7 +160,9 @@ export async function inlineWorkspaceHtml(html: string, filePath: string, wsId?:
     const { path } = splitResourceRef(hm[1]);
     if (!path) continue;
     const rp = resolveRelPath(filePath, path);
-    if (/\.(?:css|js|mjs)$/i.test(rp)) fetches.push({ tag: m[0], path: rp, type: "css" });
+    // Stylesheets only: a .js href inlined into a <style> block would be
+    // broken CSS anyway. Scripts are handled by the <script> pass below.
+    if (/\.css$/i.test(rp)) fetches.push({ tag: m[0], path: rp, type: "css" });
   }
 
   // Collect <script src="...">...</script>

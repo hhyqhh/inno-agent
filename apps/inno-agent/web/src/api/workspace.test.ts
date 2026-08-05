@@ -59,4 +59,54 @@ describe("inlineWorkspaceHtml", () => {
 		expect(result).not.toContain("site.css?v=3#theme");
 		expect(result).not.toContain("app.js?cache=1");
 	});
+
+	it.each([
+		["absolute http URL", "https://cdn.example.com/site.css"],
+		["absolute https URL", "http://cdn.example.com/site.css"],
+		["protocol-relative URL", "//cdn.example.com/site.css"],
+		["root-relative URL", "/static/site.css"],
+		["data URL", "data:text/css,body{}"],
+		["blob URL", "blob:https://example.com/id"],
+		["non-http scheme", "mailto:a@b.c"],
+		["query-only ref", "?v=3"],
+		["fragment-only ref", "#theme"],
+	])("leaves %s untouched", async (_label, href) => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		const tag = `<link rel="stylesheet" href="${href}">`;
+
+		const result = await inlineWorkspaceHtml(tag, "index.html");
+
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(result).toBe(tag);
+	});
+
+	it("does not inline a script referenced from a stylesheet link tag", async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		const tag = '<link rel="stylesheet" href="app.js">';
+
+		const result = await inlineWorkspaceHtml(tag, "index.html");
+
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(result).toBe(tag);
+	});
+
+	it("resolves Windows-style backslash paths", async () => {
+		const fetchMock = vi.fn(async (_input: string | URL | Request) =>
+			new Response(
+				JSON.stringify({ path: "assets\\site.css", name: "site.css", kind: "text", content: "body{}" }),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			));
+		vi.stubGlobal("fetch", fetchMock);
+
+		const result = await inlineWorkspaceHtml(
+			'<link rel="stylesheet" href="..\\assets\\site.css">',
+			"reports\\summary\\index.html",
+		);
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(String(fetchMock.mock.calls[0]?.[0])).toContain("path=reports%2Fassets%2Fsite.css");
+		expect(result).toContain("<style>body{}</style>");
+	});
 });

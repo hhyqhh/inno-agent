@@ -191,6 +191,93 @@ describe("ChatStore stream ownership", () => {
 		await sending;
 	});
 
+	it("restores the pending question when the submit fails before tool_end", async () => {
+		let releaseTool!: () => void;
+		let rejectSubmit!: (err: Error) => void;
+		const toolFinished = new Promise<void>((resolve) => { releaseTool = resolve; });
+		mocks.submitChatQuestion.mockReturnValue(new Promise((_, reject) => { rejectSubmit = reject; }));
+		const params = {
+			questions: [{
+				question: "Choose one",
+				header: "Choice",
+				options: [{ label: "A", description: "First" }, { label: "B", description: "Second" }],
+			}],
+		};
+		const result: QuestionnaireResult = {
+			answers: [{ questionIndex: 0, question: "Choose one", kind: "option", answer: "B" }],
+			cancelled: false,
+		};
+		mocks.streamChat.mockImplementation(async function* () {
+			yield envelope(1, { type: "stream_state", status: "running" });
+			yield envelope(2, { type: "tool_start", toolCallId: "question-tool", toolName: "ask_user_question", args: params });
+			yield envelope(3, { type: "question", questionId: "question-card", params });
+			await toolFinished;
+			yield envelope(4, { type: "tool_end", toolCallId: "question-tool", toolName: "ask_user_question", result, isError: false });
+			yield envelope(5, { type: "aborted", message: "Stopped", persisted: false });
+		});
+
+		const store = new ChatStoreImpl();
+		const sending = store.send("hello");
+		await vi.waitFor(() => expect(store.pendingQuestion?.questionId).toBe("question-card"));
+		const submitting = store.submitQuestionResponse("question-card", result);
+		await vi.waitFor(() => expect(store.completedTools).toHaveLength(1));
+		rejectSubmit(new Error("network down"));
+		await submitting;
+
+		expect(store.pendingQuestion?.questionId).toBe("question-card");
+		expect(store.completedTools).toHaveLength(0);
+		expect(store.activeTools.map((tool) => tool.toolCallId)).toEqual(["question-tool"]);
+		expect(store.streamingError).toBe("network down");
+
+		releaseTool();
+		await sending;
+	});
+
+	it("keeps the completed card when tool_end lands before a failed submit", async () => {
+		let releaseTool!: () => void;
+		let rejectSubmit!: (err: Error) => void;
+		const toolFinished = new Promise<void>((resolve) => { releaseTool = resolve; });
+		mocks.submitChatQuestion.mockReturnValue(new Promise((_, reject) => { rejectSubmit = reject; }));
+		const params = {
+			questions: [{
+				question: "Choose one",
+				header: "Choice",
+				options: [{ label: "A", description: "First" }, { label: "B", description: "Second" }],
+			}],
+		};
+		const result: QuestionnaireResult = {
+			answers: [{ questionIndex: 0, question: "Choose one", kind: "option", answer: "B" }],
+			cancelled: false,
+		};
+		mocks.streamChat.mockImplementation(async function* () {
+			yield envelope(1, { type: "stream_state", status: "running" });
+			yield envelope(2, { type: "tool_start", toolCallId: "question-tool", toolName: "ask_user_question", args: params });
+			yield envelope(3, { type: "question", questionId: "question-card", params });
+			await toolFinished;
+			yield envelope(4, { type: "tool_end", toolCallId: "question-tool", toolName: "ask_user_question", result, isError: false });
+			yield envelope(5, { type: "aborted", message: "Stopped", persisted: false });
+		});
+
+		const store = new ChatStoreImpl();
+		const sending = store.send("hello");
+		await vi.waitFor(() => expect(store.pendingQuestion?.questionId).toBe("question-card"));
+		const submitting = store.submitQuestionResponse("question-card", result);
+		releaseTool();
+		// tool_end arrives while the answer POST is still in flight: the server
+		// has already consumed the answer, so a client-side failure must not
+		// resurrect the editable question. Wait for the stream to settle so the
+		// trailing aborted event cannot overwrite the submit error.
+		await sending;
+		expect(store.messages.at(-1)?.tools).toHaveLength(1);
+		rejectSubmit(new Error("network down"));
+		await submitting;
+
+		expect(store.pendingQuestion).toBeNull();
+		expect(store.activeTools).toHaveLength(0);
+		expect(store.messages.at(-1)?.tools?.[0]?.result).toEqual(result);
+		expect(store.streamingError).toBe("network down");
+	});
+
 	it("does not replace a transient turn with stale canonical history", async () => {
 		vi.useFakeTimers();
 		try {

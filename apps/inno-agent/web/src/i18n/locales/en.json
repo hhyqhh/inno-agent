@@ -610,7 +610,8 @@
 		"submit": "Submit",
 		"submitNext": "Next",
 		"optionSelectedHint": "Option selected; deselect to enter custom text",
-		"answered": "Selected"
+		"answered": "Selected",
+		"answeredViaChat": "Answered via chat"
 	},
 	"sidebar": {
 		"expand": "Expand",

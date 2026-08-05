@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ChatToolRecord } from "../types/chat.js";
+import type { ChatToolRecord, QuestionData } from "../types/chat.js";
 import {
+	answeredQuestionnaireFromTool,
 	buildAnsweredQuestionnaireTimeline,
 	type AnsweredQuestionnaire,
 	type AnsweredQuestionnaireView,
@@ -55,5 +56,61 @@ describe("buildAnsweredQuestionnaireTimeline", () => {
 
 		expect(timeline.entries[0]?.before).toBe("already shown");
 		expect(timeline.tail).toBe("");
+	});
+});
+
+describe("answeredQuestionnaireFromTool", () => {
+	const questions: QuestionData[] = [
+		{ question: "Pick one", header: "Pick", options: [{ label: "A", description: "" }, { label: "B", description: "" }] },
+		{ question: "Pick many", header: "Multi", options: [{ label: "X", description: "" }, { label: "Y", description: "" }], multiSelect: true },
+	];
+
+	function tool(result: unknown, extra: Partial<ChatToolRecord> = {}): ChatToolRecord {
+		return { toolCallId: "question-tool", toolName: "ask_user_question", args: { questions }, result, ...extra };
+	}
+
+	it("returns null for errored tools even when the result parses", () => {
+		const result = { answers: [{ questionIndex: 0, question: "Pick one", kind: "option", answer: "A" }], cancelled: false };
+		expect(answeredQuestionnaireFromTool(tool(result, { isError: true }))).toBeNull();
+	});
+
+	it("recovers a structured result from the live { content, details } envelope", () => {
+		const details = { answers: [{ questionIndex: 0, question: "Pick one", kind: "option", answer: "B" }], cancelled: false };
+		const result = { content: [{ type: "text", text: "User has answered your questions: ..." }], details };
+
+		expect(answeredQuestionnaireFromTool(tool(result))).toEqual({ questions, result: details });
+	});
+
+	it("ignores cancelled structured results", () => {
+		const result = { answers: [], cancelled: true };
+		expect(answeredQuestionnaireFromTool(tool(result))).toBeNull();
+	});
+
+	it("parses legacy human-readable envelopes", () => {
+		const text = 'User has answered your questions: "Pick one"="A". "Pick many"="X, Y". You can now continue with the user\'s answers in mind.';
+
+		expect(answeredQuestionnaireFromTool(tool(text))).toEqual({
+			questions,
+			result: {
+				cancelled: false,
+				answers: [
+					{ questionIndex: 0, question: "Pick one", kind: "option", answer: "A" },
+					{ questionIndex: 1, question: "Pick many", kind: "multi", answer: null, selected: ["X", "Y"] },
+				],
+			},
+		});
+	});
+
+	it("marks legacy answers that match no option as custom", () => {
+		const text = 'User has answered your questions: "Pick one"="Something else". You can now continue.';
+
+		const recovered = answeredQuestionnaireFromTool(tool(text));
+		expect(recovered?.result.answers).toEqual([
+			{ questionIndex: 0, question: "Pick one", kind: "custom", answer: "Something else" },
+		]);
+	});
+
+	it("returns null when no answer marker matches the questions", () => {
+		expect(answeredQuestionnaireFromTool(tool("User declined to answer questions"))).toBeNull();
 	});
 });

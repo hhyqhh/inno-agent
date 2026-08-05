@@ -38,6 +38,9 @@ export function buildAnsweredQuestionnaireTimeline(content: string, views: Answe
  */
 export function answeredQuestionnaireFromTool(tool: ChatToolRecord): AnsweredQuestionnaire | null {
 	if (tool.toolName !== "ask_user_question") return null;
+	// An errored tool stays in the generic tool-call details even when its
+	// result happens to parse — it is a failure record, not an answered card.
+	if (tool.isError) return null;
 	const questions = readQuestions(tool.args);
 	if (!questions.length) return null;
 

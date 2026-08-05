@@ -84,6 +84,11 @@ export function AnsweredQuestionCard({ questionnaire }: { questionnaire: Answere
 										{answer.answer}
 									</div>
 								) : null}
+								{answer.kind === "chat" ? (
+									<div className="text-xs text-[var(--inno-text-muted)]">
+										{answer.answer ?? t("question.answeredViaChat")}
+									</div>
+								) : null}
 							</div>
 						</div>
 					);

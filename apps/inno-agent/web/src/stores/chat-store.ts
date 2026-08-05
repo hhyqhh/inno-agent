@@ -61,6 +61,12 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	 *  (backend may re-push a question event before the answer POST lands) and
 	 *  guards restored cards against reappearing from a stale cache. */
 	private answeredQuestionIds = new Set<string>();
+	/** Tool calls swapped to a completed questionnaire card before the answer
+	 *  POST returned. tool_end removes the id; a submit failure may only roll
+	 *  the card back while the id is still here — once tool_end landed, the
+	 *  server already consumed the answer and restoring the editable card
+	 *  would resurrect a resolved question. */
+	private optimisticQuestionToolIds = new Set<string>();
 	canReconnect = false;
 	private abortController: AbortController | null = null;
 	private detachMode = false;
@@ -449,6 +455,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			case "tool_end":
 				this.flushStreamChange();
 				this.maybeFinishFileToolPreview(event.toolCallId, event.toolName, event.result, event.isError, owner);
+				this.optimisticQuestionToolIds.delete(event.toolCallId);
 				const existingTool = this.completedTools.find((tool) => tool.toolCallId === event.toolCallId)
 					?? this.activeTools.find((tool) => tool.toolCallId === event.toolCallId);
 				this.completedTools = [
@@ -545,6 +552,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.streamingError = "";
 		this.activeTools = [];
 		this.completedTools = [];
+		this.optimisticQuestionToolIds.clear();
 		this.pendingQuestion = null;
 		if (this.workspacePreviewId) workspaceStore.clearStreamingPreview(this.workspacePreviewId);
 		this.resetWorkspaceStreamState();
@@ -709,6 +717,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		// so subsequent streamed text grows below it without changing the card.
 		this.pendingQuestion = null;
 		if (activeQuestionTool && !result.cancelled) {
+			this.optimisticQuestionToolIds.add(activeQuestionTool.toolCallId);
 			this.activeTools = this.activeTools.filter((tool) => tool.toolCallId !== activeQuestionTool.toolCallId);
 			this.completedTools = [
 				...this.completedTools.filter((tool) => tool.toolCallId !== activeQuestionTool.toolCallId),
@@ -733,12 +742,17 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			}
 		} catch (err) {
 			if (!this.activeOwner || this.owns(this.activeOwner)) {
-				if (optimisticToolCallId) {
+				// Roll back only while the optimistic card is still ours. If
+				// tool_end already arrived, the server consumed the answer
+				// despite the failed POST — keep the completed card and only
+				// surface the error instead of resurrecting the question.
+				if (optimisticToolCallId && this.optimisticQuestionToolIds.has(optimisticToolCallId)) {
+					this.optimisticQuestionToolIds.delete(optimisticToolCallId);
 					this.completedTools = this.completedTools.filter((tool) => tool.toolCallId !== optimisticToolCallId);
 					if (activeQuestionTool) this.activeTools = [...this.activeTools, activeQuestionTool];
+					this.pendingQuestion = pending;
+					this.answeredQuestionIds.delete(questionId);
 				}
-				this.pendingQuestion = pending;
-				this.answeredQuestionIds.delete(questionId);
 				this.streamingError = err instanceof Error ? err.message : "提交回答失败";
 				this.emit("change", undefined);
 			}
@@ -753,6 +767,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.detach();
 		this.messages = [];
 		this.answeredQuestionIds.clear();
+		this.optimisticQuestionToolIds.clear();
 		this.emit("change", undefined);
 	}
 

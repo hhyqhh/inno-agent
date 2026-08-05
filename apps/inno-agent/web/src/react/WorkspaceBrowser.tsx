@@ -309,7 +309,7 @@ function HtmlPreview({ file }: { file: WorkspaceFileDetail }) {
     ? raw.replace(/<head([^>]*)>/i, `<head$1>${guardScript}`)
     : `<!doctype html><html><head>${guardScript}</head><body>${raw}</body></html>`;
 
-  return <iframe className="h-full w-full border-0 bg-[var(--inno-surface)]" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcDoc={html} title={file.name} />;
+  return <iframe className="h-full w-full border-0 bg-[var(--inno-surface)]" sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-popups-to-escape-sandbox" srcDoc={html} title={file.name} />;
 }
 
 /* ---------- Preview (read-only) ---------- */

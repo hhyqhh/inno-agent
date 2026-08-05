@@ -103,21 +103,44 @@ const MAX_INLINE_BYTES = 512 * 1024;
 function isRelUrl(url: string): boolean {
   const t = url.trim();
   if (!t) return false;
-  if (/^(https?:)?\/\//i.test(t)) return false;
-  if (t.startsWith("/")) return false;
-  if (/^(?:data|blob):/i.test(t)) return false;
+  if (/^[a-z][a-z\d+.-]*:/i.test(t)) return false;
+  if (t.startsWith("//") || t.startsWith("/") || t.startsWith("?") || t.startsWith("#")) return false;
   return true;
 }
 
+function splitResourceRef(ref: string): { path: string; hash: string } {
+  const trimmed = ref.trim();
+  const hashIndex = trimmed.indexOf("#");
+  const hash = hashIndex >= 0 ? trimmed.slice(hashIndex) : "";
+  const withoutHash = hashIndex >= 0 ? trimmed.slice(0, hashIndex) : trimmed;
+  const queryIndex = withoutHash.indexOf("?");
+  const path = queryIndex >= 0 ? withoutHash.slice(0, queryIndex) : withoutHash;
+  return { path, hash };
+}
+
 function resolveRelPath(htmlFilePath: string, relativeRef: string): string {
-  const htmlDir = htmlFilePath.includes("/") ? htmlFilePath.split("/").slice(0, -1).join("/") : "";
+  const normalizedFilePath = htmlFilePath.replaceAll("\\", "/");
+  const normalizedRef = relativeRef.replaceAll("\\", "/");
+  const htmlDir = normalizedFilePath.includes("/") ? normalizedFilePath.split("/").slice(0, -1).join("/") : "";
   const segs = htmlDir ? htmlDir.split("/").filter(Boolean) : [];
-  for (const seg of relativeRef.split("/")) {
+  for (const seg of normalizedRef.split("/")) {
     if (seg === "." || seg === "") continue;
     if (seg === "..") { segs.pop(); continue; }
     segs.push(seg);
   }
   return segs.join("/");
+}
+
+function rewriteCssUrls(css: string, cssFilePath: string, wsId?: string): string {
+  return css.replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi, (match, quote: string, ref: string) => {
+    const trimmedRef = ref.trim();
+    if (!isRelUrl(trimmedRef)) return match;
+    const { path, hash } = splitResourceRef(trimmedRef);
+    if (!path) return match;
+    const rawUrl = workspaceFileUrl(resolveRelPath(cssFilePath, path), wsId) + hash;
+    const wrapper = quote || '"';
+    return `url(${wrapper}${rawUrl}${wrapper})`;
+  });
 }
 
 export async function inlineWorkspaceHtml(html: string, filePath: string, wsId?: string): Promise<string> {
@@ -132,7 +155,9 @@ export async function inlineWorkspaceHtml(html: string, filePath: string, wsId?:
     const hm = attrs.match(/\bhref\s*=\s*["\']([^"\']+)["\']/i);
     if (!hm) continue;
     if (!isRelUrl(hm[1])) continue;
-    const rp = resolveRelPath(filePath, hm[1]);
+    const { path } = splitResourceRef(hm[1]);
+    if (!path) continue;
+    const rp = resolveRelPath(filePath, path);
     if (/\.(?:css|js|mjs)$/i.test(rp)) fetches.push({ tag: m[0], path: rp, type: "css" });
   }
 
@@ -140,7 +165,9 @@ export async function inlineWorkspaceHtml(html: string, filePath: string, wsId?:
   const scrRe = /<script\b([^>]*)\bsrc\s*=\s*["']([^"']+)["']([^>]*)>\s*<\/script>/gi;
   while ((m = scrRe.exec(html)) !== null) {
     if (!isRelUrl(m[2])) continue;
-    const rp = resolveRelPath(filePath, m[2]);
+    const { path } = splitResourceRef(m[2]);
+    if (!path) continue;
+    const rp = resolveRelPath(filePath, path);
     if (/\.(?:js|mjs)$/i.test(rp)) fetches.push({ tag: m[0], path: rp, type: "js", attrs: (m[1] + ' ' + m[3]).replace(/\bsrc\s*=\s*["'][^"']*["']/gi, '').replace(/\s+/g, ' ').trim() });
   }
 
@@ -164,11 +191,12 @@ export async function inlineWorkspaceHtml(html: string, filePath: string, wsId?:
   for (const r of results) {
     if (r.content == null) continue;
     if (r.type === "css") {
-      result = result.replace(r.tag, `<style>${r.content}</style>`);
+      const css = rewriteCssUrls(r.content, r.path, wsId);
+      result = result.replace(r.tag, () => `<style>${css}</style>`);
     } else {
       const attrs = r.attrs;
       const open = attrs ? `<script ${attrs}>` : "<script>";
-      result = result.replace(r.tag, `${open}${r.content}</script>`);
+      result = result.replace(r.tag, () => `${open}${r.content}</script>`);
     }
   }
   return result;

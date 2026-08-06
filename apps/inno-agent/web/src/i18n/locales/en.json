@@ -45,6 +45,19 @@
 		"questionPending": "Please answer the question above before continuing",
 		"questionPendingJump": "View question"
 	},
+	"desktop": {
+		"closeDialog": {
+			"title": "Close Inno Agent",
+			"message": "How would you like to close Inno Agent?",
+			"detail": "Choose “Close window” to keep the app running in the background, or “Quit app” to stop the background service. Check “Remember my choice” to use it next time. You can change it later in Settings > General.",
+			"buttons": {
+				"hide": "Close window",
+				"quit": "Quit app",
+				"cancel": "Cancel"
+			},
+			"remember": "Remember my choice"
+		}
+	},
 	"sessions": {
 		"export": "Export as Markdown"
 	},

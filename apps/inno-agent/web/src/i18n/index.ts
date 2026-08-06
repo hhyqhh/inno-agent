@@ -4,8 +4,31 @@ import zhCN from "./locales/zh-CN.json";
 import en from "./locales/en.json";
 
 const STORAGE_KEY = "inno.locale";
+type SupportedLocale = "zh-CN" | "en";
 
-function getInitialLocale(): string {
+type CloseDialogCopy = {
+	title: string;
+	message: string;
+	detail: string;
+	buttons: {
+		hide: string;
+		quit: string;
+		cancel: string;
+	};
+	remember: string;
+};
+
+type DesktopBridge = {
+	setCloseDialogCopy(copy: CloseDialogCopy): void;
+};
+
+declare global {
+	interface Window {
+		innoDesktop?: DesktopBridge;
+	}
+}
+
+function getInitialLocale(): SupportedLocale {
 	if (typeof window === "undefined") return "zh-CN";
 	const saved = window.localStorage.getItem(STORAGE_KEY);
 	if (saved === "zh-CN" || saved === "en") return saved;
@@ -27,8 +50,17 @@ export function setLocale(lng: "zh-CN" | "en"): void {
 	void i18n.changeLanguage(lng);
 	if (typeof window !== "undefined") {
 		window.localStorage.setItem(STORAGE_KEY, lng);
+		syncDesktopCloseDialogCopy(lng);
 	}
 }
+
+function syncDesktopCloseDialogCopy(locale: SupportedLocale): void {
+	if (typeof window === "undefined") return;
+	const resources = locale === "en" ? en : zhCN;
+	window.innoDesktop?.setCloseDialogCopy(resources.desktop.closeDialog);
+}
+
+	syncDesktopCloseDialogCopy(getInitialLocale());
 
 export function currentLocale(): string {
 	return i18n.language || "zh-CN";

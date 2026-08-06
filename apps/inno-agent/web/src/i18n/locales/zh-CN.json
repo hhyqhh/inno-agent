@@ -45,6 +45,19 @@
 		"questionPending": "请完成上方问卷后再继续对话",
 		"questionPendingJump": "查看问卷"
 	},
+	"desktop": {
+		"closeDialog": {
+			"title": "关闭 Inno Agent",
+			"message": "要如何关闭 Inno Agent？",
+			"detail": "选择“关闭窗口”会让应用继续在后台运行；选择“退出应用”会停止后台服务。勾选“记住我的选择”后，下次将直接使用该选择，也可以在设置 > 通用中修改。",
+			"buttons": {
+				"hide": "关闭窗口",
+				"quit": "退出应用",
+				"cancel": "取消"
+			},
+			"remember": "记住我的选择"
+		}
+	},
 	"sessions": {
 		"export": "导出为 Markdown"
 	},

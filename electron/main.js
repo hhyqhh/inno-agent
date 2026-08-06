@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage } from "electron";
+import { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, ipcMain } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { join, dirname } from "node:path";
@@ -64,6 +64,47 @@ let serverProcess = null;
 let tray = null;
 let isQuitting = false;
 let isCloseDialogOpen = false;
+let closeDialogCopy = {
+  title: "关闭 Inno Agent",
+  message: "要如何关闭 Inno Agent？",
+  detail: "选择“关闭窗口”会让应用继续在后台运行；选择“退出应用”会停止后台服务。勾选“记住我的选择”后，下次将直接使用该选择，也可以在设置 > 通用中修改。",
+  buttons: {
+    hide: "关闭窗口",
+    quit: "退出应用",
+    cancel: "取消",
+  },
+  remember: "记住我的选择",
+};
+
+function isCloseDialogCopy(value) {
+  if (!value || typeof value !== "object") return false;
+  const copy = value;
+  const buttons = copy.buttons;
+  return typeof copy.title === "string"
+    && typeof copy.message === "string"
+    && typeof copy.detail === "string"
+    && typeof copy.remember === "string"
+    && buttons
+    && typeof buttons === "object"
+    && typeof buttons.hide === "string"
+    && typeof buttons.quit === "string"
+    && typeof buttons.cancel === "string";
+}
+
+ipcMain.on("inno-close-dialog-copy", (_event, copy) => {
+  if (!isCloseDialogCopy(copy)) return;
+  closeDialogCopy = {
+    title: copy.title,
+    message: copy.message,
+    detail: copy.detail,
+    buttons: {
+      hide: copy.buttons.hide,
+      quit: copy.buttons.quit,
+      cancel: copy.buttons.cancel,
+    },
+    remember: copy.remember,
+  };
+});
 
 // ── Loading 窗口（服务启动期间显示） ────────────────────────────────────────
 function openLoadingWindow() {
@@ -125,13 +166,13 @@ async function askCloseBehavior() {
   try {
     const result = await dialog.showMessageBox(mainWindow, {
       type: "question",
-      title: "关闭 Inno Agent",
-      message: "要如何关闭 Inno Agent？",
-      detail: "选择“关闭窗口”会让应用继续在后台运行；选择“退出应用”会停止后台服务。勾选“记住我的选择”后，下次将直接使用该选择，也可以在设置 > 通用中修改。",
-      buttons: ["关闭窗口", "退出应用", "取消"],
+      title: closeDialogCopy.title,
+      message: closeDialogCopy.message,
+      detail: closeDialogCopy.detail,
+      buttons: [closeDialogCopy.buttons.hide, closeDialogCopy.buttons.quit, closeDialogCopy.buttons.cancel],
       defaultId: 0,
       cancelId: 2,
-      checkboxLabel: "记住我的选择",
+      checkboxLabel: closeDialogCopy.remember,
       noLink: true,
     });
 
@@ -162,7 +203,11 @@ function openMainWindow() {
     minHeight: 600,
     title: "Inno Agent",
     backgroundColor: "#0f1117",
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: join(__dirname, "preload.cjs"),
+    },
   });
 
   mainWindow.loadURL(`http://localhost:${PORT}`);

@@ -364,6 +364,7 @@
 		"refresh": "刷新",
 		"loading": "正在加载设置…",
 		"stats": {
+			"version": "当前版本",
 			"server": "服务器",
 			"healthy": "运行中",
 			"offline": "未连接",

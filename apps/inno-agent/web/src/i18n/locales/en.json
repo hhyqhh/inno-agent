@@ -364,6 +364,7 @@
 		"refresh": "Refresh",
 		"loading": "Loading settings…",
 		"stats": {
+			"version": "Version",
 			"server": "Server",
 			"healthy": "healthy",
 			"offline": "offline",

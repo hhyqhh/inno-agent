@@ -6,6 +6,7 @@ import type { WikiStats } from "../../types/wiki.js";
 import { useStoreSnapshot } from "../hooks.js";
 import { SettingsSection, SettingsCard } from "./primitives.js";
 import { formatBytes } from "./shared.js";
+import packageJson from "../../../package.json";
 
 export function AboutSettings() {
 	const { t } = useTranslation();
@@ -34,6 +35,10 @@ export function AboutSettings() {
 				{state.isLoading ? <div className="text-sm text-[var(--inno-text-muted)]">{t("settings.loading")}</div> : null}
 				{state.error ? <div className="rounded bg-[var(--inno-danger-bg)] p-2 text-sm text-[var(--inno-danger)]">{state.error}</div> : null}
 				<div className="settings-stats-grid grid gap-3 text-sm">
+					<div className="rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
+						<div className="text-xs text-[var(--inno-text-muted)]">{t("settings.stats.version")}</div>
+						<div className="font-medium text-[var(--inno-text)]">v{packageJson.version}</div>
+					</div>
 					<div className="rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
 						<div className="text-xs text-[var(--inno-text-muted)]">{t("settings.stats.server")}</div>
 						<div className={healthOk ? "font-medium text-[var(--inno-success)]" : "font-medium text-[var(--inno-danger)]"}>

@@ -133,6 +133,7 @@ function buildIndex() {
 					name: meta.name.trim(),
 					description: (meta.description ?? "").trim(),
 					icon: meta.icon?.trim() || undefined,
+					category: meta.category?.trim() || undefined,
 				});
 			} catch {
 				// skip invalid preset.json

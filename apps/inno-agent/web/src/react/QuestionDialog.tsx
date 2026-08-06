@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
+import { Check } from "lucide-react";
 import type { PendingQuestion, QuestionAnswer, QuestionData, QuestionnaireResult } from "../types/chat.js";
 import type { AnsweredQuestionnaire } from "../utils/questionnaire.js";
 import { chatStore } from "../stores/chat-store.js";
@@ -122,18 +123,23 @@ function QuestionTab({
 	const { t } = useTranslation();
 	const isMulti = q.multiSelect === true;
 	const hasPreview = q.options.some((o) => o.preview);
-	const selectedLabels = new Set(answer?.selected ?? (answer?.answer ? [answer.answer] : []));
+	const selectedLabels = new Set(answer?.selected ?? (answer?.kind === "option" && answer.answer ? [answer.answer] : []));
 	// 选项优先：当前题已选了选项/多选时，文字输入框不生效
 	const hasOptionAnswer = answer?.kind === "option" || answer?.kind === "multi";
 
 	const handleOptionClick = (label: string) => {
+		const customAnswer = customDraft.trim();
 		if (isMulti) {
 			const next = new Set(selectedLabels);
 			if (next.has(label)) next.delete(label);
 			else next.add(label);
 			if (next.size === 0) {
-				// 多选全部脱选 → 撤回答案
-				onAnswer({ questionIndex, question: q.question, kind: "multi", answer: null, selected: [] });
+				// 多选全部脱选：有文字草稿则恢复文字答案，否则撤回答案。
+				if (customAnswer) {
+					onAnswer({ questionIndex, question: q.question, kind: "custom", answer: customAnswer });
+				} else {
+					onAnswer({ questionIndex, question: q.question, kind: "multi", answer: null, selected: [] });
+				}
 			} else {
 				onAnswer({
 					questionIndex,
@@ -146,7 +152,11 @@ function QuestionTab({
 		} else {
 			// 单选：再次点击已选项 = 脱选，回到未答
 			if (selectedLabels.has(label)) {
-				onAnswer({ questionIndex, question: q.question, kind: "option", answer: null });
+				if (customAnswer) {
+					onAnswer({ questionIndex, question: q.question, kind: "custom", answer: customAnswer });
+				} else {
+					onAnswer({ questionIndex, question: q.question, kind: "option", answer: null });
+				}
 			} else {
 				onAnswer({
 					questionIndex,
@@ -259,14 +269,15 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 		void chatStore.dismissQuestion(questionId);
 	}, [questionId]);
 
-	// 逐题推进：只要当前题答了，就能点按钮推进或提交。
-	const currentAnswered = answers.has(activeTab);
 	const isLast = activeTab === questions.length - 1;
+	// 中间题只需当前题有答案；最后一题提交前必须完成全部题目。
+	const currentAnswered = answers.has(activeTab);
+	const canContinue = currentAnswered && (!isLast || answers.size === questions.length);
 
 	const handleClick = useCallback(() => {
-		if (!answers.has(activeTab)) return;
+		if (!canContinue) return;
 		if (isLast) {
-			// 最后一题（或单题）：提交全部已答题目。未答的题不在 answers 里，自然不发。
+			// 最后一题（或单题）：提交全部题目的答案。
 			const result: QuestionnaireResult = {
 				answers: Array.from(answers.values()),
 				cancelled: false,
@@ -276,7 +287,7 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 			// 暂存当前答案，跳到下一题
 			setActiveTab((prev) => Math.min(prev + 1, questions.length - 1));
 		}
-	}, [questionId, answers, activeTab, isLast, questions.length]);
+	}, [questionId, answers, canContinue, isLast]);
 
 	const setFocusedForTab = useCallback(
 		(tab: number, optionIdx: number) => {
@@ -310,7 +321,7 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 						{questions.map((q, i) => (
 							<button
 								key={q.header}
-								className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+								className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
 									activeTab === i
 										? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
 										: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
@@ -318,6 +329,7 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 								onClick={() => setActiveTab(i)}
 							>
 								{q.header}
+								{answers.has(i) ? <Check size={12} strokeWidth={2.5} aria-hidden="true" /> : null}
 							</button>
 						))}
 					</div>
@@ -342,8 +354,8 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 						</span>
 					) : null}
 					<button
-						className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${ currentAnswered ? "inno-primary-button" : "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]" }`}
-						disabled={!currentAnswered}
+						className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${ canContinue ? "inno-primary-button" : "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]" }`}
+						disabled={!canContinue}
 						onClick={handleClick}
 					>
 						{isLast ? t("question.submit") : t("question.submitNext")}

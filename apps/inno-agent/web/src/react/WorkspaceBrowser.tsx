@@ -638,6 +638,10 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 						multiSelect.toggleFile(node.data.path);
 						return;
 					}
+					if (node.isSelected) {
+						node.deselect();
+						return;
+					}
 					node.select();
 					workspaceStore.clearStreamingPreview();
 					if (appStore.workspaceWidth < CONTENT_REVEAL_WIDTH) {

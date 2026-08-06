@@ -461,6 +461,14 @@
 			"ocean": "海洋",
 			"innospark": "启创"
 		},
+		"closeBehavior": {
+			"title": "关闭行为",
+			"options": {
+				"ask": "每次询问",
+				"hide": "关闭窗口并保留后台",
+				"quit": "退出应用"
+			}
+		},
 		"channels": {
 			"title": "消息渠道",
 			"feishu": {
@@ -531,11 +539,12 @@
 			"about": "关于"
 		},
 		"sections": {
-			"general": {
-				"desc": "外观与语言偏好",
-				"themeDesc": "选择界面配色主题",
-				"languageDesc": "切换界面显示语言"
-			},
+		"general": {
+			"desc": "外观与语言偏好",
+			"themeDesc": "选择界面配色主题",
+			"languageDesc": "切换界面显示语言",
+			"closeBehaviorDesc": "设置点击窗口关闭按钮时的处理方式；确认框中的“记住我的选择”会保存到这里，所有平台通用。"
+		},
 			"models": {
 				"desc": "配置模型提供商与默认模型"
 			},

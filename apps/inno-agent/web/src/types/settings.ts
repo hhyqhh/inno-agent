@@ -71,6 +71,8 @@ export interface ChannelsSettingsPayload {
 	};
 }
 
+export type WindowCloseBehavior = "ask" | "hide" | "quit";
+
 export interface InnoSettings {
 	defaultProvider: string;
 	defaultModel: string;
@@ -107,5 +109,5 @@ export interface InnoSettings {
 	};
 	memory?: { l1Enabled: boolean; l2Enabled: boolean; l3Enabled: boolean };
 	simpleMode?: { enabled: boolean };
-	ui?: { theme: string };
+	ui?: { theme: string; closeBehavior: WindowCloseBehavior };
 }

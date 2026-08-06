@@ -1,5 +1,6 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveCloseBehavior, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
+import type { WindowCloseBehavior } from "../types/settings.js";
 import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
 interface SettingsStoreEvents {
@@ -18,6 +19,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingTavily = false;
 	isSavingContentHub = false;
 	isSavingSimpleMode = false;
+	isSavingCloseBehavior = false;
 	error: string | null = null;
 
 	async load(): Promise<void> {
@@ -152,6 +154,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			throw err;
 		} finally {
 			this.isSavingSimpleMode = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveCloseBehavior(closeBehavior: WindowCloseBehavior): Promise<void> {
+		this.isSavingCloseBehavior = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveCloseBehavior(closeBehavior);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save close behavior";
+			this.emit("change", undefined);
+			throw err;
+		} finally {
+			this.isSavingCloseBehavior = false;
 			this.emit("change", undefined);
 		}
 	}

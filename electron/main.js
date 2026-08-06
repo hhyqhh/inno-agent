@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage } from "electron";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
@@ -52,6 +52,7 @@ function ensureConfig() {
     },
     bridge: { token: "" },
     subagents: { enabled: false },
+    ui: { theme: "light", closeBehavior: "ask" },
   };
   writeFileSync(configPath, JSON.stringify(defaults, null, 2) + "\n");
 }
@@ -61,6 +62,8 @@ let mainWindow = null;
 let loadingWindow = null;
 let serverProcess = null;
 let tray = null;
+let isQuitting = false;
+let isCloseDialogOpen = false;
 
 // ── Loading 窗口（服务启动期间显示） ────────────────────────────────────────
 function openLoadingWindow() {
@@ -77,6 +80,78 @@ function openLoadingWindow() {
 }
 
 // ── 主窗口 ────────────────────────────────────────────────────────────────────
+function getConfiguredCloseBehavior() {
+  try {
+    const raw = JSON.parse(readFileSync(configPath, "utf-8"));
+    const behavior = raw?.ui?.closeBehavior;
+    if (behavior === "hide" || behavior === "quit") return behavior;
+  } catch { /* 配置尚未生成或无法读取时使用安全默认值 */ }
+  return "ask";
+}
+
+async function rememberCloseBehavior(closeBehavior) {
+  try {
+    const response = await fetch(`http://localhost:${PORT}/api/settings/close-behavior`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ closeBehavior }),
+    });
+    if (response.ok) return;
+    throw new Error(`settings request failed with status ${response.status}`);
+  } catch (error) {
+    // Keep the preference even if the local server is already stopping.
+    try {
+      const raw = JSON.parse(readFileSync(configPath, "utf-8"));
+      const ui = raw?.ui && typeof raw.ui === "object" && !Array.isArray(raw.ui) ? raw.ui : {};
+      raw.ui = { ...ui, closeBehavior };
+      writeFileSync(configPath, `${JSON.stringify(raw, null, 2)}\n`, "utf-8");
+    } catch (fallbackError) {
+      console.warn("[window] failed to remember close behavior", error, fallbackError);
+    }
+  }
+}
+
+function quitApplication() {
+  isQuitting = true;
+  // If called from the window's `close` event, wait until the current event
+  // finishes before asking Electron to close the window again.
+  setImmediate(() => app.quit());
+}
+
+async function askCloseBehavior() {
+  if (isCloseDialogOpen || !mainWindow || mainWindow.isDestroyed()) return;
+  isCloseDialogOpen = true;
+
+  try {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "question",
+      title: "关闭 Inno Agent",
+      message: "要如何关闭 Inno Agent？",
+      detail: "选择“关闭窗口”会让应用继续在后台运行；选择“退出应用”会停止后台服务。勾选“记住我的选择”后，下次将直接使用该选择，也可以在设置 > 通用中修改。",
+      buttons: ["关闭窗口", "退出应用", "取消"],
+      defaultId: 0,
+      cancelId: 2,
+      checkboxLabel: "记住我的选择",
+      noLink: true,
+    });
+
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const selectedBehavior = result.response === 0 ? "hide" : result.response === 1 ? "quit" : null;
+    if (!selectedBehavior) return;
+    if (result.checkboxChecked) await rememberCloseBehavior(selectedBehavior);
+
+    if (selectedBehavior === "hide") {
+      mainWindow.hide();
+    } else {
+      quitApplication();
+    }
+  } catch (error) {
+    console.warn("[window] close confirmation failed", error);
+  } finally {
+    isCloseDialogOpen = false;
+  }
+}
+
 function openMainWindow() {
   if (mainWindow) { mainWindow.focus(); return; }
 
@@ -95,11 +170,38 @@ function openMainWindow() {
   // 关闭 loading 窗口
   loadingWindow?.close();
 
+  // 关闭按钮的行为由跨平台设置决定：询问、隐藏窗口或退出应用。
+  mainWindow.on("close", (event) => {
+    if (isQuitting) return;
+
+    const behavior = getConfiguredCloseBehavior();
+    if (behavior === "hide") {
+      event.preventDefault();
+      mainWindow.hide();
+    } else if (behavior === "ask") {
+      event.preventDefault();
+      void askCloseBehavior();
+    } else {
+      event.preventDefault();
+      quitApplication();
+    }
+  });
   mainWindow.on("closed", () => { mainWindow = null; });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
   });
+}
+
+function showMainWindow() {
+  if (!mainWindow) {
+    openMainWindow();
+    return;
+  }
+
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
 }
 
 // ── 启动后端服务器 ────────────────────────────────────────────────────────────
@@ -152,13 +254,13 @@ app.whenReady().then(async () => {
     Menu.buildFromTemplate([
       {
         label: "打开 Inno Agent",
-        click: () => { if (mainWindow) mainWindow.show(); else openMainWindow(); },
+        click: showMainWindow,
       },
       { type: "separator" },
       { label: "退出", click: () => app.quit() },
     ])
   );
-  tray.on("click", () => { if (mainWindow) mainWindow.show(); else openMainWindow(); });
+  tray.on("click", showMainWindow);
 
   ensureConfig();
   openLoadingWindow();
@@ -172,9 +274,10 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
   if (!app.isReady()) return;
-  if (mainWindow) mainWindow.show();
+  showMainWindow();
 });
 
 app.on("before-quit", () => {
+  isQuitting = true;
   serverProcess?.kill();
 });

@@ -117,7 +117,8 @@ npm run dev:server & npm run web:dev
     "feishu": { "enabled": false },
     "wechat": { "enabled": false, "mode": "ilink" }
   },
-  "memory": { "l1Enabled": true, "l2Enabled": true, "l3Enabled": true }
+  "memory": { "l1Enabled": true, "l2Enabled": true, "l3Enabled": true },
+  "ui": { "theme": "light", "closeBehavior": "ask" }
 }
 ```
 

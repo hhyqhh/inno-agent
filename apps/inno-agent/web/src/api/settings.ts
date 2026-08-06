@@ -1,5 +1,5 @@
 import { apiFetch } from "./client.js";
-import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
+import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload, WindowCloseBehavior } from "../types/settings.js";
 
 export async function getSettings(): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings");
@@ -122,6 +122,13 @@ export async function saveThemeSettings(theme: string): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings/theme", {
 		method: "PUT",
 		body: JSON.stringify({ theme }),
+	});
+}
+
+export async function saveCloseBehavior(closeBehavior: WindowCloseBehavior): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>("/api/settings/close-behavior", {
+		method: "PUT",
+		body: JSON.stringify({ closeBehavior }),
 	});
 }
 

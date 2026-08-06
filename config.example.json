@@ -58,6 +58,10 @@
 		"l2Enabled": true,
 		"l3Enabled": true
 	},
+	"ui": {
+		"theme": "light",
+		"closeBehavior": "ask"
+	},
 	"ocrApi": {
 		"token": "",
 		"model": "PaddleOCR-VL-1.6",

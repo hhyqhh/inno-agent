@@ -4475,7 +4475,24 @@ const server = createServer(async (req, res) => {
 				json(res, 400, { error: `Invalid theme. Allowed: ${ALLOWED_THEMES.join(", ")}` });
 				return;
 			}
-			config.ui = { theme };
+			config.ui = { ...(config.ui ?? { theme: "light", closeBehavior: "ask" }), theme };
+			config = saveConfig(paths.configPath, config);
+			json(res, 200, buildSafeSettings());
+			return;
+		}
+
+		// PUT /api/settings/close-behavior — persist the cross-platform window-close preference
+		if (method === "PUT" && url === "/api/settings/close-behavior") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			const closeBehavior = body.closeBehavior;
+			if (closeBehavior !== "ask" && closeBehavior !== "hide" && closeBehavior !== "quit") {
+				json(res, 400, { error: "closeBehavior must be one of ask, hide, quit" });
+				return;
+			}
+			config.ui = {
+				...(config.ui ?? { theme: "light", closeBehavior: "ask" }),
+				closeBehavior,
+			};
 			config = saveConfig(paths.configPath, config);
 			json(res, 200, buildSafeSettings());
 			return;

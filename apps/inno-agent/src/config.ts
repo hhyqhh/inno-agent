@@ -62,6 +62,14 @@ export interface InnoSimpleModeConfig {
 	enabled: boolean;
 }
 
+/** What should happen when the desktop window's close button is clicked. */
+export type InnoCloseBehavior = "ask" | "hide" | "quit";
+
+export interface InnoUiConfig {
+	theme: string;
+	closeBehavior: InnoCloseBehavior;
+}
+
 /**
  * Content Hub. The single source for remotely-fetched, ready-to-use content:
  * the global skill library and the Simple Mode preset workspaces. Both used to
@@ -152,9 +160,7 @@ export interface InnoConfig {
 	subagents?: InnoSubagentsConfig;
 	memory?: InnoMemoryConfig;
 	simpleMode?: InnoSimpleModeConfig;
-	ui?: {
-		theme: string;
-	};
+	ui?: InnoUiConfig;
 	/**
 	 * Optional OCR API config (Baidu PaddleOCR-VL). When the configured model
 	 * cannot recognize images, the agent calls the `ocr_image` tool which uses
@@ -256,6 +262,14 @@ export function normalizeSimpleModeConfig(simpleMode: Partial<InnoSimpleModeConf
 	};
 }
 
+export function normalizeUiConfig(ui: Partial<InnoUiConfig> | undefined): InnoUiConfig {
+	const theme = typeof ui?.theme === "string" && ui.theme.trim() ? ui.theme.trim() : "light";
+	const closeBehavior: InnoCloseBehavior = ui?.closeBehavior === "hide" || ui?.closeBehavior === "quit"
+		? ui.closeBehavior
+		: "ask";
+	return { theme, closeBehavior };
+}
+
 /**
  * Normalize the Content Hub config, filling missing fields from the built-in
  * public-hub defaults. `legacyGithubToken` lets us migrate the older
@@ -318,7 +332,7 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		subagents: config.subagents,
 		memory: normalizeMemoryConfig(config.memory),
 		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
-		ui: config.ui,
+		ui: normalizeUiConfig(config.ui),
 		ocrApi: config.ocrApi,
 		tavily: config.tavily,
 	} as InnoConfig;

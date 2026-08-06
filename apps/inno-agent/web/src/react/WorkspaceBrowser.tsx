@@ -932,10 +932,16 @@ export function WorkspaceBrowser() {
 	}, [deleteConfirm]);
 
 	const toggleMultiSelectMode = useCallback(() => {
+		const currentPath = workspaceStore.currentFile?.path;
 		treeRef.current?.deselectAll();
-		setSelectedFileIds([]);
+		if (multiSelectMode) {
+			setSelectedFileIds([]);
+			if (currentPath) treeRef.current?.get(currentPath)?.select();
+		} else {
+			setSelectedFileIds(currentPath ? [currentPath] : []);
+		}
 		setMultiSelectMode((enabled) => !enabled);
-	}, []);
+	}, [multiSelectMode]);
 
 	const toggleSelectedFile = useCallback((path: string) => {
 		setSelectedFileIds((current) => current.includes(path)

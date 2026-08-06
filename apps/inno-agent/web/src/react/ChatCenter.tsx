@@ -489,6 +489,7 @@ function StreamingBubbles() {
 
 			{stream.text && stream.target === "workspace" ? (
 				<motion.div
+					key="workspace-streaming-status"
 					className="flex justify-start"
 					initial={{ opacity: 0, y: 8 }}
 					animate={{ opacity: 1, y: 0 }}
@@ -503,6 +504,7 @@ function StreamingBubbles() {
 				</motion.div>
 			) : stream.text || questionnaires.length ? (
 				<motion.div
+					key="chat-streaming-bubble"
 					className="flex justify-start"
 					initial={{ opacity: 0, y: 8 }}
 					animate={{ opacity: 1, y: 0 }}

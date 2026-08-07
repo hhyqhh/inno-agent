@@ -14,7 +14,8 @@ import {
 	type SessionMeta,
 } from "../api/sessions.js";
 import { getSessionWorkspace } from "../api/workspaces.js";
-import { getChatStatus } from "../api/chat.js";
+import { abortChat, getChatStatus } from "../api/chat.js";
+import { ApiError, withTimeout } from "../api/client.js";
 import { chatStore } from "./chat-store.js";
 import type { PendingQuestion } from "../types/chat.js";
 import { workspaceStore } from "./workspace-store.js";
@@ -42,6 +43,11 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	/** When set, a new session should be pre-bound to this workspace (set from the sidebar). */
 	preselectedWorkspaceId: string | null = null;
 	private _openRequestId = 0;
+	/** Set when a queue-backed op (create/activate) got a 409 session_busy:
+	 *  another session's turn holds the shared prompt queue. The UI offers to
+	 *  stop that turn and retry. */
+	busyBlocker: { sessionId: string; turnId: string; questionPending: boolean } | null = null;
+	private _lastCreateInput: CreateSessionInput | null = null;
 	private _messageCache = new Map<string, Awaited<ReturnType<typeof getSession>>["messages"]>();
 	/** Caches an unanswered question card across session switches so it can be
 	 *  restored instantly when switching back (the backend replay/persistence
@@ -203,8 +209,10 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 				console.warn(`[sessions] failed to load workspace for ${id}:`, err instanceof Error ? err.message : err);
 			});
 
-		try {
-			const session = await getSession(id);
+			try {
+			// Hard bound on history load: without it a stuck request would pin
+			// isLoadingHistory forever ("正在加载会话…" with no way out, #124).
+			const session = await withTimeout(getSession(id), 15_000, "加载会话超时，请重试");
 			const chatStatus = await getChatStatus(id).catch((error) => {
 				console.warn(`[sessions] failed to load chat status for ${id}:`, error instanceof Error ? error.message : error);
 				return { found: false } as Awaited<ReturnType<typeof getChatStatus>>;
@@ -290,6 +298,11 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	 * can't keep `chatStore.isSending` true and block the chooser / input.
 	 */
 	beginNewSession(): void {
+		// Invalidate any in-flight openSession so its late completion can't
+		// clobber the new-session state (load old messages into it, or leave
+		// isLoadingHistory stuck on). Matches showWelcomeFromHistory.
+		this._openRequestId++;
+		chatStore.setLoadingHistory(false);
 		if (this.currentSessionId && chatStore.isSending) {
 			this._backgroundRunningSessions.add(this.currentSessionId);
 			this._messageCache.set(this.currentSessionId, chatStore.messages);
@@ -339,7 +352,12 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		void terminalStore.disconnect();
 		this.emit("change", undefined);
 		try {
-			const created = await createSession(input);
+			// Server answers 409 session_busy within ~8s when another session's
+			// turn holds the queue; the 45s ceiling is only a last-resort guard
+			// (first-time preset downloads can legitimately take a while).
+			const created = await withTimeout(createSession(input), 45_000, "创建会话超时，请重试");
+			this.busyBlocker = null;
+			this._lastCreateInput = null;
 			this._messageCache.clear();
 			chatStore.clear();
 			// Refresh side panels so the new workspace shows up.
@@ -351,10 +369,48 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 				void workspaceStore.setActiveWorkspace(created.workspaceId);
 			}
 			this.emit("change", undefined);
+		} catch (err) {
+			const blocking = err instanceof ApiError && err.status === 409
+				? (err.data?.blocking as { sessionId: string; turnId: string; questionPending?: boolean } | undefined)
+				: undefined;
+			if (blocking?.sessionId && blocking.turnId) {
+				// Another session's turn holds the queue — offer to stop it and retry.
+				this.busyBlocker = {
+					sessionId: blocking.sessionId,
+					turnId: blocking.turnId,
+					questionPending: blocking.questionPending === true,
+				};
+				this._lastCreateInput = input;
+			} else {
+				chatStore.showError(err instanceof Error ? err.message : "创建会话失败");
+			}
+			this.emit("change", undefined);
 		} finally {
 			this.isLoading = false;
 			this.emit("change", undefined);
 		}
+	}
+
+	/** Stop the turn holding the prompt queue, then retry the session creation it blocked. */
+	async stopBusyBlockerAndRetry(): Promise<void> {
+		const blocker = this.busyBlocker;
+		if (!blocker) return;
+		try {
+			await abortChat(blocker.sessionId, blocker.turnId);
+		} catch {
+			// The turn may have ended on its own — proceed to retry regardless.
+		}
+		this.busyBlocker = null;
+		this.emit("change", undefined);
+		const input = this._lastCreateInput;
+		this._lastCreateInput = null;
+		if (input) await this.createSessionWith(input);
+	}
+
+	dismissBusyBlocker(): void {
+		this.busyBlocker = null;
+		this._lastCreateInput = null;
+		this.emit("change", undefined);
 	}
 
 	async clearSelection() {

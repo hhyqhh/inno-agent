@@ -2,6 +2,8 @@ export class ApiError extends Error {
 	constructor(
 		public status: number,
 		message: string,
+		/** Parsed error response body, when the server sent one (e.g. 409 session_busy carries `blocking`). */
+		public data?: Record<string, unknown>,
 	) {
 		super(message);
 		this.name = "ApiError";
@@ -17,11 +19,20 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
 	});
 	if (!res.ok) {
 		const body = await res.json().catch(() => ({}));
-		throw new ApiError(res.status, (body as Record<string, string>).error || res.statusText);
+		throw new ApiError(res.status, (body as Record<string, string>).error || res.statusText, body as Record<string, unknown>);
 	}
 	// 204 No Content
 	if (res.status === 204) return undefined as T;
 	return res.json() as Promise<T>;
+}
+
+/** Reject with `message` if the promise doesn't settle within `ms`. */
+export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => reject(new Error(message)), ms);
+	});
+	return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 /**

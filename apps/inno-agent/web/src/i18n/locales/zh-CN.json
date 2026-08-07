@@ -43,7 +43,11 @@
 		"pasteCollapsed": "«已粘贴 {{count}} 行»",
 		"pasteCollapsedUndo": "撤销粘贴",
 		"questionPending": "请完成上方问卷后再继续对话",
-		"questionPendingJump": "查看问卷"
+		"questionPendingJump": "查看问卷",
+		"sessionBusy": "另一个会话的任务仍在运行，阻塞了当前操作",
+		"sessionBusyQuestion": "另一个会话正在等待你的回答，阻塞了当前操作",
+		"sessionBusyStop": "停止并重试",
+		"sessionBusyDismiss": "知道了"
 	},
 	"desktop": {
 		"closeDialog": {

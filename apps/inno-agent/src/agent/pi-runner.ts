@@ -70,10 +70,53 @@ async function switchToSession(sessionPath: string, opts?: { force?: boolean; cw
 	_currentCwd = desiredCwd;
 }
 
-function enqueue<T>(task: () => Promise<T>): Promise<T> {
-	const run = _queue.then(task, task);
-	_queue = run.then(() => undefined, () => undefined);
-	return run;
+/** Error thrown when a queued task is cancelled before it starts executing. */
+export class QueueTaskCancelledError extends Error {
+	constructor(message = "Queue task was cancelled before it started") {
+		super(message);
+		this.name = "QueueTaskCancelledError";
+	}
+}
+
+export function isQueueTaskCancelled(err: unknown): boolean {
+	return err instanceof QueueTaskCancelledError;
+}
+
+function enqueue<T>(task: () => Promise<T>, opts?: { signal?: AbortSignal }): Promise<T> {
+	// A cancelled task must NEVER execute once its slot arrives — otherwise
+	// ops whose caller already gave up (client disconnected / timed out)
+	// would run later in a jumbled order (ghost sessions, surprise session
+	// switches). Cancellation is also EAGER: the returned promise rejects as
+	// soon as the signal fires, so HTTP handlers waiting on a queued op can
+	// answer 409 immediately instead of hanging until the slot frees up.
+	// See https://github.com/hhyqhh/inno-agent/issues/124.
+	return new Promise<T>((resolve, reject) => {
+		const signal = opts?.signal;
+		let settled = false;
+		const onAbort = () => {
+			if (settled) return;
+			settled = true;
+			reject(new QueueTaskCancelledError());
+		};
+		if (signal) {
+			if (signal.aborted) {
+				reject(new QueueTaskCancelledError());
+				return;
+			}
+			signal.addEventListener("abort", onAbort, { once: true });
+		}
+		const guarded = () => {
+			if (signal?.aborted) return Promise.reject(new QueueTaskCancelledError());
+			return task();
+		};
+		const run = _queue.then(guarded, guarded);
+		_queue = run.then(() => undefined, () => undefined);
+		const cleanup = () => signal?.removeEventListener("abort", onAbort);
+		run.then(
+			(value) => { cleanup(); if (!settled) { settled = true; resolve(value); } },
+			(err) => { cleanup(); if (!settled) { settled = true; reject(err); } },
+		);
+	});
 }
 
 /**
@@ -880,11 +923,11 @@ export async function reloadResources(): Promise<void> {
  * sessions is a UI-level navigation action. The backend task continues
  * running and the client can reconnect to its event stream later.
  */
-export async function switchSessionFile(sessionPath: string): Promise<void> {
+export async function switchSessionFile(sessionPath: string, opts?: { signal?: AbortSignal }): Promise<void> {
 	if (!_runtime) throw new Error("Session not initialized. Call initSession() first.");
 	await enqueue(async () => {
 		await switchToSession(sessionPath);
-	});
+	}, opts);
 }
 
 /**
@@ -893,11 +936,11 @@ export async function switchSessionFile(sessionPath: string): Promise<void> {
  * agent's tools pick up the new cwd on the next prompt without a full
  * session-path change.
  */
-export async function applyWorkspaceCwd(sessionPath: string): Promise<void> {
+export async function applyWorkspaceCwd(sessionPath: string, opts?: { signal?: AbortSignal }): Promise<void> {
 	if (!_runtime) return;
 	await enqueue(async () => {
 		await switchToSession(sessionPath, { force: true });
-	});
+	}, opts);
 }
 
 /**
@@ -906,7 +949,7 @@ export async function applyWorkspaceCwd(sessionPath: string): Promise<void> {
  * task for the previous session continues running in the background.
  * The client can reconnect to its event stream when switching back.
  */
-export async function createNewSession(): Promise<string> {
+export async function createNewSession(opts?: { signal?: AbortSignal }): Promise<string> {
 	if (!_runtime) throw new Error("Session not initialized. Call initSession() first.");
 	return enqueue(async () => {
 		await _runtime!.newSession();
@@ -922,7 +965,12 @@ export async function createNewSession(): Promise<string> {
 		// the registry mapping is in place.
 		_currentCwd = _workspaceDir;
 		return sessionId;
-	});
+	}, opts);
+}
+
+/** Token (turnId) of the prompt currently occupying the shared queue, if any. */
+export function getActivePromptToken(): string | null {
+	return _activePromptToken;
 }
 
 /**

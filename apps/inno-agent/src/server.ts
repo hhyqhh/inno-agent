@@ -23,7 +23,9 @@ import {
 	getAvailableModels,
 	getLoadedSkills,
 	getSession,
+	getActivePromptToken,
 	initSession,
+	isQueueTaskCancelled,
 	refreshConfiguredProviders,
 	reloadResources,
 	switchModel,
@@ -2394,6 +2396,79 @@ function maybeAutoGenerateTopic(sessionId: string): void {
 // HTTP Server
 // ---------------------------------------------------------------------------
 
+/**
+ * The prompt currently holding the shared serial queue, if any. Only prompts
+ * hold queue slots for a meaningful duration; switch/create are instant.
+ */
+function getQueueBlocker(): { sessionId: string; turnId: string; questionPending: boolean } | null {
+	const token = getActivePromptToken();
+	if (!token) return null;
+	const state = streamRegistry.getByTurn(token);
+	if (!state || (state.status !== "queued" && state.status !== "running")) return null;
+	const pending = questionBridge.pendingInfo();
+	return {
+		sessionId: state.sessionId,
+		turnId: state.turnId,
+		questionPending: pending?.turnId === state.turnId,
+	};
+}
+
+/**
+ * Session-retention policy (issue #124): a turn parked on a question card can
+ * never progress without the user, yet it holds the shared prompt queue for
+ * up to the 30-minute question timeout — blocking every session switch /
+ * creation behind it. Navigating to a DIFFERENT session implicitly abandons
+ * the card, so abort that turn to release the queue. Turns that are actively
+ * generating are left alone (they end on their own; the user can still stop
+ * them explicitly via the scoped abort endpoint).
+ *
+ * Mirrors the scoped abort route: cancel the registry state, resolve the
+ * parked question (session.abort() alone cannot wake it), then abort.
+ */
+function releaseQueueFromQuestionBlockedTurn(targetSessionId: string): void {
+	const blocker = getQueueBlocker();
+	if (!blocker || !blocker.questionPending || blocker.sessionId === targetSessionId) return;
+	const state = streamRegistry.getByTurn(blocker.turnId);
+	if (!state) return;
+	logger.info({ blockedSession: blocker.sessionId, turnId: blocker.turnId, targetSessionId }, "auto-aborting question-blocked turn to release the prompt queue");
+	streamRegistry.requestCancel(state);
+	questionBridge.unbindTurn({ sessionId: state.sessionId, turnId: state.turnId, reason: "switched_away" });
+	if (state.status === "running") void abortPromptForTurnToken(state.turnId);
+}
+
+/**
+ * Run an enqueue-backed operation with a hard wait bound. If the queue is
+ * held by a long turn the caller gets a 409 with blocker details instead of
+ * hanging for minutes; a client disconnect cancels the still-queued task so
+ * it never executes out from under a user who already gave up.
+ */
+async function runQueueOpWithTimeout<T>(
+	req: HttpReq,
+	res: ServerResponse,
+	op: (signal: AbortSignal) => Promise<T>,
+	timeoutMs = 8_000,
+): Promise<T | null> {
+	const aborter = new AbortController();
+	// res "close" with the response unfinished = the client went away. (req
+	// "close" is unusable here: it fires as soon as the request body is fully
+	// received, long before we answer.)
+	res.on("close", () => { if (!res.writableFinished) aborter.abort(); });
+	const timer = setTimeout(() => aborter.abort(), timeoutMs);
+	try {
+		return await op(aborter.signal);
+	} catch (err) {
+		if (isQueueTaskCancelled(err)) {
+			if (!res.writableFinished && !res.destroyed) {
+				json(res, 409, { error: "session_busy", blocking: getQueueBlocker() ?? undefined });
+			}
+			return null;
+		}
+		throw err;
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 const server = createServer(async (req, res) => {
 	const url = req.url ?? "/";
 	const method = req.method ?? "GET";
@@ -3120,14 +3195,22 @@ const server = createServer(async (req, res) => {
 				json(res, 404, { error: "Session not found" });
 				return;
 			}
-			await switchSessionFile(sessionPath);
+			// If the queue is held by another session's question-blocked turn,
+			// abort it first — otherwise this switch could wait up to 30 min.
+			releaseQueueFromQuestionBlockedTurn(basename(sessionPath));
+			const switched = await runQueueOpWithTimeout(req, res, (signal) => switchSessionFile(sessionPath, { signal }));
+			if (switched === null) return; // 409 session_busy already sent (or client gone)
 			json(res, 200, { id: basename(sessionPath), active: getCurrentSessionId() === basename(sessionPath) });
 			return;
 		}
 
 		if (method === "POST" && url === "/api/sessions") {
 			const body = await readBody(req).catch(() => ({})) as Record<string, unknown>;
-			const id = await createNewSession();
+			// A new session is always a different session — release the queue
+			// from a question-blocked turn before enqueueing (issue #124).
+			releaseQueueFromQuestionBlockedTurn("");
+			const id = await runQueueOpWithTimeout(req, res, (signal) => createNewSession({ signal }));
+			if (id === null) return; // 409 session_busy already sent (or client gone)
 			// This endpoint is exclusively the Web UI's session-creation path.
 			// Record the origin immediately so Simple Mode includes the new empty
 			// session before the first assistant response has finished streaming.
@@ -3143,6 +3226,11 @@ const server = createServer(async (req, res) => {
 			const newWorkspaceSpec = body.newWorkspace && typeof body.newWorkspace === "object"
 				? body.newWorkspace as { name?: unknown; isTemp?: unknown }
 				: null;
+			// The follow-up cwd apply re-enters the queue; if the client goes
+			// away, cancel it while queued rather than switching the runtime's
+			// cwd out from under whatever the user moved on to.
+			const cwdAborter = new AbortController();
+			res.on("close", () => { if (!res.writableFinished) cwdAborter.abort(); });
 			try {
 				if (presetId) {
 					// Ensure the preset's files are in the local cache (download on
@@ -3164,7 +3252,7 @@ const server = createServer(async (req, res) => {
 				// tools (read/write/bash) operate inside the bound directory.
 				const sessionPath = sessionFileFromId(join(dataDir, "sessions"), id);
 				if (sessionPath) {
-					await applyWorkspaceCwd(sessionPath);
+					await applyWorkspaceCwd(sessionPath, { signal: cwdAborter.signal });
 				}
 			} catch (err) {
 				logger.warn({ err }, `failed to bind workspace for session ${id}`);
@@ -3191,7 +3279,9 @@ const server = createServer(async (req, res) => {
 			// first so the agent runtime doesn't keep writing to a deleted file.
 			let newActiveId: string | null = null;
 			if (getCurrentSessionId() === sessionId) {
-				newActiveId = await createNewSession();
+				releaseQueueFromQuestionBlockedTurn("");
+				newActiveId = await runQueueOpWithTimeout(req, res, (signal) => createNewSession({ signal }));
+				if (newActiveId === null) return; // 409 session_busy already sent (or client gone)
 			}
 
 			// If this session is the sole owner of a temp workspace, remove the
@@ -3998,7 +4088,9 @@ const server = createServer(async (req, res) => {
 			if (getCurrentSessionId() === sessionId) {
 				const sessionPath = sessionFileFromId(join(dataDir, "sessions"), sessionId);
 				if (sessionPath) {
-					await applyWorkspaceCwd(sessionPath);
+					releaseQueueFromQuestionBlockedTurn(sessionId);
+					const applied = await runQueueOpWithTimeout(req, res, (signal) => applyWorkspaceCwd(sessionPath, { signal }));
+					if (applied === null) return; // 409 session_busy already sent (or client gone)
 				}
 			}
 			json(res, 200, { sessionId, workspaceId });
@@ -4675,6 +4767,9 @@ const server = createServer(async (req, res) => {
 				json(res, 409, { error: "Session already has an active chat turn" });
 				return;
 			}
+			// Sending in a different session implicitly abandons another
+			// session's unanswered question card — release the queue (issue #124).
+			releaseQueueFromQuestionBlockedTurn(requestedSessionId);
 			const targetSessionPath = sessionFileFromId(join(dataDir, "sessions"), requestedSessionId);
 			if (!targetSessionPath || !existsSync(targetSessionPath)) {
 				json(res, 404, { error: "Session not found" });

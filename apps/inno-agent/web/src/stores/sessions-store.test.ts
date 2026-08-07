@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 	createSession: vi.fn(),
 	activateSession: vi.fn(),
 	getChatStatus: vi.fn(),
+	abortChat: vi.fn(),
 	chatDetach: vi.fn(),
 	chatClear: vi.fn(),
 	chatLoadHistory: vi.fn(),
@@ -24,7 +25,7 @@ vi.mock("../api/sessions.js", () => ({
 	unarchiveSession: vi.fn(),
 	updateSessionName: vi.fn(),
 }));
-vi.mock("../api/chat.js", () => ({ getChatStatus: mocks.getChatStatus }));
+vi.mock("../api/chat.js", () => ({ getChatStatus: mocks.getChatStatus, abortChat: mocks.abortChat }));
 vi.mock("../api/workspaces.js", () => ({ getSessionWorkspace: vi.fn().mockResolvedValue({ workspaceId: "workspace-1" }) }));
 vi.mock("./chat-store.js", () => ({
 	chatStore: {
@@ -44,6 +45,7 @@ vi.mock("./workspaces-store.js", () => ({ workspacesStore: { load: vi.fn() } }))
 vi.mock("./terminal-store.js", () => ({ terminalStore: { disconnect: vi.fn() } }));
 
 import { SessionsStoreImpl } from "./sessions-store.js";
+import { ApiError } from "../api/client.js";
 
 function session(id: string) {
 	return {
@@ -109,5 +111,46 @@ describe("SessionsStore navigation", () => {
 		await openingA;
 		expect(store.currentSessionId).toBe("b.jsonl");
 		expect(mocks.chatLoadHistory).toHaveBeenLastCalledWith([], "b.jsonl");
+	});
+
+	it("beginNewSession invalidates an in-flight openSession", async () => {
+		let resolveA!: (value: ReturnType<typeof session>) => void;
+		const a = new Promise<ReturnType<typeof session>>((resolve) => { resolveA = resolve; });
+		mocks.getSession.mockImplementation((id: string) => id === "a.jsonl" ? a : Promise.resolve(session(id)));
+		const store = new SessionsStoreImpl();
+		store.currentSessionId = "x.jsonl";
+		const openingA = store.openSession("a.jsonl", { historyMode: "none" });
+		await Promise.resolve();
+		store.beginNewSession();
+		resolveA(session("a.jsonl"));
+		await openingA;
+		expect(store.currentSessionId).toBeNull();
+		expect(store.pendingNewSession).toBe(true);
+		expect(mocks.chatSetLoadingHistory).toHaveBeenCalledWith(false);
+	});
+
+	it("surfaces a busy blocker when session creation hits a queue-blocked 409", async () => {
+		mocks.createSession.mockRejectedValue(
+			new ApiError(409, "session_busy", { error: "session_busy", blocking: { sessionId: "old.jsonl", turnId: "t-1", questionPending: true } }),
+		);
+		const store = new SessionsStoreImpl();
+		await store.createSessionWith({ workspaceId: "workspace-1" });
+		expect(store.busyBlocker).toEqual({ sessionId: "old.jsonl", turnId: "t-1", questionPending: true });
+		expect(store.currentSessionId).toBeNull();
+		expect(mocks.chatShowError).not.toHaveBeenCalled();
+	});
+
+	it("stopBusyBlockerAndRetry aborts the blocking turn and retries creation", async () => {
+		mocks.createSession
+			.mockRejectedValueOnce(new ApiError(409, "session_busy", { error: "session_busy", blocking: { sessionId: "old.jsonl", turnId: "t-1" } }))
+			.mockResolvedValueOnce({ id: "new.jsonl", active: true, workspaceId: "workspace-1" });
+		mocks.abortChat.mockResolvedValue(undefined);
+		const store = new SessionsStoreImpl();
+		await store.createSessionWith({ workspaceId: "workspace-1" });
+		expect(store.busyBlocker?.turnId).toBe("t-1");
+		await store.stopBusyBlockerAndRetry();
+		expect(mocks.abortChat).toHaveBeenCalledWith("old.jsonl", "t-1");
+		expect(store.currentSessionId).toBe("new.jsonl");
+		expect(store.busyBlocker).toBeNull();
 	});
 });

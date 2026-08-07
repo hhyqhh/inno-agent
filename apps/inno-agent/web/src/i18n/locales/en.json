@@ -43,7 +43,11 @@
 		"pasteCollapsed": "«Pasted {{count}} lines»",
 		"pasteCollapsedUndo": "Undo paste",
 		"questionPending": "Please answer the question above before continuing",
-		"questionPendingJump": "View question"
+		"questionPendingJump": "View question",
+		"sessionBusy": "Another session's task is still running and blocking this action",
+		"sessionBusyQuestion": "Another session is waiting for your answer, blocking this action",
+		"sessionBusyStop": "Stop it and retry",
+		"sessionBusyDismiss": "Dismiss"
 	},
 	"desktop": {
 		"closeDialog": {

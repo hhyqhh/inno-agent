@@ -91,8 +91,15 @@ export class QuestionBridge {
 		});
 	}
 
-	respond(input: { sessionId: string; turnId: string; questionId: string; result: QuestionBridgeResult }): QuestionResponseStatus {
+	/** Info about the currently parked question, if a turn is waiting on one. */
+	pendingInfo(): { sessionId: string; turnId: string; questionId: string } | null {
 		const pending = this.pending;
+		return pending
+			? { sessionId: pending.sessionId, turnId: pending.turnId, questionId: pending.questionId }
+			: null;
+	}
+
+	respond(input: { sessionId: string; turnId: string; questionId: string; result: QuestionBridgeResult }): QuestionResponseStatus {		const pending = this.pending;
 		if (!pending || pending.questionId !== input.questionId) {
 			return this.lastResolved?.questionId === input.questionId
 				&& this.lastResolved.sessionId === input.sessionId

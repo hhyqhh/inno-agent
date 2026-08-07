@@ -772,6 +772,7 @@ export function ChatCenter() {
 	const sessions = useStoreSnapshot(sessionsStore, () => ({
 		currentSessionId: sessionsStore.currentSessionId,
 		preselectedWorkspaceId: sessionsStore.preselectedWorkspaceId,
+		busyBlocker: sessionsStore.busyBlocker,
 		// Single source of truth for the welcome-vs-session view (see store).
 		// Depends on chatStore too, but ChatCenter subscribes to chatStore via
 		// the `chat` snapshot above, so this re-evaluates on chat changes.
@@ -1239,6 +1240,27 @@ export function ChatCenter() {
 		) : null
 	);
 
+	const renderBusyBlocker = () => (
+		sessions.busyBlocker ? (
+			<div className="mb-2 flex items-center gap-2 rounded-md border border-[var(--inno-border)] bg-[var(--inno-accent-soft)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)]">
+				<AlertTriangle size={14} className="shrink-0 text-[var(--inno-warning)]" />
+				<span>{t(sessions.busyBlocker.questionPending ? "common.sessionBusyQuestion" : "common.sessionBusy")}</span>
+				<button
+					className="ml-auto shrink-0 rounded px-2 py-0.5 font-medium text-[var(--inno-warning)] hover:bg-[var(--inno-surface-muted)]"
+					onClick={() => void sessionsStore.stopBusyBlockerAndRetry()}
+				>
+					{t("common.sessionBusyStop")}
+				</button>
+				<button
+					className="shrink-0 rounded px-2 py-0.5 text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)]"
+					onClick={() => sessionsStore.dismissBusyBlocker()}
+				>
+					{t("common.sessionBusyDismiss")}
+				</button>
+			</div>
+		) : null
+	);
+
 	const renderComposer = (placeholder: string) => (
 		<div className="inno-composer flex items-end gap-2 rounded-lg p-2">
 			<input ref={fileInputRef} id="file-input" type="file" className="hidden" multiple onChange={handleFiles} />
@@ -1357,6 +1379,7 @@ export function ChatCenter() {
 						{renderUploadChips()}
 						{renderInlineImagePreviews()}
 						{renderQuestionHint()}
+						{renderBusyBlocker()}
 						{renderComposer(t("chat.welcomePlaceholder"))}
 
 						{simpleMode && presets.length > 0 ? (
@@ -1536,6 +1559,7 @@ export function ChatCenter() {
 					{renderUploadChips()}
 					{renderInlineImagePreviews()}
 					{renderQuestionHint()}
+					{renderBusyBlocker()}
 					{wsError ? <p className="mb-2 text-xs text-[var(--inno-danger)]">{wsError}</p> : null}
 					{renderComposer(t("chat.composerPlaceholder"))}
 				</div>

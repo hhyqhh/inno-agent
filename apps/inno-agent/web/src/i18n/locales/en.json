@@ -557,15 +557,16 @@
 			"memory": "Memory",
 			"integrations": "Integrations",
 			"channels": "Channels",
+			"mcp": "MCP",
 			"about": "About"
 		},
 		"sections": {
-		"general": {
-			"desc": "Appearance and language preferences",
-			"themeDesc": "Choose the interface color theme",
-			"languageDesc": "Switch the display language",
-			"closeBehaviorDesc": "Choose what happens when you click the window close button. The dialog's “Remember my choice” option saves it here across platforms."
-		},
+			"general": {
+				"desc": "Appearance and language preferences",
+				"themeDesc": "Choose the interface color theme",
+				"languageDesc": "Switch the display language",
+				"closeBehaviorDesc": "Choose what happens when you click the window close button. The dialog's “Remember my choice” option saves it here across platforms."
+			},
 			"models": {
 				"desc": "Configure model providers and the default model"
 			},
@@ -577,6 +578,9 @@
 			},
 			"channels": {
 				"desc": "Messaging channel integrations (Feishu, WeChat)"
+			},
+			"mcp": {
+				"desc": "MCP server integration and master switch"
 			},
 			"about": {
 				"desc": "Server status and storage stats"
@@ -594,7 +598,47 @@
 			"autoFilled": "Parameters auto-filled",
 			"advanced": "Advanced options"
 		},
-		"editModel": "Edit model"
+		"editModel": "Edit model",
+		"mcp": {
+			"masterTitle": "Enable MCP (Model Context Protocol)",
+			"masterOnDesc": "The agent can discover and call MCP server tools on demand via the mcp proxy tool, plus multi-call mcpScript.",
+			"masterOffDesc": "Turn on to tap the MCP ecosystem (databases, browsers, APIs) and extend the agent. Toggling requires a restart.",
+			"restartHint": "Master switch changed — takes effect after a server restart",
+			"serversTitle": "MCP servers",
+			"serversDesc": "Server definitions live in the managed config file below; standard locations like workspace .mcp.json and ~/.config/mcp/mcp.json are also merged (external sources are read-only).",
+			"addServer": "Add server",
+			"editServer": "Edit server",
+			"deleteConfirm": "Delete server {{name}}?",
+			"empty": "No MCP servers configured yet",
+			"configError": "Failed to parse managed config file: {{error}}",
+			"externalSource": "External source (read-only)",
+			"namePlaceholder": "Server name (e.g. chrome-devtools)",
+			"transportStdio": "stdio (local command)",
+			"transportHttp": "HTTP (remote service)",
+			"commandPlaceholder": "Command (e.g. npx)",
+			"argsPlaceholder": "Arguments, one per line (e.g. -y, some-mcp-server)",
+			"envPlaceholder": "Environment variables, one KEY=VALUE per line (optional)",
+			"urlPlaceholder": "Service URL (e.g. https://mcp.example.com/mcp)",
+			"headersPlaceholder": "Headers, one KEY=VALUE per line (optional)",
+			"lifecycleDefault": "Lifecycle: lazy (default, connect on use)",
+			"lifecycleEager": "Lifecycle: eager (connect at startup)",
+			"lifecycleKeepAlive": "Lifecycle: keep-alive (resident + reconnect)",
+			"lifecycleLazyKeepAlive": "Lifecycle: lazy-keep-alive (resident after first use)",
+			"directProxy": "Tool exposure: proxy mode (default, saves context)",
+			"directAll": "Tool exposure: register all directly",
+			"jsonMode": "Edit JSON",
+			"formMode": "Edit form",
+			"toolCount": "{{count}} tools",
+			"footerHint": "Servers are lazy by default: they connect on first call and disconnect when idle. Changes are hot-reloaded on save; restart the server if they do not take effect. OAuth is completed in chat via the mcp tool's auth-start/auth-complete actions.",
+			"status": {
+				"connected": "connected",
+				"cached": "cached",
+				"failed": "failed",
+				"needs-auth": "needs auth",
+				"not-connected": "not connected",
+				"disabled": "disabled"
+			}
+		}
 	},
 	"chat": {
 		"welcomePlaceholder": "What would you like to learn or build? Send a message to start…",

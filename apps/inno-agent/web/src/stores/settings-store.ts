@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveCloseBehavior, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveMcpSettings, saveCloseBehavior, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
 import type { WindowCloseBehavior } from "../types/settings.js";
 import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
@@ -19,6 +19,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingTavily = false;
 	isSavingContentHub = false;
 	isSavingSimpleMode = false;
+	isSavingMcp = false;
 	isSavingCloseBehavior = false;
 	error: string | null = null;
 
@@ -154,6 +155,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			throw err;
 		} finally {
 			this.isSavingSimpleMode = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveMcp(enabled: boolean): Promise<void> {
+		this.isSavingMcp = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveMcpSettings(enabled);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save MCP setting";
+			this.emit("change", undefined);
+			throw err;
+		} finally {
+			this.isSavingMcp = false;
 			this.emit("change", undefined);
 		}
 	}

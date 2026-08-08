@@ -557,15 +557,16 @@
 			"memory": "记忆",
 			"integrations": "集成",
 			"channels": "渠道",
+			"mcp": "MCP",
 			"about": "关于"
 		},
 		"sections": {
-		"general": {
-			"desc": "外观与语言偏好",
-			"themeDesc": "选择界面配色主题",
-			"languageDesc": "切换界面显示语言",
-			"closeBehaviorDesc": "设置点击窗口关闭按钮时的处理方式；确认框中的“记住我的选择”会保存到这里，所有平台通用。"
-		},
+			"general": {
+				"desc": "外观与语言偏好",
+				"themeDesc": "选择界面配色主题",
+				"languageDesc": "切换界面显示语言",
+				"closeBehaviorDesc": "设置点击窗口关闭按钮时的处理方式；确认框中的“记住我的选择”会保存到这里，所有平台通用。"
+			},
 			"models": {
 				"desc": "配置模型提供商与默认模型"
 			},
@@ -577,6 +578,9 @@
 			},
 			"channels": {
 				"desc": "飞书、微信等消息渠道接入"
+			},
+			"mcp": {
+				"desc": "MCP 服务器接入与开关"
 			},
 			"about": {
 				"desc": "服务状态与存储统计"
@@ -594,7 +598,47 @@
 			"autoFilled": "参数已自动填充",
 			"advanced": "高级选项"
 		},
-		"editModel": "编辑模型"
+		"editModel": "编辑模型",
+		"mcp": {
+			"masterTitle": "启用 MCP (Model Context Protocol)",
+			"masterOnDesc": "agent 可通过 mcp 代理工具按需发现并调用 MCP 服务器的能力，也支持多步调用的 mcpScript 工具。",
+			"masterOffDesc": "开启后可接入 MCP 生态（数据库、浏览器、各类 API）扩展 agent 能力。总开关变更需重启后生效。",
+			"restartHint": "总开关已修改，将在重启服务后生效",
+			"serversTitle": "MCP 服务器",
+			"serversDesc": "服务器定义保存在下方托管配置文件中；也会合并工作区 .mcp.json 与 ~/.config/mcp/mcp.json 等标准位置（外部来源只读）。",
+			"addServer": "添加服务器",
+			"editServer": "编辑服务器",
+			"deleteConfirm": "确定删除服务器 {{name}}？",
+			"empty": "尚未配置 MCP 服务器",
+			"configError": "托管配置文件解析失败：{{error}}",
+			"externalSource": "外部来源（只读）",
+			"namePlaceholder": "服务器名称（如 chrome-devtools）",
+			"transportStdio": "stdio（本地命令）",
+			"transportHttp": "HTTP（远程服务）",
+			"commandPlaceholder": "命令（如 npx）",
+			"argsPlaceholder": "参数，每行一个（如 -y 换行 some-mcp-server）",
+			"envPlaceholder": "环境变量，每行一个 KEY=VALUE（可选）",
+			"urlPlaceholder": "服务 URL（如 https://mcp.example.com/mcp）",
+			"headersPlaceholder": "请求头，每行一个 KEY=VALUE（可选）",
+			"lifecycleDefault": "生命周期：lazy（默认，用时才连接）",
+			"lifecycleEager": "生命周期：eager（启动即连接）",
+			"lifecycleKeepAlive": "生命周期：keep-alive（常驻 + 自动重连）",
+			"lifecycleLazyKeepAlive": "生命周期：lazy-keep-alive（首用后常驻）",
+			"directProxy": "工具暴露：代理模式（默认，省上下文）",
+			"directAll": "工具暴露：全部直接注册",
+			"jsonMode": "JSON 编辑",
+			"formMode": "表单编辑",
+			"toolCount": "{{count}} 个工具",
+			"footerHint": "服务器默认 lazy 连接：首次调用才启动，空闲自动断开。配置变更保存后自动尝试热加载，若未生效请重启服务。OAuth 认证在对话中通过 mcp 工具的 auth-start/auth-complete 完成。",
+			"status": {
+				"connected": "已连接",
+				"cached": "已缓存",
+				"failed": "连接失败",
+				"needs-auth": "需要认证",
+				"not-connected": "未连接",
+				"disabled": "已禁用"
+			}
+		}
 	},
 	"chat": {
 		"welcomePlaceholder": "有什么想学习或实践的?发送消息开始…",

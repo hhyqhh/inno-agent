@@ -58,6 +58,9 @@
 		"l2Enabled": true,
 		"l3Enabled": true
 	},
+	"mcp": {
+		"enabled": false
+	},
 	"ui": {
 		"theme": "light",
 		"closeBehavior": "ask"

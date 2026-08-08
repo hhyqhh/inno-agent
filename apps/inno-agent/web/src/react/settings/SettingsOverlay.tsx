@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Settings2, Cpu, Brain, Plug, Radio, Info } from "lucide-react";
+import { ArrowLeft, Settings2, Cpu, Brain, Plug, Radio, Blocks, Info } from "lucide-react";
 import { appStore, type SettingsTab } from "../../stores/app-store.js";
 import { settingsStore } from "../../stores/settings-store.js";
 import { useStoreSnapshot } from "../hooks.js";
@@ -9,6 +9,7 @@ import { ModelsSettings } from "./ModelsSettings.js";
 import { MemorySettings } from "./MemorySettings.js";
 import { IntegrationsSettings } from "./IntegrationsSettings.js";
 import { ChannelsSettings } from "./ChannelsSettings.js";
+import { McpSettings } from "./McpSettings.js";
 import { AboutSettings } from "./AboutSettings.js";
 
 const TABS: { id: SettingsTab; icon: React.ReactNode }[] = [
@@ -17,11 +18,12 @@ const TABS: { id: SettingsTab; icon: React.ReactNode }[] = [
 	{ id: "memory", icon: <Brain size={15} /> },
 	{ id: "integrations", icon: <Plug size={15} /> },
 	{ id: "channels", icon: <Radio size={15} /> },
+	{ id: "mcp", icon: <Blocks size={15} /> },
 	{ id: "about", icon: <Info size={15} /> },
 ];
 
 // In Simple Mode the advanced categories are hidden, mirroring the workspace tabs.
-const HIDDEN_IN_SIMPLE: SettingsTab[] = ["integrations", "channels"];
+const HIDDEN_IN_SIMPLE: SettingsTab[] = ["integrations", "channels", "mcp"];
 
 export function SettingsOverlay() {
 	const { t } = useTranslation();
@@ -110,6 +112,7 @@ export function SettingsOverlay() {
 							{activeSettingsTab === "memory" && settings && <MemorySettings settings={settings} />}
 							{activeSettingsTab === "integrations" && settings && <IntegrationsSettings settings={settings} />}
 							{activeSettingsTab === "channels" && settings && <ChannelsSettings settings={settings} />}
+							{activeSettingsTab === "mcp" && settings && <McpSettings settings={settings} />}
 							{activeSettingsTab === "about" && <AboutSettings />}
 						</>
 					)}

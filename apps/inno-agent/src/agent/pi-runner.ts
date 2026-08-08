@@ -16,6 +16,7 @@ import { complete, type AssistantMessage, type ImageContent, type Model, type Us
 import { basename, join, resolve } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInnoExtension, type ConfigHolder, type InnoExtensionDeps } from "./inno-extension.js";
+import { createMcpStatusExtension, loadMcpAdapterExtension } from "./mcp-extension.js";
 import { createObservabilityExtension, createPromptObserver, obsLogger } from "./observability-extension.js";
 import type { InnoConfig } from "../config.js";
 import type { RuntimePaths } from "../runtime.js";
@@ -173,6 +174,11 @@ export async function initSession(
 	// Build extension factories list
 	const observabilityExtension = createObservabilityExtension();
 	const extensionFactories: ExtensionFactory[] = [observabilityExtension, innoExtension];
+	// MCP: the status bridge subscribes before the adapter so no snapshot is
+	// missed; the adapter itself only loads when `mcp.enabled` is set.
+	extensionFactories.push(createMcpStatusExtension());
+	const mcpAdapter = await loadMcpAdapterExtension(config, paths);
+	if (mcpAdapter) extensionFactories.push(mcpAdapter);
 	if (options?.sandbox) {
 		try {
 			const { createJiti } = await import("jiti/static");
@@ -269,27 +275,38 @@ export async function initSession(
 	});
 	const session = runtime.session;
 
-	await session.bindExtensions({
-		commandContextActions: {
-			waitForIdle: () => session.agent.waitForIdle(),
-			newSession: async () => {
-				await runtime.newSession();
-				return { cancelled: false };
+	// session_start is emitted only from bindExtensions. Bind the boot session
+	// AND every later replacement session (newSession/switchSession): the SDK
+	// recreates the session object on replacement, and without rebind no
+	// session_start is ever emitted for it — extensions that initialize on
+	// session_start then stay dead for the rest of the process. (This is what
+	// made pi-mcp-adapter's proxy tool return "MCP not initialized" after the
+	// first "new chat".)
+	const bindSessionExtensions = async (target: AgentSession): Promise<void> => {
+		await target.bindExtensions({
+			commandContextActions: {
+				waitForIdle: () => target.agent.waitForIdle(),
+				newSession: async () => {
+					await runtime.newSession();
+					return { cancelled: false };
+				},
+				fork: async () => ({ cancelled: true }),
+				navigateTree: async () => ({ cancelled: true }),
+				switchSession: async (sessionPath) => {
+					await switchToSession(sessionPath);
+					return { cancelled: false };
+				},
+				reload: async () => {
+					await runtime.session.reload();
+				},
 			},
-			fork: async () => ({ cancelled: true }),
-			navigateTree: async () => ({ cancelled: true }),
-			switchSession: async (sessionPath) => {
-				await switchToSession(sessionPath);
-				return { cancelled: false };
+			onError: (err) => {
+				logger.error({ err }, "agent extension error");
 			},
-			reload: async () => {
-				await runtime.session.reload();
-			},
-		},
-		onError: (err) => {
-			logger.error({ err }, "agent extension error");
-		},
-	});
+		});
+	};
+	await bindSessionExtensions(session);
+	runtime.setRebindSession(bindSessionExtensions);
 
 	_runtime = runtime;
 	_config = config;

@@ -54,6 +54,13 @@ import { handleBridgeMessage } from "./channels/bridge/bridge-server.js";
 import { WeChatChannel } from "./channels/wechat/wechat-channel.js";
 import type { PersonalBridgeChannelConfig } from "./config.js";
 import { JobStore } from "./scheduler/job-store.js";
+import {
+	deleteManagedServer,
+	getMcpOverview,
+	setManagedServerDisabled,
+	upsertManagedServer,
+	type McpServerEntry,
+} from "./mcp/mcp-config-store.js";
 import { executeJob } from "./scheduler/job-runner.js";
 import { CronScheduler } from "./scheduler/cron-scheduler.js";
 import { validateCron } from "./scheduler/cron-utils.js";
@@ -4520,7 +4527,74 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
-		// --- GitHub settings (token to raise skill-library API rate limit) ---
+		// --- MCP master switch. Takes effect on the next process start: the
+		// extension set is fixed at boot, so toggling loads/unloads the
+		// pi-mcp-adapter extension only after a restart. The UI compares
+		// `mcp.enabled` (config) against GET /api/mcp's `adapterLoaded`
+		// (runtime) to surface the restart hint.
+		if (method === "PUT" && url === "/api/settings/mcp") {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			if (typeof body.enabled !== "boolean") {
+				json(res, 400, { error: "enabled must be a boolean" });
+				return;
+			}
+			config.mcp = { enabled: body.enabled };
+			config = saveConfig(paths.configPath, config);
+			syncConfig(config);
+			json(res, 200, buildSafeSettings());
+			return;
+		}
+
+		// --- MCP server management (managed file: <configDir>/mcp.json) ---
+		if (method === "GET" && url === "/api/mcp") {
+			json(res, 200, getMcpOverview(config, paths));
+			return;
+		}
+
+		const mcpServerPutMatch = matchRoute("PUT", method, url, "/api/mcp/servers/:name");
+		if (mcpServerPutMatch) {
+			const name = mcpServerPutMatch.name;
+			const body = (await readBody(req)) as McpServerEntry;
+			try {
+				upsertManagedServer(paths, name, body);
+			} catch (err) {
+				json(res, 400, { error: err instanceof Error ? err.message : "Invalid server definition" });
+				return;
+			}
+			// Best-effort hot apply; if the runtime doesn't pick it up the UI
+			// tells the user to restart (same fire-and-forget pattern as skills).
+			scheduleSkillsReload();
+			json(res, 200, getMcpOverview(config, paths));
+			return;
+		}
+
+		const mcpServerPatchMatch = matchRoute("PATCH", method, url, "/api/mcp/servers/:name");
+		if (mcpServerPatchMatch) {
+			const body = (await readBody(req)) as Record<string, unknown>;
+			if (typeof body.disabled !== "boolean") {
+				json(res, 400, { error: "disabled must be a boolean" });
+				return;
+			}
+			if (!setManagedServerDisabled(paths, mcpServerPatchMatch.name, body.disabled)) {
+				json(res, 404, { error: "Server not found in managed config (it may come from an external config file)" });
+				return;
+			}
+			scheduleSkillsReload();
+			json(res, 200, getMcpOverview(config, paths));
+			return;
+		}
+
+		const mcpServerDeleteMatch = matchRoute("DELETE", method, url, "/api/mcp/servers/:name");
+		if (mcpServerDeleteMatch) {
+			if (!deleteManagedServer(paths, mcpServerDeleteMatch.name)) {
+				json(res, 404, { error: "Server not found in managed config (it may come from an external config file)" });
+				return;
+			}
+			scheduleSkillsReload();
+			json(res, 200, getMcpOverview(config, paths));
+			return;
+		}
+
 		if (method === "PUT" && url === "/api/settings/github") {
 			const body = (await readBody(req)) as Record<string, unknown>;
 			if (typeof body.token !== "string") {

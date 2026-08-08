@@ -62,6 +62,18 @@ export interface InnoSimpleModeConfig {
 	enabled: boolean;
 }
 
+/**
+ * MCP (Model Context Protocol) support via the pi-mcp-adapter extension.
+ * Master switch (default OFF, opt-in). Server definitions live in the standard
+ * MCP config file `<configDir>/mcp.json` (managed through the web UI or edited
+ * by hand); the adapter also merges the usual shared locations (`.mcp.json` in
+ * the workspace, `~/.config/mcp/mcp.json`, …). Changing `enabled` takes effect
+ * on the next process start because the extension set is fixed at boot.
+ */
+export interface InnoMcpConfig {
+	enabled: boolean;
+}
+
 /** What should happen when the desktop window's close button is clicked. */
 export type InnoCloseBehavior = "ask" | "hide" | "quit";
 
@@ -160,6 +172,7 @@ export interface InnoConfig {
 	subagents?: InnoSubagentsConfig;
 	memory?: InnoMemoryConfig;
 	simpleMode?: InnoSimpleModeConfig;
+	mcp?: InnoMcpConfig;
 	ui?: InnoUiConfig;
 	/**
 	 * Optional OCR API config (Baidu PaddleOCR-VL). When the configured model
@@ -262,6 +275,13 @@ export function normalizeSimpleModeConfig(simpleMode: Partial<InnoSimpleModeConf
 	};
 }
 
+export function normalizeMcpConfig(mcp: Partial<InnoMcpConfig> | undefined): InnoMcpConfig {
+	// MCP defaults OFF; only an explicit `true` enables it.
+	return {
+		enabled: mcp?.enabled === true,
+	};
+}
+
 export function normalizeUiConfig(ui: Partial<InnoUiConfig> | undefined): InnoUiConfig {
 	const theme = typeof ui?.theme === "string" && ui.theme.trim() ? ui.theme.trim() : "light";
 	const closeBehavior: InnoCloseBehavior = ui?.closeBehavior === "hide" || ui?.closeBehavior === "quit"
@@ -332,6 +352,7 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		subagents: config.subagents,
 		memory: normalizeMemoryConfig(config.memory),
 		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
+		mcp: normalizeMcpConfig(config.mcp),
 		ui: normalizeUiConfig(config.ui),
 		ocrApi: config.ocrApi,
 		tavily: config.tavily,

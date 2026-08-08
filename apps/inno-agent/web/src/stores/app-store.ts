@@ -3,7 +3,7 @@ import { EventEmitter } from "./event-emitter.js";
 export type RightPanelTab = "notebook" | "preview" | "profile" | "skills" | "jobs";
 export type SidebarSection = "chat" | "wiki" | "jobs" | "settings";
 export type WorkspaceMode = "collapsed" | "quarter" | "half" | "full";
-export type SettingsTab = "general" | "models" | "memory" | "integrations" | "channels" | "about";
+export type SettingsTab = "general" | "models" | "memory" | "integrations" | "channels" | "mcp" | "about";
 
 interface AppStoreEvents {
 	change: void;

@@ -73,6 +73,13 @@ export async function saveSimpleModeSettings(enabled: boolean): Promise<InnoSett
 	});
 }
 
+export async function saveMcpSettings(enabled: boolean): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>("/api/settings/mcp", {
+		method: "PUT",
+		body: JSON.stringify({ enabled }),
+	});
+}
+
 export async function saveGithubSettings(token: string): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings/github", {
 		method: "PUT",

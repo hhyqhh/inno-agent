@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -494,6 +494,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 	const [editingName, setEditingName] = useState("");
 	const [generatingId, setGeneratingId] = useState<string | null>(null);
 	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set(["archived"]));
+	const collapsedGroupsBeforeCustomSort = useRef<Set<string> | null>(null);
 	const [showSearch, setShowSearch] = useState(false);
 	const [editingWsId, setEditingWsId] = useState<string | null>(null);
 	const [editingWsName, setEditingWsName] = useState("");
@@ -650,17 +651,19 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 
 	const beginCustomSort = useCallback(() => {
 		setCustomOrderDraft(sortableGroupIds);
+		collapsedGroupsBeforeCustomSort.current = new Set(collapsedGroups);
 		setCollapsedGroups(new Set(groups.map((group) => group.id)));
 		setDraggingWorkspaceId(null);
 		setIsCustomSorting(true);
 		setSortMenuOpen(false);
-	}, [groups, sortableGroupIds]);
+	}, [collapsedGroups, groups, sortableGroupIds]);
 
 	const finishCustomSort = useCallback(() => {
 		setCustomOrder(customOrderDraft);
 		setWorkspaceSort("custom");
 		setIsCustomSorting(false);
-		setCollapsedGroups(new Set());
+		setCollapsedGroups(new Set(collapsedGroupsBeforeCustomSort.current ?? []));
+		collapsedGroupsBeforeCustomSort.current = null;
 		setDraggingWorkspaceId(null);
 		window.localStorage.setItem(WORKSPACE_SORT_STORAGE_KEY, "custom");
 		window.localStorage.setItem(WORKSPACE_CUSTOM_ORDER_STORAGE_KEY, JSON.stringify(customOrderDraft));
@@ -668,7 +671,8 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 
 	const cancelCustomSort = useCallback(() => {
 		setIsCustomSorting(false);
-		setCollapsedGroups(new Set());
+		setCollapsedGroups(new Set(collapsedGroupsBeforeCustomSort.current ?? []));
+		collapsedGroupsBeforeCustomSort.current = null;
 		setDraggingWorkspaceId(null);
 		setCustomOrderDraft([]);
 	}, []);

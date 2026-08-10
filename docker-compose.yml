@@ -9,6 +9,10 @@ services:
       INNO_SKILLS_DIR: /var/lib/inno-agent/skills
       INNO_WORKSPACE_DIR: /srv/inno-workspace
       INNO_PORT: 3000
+      # The server defaults to loopback-only binding; inside a container it
+      # must listen on all interfaces for the published port to work.
+      # Consider also setting server.token in config.json (see config.example.json).
+      INNO_HOST: 0.0.0.0
     volumes:
       - ./runtime/config:/etc/inno-agent
       - ./runtime/data:/var/lib/inno-agent/data

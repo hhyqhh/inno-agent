@@ -4,6 +4,7 @@ import { Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import type { WorkspaceFileDetail } from "../../types/workspace.js";
 import { triggerDownload } from "../../api/workspace.js";
+import { withApiToken } from "../../api/client.js";
 
 /** Cap rendered rows per sheet to avoid blowing up the DOM on huge sheets. */
 const MAX_ROWS = 2000;
@@ -35,7 +36,7 @@ export default function XlsxPreview({ file }: { file: WorkspaceFileDetail }) {
 		setActive(0);
 		(async () => {
 			try {
-				const res = await fetch(file.url as string);
+				const res = await fetch(withApiToken(file.url as string));
 				if (!res.ok) throw new Error(res.statusText);
 				const buf = await res.arrayBuffer();
 				if (cancelled) return;
@@ -90,7 +91,7 @@ export default function XlsxPreview({ file }: { file: WorkspaceFileDetail }) {
 	}, [tableHtml]);
 
 	const downloadOriginal = () => {
-		if (file.url) triggerDownload(`${file.url}${file.url.includes("?") ? "&" : "?"}download=1`);
+		if (file.url) triggerDownload(`${withApiToken(file.url)}${file.url.includes("?") ? "&" : "?"}download=1`);
 	};
 
 	if (loading) {

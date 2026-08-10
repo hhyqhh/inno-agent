@@ -8,7 +8,7 @@ import { cpSync, existsSync, readFileSync, readdirSync, realpathSync, rmSync, st
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
-import { loadConfig, normalizeContentHubConfig, type InnoConfig, type InnoContentHubConfig } from "./config.js";
+import { loadConfig, normalizeContentHubConfig, peekServerSecurity, DEFAULT_SERVER_HOST, type InnoConfig, type InnoContentHubConfig } from "./config.js";
 import { installFetchLogger } from "./utils/fetch-logger.js";
 import { canonicalContainmentRoot, isWithin } from "./utils/path-safety.js";
 import { applyProviderProxyBypass } from "./utils/proxy-bypass.js";
@@ -35,7 +35,7 @@ import type { PersonalBridgeChannelConfig } from "./config.js";
 import { JobStore } from "./scheduler/job-store.js";
 import { seedManagedMcpConfig } from "./mcp/mcp-config-store.js";
 import { CronScheduler } from "./scheduler/cron-scheduler.js";
-import { HttpError, json } from "./server/http-helpers.js";
+import { HttpError, json, originMatchesHost, requestTokenMatches } from "./server/http-helpers.js";
 import {
 	safeJoinReal,
 	slugifySkillName,
@@ -92,6 +92,21 @@ applyRuntimeEnvironment(paths);
 const port = parsed.options.port
 	?? (process.env.INNO_PORT ? Number.parseInt(process.env.INNO_PORT, 10) : undefined)
 	?? 3000;
+
+// Host and API token are peeked from the raw config file (no bootstrap):
+// host is needed at listen() time, and the token must be known before the
+// first API call so the served index.html can carry it to the web UI.
+// Both are restart-only settings.
+//
+// Host defaults to loopback — the single-user threat model does not include
+// LAN attackers (issue #159). Remote access requires an explicit
+// server.host / --host / INNO_HOST plus a server.token.
+const serverSecurity = peekServerSecurity(paths.configPath);
+const host = parsed.options.host
+	?? (process.env.INNO_HOST?.trim() || undefined)
+	?? serverSecurity.host
+	?? DEFAULT_SERVER_HOST;
+const serverToken = serverSecurity.token ?? null;
 
 // Config is loaded on first API request, not at startup.
 let config!: InnoConfig;
@@ -479,6 +494,39 @@ function serveStatic(req: HttpReq, res: ServerResponse, filePath: string, sendBo
 		res.end(sendBody ? content : undefined);
 		return true;
 	} catch (err) {
+		return false;
+	}
+}
+
+/**
+ * Serve the SPA index.html, injecting the configured API token as a
+ * `window.__INNO_API_TOKEN__` bootstrap script so the web UI can
+ * authenticate its API/WS calls. Static assets stay unauthenticated (they
+ * carry no sensitive data); only /api/* and the terminal WS are gated.
+ * The token is restart-only, so the injected page is cached per process.
+ */
+let indexHtmlCache: Buffer | null = null;
+
+function serveIndexHtml(res: ServerResponse, sendBody = true): boolean {
+	try {
+		if (!indexHtmlCache) {
+			const filePath = join(webDistDir, "index.html");
+			if (!existsSync(filePath)) return false;
+			let html = readFileSync(filePath, "utf-8");
+			if (serverToken) {
+				const tag = `<script>window.__INNO_API_TOKEN__=${JSON.stringify(serverToken)};</script>`;
+				html = html.includes("</head>") ? html.replace("</head>", `${tag}</head>`) : tag + html;
+			}
+			indexHtmlCache = Buffer.from(html, "utf-8");
+		}
+		res.writeHead(200, {
+			"Content-Type": "text/html; charset=utf-8",
+			"Content-Length": indexHtmlCache.length,
+			"Cache-Control": "no-cache",
+		});
+		res.end(sendBody ? indexHtmlCache : undefined);
+		return true;
+	} catch {
 		return false;
 	}
 }
@@ -1375,8 +1423,24 @@ async function runQueueOpWithTimeout<T>(
 }
 
 const server = createServer(async (req, res) => {
-	const url = req.url ?? "/";
+	let url = req.url ?? "/";
 	const method = req.method ?? "GET";
+
+	// The API token may arrive as ?token= (browser WebSocket upgrades and
+	// <img>/iframe URLs can't set headers). Strip it before routing so
+	// exact-path route matching is unaffected.
+	if (url.includes("token=")) {
+		try {
+			const parsed = new URL(url, "http://localhost");
+			if (parsed.searchParams.has("token")) {
+				parsed.searchParams.delete("token");
+				const qs = parsed.searchParams.toString();
+				url = parsed.pathname + (qs ? `?${qs}` : "");
+			}
+		} catch {
+			// leave url as-is; route matching will 404
+		}
+	}
 
 	try {
 		// --- Health check (no bootstrap needed) ---
@@ -1390,6 +1454,22 @@ const server = createServer(async (req, res) => {
 		// Static files and SPA fallback skip this so no directories are
 		// created until the user actually interacts with the web UI.
 		if (url.startsWith("/api/")) {
+			// Cross-origin defense (issue #159 / #162): a browser page on
+			// another origin must not drive this API — neither via simple
+			// cross-site POSTs nor via DNS rebinding. Non-browser clients
+			// (curl, sidecars) carry no Origin header and are unaffected.
+			if (!originMatchesHost(req)) {
+				json(res, 403, { error: "Forbidden: cross-origin request" });
+				return;
+			}
+			// Optional Bearer auth (server.token). /api/bridge/messages is
+			// exempt — sidecars authenticate with the separate bridge token.
+			if (serverToken
+				&& url.split("?")[0] !== "/api/bridge/messages"
+				&& !requestTokenMatches(req, serverToken)) {
+				json(res, 401, { error: "Unauthorized" });
+				return;
+			}
 			await ensureBootstrapped();
 		}
 
@@ -1478,12 +1558,13 @@ const server = createServer(async (req, res) => {
 			const urlPath = decodeURIComponent(url.split("?")[0]);
 			const staticPath = safeJoinReal(webDistDir, urlPath.replace(/^\/+/, ""));
 			const sendBody = method === "GET";
-			// Try exact file in web/dist
-			if (staticPath && serveStatic(req, res, staticPath, sendBody, webDistDir)) return;
+			// index.html always goes through serveIndexHtml (never the exact-file
+			// path) so the API token injection can't be bypassed.
+			if (staticPath && basename(staticPath) !== "index.html" && serveStatic(req, res, staticPath, sendBody, webDistDir)) return;
 			// SPA fallback: serve index.html for non-API paths only. An unmatched
 			// /api/* route must fall through to the JSON 404 — returning HTML with
 			// a 200 status breaks API client error handling.
-			if (urlPath !== "/api" && !urlPath.startsWith("/api/") && serveStatic(req, res, join(webDistDir, "index.html"), sendBody, webDistDir)) return;
+			if (urlPath !== "/api" && !urlPath.startsWith("/api/") && serveIndexHtml(res, sendBody)) return;
 		}
 
 		// --- 404 ---
@@ -1522,6 +1603,20 @@ const wss = new WebSocketServer({ noServer: true });
 server.on("upgrade", (req, socket, head) => {
 	const url = req.url ?? "";
 		if (!bootstrapped) { socket.destroy(); return; }
+	// Same policy as the HTTP API: Origin must match Host when present, and
+	// the optional server token (carried as ?token= — browser WebSocket
+	// connections cannot set headers) must match. Reject with a real HTTP
+	// status (not just a dropped socket) so failures are debuggable.
+	if (!originMatchesHost(req)) {
+		socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+		socket.destroy();
+		return;
+	}
+	if (serverToken && !requestTokenMatches(req, serverToken)) {
+		socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+		socket.destroy();
+		return;
+	}
 	const m = /^\/api\/terminal\/sessions\/([^/?]+)\/ws$/.exec(url.split("?")[0]);
 	if (!m) {
 		socket.destroy();
@@ -1646,7 +1741,15 @@ installProcessFallbacks({
 	},
 });
 
-server.listen(port, () => {
-	console.log(`[inno-server] listening on http://localhost:${port}`);
+server.listen(port, host, () => {
+	console.log(`[inno-server] listening on http://${host}:${port}`);
 	console.log(`[inno-server] config: ${paths.configPath}`);
+	const isLoopback = host === "127.0.0.1" || host === "localhost" || host === "::1";
+	if (!isLoopback) {
+		const msg = serverToken
+			? `[inno-server] bound to ${host} — reachable beyond this machine; server.token auth is ON`
+			: `[inno-server] WARNING: bound to ${host} — every API (including the terminal WebSocket) is reachable by anyone who can reach this address. Set server.token in config.json.`;
+		console.warn(msg);
+		logger.warn({ host, tokenConfigured: !!serverToken }, msg);
+	}
 });

@@ -1,4 +1,4 @@
-import { apiFetch } from "./client.js";
+import { apiFetch, apiToken } from "./client.js";
 import type { RunRecord, TerminalSessionInfo } from "../types/terminal.js";
 
 export async function createTerminalSession(input: {
@@ -19,7 +19,11 @@ export async function closeTerminalSession(id: string): Promise<void> {
 
 export function terminalWsUrl(id: string): string {
 	const proto = location.protocol === "https:" ? "wss:" : "ws:";
-	return `${proto}//${location.host}/api/terminal/sessions/${encodeURIComponent(id)}/ws`;
+	// Browser WebSocket connections can't set headers — the server accepts the
+	// token as a query parameter on the upgrade request instead.
+	const token = apiToken();
+	const query = token ? `?token=${encodeURIComponent(token)}` : "";
+	return `${proto}//${location.host}/api/terminal/sessions/${encodeURIComponent(id)}/ws${query}`;
 }
 
 export async function listRuns(sessionId: string, limit = 20): Promise<RunRecord[]> {

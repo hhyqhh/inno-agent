@@ -4,6 +4,7 @@ import { Download } from "lucide-react";
 import { renderAsync } from "docx-preview";
 import type { WorkspaceFileDetail } from "../../types/workspace.js";
 import { triggerDownload } from "../../api/workspace.js";
+import { withApiToken } from "../../api/client.js";
 
 /**
  * Render a .docx into an HTML container with formatting preserved, via
@@ -29,7 +30,7 @@ export default function DocxPreview({ file }: { file: WorkspaceFileDetail }) {
 		if (container) container.innerHTML = "";
 		(async () => {
 			try {
-				const res = await fetch(file.url as string);
+				const res = await fetch(withApiToken(file.url as string));
 				if (!res.ok) throw new Error(res.statusText);
 				const buf = await res.arrayBuffer();
 				if (cancelled || !containerRef.current) return;
@@ -59,7 +60,7 @@ export default function DocxPreview({ file }: { file: WorkspaceFileDetail }) {
 	}, [file.url, t]);
 
 	const downloadOriginal = () => {
-		if (file.url) triggerDownload(`${file.url}${file.url.includes("?") ? "&" : "?"}download=1`);
+		if (file.url) triggerDownload(`${withApiToken(file.url)}${file.url.includes("?") ? "&" : "?"}download=1`);
 	};
 
 	return (

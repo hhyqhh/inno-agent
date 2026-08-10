@@ -12,9 +12,41 @@ export class ApiError extends Error {
 
 const BASE_URL = ""; // Same origin — Vite proxy in dev
 
+/**
+ * API token injected by the server into index.html when `server.token` is
+ * configured (see serveIndexHtml in server.ts). Undefined in the default
+ * loopback deployment, where no auth is required.
+ */
+declare global {
+	interface Window {
+		__INNO_API_TOKEN__?: string;
+	}
+}
+
+export function apiToken(): string | undefined {
+	return typeof window !== "undefined" ? window.__INNO_API_TOKEN__ : undefined;
+}
+
+function authHeaders(): Record<string, string> {
+	const token = apiToken();
+	return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/**
+ * Append the API token as a query parameter for contexts that cannot set
+ * headers — <img> tags and direct fetches of /api/* file URLs (workspace
+ * raw, skill raw, office previews). Non-API URLs (blob:, data:, external)
+ * are returned untouched.
+ */
+export function withApiToken(url: string): string {
+	const token = apiToken();
+	if (!token || !url.startsWith("/api/") || /[?&]token=/.test(url)) return url;
+	return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+}
+
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 	const res = await fetch(`${BASE_URL}${path}`, {
-		headers: { "Content-Type": "application/json", ...options?.headers },
+		headers: { "Content-Type": "application/json", ...authHeaders(), ...options?.headers },
 		...options,
 	});
 	if (!res.ok) {
@@ -100,7 +132,7 @@ export async function* streamSSE<T>(url: string, body: unknown, signal?: AbortSi
 	try {
 		res = await fetch(url, {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { "Content-Type": "application/json", ...authHeaders() },
 			body: JSON.stringify(body),
 			signal,
 		});
@@ -122,7 +154,7 @@ export async function* streamSSE<T>(url: string, body: unknown, signal?: AbortSi
 export async function* streamSSEGet<T>(url: string, signal?: AbortSignal, options: { allowNotFound?: boolean } = {}): AsyncGenerator<T> {
 	let res: Response;
 	try {
-		res = await fetch(url, { method: "GET", signal });
+		res = await fetch(url, { method: "GET", headers: { ...authHeaders() }, signal });
 	} catch (err) {
 		if (signal?.aborted) return;
 		throw err;

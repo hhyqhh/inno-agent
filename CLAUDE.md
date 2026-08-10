@@ -19,7 +19,7 @@ PI SDK packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@e
 
 Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (scheduler), `@larksuiteoapi/node-sdk` (Feishu), `typebox` (validation), `undici` (HTTP client), `@juicesharp/rpiv-ask-user-question` (bridges agent `ask_user_question` tool calls to the web UI), `pi-subagents` (optional subagent support), `pi-sandbox` (optional OS-level sandboxing), `graphology` + `graphology-communities-louvain` (wiki knowledge graph), `yaml` (YAML parsing), `@llamaindex/liteparse` (document parsing).
 
-Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is ~32 files (254 tests) and skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
+Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is ~33 files (263 tests) and skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
 
 When a PR changes the test count, the size of `server.ts`, or other structural facts stated in this file, update this file in the same PR — AI agents read it as ground truth.
 
@@ -158,6 +158,7 @@ Precedence: CLI flag → env var → `~/.inno-agent/...`.
 | `--skills` / `--skills-dir` | `INNO_SKILLS_DIR` | `<home>/skills` |
 | `--workspace` / `--workspace-dir` | `INNO_WORKSPACE_DIR` | invocation CWD |
 | `--port` | `INNO_PORT` (via config) | `3000` |
+| `--host` | `INNO_HOST` | `127.0.0.1` |
 
 Derived paths inside `dataDir`: `learner/`, `sessions/`, `jobs/`, `l2/`, `l3/`, `channels/`, `preset-cache/`. `applyRuntimeEnvironment` re-exports the resolved paths back into `process.env` plus `PI_CODING_AGENT_SESSION_DIR` so PI SDK code picks them up. It also sets `PI_CODING_AGENT_DIR` to `configDir` so pi-sandbox reads `sandbox.json` from the config directory.
 
@@ -252,7 +253,7 @@ Three layers, all file-backed under `dataDir`:
 
 ### HTTP server (`src/server.ts`)
 
-Plain Node `http.createServer` (no framework), ~1600 lines plus route domains extracted under `src/server/routes/` (chat, wiki, workspaces, skills, channels, jobs, sessions, settings, learner, practice, presets). Key endpoints:
+Plain Node `http.createServer` (no framework), ~1800 lines plus route domains extracted under `src/server/routes/` (chat, wiki, workspaces, skills, channels, jobs, sessions, settings, learner, practice, presets). Binds to `127.0.0.1` by default (`--host` / `INNO_HOST` / `server.host` to change; Docker sets `INNO_HOST=0.0.0.0`). Two request gates apply to all `/api/*` and the terminal WS upgrade: (1) when present, the `Origin` header's host must match the request `Host` (CSRF / DNS-rebinding defense); (2) when `server.token` is set, a Bearer token (or `?token=` query, stripped before routing) is required — `/health` and `/api/bridge/messages` (own bridge token) are exempt, and the served index.html gets the token injected as `window.__INNO_API_TOKEN__` for the web UI. Both host and token are peeked from config.json at startup (restart-only). Key endpoints:
 - `POST /api/chat/stream` — SSE streaming chat.
 - `POST /api/chat` — non-streaming chat (full response).
 - `GET /api/chat/events/:id` — SSE event replay for reconnecting to an in-progress chat stream after page navigation (backed by `SessionEventBroadcaster`, an in-memory buffer).
@@ -371,7 +372,7 @@ Separate Dockerfile for building the custom base image. Based on `node:22-bookwo
 
 ### User-facing config (`<configDir>/config.json`)
 
-Template: `config.example.json` at repo root. Declares `defaultProvider`, `defaultModel`, a `providers` map (each with `baseUrl`, `api` ∈ {`openai-completions`, `anthropic-messages`}, `apiKey`, `models[]`), optional `server.port`, optional `channels.*` blocks, optional `bridge.token`, optional `subagents.enabled`, optional `contentHub`, `memory`, `simpleMode`, and `ui` sections. The server hot-rewrites this file when the user switches model via the UI.
+Template: `config.example.json` at repo root. Declares `defaultProvider`, `defaultModel`, a `providers` map (each with `baseUrl`, `api` ∈ {`openai-completions`, `anthropic-messages`}, `apiKey`, `models[]`), optional `server.port` / `server.host` (loopback default) / `server.token` (optional API Bearer auth), optional `channels.*` blocks, optional `bridge.token`, optional `subagents.enabled`, optional `contentHub`, `memory`, `simpleMode`, and `ui` sections. The server hot-rewrites this file when the user switches model via the UI.
 
 Model config supports `reasoning` (boolean), `input` (modality array, e.g. `["text", "image"]`), `contextWindow`, and `maxTokens` per model entry. Provider config supports `authHeader` (boolean) and `bypassProxy` (boolean) fields.
 
@@ -381,7 +382,7 @@ Full config.json structure (see `config.example.json`):
   "defaultProvider": "innospark",
   "defaultModel": "claude-sonnet-4-6",
   "providers": { /* ... */ },
-  "server": { "port": 3000 },
+  "server": { "port": 3000, "host": "127.0.0.1", "token": "" },
   "channels": {
     "feishu": { "enabled": false, "personalOnly": true, "allowedUserIds": [] },
     "wechat": { "enabled": false, "mode": "bridge", "allowedUserIds": [], "sidecarBaseUrl": "http://127.0.0.1:4319" }

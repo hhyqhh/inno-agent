@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Download } from "lucide-react";
 import type { PptxPreviewResult, PptxSlide, WorkspaceFileDetail } from "../../types/workspace.js";
 import { triggerDownload } from "../../api/workspace.js";
+import { withApiToken } from "../../api/client.js";
 import { Spinner } from "../ui/Spinner.js";
 
 /**
@@ -27,7 +28,7 @@ export default function PptxPreview({ file }: { file: WorkspaceFileDetail }) {
 		setLoading(true);
 		setError("");
 		setSlides([]);
-		fetch(file.previewUrl)
+		fetch(withApiToken(file.previewUrl))
 			.then(async (res) => {
 				if (!res.ok) {
 					const body = await res.json().catch(() => ({}));
@@ -46,7 +47,7 @@ export default function PptxPreview({ file }: { file: WorkspaceFileDetail }) {
 	}, [file.previewUrl, t]);
 
 	const downloadOriginal = () => {
-		if (file.url) triggerDownload(`${file.url}${file.url.includes("?") ? "&" : "?"}download=1`);
+		if (file.url) triggerDownload(`${withApiToken(file.url)}${file.url.includes("?") ? "&" : "?"}download=1`);
 	};
 
 	if (loading) {

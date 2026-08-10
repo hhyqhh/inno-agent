@@ -2,7 +2,7 @@ import type { BridgeMessageBody, BridgeMessageResponse } from "./types.js";
 import type { IncomingMessage, ChannelName } from "../types.js";
 import type { PersonalChannelDispatcher } from "../personal-dispatcher.js";
 import type { ChannelRegistry } from "../channel.js";
-import { timingSafeEqual } from "node:crypto";
+import { bearerTokenMatches } from "../../server/http-helpers.js";
 import { logger } from "../../logger.js";
 
 const VALID_BRIDGE_CHANNELS = new Set<string>(["qq", "wechat"]);
@@ -11,14 +11,6 @@ export interface BridgeServerOptions {
 	token: string;
 	channelRegistry: ChannelRegistry;
 	dispatcher: PersonalChannelDispatcher;
-}
-
-/** Constant-time bearer-token check (the token guards message injection). */
-function bearerTokenMatches(authHeader: string | undefined, token: string): boolean {
-	if (!authHeader) return false;
-	const expected = Buffer.from(`Bearer ${token}`, "utf-8");
-	const actual = Buffer.from(authHeader, "utf-8");
-	return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 export function handleBridgeMessage(

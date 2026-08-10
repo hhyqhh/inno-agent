@@ -37,7 +37,7 @@ General-purpose coding agents optimize for open-ended software engineering. Educ
 Inno Agent is a **personal** agent, and the architecture deliberately reflects that:
 
 - **One process, one active agent session.** A single in-memory prompt queue serializes all work; sessions, workspaces, and channels share it. Session switching swaps session files in place — there is no per-session agent pool.
-- **No multi-user concurrency, no horizontal scaling.** There is no auth model, no tenant isolation, and no sharded state. If you need a team deployment, run one instance per person.
+- **No multi-user concurrency, no horizontal scaling.** There is no auth model, no tenant isolation, and no sharded state. If you need a team deployment, run one instance per person. The HTTP server binds to `127.0.0.1` by default to match this threat model; if you deliberately expose it (`server.host` / `INNO_HOST`), set `server.token` too.
 - **Backpressure is a feature, not a bug.** When the queue is busy (e.g. another session's long turn or an unanswered question card), cross-session operations answer `409 session_busy` with blocker details instead of silently queueing for minutes — the UI surfaces this so you can finish or abort the blocking turn. See [issue #124](https://github.com/hhyqhh/inno-agent/issues/124) for the design discussion.
 
 These constraints keep the memory layers, scheduler, and channels simple enough to reason about — which matters more for a tool that watches how you learn than for one that serves a crowd.

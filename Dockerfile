@@ -40,7 +40,8 @@ ENV NODE_ENV=production \
     INNO_DATA_DIR=/var/lib/inno-agent/data \
     INNO_SKILLS_DIR=/var/lib/inno-agent/skills \
     INNO_WORKSPACE_DIR=/srv/inno-workspace \
-    INNO_PORT=3000
+    INNO_PORT=3000 \
+    INNO_HOST=0.0.0.0
 
 # Copy the FULL node_modules from build stage (no pruning).
 # npm prune --production is unreliable with workspaces: it can drop

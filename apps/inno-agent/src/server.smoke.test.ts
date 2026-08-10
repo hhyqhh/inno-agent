@@ -453,6 +453,34 @@ describe("server smoke", () => {
 		expect(((await res.json()) as { error: string }).error).toContain("Invalid JSON");
 	});
 
+	it("binds to loopback by default (issue #159)", async () => {
+		expect(childLog).toContain(`listening on http://127.0.0.1:${port}`);
+	});
+
+	it("rejects cross-origin browser requests (Origin ≠ Host) with 403", async () => {
+		// A page on evil.example driving localhost:3000 — drive-by CSRF /
+		// DNS-rebinding defense (issues #159 / #162).
+		const evilPost = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Origin: "http://evil.example" },
+			body: JSON.stringify({}),
+		});
+		expect(evilPost.status).toBe(403);
+
+		const evilGet = await fetch(`http://127.0.0.1:${port}/api/settings`, {
+			headers: { Origin: "http://evil.example" },
+		});
+		expect(evilGet.status).toBe(403);
+
+		// Same-origin Origin header (as the real UI sends) passes the check.
+		const sameOrigin = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Origin: `http://127.0.0.1:${port}` },
+			body: JSON.stringify({}),
+		});
+		expect(sameOrigin.status).toBe(400); // passes Origin check, fails validation
+	});
+
 	it("POST with an oversized declared Content-Length returns 413 and survives to serve the next request", async () => {
 		// Send headers only — the server must reject from the declared length
 		// without consuming a single body byte. (issue #162: readBody had no cap)

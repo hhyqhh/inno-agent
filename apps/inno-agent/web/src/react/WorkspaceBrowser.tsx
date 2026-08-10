@@ -4,6 +4,7 @@ import { Tree, type NodeRendererProps, type TreeApi, type CreateHandler, type Re
 import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, FileCode2, Presentation, FileSpreadsheet, Copy, Check, ListChecks, Trash2 } from "lucide-react";
 import { workspaceStore, type StreamingWorkspacePreview } from "../stores/workspace-store.js";
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
+import { withApiToken } from "../api/client.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { settingsStore } from "../stores/settings-store.js";
@@ -237,7 +238,7 @@ function OfficePreview({ file }: { file: WorkspaceFileDetail }) {
 		setLoading(true);
 		setError("");
 		setData(null);
-		fetch(file.previewUrl)
+		fetch(withApiToken(file.previewUrl))
 			.then(async (res) => {
 				if (!res.ok) {
 					const body = await res.json().catch(() => ({}));
@@ -252,7 +253,7 @@ function OfficePreview({ file }: { file: WorkspaceFileDetail }) {
 	}, [file.previewUrl, file.path, t]);
 
 	const downloadOriginal = useCallback(() => {
-		if (file.url) triggerDownload(`${file.url}${file.url.includes("?") ? "&" : "?"}download=1`);
+		if (file.url) triggerDownload(`${withApiToken(file.url)}${file.url.includes("?") ? "&" : "?"}download=1`);
 	}, [file.url]);
 
 	if (loading) {
@@ -323,7 +324,7 @@ function Preview({ file, isLoading }: { file: WorkspaceFileDetail; isLoading: bo
 		// Default to fit-width so the PDF fills the preview panel horizontally.
 		// `view=FitH` (PDF Open Params) + `zoom=page-width` covers Chromium and Firefox.
 		// Users can still zoom in/out further via the native PDF viewer toolbar.
-		const baseUrl = file.url ?? "";
+		const baseUrl = withApiToken(file.url ?? "");
 		const pdfUrl = baseUrl
 			? `${baseUrl}${baseUrl.includes("#") ? "&" : "#"}view=FitH&zoom=page-width`
 			: "";
@@ -332,7 +333,7 @@ function Preview({ file, isLoading }: { file: WorkspaceFileDetail; isLoading: bo
 	if (file.kind === "image") {
 		return (
 			<div className="flex h-full items-center justify-center overflow-auto bg-[var(--inno-surface-muted)] p-4">
-				<img className="max-h-full max-w-full object-contain" src={file.url ?? ""} alt={file.name} />
+				<img className="max-h-full max-w-full object-contain" src={withApiToken(file.url ?? "")} alt={file.name} />
 			</div>
 		);
 	}

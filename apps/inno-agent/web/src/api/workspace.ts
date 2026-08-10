@@ -1,4 +1,4 @@
-import { apiFetch } from "./client.js";
+import { apiFetch, withApiToken } from "./client.js";
 import type { PptxPreviewResult, WorkspaceFileDetail, WorkspaceTree, WorkspaceTreeNode } from "../types/workspace.js";
 
 function qs(workspaceId?: string): string {
@@ -75,7 +75,7 @@ export function workspaceFileUrl(path: string, workspaceId?: string, download = 
 	const params = new URLSearchParams({ path });
 	if (workspaceId) params.set("workspaceId", workspaceId);
 	if (download) params.set("download", "1");
-	return `/api/workspace/raw?${params.toString()}`;
+	return withApiToken(`/api/workspace/raw?${params.toString()}`);
 }
 
 /** Build the URL that zips and downloads a workspace folder (empty path → whole workspace). */
@@ -84,7 +84,7 @@ export function workspaceFolderZipUrl(path: string, workspaceId?: string): strin
 	if (path) params.set("path", path);
 	if (workspaceId) params.set("workspaceId", workspaceId);
 	const qs = params.toString();
-	return `/api/workspace/download-folder${qs ? `?${qs}` : ""}`;
+	return withApiToken(`/api/workspace/download-folder${qs ? `?${qs}` : ""}`);
 }
 
 /** Fetch a pptx rendered to per-slide SVG. */

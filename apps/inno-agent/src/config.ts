@@ -160,6 +160,20 @@ export interface InnoConfig {
 	providers: Record<string, InnoProviderConfig>;
 	server?: {
 		port: number;
+		/**
+		 * Bind address. Defaults to 127.0.0.1 (loopback only) — the
+		 * single-user threat model does not include LAN attackers. Set
+		 * "0.0.0.0" explicitly (and pair it with `token`) for remote access.
+		 * Overridden by the --host flag / INNO_HOST env var.
+		 */
+		host?: string;
+		/**
+		 * Optional Bearer token. When set, every /api/* request and terminal
+		 * WebSocket upgrade must carry it (Authorization header or ?token=
+		 * query). The web UI receives it via an injected <script> in the
+		 * served index.html. Changes require a restart.
+		 */
+		token?: string;
 	};
 	feishu?: {
 		appId: string;
@@ -498,6 +512,28 @@ export function getConfiguredPort(config: InnoConfig, override?: number): number
 	const envPort = process.env.INNO_PORT ? Number.parseInt(process.env.INNO_PORT, 10) : undefined;
 	if (envPort && Number.isFinite(envPort)) return envPort;
 	return config.server?.port ?? 3000;
+}
+
+export const DEFAULT_SERVER_HOST = "127.0.0.1";
+
+/**
+ * Read server.host/server.token straight from the config file, without the
+ * full normalize/validate pipeline. server.ts needs these before (and
+ * independently of) the lazy bootstrap: host is required at listen() time
+ * and token must be known to inject into the served index.html even when no
+ * API call has triggered bootstrap yet. Both are restart-only settings.
+ */
+export function peekServerSecurity(configPath: string): { host?: string; token?: string } {
+	try {
+		const raw = JSON.parse(readFileSync(configPath, "utf-8")) as {
+			server?: { host?: unknown; token?: unknown };
+		};
+		const host = typeof raw.server?.host === "string" && raw.server.host.trim() ? raw.server.host.trim() : undefined;
+		const token = typeof raw.server?.token === "string" && raw.server.token ? raw.server.token : undefined;
+		return { host, token };
+	} catch {
+		return {};
+	}
 }
 
 /**

@@ -21,7 +21,11 @@
 		}
 	},
 	"server": {
-		"port": 3000
+		"port": 3000,
+		"_comment_host": "Bind address. Default 127.0.0.1 (loopback only). Set 0.0.0.0 for LAN/remote access — pair it with token.",
+		"host": "127.0.0.1",
+		"_comment_token": "Optional Bearer token. When set, all /api/* requests and the terminal WebSocket require it. Recommended when host is not loopback. Restart to apply.",
+		"token": ""
 	},
 	"channels": {
 		"feishu": {

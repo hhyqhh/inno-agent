@@ -24,6 +24,7 @@ export interface RuntimeCliOptions {
 	configDir?: string;
 	dataDir?: string;
 	home?: string;
+	host?: string;
 	port?: number;
 	sandbox?: boolean;
 	skillsDir?: string;
@@ -85,6 +86,8 @@ export function parseRuntimeArgs(args: string[]): ParsedRuntimeArgs {
 			options.dataDir = readValue(arg.startsWith("--data-dir") ? "--data-dir" : "--data");
 		} else if (arg === "--home" || arg.startsWith("--home=")) {
 			options.home = readValue("--home");
+		} else if (arg === "--host" || arg.startsWith("--host=")) {
+			options.host = readValue("--host");
 		} else if (arg === "--skills" || arg === "--skills-dir" || arg.startsWith("--skills=") || arg.startsWith("--skills-dir=")) {
 			options.skillsDir = readValue(arg.startsWith("--skills-dir") ? "--skills-dir" : "--skills");
 		} else if (arg === "--workspace" || arg === "--workspace-dir" || arg.startsWith("--workspace=") || arg.startsWith("--workspace-dir=")) {

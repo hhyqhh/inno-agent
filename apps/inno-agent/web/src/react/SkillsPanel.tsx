@@ -4,6 +4,7 @@ import { Tree, type NodeRendererProps } from "react-arborist";
 import { RefreshCw, Upload, Trash2, ChevronLeft, File, FileText, FileType, Folder, FolderOpen, Globe, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Library, Download, Check, FileCode2, Search } from "lucide-react";
 import { skillsStore } from "../stores/skills-store.js";
 import { skillRawUrl } from '../api/skills.js';
+import { withApiToken } from '../api/client.js';
 import type { SkillInfo } from "../types/skills.js";
 import type { WorkspaceFileDetail, WorkspaceFileKind } from "../types/workspace.js";
 import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
@@ -67,11 +68,11 @@ function FilePreview({ file, skillName, isLoading }: { file: WorkspaceFileDetail
 	if (isLoading) return <div className="flex h-full items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("preview.loadingFile", "Loading...")}</div>;
 	if (file.kind === "markdown") return <div className="h-full overflow-y-auto p-5"><markdown-artifact content={normalizeMarkdownMath(file.content ?? "")} /></div>;
 	if (file.kind === "html") return <SkillHtmlPreview file={file} />;
-	if (file.kind === "pdf") return <iframe className="h-full w-full border-0 bg-[var(--inno-surface)]" src={file.url ?? skillRawUrl(skillName, file.path)} title={file.name} />;
+	if (file.kind === "pdf") return <iframe className="h-full w-full border-0 bg-[var(--inno-surface)]" src={withApiToken(file.url ?? skillRawUrl(skillName, file.path))} title={file.name} />;
 	if (file.kind === "image") {
 		return (
 			<div className="flex h-full items-center justify-center overflow-auto bg-[var(--inno-surface-muted)] p-4">
-				<img className="max-h-full max-w-full object-contain" src={file.url ?? skillRawUrl(skillName, file.path)} alt={file.name} />
+				<img className="max-h-full max-w-full object-contain" src={withApiToken(file.url ?? skillRawUrl(skillName, file.path))} alt={file.name} />
 			</div>
 		);
 	}

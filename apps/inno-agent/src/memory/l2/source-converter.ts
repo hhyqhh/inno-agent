@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { ensureDir, writeText } from "../../storage/file-store.js";
 import type { RawSourceType } from "./types.js";
 import { logger } from "../../logger.js";
+import { joinL2Path } from "./l2-path.js";
 
 /**
  * Convert raw content to extracted markdown and save to data/l2/extracted/.
@@ -24,7 +25,7 @@ export function convertToExtracted(
 		.slice(0, 50);
 	const filename = `${slug}-${randomUUID().slice(0, 6)}.md`;
 	writeText(join(dir, filename), markdown);
-	return join("extracted", filename);
+	return joinL2Path("extracted", filename);
 }
 
 function convertContent(content: string, sourceType: RawSourceType): string {

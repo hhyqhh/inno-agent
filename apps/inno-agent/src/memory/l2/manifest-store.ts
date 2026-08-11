@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { appendJsonl, readJsonl, writeText } from "../../storage/file-store.js";
 import type { ManifestEntry } from "./types.js";
+import { normalizeL2Path } from "./l2-path.js";
 
 const MANIFEST_FILE = "manifest.jsonl";
 
@@ -9,21 +10,31 @@ function getManifestPath(l2DataDir: string): string {
 }
 
 export function appendManifest(l2DataDir: string, entry: ManifestEntry): void {
-	appendJsonl(getManifestPath(l2DataDir), entry);
+	appendJsonl(getManifestPath(l2DataDir), normalizeManifestPaths(entry));
 }
 
 /** Insert a manifest entry or atomically replace the existing record with the same id. */
 export function upsertManifest(l2DataDir: string, entry: ManifestEntry): void {
 	const entries = readManifest(l2DataDir);
 	const index = entries.findIndex((candidate) => candidate.id === entry.id);
-	if (index >= 0) entries[index] = entry;
-	else entries.push(entry);
+	const normalizedEntry = normalizeManifestPaths(entry);
+	if (index >= 0) entries[index] = normalizedEntry;
+	else entries.push(normalizedEntry);
 	const lines = entries.map((candidate) => JSON.stringify(candidate)).join("\n");
 	writeText(getManifestPath(l2DataDir), lines ? `${lines}\n` : "");
 }
 
 export function readManifest(l2DataDir: string): ManifestEntry[] {
-	return readJsonl<ManifestEntry>(getManifestPath(l2DataDir));
+	return readJsonl<ManifestEntry>(getManifestPath(l2DataDir)).map(normalizeManifestPaths);
+}
+
+function normalizeManifestPaths(entry: ManifestEntry): ManifestEntry {
+	return {
+		...entry,
+		rawPath: normalizeL2Path(entry.rawPath),
+		extractedPath: entry.extractedPath === undefined ? undefined : normalizeL2Path(entry.extractedPath),
+		wikiPages: entry.wikiPages.map(normalizeL2Path),
+	};
 }
 
 /**
@@ -34,10 +45,11 @@ export function readManifest(l2DataDir: string): ManifestEntry[] {
  */
 export function removeWikiPathFromManifest(l2DataDir: string, wikiPath: string): boolean {
 	const entries = readManifest(l2DataDir);
+	const normalizedPath = normalizeL2Path(wikiPath);
 	let changed = false;
 	for (const entry of entries) {
-		if (entry.wikiPages.includes(wikiPath)) {
-			entry.wikiPages = entry.wikiPages.filter((p) => p !== wikiPath);
+		if (entry.wikiPages.includes(normalizedPath)) {
+			entry.wikiPages = entry.wikiPages.filter((p) => p !== normalizedPath);
 			changed = true;
 		}
 	}

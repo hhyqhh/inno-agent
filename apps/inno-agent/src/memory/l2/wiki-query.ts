@@ -4,6 +4,7 @@ import { readManifest } from "./manifest-store.js";
 import type { ManifestEntry } from "./types.js";
 import type { L2Memory } from "./l2-memory.js";
 import type { L2SearchResult } from "./l2-search.js";
+import { normalizeL2Path } from "./l2-path.js";
 
 export interface WikiQueryHit {
 	path: string;
@@ -32,7 +33,7 @@ export function readIndex(l2DataDir: string): string {
  * Read a specific wiki page by relative path.
  */
 export function readWikiPage(l2DataDir: string, relativePath: string): string | null {
-	const absPath = join(l2DataDir, relativePath);
+	const absPath = join(l2DataDir, normalizeL2Path(relativePath));
 	if (!fileExists(absPath)) return null;
 	return readText(absPath);
 }

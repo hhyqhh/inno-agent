@@ -62,6 +62,26 @@ describe("L2 wiki maintenance", () => {
 		expect(parsed.body).toBe("正文");
 	});
 
+	it("serializes Windows source paths with portable separators", () => {
+		const frontmatter: WikiPageFrontmatter = {
+			title: "Portable source",
+			created: "2026-07-30",
+			type: "analysis",
+			tags: [],
+			sources: ["workspace\\reports\\result.md"],
+			source_ids: [],
+			updated: "2026-07-30",
+			status: "draft",
+			confidence: "medium",
+		};
+
+		const serialized = serializeFrontmatter(frontmatter);
+		expect(serialized).not.toContain("\\");
+		expect(parseFrontmatter(`${serialized}\nBody`).frontmatter?.sources).toEqual([
+			"workspace/reports/result.md",
+		]);
+	});
+
 	it("creates navigation and schema files without user setup", () => {
 		const root = makeTempDir();
 		ensureL2Directories(root);

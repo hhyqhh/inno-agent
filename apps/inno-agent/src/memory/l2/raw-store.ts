@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { copyFileSync } from "node:fs";
 import { ensureDir, writeText } from "../../storage/file-store.js";
 import type { RawSourceType } from "./types.js";
+import { joinL2Path } from "./l2-path.js";
 
 /** Map source type to subdirectory under raw/. */
 const TYPE_DIR_MAP: Record<RawSourceType, string> = {
@@ -55,7 +56,7 @@ export function saveRaw(
 	ensureDir(dir);
 	const filename = generateFilename(title, sourceType);
 	writeText(join(dir, filename), rawFrontmatter(content, sourceType, sourceUrl) + content);
-	return join("raw", subdir, filename);
+	return joinL2Path("raw", subdir, filename);
 }
 
 /**
@@ -81,5 +82,5 @@ export function saveRawFile(
 	const ext = extname(originalFilePath);
 	const filename = `${date}-${slug}-${randomUUID().slice(0, 6)}${ext}`;
 	copyFileSync(originalFilePath, join(dir, filename));
-	return join("raw", subdir, filename);
+	return joinL2Path("raw", subdir, filename);
 }

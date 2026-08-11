@@ -26,6 +26,7 @@ const louvainDetailed = (louvainImport as unknown as { detailed: LouvainDetailed
 import { readText, fileExists } from "../../storage/file-store.js";
 import { parseFrontmatter } from "./wiki-maintainer.js";
 import { buildAliasIndex, extractOutgoingLinks, normalizeWikiLink, stripParenthetical } from "./wiki-links.js";
+import { joinL2Path } from "./l2-path.js";
 
 const WIKI_SUBDIRS = ["sources", "entities", "concepts", "analysis"] as const;
 
@@ -39,7 +40,7 @@ const MIN_COMMUNITY_SIZE = 3;
  * "connects everything" super-node AND inflate the degree of exactly the nodes
  * it ranks — a feedback loop. It is therefore excluded from the graph.
  */
-export const OVERVIEW_PATH = join("wiki", "analysis", "overview.md");
+export const OVERVIEW_PATH = joinL2Path("wiki", "analysis", "overview.md");
 
 export interface WikiGraphNode {
 	id: string;
@@ -128,7 +129,7 @@ function readAllPages(l2DataDir: string): PageRecord[] {
 		}
 		for (const file of files) {
 			if (!file.endsWith(".md")) continue;
-			const wikiPath = join("wiki", sub, file);
+			const wikiPath = joinL2Path("wiki", sub, file);
 			if (wikiPath === OVERVIEW_PATH) continue;
 			const { frontmatter, body } = parseFrontmatter(readText(join(l2DataDir, wikiPath)));
 			if (!frontmatter) continue;

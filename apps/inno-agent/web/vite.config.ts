@@ -1,7 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { basename, extname, join, resolve } from "node:path";
+import { basename, extname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
 import { defineConfig, type Plugin, type ResolvedConfig } from "vite";
@@ -196,7 +196,7 @@ export default defineConfig({
 								fileName,
 								mimeType,
 								size: data.length,
-								rawPath: join("raw", "uploads", outputName),
+								rawPath: posix.join("raw", "uploads", outputName),
 							}));
 						} catch (err) {
 							res.statusCode = 500;

@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { readText, fileExists } from "../../storage/file-store.js";
 import { parseFrontmatter } from "./wiki-maintainer.js";
 import type { L2IndexStore, L2PageDoc } from "./l2-index-store.js";
+import { joinL2Path, normalizeL2Path } from "./l2-path.js";
 
 const WIKI_SUBDIRS = ["sources", "entities", "concepts", "analysis"] as const;
 
@@ -33,6 +34,7 @@ function inferTypeFromPath(wikiPath: string): string {
  * written (false when the file is missing/empty or unchanged since last index).
  */
 export function indexPage(store: L2IndexStore, l2DataDir: string, wikiPath: string): boolean {
+	wikiPath = normalizeL2Path(wikiPath);
 	const abs = join(l2DataDir, wikiPath);
 	if (!fileExists(abs)) return false;
 	const content = readText(abs);
@@ -81,7 +83,7 @@ export function indexAllPages(store: L2IndexStore, l2DataDir: string): { indexed
 			continue;
 		}
 		for (const f of files) {
-			const wikiPath = join("wiki", sub, f);
+			const wikiPath = joinL2Path("wiki", sub, f);
 			present.add(wikiPath);
 			if (indexPage(store, l2DataDir, wikiPath)) indexed++;
 		}
@@ -97,5 +99,5 @@ export function indexAllPages(store: L2IndexStore, l2DataDir: string): { indexed
 }
 
 export function removePageFromIndex(store: L2IndexStore, wikiPath: string): void {
-	store.deletePage(wikiPath);
+	store.deletePage(normalizeL2Path(wikiPath));
 }

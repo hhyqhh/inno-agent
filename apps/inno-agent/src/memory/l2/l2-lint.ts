@@ -7,6 +7,7 @@ import { readManifest } from "./manifest-store.js";
 import type { WikiPageFrontmatter, WikiPageType } from "./types.js";
 import { buildAliasIndex, extractOutgoingLinks } from "./wiki-links.js";
 import { parseFrontmatter } from "./wiki-maintainer.js";
+import { joinL2Path, normalizeL2Path } from "./l2-path.js";
 
 const PAGE_DIRS = ["sources", "entities", "concepts", "analysis"] as const;
 const REQUIRED_FIELDS = ["title", "created", "type", "tags", "sources", "source_ids", "updated", "status", "confidence"] as const;
@@ -52,10 +53,6 @@ interface PageRecord {
 	rawFrontmatter: Record<string, unknown> | null;
 }
 
-function normalizePath(value: string): string {
-	return value.replace(/\\/g, "/");
-}
-
 function fileExistsWithin(root: string, relativePath: string): boolean {
 	const absoluteRoot = resolve(root);
 	const target = resolve(absoluteRoot, relativePath);
@@ -65,7 +62,7 @@ function fileExistsWithin(root: string, relativePath: string): boolean {
 }
 
 function finding(code: L2LintCode, severity: L2LintSeverity, path: string, message: string): L2LintFinding {
-	return { code, severity, path: normalizePath(path), message };
+	return { code, severity, path: normalizeL2Path(path), message };
 }
 
 function wikiPagePaths(l2DataDir: string): string[] {
@@ -74,7 +71,7 @@ function wikiPagePaths(l2DataDir: string): string[] {
 		const absolute = join(l2DataDir, "wiki", directory);
 		if (!fileExists(absolute)) continue;
 		for (const file of readdirSync(absolute).filter((candidate) => candidate.endsWith(".md")).sort()) {
-			paths.push(join("wiki", directory, file));
+			paths.push(joinL2Path("wiki", directory, file));
 		}
 	}
 	return paths;
@@ -147,7 +144,7 @@ function indexedWikiPaths(l2DataDir: string): Set<string> {
 	const paths = new Set<string>();
 	const pattern = /`(wiki[\\/](?:sources|entities|concepts|analysis)[\\/][^`]+\.md)`/g;
 	let match: RegExpExecArray | null;
-	while ((match = pattern.exec(index)) !== null) paths.add(normalizePath(match[1]));
+	while ((match = pattern.exec(index)) !== null) paths.add(normalizeL2Path(match[1]));
 	return paths;
 }
 
@@ -157,7 +154,7 @@ export function runL2Lint(l2DataDir: string): L2LintReport {
 	const manifest = readManifest(l2DataDir);
 	const manifestIds = new Set(manifest.map((entry) => entry.id));
 	const pagePaths = wikiPagePaths(l2DataDir);
-	const actualPagePaths = new Set(pagePaths.map(normalizePath));
+	const actualPagePaths = new Set(pagePaths.map(normalizeL2Path));
 	const pages = pagePaths.map((path) => readPage(l2DataDir, path, findings));
 
 	const alias = buildAliasIndex(pages);

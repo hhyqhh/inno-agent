@@ -14,9 +14,9 @@ afterEach(() => {
 });
 
 function writePage(root: string, name: string, title: string, sourceId: string, body: string): string {
-	const path = join("wiki", "concepts", `${name}.md`);
+	const path = `wiki/concepts/${name}.md`;
 	writeText(
-		join(root, path),
+		join(root, "wiki", "concepts", `${name}.md`),
 		`${serializeFrontmatter({
 			title,
 			created: "2026-07-30",

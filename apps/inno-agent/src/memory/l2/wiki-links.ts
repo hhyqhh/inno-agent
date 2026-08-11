@@ -30,7 +30,7 @@ export function stripParenthetical(s: string): string {
 
 /** Filename stem of a wiki-relative path (no dir, no `.md`). */
 export function pageStem(path: string): string {
-	return (path.split("/").pop() ?? path).replace(/\.md$/, "");
+	return (path.replace(/\\/g, "/").split("/").pop() ?? path).replace(/\.md$/, "");
 }
 
 /** Extract raw `[[link]]` targets (alias part stripped) from a page body. */

@@ -131,6 +131,7 @@ describe("L2 wiki link maintenance", () => {
 		const source = entry();
 		const summary = "## 关键概念\n\n- [[Shared Memory]]";
 		const sourcePath = createSourcePage(root, source, summary, source.extractedPath);
+		const legacySourcePath = sourcePath.replace(/\//g, "\\");
 		writeText(
 			join(root, "wiki", "concepts", "shared-memory.md"),
 			`${serializeFrontmatter({
@@ -143,7 +144,7 @@ describe("L2 wiki link maintenance", () => {
 				updated: "2026-07-29",
 				status: "draft",
 				confidence: "medium",
-			})}\n# Shared Memory\n\n## 定义\n\n旧定义。\n`,
+			})}\n# Shared Memory\n\n## 定义\n\n旧定义。\n\n## 相关资料\n\n- [[旧资料]] — \`${legacySourcePath}\`\n`,
 		);
 
 		completeMock
@@ -172,7 +173,11 @@ describe("L2 wiki link maintenance", () => {
 		expect(result.pages).toEqual(["wiki/concepts/shared-memory.md"]);
 		expect(result.created).toEqual([]);
 		expect(result.updated).toEqual(["wiki/concepts/shared-memory.md"]);
-		expect(readFileSync(join(root, "wiki", "concepts", "shared-memory.md"), "utf8")).toContain(source.id);
+		const updatedPage = readFileSync(join(root, "wiki", "concepts", "shared-memory.md"), "utf8");
+		expect(updatedPage).toContain(source.id);
+		const updatedBody = parseFrontmatter(updatedPage).body;
+		expect(updatedBody).toContain(legacySourcePath);
+		expect(updatedBody).not.toContain(`\`${sourcePath}\``);
 		expect(() => readFileSync(join(root, "wiki", "entities", "shared-memory.md"), "utf8")).toThrow();
 	});
 });

@@ -10,6 +10,7 @@ import type {
 	ManifestEntry,
 } from "./types.js";
 import { logger } from "../../logger.js";
+import { joinL2Path, normalizeL2Path } from "./l2-path.js";
 
 const L2_SCHEMA_VERSION = "1.0";
 
@@ -42,7 +43,7 @@ export function serializeFrontmatter(fm: WikiPageFrontmatter): string {
 		created: fm.created || fm.updated,
 		type: fm.type,
 		tags: fm.tags,
-		sources: fm.sources,
+		sources: fm.sources.map(normalizeL2Path),
 		source_ids: fm.source_ids,
 		updated: fm.updated,
 		status: fm.status,
@@ -92,7 +93,7 @@ export function parseFrontmatter(content: string): { frontmatter: WikiPageFrontm
 			created: asString(raw.created) || asString(raw.updated),
 			type: (raw.type as WikiPageType) ?? "source-summary",
 			tags: asStringArray(raw.tags),
-			sources: asStringArray(raw.sources),
+			sources: asStringArray(raw.sources).map(normalizeL2Path),
 			source_ids: asStringArray(raw.source_ids),
 			updated: asString(raw.updated),
 			status: (raw.status as WikiPageStatus) ?? "draft",
@@ -288,7 +289,7 @@ export function createSourcePage(
 	const ref = extractedPath ? `\n## 来源\n\n完整提取文本: \`${extractedPath}\`\n` : "";
 	const body = `\n# ${entry.title}\n\n${summaryBody}\n${ref}`;
 	writeText(join(dir, filename), serializeFrontmatter(fm) + body);
-	return join("wiki", "sources", filename);
+	return joinL2Path("wiki", "sources", filename);
 }
 
 // ============================================================================
@@ -423,7 +424,7 @@ function listWikiPagesForIndex(
 	const fallbackTitleByPath = new Map<string, string>();
 	for (const entry of entries) {
 		for (const wikiPath of entry.wikiPages) {
-			fallbackTitleByPath.set(wikiPath, entry.title);
+			fallbackTitleByPath.set(normalizeL2Path(wikiPath), entry.title);
 		}
 	}
 	for (const type of ["source-summary", "entity", "concept", "analysis"] as WikiPageType[]) {
@@ -431,7 +432,7 @@ function listWikiPagesForIndex(
 		if (!fileExists(dir)) continue;
 		const files = readDirectoryMdFiles(dir);
 		for (const file of files) {
-			const wikiPath = join("wiki", TYPE_DIR_MAP[type], file);
+			const wikiPath = joinL2Path("wiki", TYPE_DIR_MAP[type], file);
 			items.push(readWikiPageIndexItem(l2DataDir, fallbackTitleByPath.get(wikiPath) ?? file.replace(/\.md$/, ""), wikiPath));
 		}
 	}

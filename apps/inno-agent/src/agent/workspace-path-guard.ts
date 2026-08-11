@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,12 +30,44 @@ function isWithin(root: string, target: string): boolean {
 
 function findExistingAncestor(target: string): string | null {
 	let current = target;
-	while (!existsSync(current)) {
+	while (true) {
+		try {
+			lstatSync(current);
+			return current;
+		} catch (err) {
+			const code = (err as NodeJS.ErrnoException).code;
+			if (code !== "ENOENT" && code !== "ENOTDIR") throw err;
+		}
 		const parent = dirname(current);
 		if (parent === current) return null;
 		current = parent;
 	}
-	return current;
+}
+
+/** Resolve a path while ensuring existing symlinks cannot escape the root. */
+export function checkPathWithinRoot(rootDir: string, requestedPath: string): WorkspacePathCheck {
+	try {
+		const canonicalRoot = realpathSync(rootDir);
+		const resolvedPath = resolve(rootDir, requestedPath);
+		const existingAncestor = findExistingAncestor(resolvedPath);
+		if (!existingAncestor) {
+			return { allowed: false, resolvedPath, reason: "invalid_path" };
+		}
+
+		const canonicalAncestor = realpathSync(existingAncestor);
+		const unresolvedSuffix = relative(existingAncestor, resolvedPath);
+		const canonicalTarget = resolve(canonicalAncestor, unresolvedSuffix);
+		if (!isWithin(canonicalRoot, canonicalTarget)) {
+			return { allowed: false, resolvedPath, reason: "outside_workspace" };
+		}
+
+		return { allowed: true, resolvedPath };
+	} catch {
+		return {
+			allowed: false,
+			reason: existsSync(rootDir) ? "invalid_path" : "workspace_unavailable",
+		};
+	}
 }
 
 /**
@@ -46,21 +78,7 @@ export function checkWorkspaceMutationPath(workspaceDir: string, requestedPath: 
 	if (!requestedPath.trim()) return { allowed: false, reason: "invalid_path" };
 
 	try {
-		const workspaceRoot = realpathSync(workspaceDir);
-		const resolvedPath = resolve(workspaceDir, normalizeToolPath(requestedPath));
-		const existingAncestor = findExistingAncestor(resolvedPath);
-		if (!existingAncestor) {
-			return { allowed: false, resolvedPath, reason: "invalid_path" };
-		}
-
-		const canonicalAncestor = realpathSync(existingAncestor);
-		const unresolvedSuffix = relative(existingAncestor, resolvedPath);
-		const canonicalTarget = resolve(canonicalAncestor, unresolvedSuffix);
-		if (!isWithin(workspaceRoot, canonicalTarget)) {
-			return { allowed: false, resolvedPath, reason: "outside_workspace" };
-		}
-
-		return { allowed: true, resolvedPath };
+		return checkPathWithinRoot(workspaceDir, normalizeToolPath(requestedPath));
 	} catch {
 		return {
 			allowed: false,

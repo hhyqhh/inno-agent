@@ -70,6 +70,8 @@ import { DEFAULT_WORKSPACE_ID, TEMP_WORKSPACE_ID, WorkspaceRegistry } from "./wo
 import { listPresets, listRemotePresets, ensurePresetCached, instantiatePreset } from "./presets/preset-store.js";
 import { createContentSource, type RemoteContentSource } from "./content-source/index.js";
 import { mapWithConcurrency } from "./content-source/types.js";
+import { joinL2Path, normalizeL2Path } from "./memory/l2/l2-path.js";
+import { checkPathWithinRoot } from "./agent/workspace-path-guard.js";
 import { RunRecordStore } from "./terminal/run-record-store.js";
 import { TerminalSessionManager } from "./terminal/terminal-session-manager.js";
 import type { ClientTerminalEvent, ServerTerminalEvent } from "./terminal/terminal-types.js";
@@ -812,11 +814,8 @@ function serveStatic(req: HttpReq, res: ServerResponse, filePath: string, sendBo
 // ---------------------------------------------------------------------------
 
 function safeJoin(baseDir: string, userPath: string): string | null {
-	const resolvedBase = resolve(baseDir);
-	const resolvedPath = resolve(resolvedBase, userPath);
-	const rel = relative(resolvedBase, resolvedPath);
-	if (rel.startsWith("..") || resolve(rel) === rel) return null;
-	return resolvedPath;
+	const result = checkPathWithinRoot(baseDir, userPath);
+	return result.allowed ? result.resolvedPath ?? null : null;
 }
 
 function safeWorkspacePath(workspaceId: string | null | undefined, userPath: string): string | null {
@@ -1823,7 +1822,7 @@ function listWikiPagePaths(): string[] {
 		if (!existsSync(dir)) continue;
 		for (const file of readdirSync(dir)) {
 			if (file.endsWith(".md")) {
-				paths.push(join("wiki", dirName, file));
+				paths.push(joinL2Path("wiki", dirName, file));
 			}
 		}
 	}
@@ -3428,11 +3427,12 @@ const server = createServer(async (req, res) => {
 
 		if (method === "GET" && url.startsWith("/api/wiki/page?")) {
 			const params = new URL(url, "http://localhost").searchParams;
-			const path = params.get("path");
-			if (!path) {
+			const requestedPath = params.get("path");
+			if (!requestedPath) {
 				json(res, 400, { error: "Missing path parameter" });
 				return;
 			}
+			const path = normalizeL2Path(requestedPath);
 			const fullPath = safeJoin(l2DataDir, path);
 			if (!fullPath) {
 				json(res, 400, { error: "Invalid wiki path" });
@@ -3449,12 +3449,13 @@ const server = createServer(async (req, res) => {
 
 		if (method === "PUT" && url === "/api/wiki/page") {
 			const body = (await readBody(req)) as Record<string, unknown>;
-			const path = body.path as string | undefined;
+			const requestedPath = body.path as string | undefined;
 			const content = body.content as string | undefined;
-			if (!path || content === undefined) {
+			if (!requestedPath || content === undefined) {
 				json(res, 400, { error: "Missing path or content" });
 				return;
 			}
+			const path = normalizeL2Path(requestedPath);
 			const fullPath = safeJoin(l2DataDir, path);
 			if (!fullPath) {
 				json(res, 400, { error: "Invalid wiki path" });
@@ -3468,11 +3469,12 @@ const server = createServer(async (req, res) => {
 
 		if (method === "DELETE" && url.startsWith("/api/wiki/page?")) {
 			const params = new URL(url, "http://localhost").searchParams;
-			const path = params.get("path");
-			if (!path) {
+			const requestedPath = params.get("path");
+			if (!requestedPath) {
 				json(res, 400, { error: "Missing path parameter" });
 				return;
 			}
+			const path = normalizeL2Path(requestedPath);
 			const fullPath = safeJoin(l2DataDir, path);
 			if (!fullPath) {
 				json(res, 400, { error: "Invalid wiki path" });
@@ -4214,7 +4216,7 @@ const server = createServer(async (req, res) => {
 			const ws = workspaceRegistry.getWorkspace(record.workspaceId);
 
 			const now = new Date().toISOString();
-			const wikiRelPath = join("wiki", "analysis", `run-${record.id}.md`);
+			const wikiRelPath = joinL2Path("wiki", "analysis", `run-${record.id}.md`);
 			const fullPath = join(l2DataDir, wikiRelPath);
 			if (existsSync(fullPath)) {
 				json(res, 409, { error: "Run already archived", path: wikiRelPath });
@@ -4295,7 +4297,7 @@ const server = createServer(async (req, res) => {
 			const outputPath = join(dir, outputName);
 			const data = Buffer.from(dataBase64, "base64");
 			writeFileSync(outputPath, data);
-			const rawPath = join("raw", "uploads", outputName);
+			const rawPath = joinL2Path("raw", "uploads", outputName);
 			json(res, 201, {
 				fileName,
 				mimeType,

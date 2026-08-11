@@ -14,7 +14,7 @@ vi.mock("./document-parser.js", async (importOriginal) => {
 import type { L2Memory } from "./l2-memory.js";
 import { createL2Tools } from "./l2-tools.js";
 import { runL2Lint } from "./l2-lint.js";
-import { upsertManifest, readManifest } from "./manifest-store.js";
+import { upsertManifest, readManifest, removeWikiPathFromManifest } from "./manifest-store.js";
 import { writeText } from "../../storage/file-store.js";
 
 const tempDirs: string[] = [];
@@ -81,6 +81,9 @@ describe("l2_archive", () => {
 		const entries = readManifest(root);
 		expect(entries).toHaveLength(1);
 		expect(entries[0].status).toBe("indexed");
+		expect(entries[0].rawPath).not.toContain("\\");
+		expect(entries[0].extractedPath).not.toContain("\\");
+		expect(entries[0].wikiPages.every((pagePath) => !pagePath.includes("\\"))).toBe(true);
 		expect(readFileSync(join(root, entries[0].rawPath), "utf8")).toContain("间隔重复");
 		expect(readFileSync(join(root, entries[0].extractedPath!), "utf8")).toContain("间隔重复");
 		expect(entries[0].wikiPages.length).toBeGreaterThan(0);
@@ -96,6 +99,34 @@ describe("l2_archive", () => {
 
 		expect(readManifest(root)).toHaveLength(1);
 		expect(duplicate.details).toMatchObject({ duplicate: true });
+	});
+
+	it("normalizes legacy Windows paths when reading and updating the manifest", () => {
+		const root = makeTempDir();
+		const legacyEntry = {
+			id: "legacy",
+			title: "Legacy",
+			sourceType: "markdown" as const,
+			rawPath: "raw\\uploads\\source.md",
+			extractedPath: "extracted\\source.md",
+			wikiPages: ["wiki\\concepts\\legacy.md"],
+			tags: [],
+			contentHash: "legacy-hash",
+			status: "indexed" as const,
+			source: { origin: "user_upload" as const },
+			createdAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-01T00:00:00.000Z",
+		};
+		writeText(join(root, "manifest.jsonl"), `${JSON.stringify(legacyEntry)}\n`);
+
+		expect(readManifest(root)[0]).toMatchObject({
+			rawPath: "raw/uploads/source.md",
+			extractedPath: "extracted/source.md",
+			wikiPages: ["wiki/concepts/legacy.md"],
+		});
+		expect(removeWikiPathFromManifest(root, "wiki\\concepts\\legacy.md")).toBe(true);
+		expect(readManifest(root)[0].wikiPages).toEqual([]);
+		expect(readFileSync(join(root, "manifest.jsonl"), "utf8")).not.toContain("\\");
 	});
 
 	it("discovers a linked concept near the end of a long source without a model", async () => {

@@ -7,7 +7,7 @@ interface SkillsStoreEvents {
 	change: void;
 }
 
-class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
+export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 	skills: SkillInfo[] = [];
 	isLoading = false;
 	isUploading = false;
@@ -30,6 +30,8 @@ class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 	libraryError: string | null = null;
 	/** Names currently being imported (for per-row spinners). */
 	importing = new Set<string>();
+	private treeRequestId = 0;
+	private fileRequestId = 0;
 
 	async load() {
 		this.isLoading = true;
@@ -71,9 +73,13 @@ class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 		await deleteSkill(name);
 		this.skills = this.skills.filter((item) => item.name !== name);
 		if (this.selectedSkill === name) {
+			this.treeRequestId++;
+			this.fileRequestId++;
 			this.selectedSkill = null;
 			this.skillTree = null;
 			this.currentFile = null;
+			this.isLoadingTree = false;
+			this.isLoadingFile = false;
 			this.isEditing = false;
 		}
 		this.emit("change", undefined);
@@ -133,48 +139,67 @@ class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 	/* --- File browsing --- */
 
 	async selectSkill(name: string) {
+		const requestId = ++this.treeRequestId;
+		this.fileRequestId++;
 		this.selectedSkill = name;
 		this.currentFile = null;
+		this.isLoadingFile = false;
 		this.isEditing = false;
 		this.isLoadingTree = true;
 		this.emit("change", undefined);
 		try {
 			const data = await getSkillTree(name);
-			if (this.selectedSkill === name) {
+			if (requestId === this.treeRequestId && this.selectedSkill === name) {
 				this.skillTree = data.children;
 			}
 		} catch {
-			this.skillTree = [];
+			if (requestId === this.treeRequestId && this.selectedSkill === name) {
+				this.skillTree = [];
+			}
 		} finally {
-			this.isLoadingTree = false;
-			this.emit("change", undefined);
+			if (requestId === this.treeRequestId && this.selectedSkill === name) {
+				this.isLoadingTree = false;
+				this.emit("change", undefined);
+			}
 		}
 	}
 
 	deselectSkill() {
+		this.treeRequestId++;
+		this.fileRequestId++;
 		this.selectedSkill = null;
 		this.skillTree = null;
 		this.currentFile = null;
+		this.isLoadingTree = false;
+		this.isLoadingFile = false;
 		this.isEditing = false;
 		this.emit("change", undefined);
 	}
 
 	async selectFile(path: string) {
-		if (!this.selectedSkill) return;
+		const skillName = this.selectedSkill;
+		if (!skillName) return;
+		const requestId = ++this.fileRequestId;
 		this.isEditing = false;
 		this.isLoadingFile = true;
 		this.emit("change", undefined);
 		try {
-			const file = await getSkillFile(this.selectedSkill, path);
+			const file = await getSkillFile(skillName, path);
+			if (requestId !== this.fileRequestId || this.selectedSkill !== skillName) return;
 			if (file && file.kind === "html" && file.content) {
-				file.content = await inlineSkillHtml(this.selectedSkill, file.content, file.path);
+				file.content = await inlineSkillHtml(skillName, file.content, file.path);
+				if (requestId !== this.fileRequestId || this.selectedSkill !== skillName) return;
 			}
 			this.currentFile = file;
 		} catch {
-			this.currentFile = null;
+			if (requestId === this.fileRequestId && this.selectedSkill === skillName) {
+				this.currentFile = null;
+			}
 		} finally {
-			this.isLoadingFile = false;
-			this.emit("change", undefined);
+			if (requestId === this.fileRequestId && this.selectedSkill === skillName) {
+				this.isLoadingFile = false;
+				this.emit("change", undefined);
+			}
 		}
 	}
 
@@ -187,17 +212,24 @@ class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 
 	/** Re-fetch the current file forcing text mode (for binary files the user wants to edit). */
 	async openAsText() {
-		if (!this.selectedSkill || !this.currentFile) return;
+		const skillName = this.selectedSkill;
+		const currentFile = this.currentFile;
+		if (!skillName || !currentFile) return;
+		const requestId = ++this.fileRequestId;
 		this.isLoadingFile = true;
 		this.emit("change", undefined);
 		try {
-			const file = await getSkillFile(this.selectedSkill, this.currentFile.path, true);
-			this.currentFile = file;
+			const file = await getSkillFile(skillName, currentFile.path, true);
+			if (requestId === this.fileRequestId && this.selectedSkill === skillName) {
+				this.currentFile = file;
+			}
 		} catch {
 			// keep current file on failure
 		} finally {
-			this.isLoadingFile = false;
-			this.emit("change", undefined);
+			if (requestId === this.fileRequestId && this.selectedSkill === skillName) {
+				this.isLoadingFile = false;
+				this.emit("change", undefined);
+			}
 		}
 	}
 
@@ -226,17 +258,25 @@ class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 	}
 
 	async refreshTree() {
-		if (!this.selectedSkill) return;
+		const skillName = this.selectedSkill;
+		if (!skillName) return;
+		const requestId = ++this.treeRequestId;
 		this.isLoadingTree = true;
 		this.emit("change", undefined);
 		try {
-			const data = await getSkillTree(this.selectedSkill);
-			this.skillTree = data.children;
+			const data = await getSkillTree(skillName);
+			if (requestId === this.treeRequestId && this.selectedSkill === skillName) {
+				this.skillTree = data.children;
+			}
 		} catch {
-			this.skillTree = [];
+			if (requestId === this.treeRequestId && this.selectedSkill === skillName) {
+				this.skillTree = [];
+			}
 		} finally {
-			this.isLoadingTree = false;
-			this.emit("change", undefined);
+			if (requestId === this.treeRequestId && this.selectedSkill === skillName) {
+				this.isLoadingTree = false;
+				this.emit("change", undefined);
+			}
 		}
 	}
 }

@@ -594,6 +594,8 @@
 			"fetching": "Fetching…",
 			"fetchedCount": "{{count}} models fetched",
 			"modelPlaceholder": "Type or pick from the fetched list",
+			"collapseModelList": "Collapse model list",
+			"expandModelList": "Expand model list",
 			"vision": "Vision",
 			"autoFilled": "Parameters auto-filled",
 			"advanced": "Advanced options"

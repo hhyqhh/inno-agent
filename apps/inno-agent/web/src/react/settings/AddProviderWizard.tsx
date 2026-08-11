@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, Plus, ExternalLink, RefreshCw, Check } from "lucide-react";
 import { settingsStore } from "../../stores/settings-store.js";
@@ -76,10 +76,31 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const [fetchedModels, setFetchedModels] = useState<string[] | null>(null);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
+	const [activeModelIndex, setActiveModelIndex] = useState(-1);
 	const [probing, setProbing] = useState(false);
 	const [probeError, setProbeError] = useState<string | null>(null);
 	const [formError, setFormError] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
+	const modelPickerRef = useRef<HTMLDivElement>(null);
+
+	// Close the fetched-model listbox on outside click or Escape while open.
+	useEffect(() => {
+		if (!modelPickerOpen) return;
+		function onPointerDown(event: MouseEvent) {
+			if (modelPickerRef.current && !modelPickerRef.current.contains(event.target as Node)) {
+				setModelPickerOpen(false);
+			}
+		}
+		function onKeyDown(event: KeyboardEvent) {
+			if (event.key === "Escape") setModelPickerOpen(false);
+		}
+		document.addEventListener("mousedown", onPointerDown);
+		document.addEventListener("keydown", onKeyDown);
+		return () => {
+			document.removeEventListener("mousedown", onPointerDown);
+			document.removeEventListener("keydown", onKeyDown);
+		};
+	}, [modelPickerOpen]);
 
 	const existingProviders = providers;
 
@@ -118,6 +139,37 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 	function selectModel(modelId: string) {
 		applyModel(modelId);
 		setModelPickerOpen(false);
+	}
+
+	function toggleModelPicker() {
+		setModelPickerOpen((open) => {
+			if (!open && fetchedModels?.length) {
+				setActiveModelIndex(Math.max(0, fetchedModels.indexOf(form?.modelId ?? "")));
+			}
+			return !open;
+		});
+	}
+
+	/** Combobox keyboard navigation: arrows move the active option, Enter selects. */
+	function handleModelKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+		if (!fetchedModels?.length) return;
+		if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+			event.preventDefault();
+			if (!modelPickerOpen) {
+				setModelPickerOpen(true);
+				setActiveModelIndex(Math.max(0, fetchedModels.indexOf(form?.modelId ?? "")));
+				return;
+			}
+			const delta = event.key === "ArrowDown" ? 1 : -1;
+			setActiveModelIndex((index) => {
+				const next = Math.min(fetchedModels.length - 1, Math.max(0, index + delta));
+				document.getElementById(`inno-probed-model-${next}`)?.scrollIntoView({ block: "nearest" });
+				return next;
+			});
+		} else if (event.key === "Enter" && modelPickerOpen && activeModelIndex >= 0) {
+			event.preventDefault();
+			selectModel(fetchedModels[activeModelIndex]);
+		}
 	}
 
 	async function handleProbe() {
@@ -281,35 +333,39 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 													: t("settings.wizard.fetchModels", "拉取模型列表")}
 										</button>
 									</div>
-									<div className="relative">
+									<div className="relative" ref={modelPickerRef}>
 										<input
 											className={`${inputCls}${fetchedModels?.length ? " pr-8" : ""}`}
 											role="combobox"
 											aria-controls="inno-probed-models"
 											aria-expanded={modelPickerOpen}
+											aria-activedescendant={modelPickerOpen && activeModelIndex >= 0 ? `inno-probed-model-${activeModelIndex}` : undefined}
 											placeholder={t("settings.wizard.modelPlaceholder", "输入或从拉取的列表中选择") ?? ""}
 											value={form.modelId}
 											onChange={(e) => applyModel(e.target.value)}
+											onKeyDown={handleModelKeyDown}
 										/>
 										{fetchedModels?.length ? (
 											<button
 												type="button"
-												aria-label={modelPickerOpen ? "收起模型列表" : "展开模型列表"}
+												aria-label={modelPickerOpen ? t("settings.wizard.collapseModelList", "收起模型列表") : t("settings.wizard.expandModelList", "展开模型列表")}
 												className="absolute right-0 top-0 flex h-full w-8 items-center justify-center text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]"
-												onClick={() => setModelPickerOpen((open) => !open)}
+												onClick={toggleModelPicker}
 											>
 												<ChevronDown size={14} className={`transition-transform${modelPickerOpen ? " rotate-180" : ""}`} />
 											</button>
 										) : null}
 										{modelPickerOpen && fetchedModels?.length ? (
 											<div id="inno-probed-models" role="listbox" className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] p-1 shadow-lg">
-												{fetchedModels.map((id) => (
+												{fetchedModels.map((id, index) => (
 													<button
 														key={id}
+														id={`inno-probed-model-${index}`}
 														type="button"
 														role="option"
 														aria-selected={form.modelId === id}
-																className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]"
+																className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]${index === activeModelIndex ? " bg-[var(--inno-surface-muted)]" : ""}`}
+														onMouseEnter={() => setActiveModelIndex(index)}
 														onClick={() => selectModel(id)}
 															>
 																<span className="block truncate">{id}</span>

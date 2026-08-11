@@ -4,8 +4,8 @@ These are local copies saved on 2026-08-10 and used by the provider-card icons i
 
 | File | Provider | Source |
 | --- | --- | --- |
-| `deepseek.ico` | DeepSeek | https://www.deepseek.com/favicon.ico |
-| `kimi-rounded.png` | Kimi | https://moonshotai.github.io/Branding-Guide/scenarios/03-icon-without-kimi/kimi-icon-rounded-corner.png |
+| `deepseek.png` | DeepSeek | https://www.deepseek.com/favicon.ico (converted to 64px PNG) |
+| `kimi-rounded.png` | Kimi | https://moonshotai.github.io/Branding-Guide/scenarios/03-icon-without-kimi/kimi-icon-rounded-corner.png (downscaled to 64px) |
 | `kimi-k-only-color.svg` | Kimi | https://moonshotai.github.io/Branding-Guide/scenarios/04-k-only/k-only-color.svg |
 | `kimi-k-only-light.svg` | Kimi | https://moonshotai.github.io/Branding-Guide/scenarios/04-k-only/k-only-light.svg |
 | `minimax-user-icon.png` | MiniMax（当前使用） | 用户提供素材，仅裁剪左侧图标（2026-08-10） |

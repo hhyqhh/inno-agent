@@ -594,6 +594,8 @@
 			"fetching": "拉取中…",
 			"fetchedCount": "已拉取 {{count}} 个模型",
 			"modelPlaceholder": "输入或从拉取的列表中选择",
+			"collapseModelList": "收起模型列表",
+			"expandModelList": "展开模型列表",
 			"vision": "视觉",
 			"autoFilled": "参数已自动填充",
 			"advanced": "高级选项"

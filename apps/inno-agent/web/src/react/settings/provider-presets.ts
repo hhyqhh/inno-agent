@@ -35,7 +35,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 		name: "DeepSeek",
 		description: "深度求索 · deepseek-chat / reasoner",
 		brandColor: "#4D6BFE",
-		iconSrc: "/provider-icons/deepseek.ico",
+		iconSrc: "/provider-icons/deepseek.png",
 		glyph: "DS",
 		baseUrl: "https://api.deepseek.com/v1",
 		api: "openai-completions",

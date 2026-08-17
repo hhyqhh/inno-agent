@@ -437,6 +437,8 @@ inno-workspace-panel textarea {
 }
 
 .inno-composer {
+	display: flex;
+	flex-direction: column;
 	border: 1px solid var(--inno-border);
 	background: var(--inno-surface);
 	box-shadow: var(--inno-shadow-soft);
@@ -446,6 +448,246 @@ inno-workspace-panel textarea {
 .inno-composer:focus-within {
 	border-color: var(--inno-focus-border);
 	box-shadow: var(--inno-ring);
+}
+
+.inno-composer-textarea {
+	display: block;
+	flex: 0 0 auto;
+	min-height: calc(2 * 1.25rem + 1rem);
+	max-height: none;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	overflow-x: hidden;
+	overflow-y: hidden;
+	vertical-align: top;
+}
+
+.inno-composer-textarea:focus,
+.inno-composer-textarea:focus-visible {
+	border: 0;
+	outline: none;
+	box-shadow: none;
+}
+
+/* On the welcome screen, keep the composer centered while its textarea grows:
+   the upper block moves with the top edge, while the lower content remains in
+   normal flow and is pushed down by the expanded composer. */
+.inno-welcome-layout {
+	--inno-welcome-composer-half-growth: 0px;
+}
+
+.inno-welcome-upper {
+	transform: translateY(calc(-1 * var(--inno-welcome-composer-half-growth)));
+}
+
+.inno-welcome-composer-shell {
+	margin-top: calc(-1 * var(--inno-welcome-composer-half-growth));
+	/* Keep following welcome content in normal flow so it is pushed down by
+	   the expanded composer instead of being covered by it. */
+}
+
+.inno-composer-toolbar {
+	min-height: 36px;
+}
+
+.inno-composer-model-picker {
+	z-index: 20;
+}
+
+.inno-composer-model-trigger {
+	border: 0;
+	/* Keep the compact selector visibly rectangular instead of pill-shaped. */
+	border-radius: 6px;
+	background: transparent;
+	color: var(--inno-text-muted);
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-composer-model-trigger:hover:not(:disabled),
+.inno-composer-model-trigger[aria-expanded="true"] {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+
+.inno-composer-model-menu {
+	position: absolute;
+	right: 0;
+	bottom: calc(100% + 8px);
+	width: min(220px, calc(100vw - 24px));
+	max-height: min(360px, calc(100vh - 24px));
+	overflow-y: auto;
+	padding: 6px;
+	border: 1px solid var(--inno-border);
+	border-radius: 8px;
+	background: var(--inno-surface-raised);
+	box-shadow: 0 12px 28px rgba(31, 35, 40, 0.16);
+	transform-origin: bottom right;
+	animation: inno-composer-model-menu-in var(--inno-dur-fast) var(--inno-ease-out) both;
+}
+
+@keyframes inno-composer-model-menu-in {
+	from {
+		opacity: 0;
+		transform: translateY(5px) scale(0.98);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+.inno-composer-model-menu-footer {
+	margin-top: 5px;
+	padding-top: 5px;
+	border-top: 1px solid var(--inno-border);
+}
+
+.inno-composer-model-option,
+.inno-composer-model-manage {
+	display: flex;
+	width: 100%;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 7px 8px;
+	border: 0;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--inno-text);
+	font-size: 12px;
+	text-align: left;
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-composer-model-option:hover:not(:disabled),
+.inno-composer-model-option.is-selected,
+.inno-composer-model-manage:hover {
+	background: var(--inno-accent-soft);
+	color: var(--inno-accent);
+}
+
+.inno-composer-model-option + .inno-composer-model-option {
+	margin-top: 2px;
+}
+
+.inno-composer-model-option:disabled {
+	cursor: wait;
+	opacity: 0.65;
+}
+
+.inno-composer-model-manage {
+	justify-content: flex-start;
+	color: var(--inno-text-muted);
+	cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.inno-composer-model-menu {
+		animation: none;
+	}
+}
+
+.inno-composer .inno-composer-action {
+	border-color: transparent;
+	background: transparent;
+	box-shadow: none;
+}
+
+.inno-composer .inno-composer-action:hover:not(:disabled) {
+	border-color: transparent;
+	background: var(--inno-surface-muted);
+	box-shadow: none;
+}
+
+.inno-composer-send {
+	border: 0;
+	background: var(--inno-accent);
+	color: #ffffff;
+	box-shadow: var(--inno-shadow-soft);
+}
+
+.inno-composer-send:hover:not(:disabled):not(.is-disabled) {
+	background: var(--inno-tech);
+	box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+}
+
+.inno-composer-send:active:not(:disabled):not(.is-disabled),
+.inno-composer-stop:active:not(:disabled) {
+	transform: scale(0.97);
+}
+
+.inno-composer-send.is-disabled,
+.inno-composer-send:disabled {
+	cursor: not-allowed;
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-muted);
+	box-shadow: none;
+}
+
+.inno-composer-stop {
+	border: 0;
+	background: var(--inno-danger);
+	box-shadow: var(--inno-shadow-soft);
+}
+
+.inno-paste-card {
+	display: flex;
+	align-items: center;
+	width: min(100%, 200px);
+	min-height: 48px;
+	gap: 8px;
+	padding: 6px 7px;
+	border: 1px solid var(--inno-border);
+	border-radius: 12px;
+	background: var(--inno-surface-raised);
+	box-shadow: 0 1px 2px rgba(31, 35, 40, 0.04);
+}
+
+.inno-paste-card-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	flex: 0 0 auto;
+	border-radius: 8px;
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-muted);
+}
+
+.inno-paste-card-action {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--inno-text-muted);
+	cursor: pointer;
+}
+
+.inno-paste-card-action:hover {
+	color: var(--inno-text);
+	text-decoration: underline;
+}
+
+.inno-paste-card-remove {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	flex: 0 0 auto;
+	padding: 0;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	color: var(--inno-text-muted);
+	cursor: pointer;
+}
+
+.inno-paste-card-remove:hover {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
 }
 
 .inno-workspace-card {
@@ -739,20 +981,34 @@ inno-workspace-panel textarea {
 }
 
 :root[data-theme="innospark"] .inno-icon-button,
-:root[data-theme="innospark"] .inno-composer button {
+:root[data-theme="innospark"] .inno-composer button:not(.inno-composer-model-trigger):not(.inno-composer-model-option):not(.inno-composer-model-manage) {
 	border-radius: 999px;
 }
 
 :root[data-theme="innospark"] .inno-composer button[title="Send"],
-:root[data-theme="innospark"] .inno-composer button[title="Stop generation"] {
+:root[data-theme="innospark"] .inno-composer button[title="Stop generation"],
+:root[data-theme="innospark"] .inno-composer .inno-composer-send:not(.is-disabled),
+:root[data-theme="innospark"] .inno-composer .inno-composer-stop {
 	background: var(--inno-accent);
 	color: #ffffff;
 	box-shadow: 0 6px 18px rgba(85, 90, 255, 0.22);
 }
 
 :root[data-theme="innospark"] .inno-composer button[title="Send"]:hover:not(:disabled),
-:root[data-theme="innospark"] .inno-composer button[title="Stop generation"]:hover:not(:disabled) {
+:root[data-theme="innospark"] .inno-composer button[title="Stop generation"]:hover:not(:disabled),
+:root[data-theme="innospark"] .inno-composer .inno-composer-send:hover:not(:disabled):not(.is-disabled),
+:root[data-theme="innospark"] .inno-composer .inno-composer-stop:hover:not(:disabled) {
 	background: #474cf2;
+}
+
+:root[data-theme="innospark"] .inno-composer .inno-composer-send:not(.is-disabled) {
+	background: var(--inno-accent);
+	color: #ffffff;
+	box-shadow: 0 4px 12px rgba(85, 90, 255, 0.2);
+}
+
+:root[data-theme="innospark"] .inno-composer .inno-composer-send:hover:not(:disabled):not(.is-disabled) {
+	background: var(--inno-tech);
 }
 
 :root[data-theme="innospark"] .inno-message {

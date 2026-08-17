@@ -2,9 +2,10 @@ import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } fro
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Paperclip, X, SendHorizonal, Square, RotateCcw, Image, AlertTriangle, Search, Sparkles } from "lucide-react";
+import { Paperclip, X, ArrowUp, Square, RotateCcw, Image, AlertTriangle, Search, Sparkles, FileText, Check, ChevronDown, Settings2 } from "lucide-react";
 import { Spinner } from "./ui/Spinner.js";
 import type { ChatMessage, ChatToolRecord } from "../types/chat.js";
+import type { InnoModelInfo } from "../types/settings.js";
 import type { InlineImage } from "../api/chat.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
@@ -28,12 +29,85 @@ import { AnsweredQuestionCard } from "./chat/AnsweredQuestionCard.js";
 import { buildConversationTurns, ConversationMinimap } from "./ConversationMinimap.js";
 import { MarkdownArtifact } from "./MarkdownArtifact.js";
 import { ErrorBlock, MessageBubble, ToolRecordDetails } from "./chat/MessageBubble.js";
+import { findPreset } from "./settings/provider-presets.js";
 
-// Thresholds for collapsing a large paste into a placeholder chip. A paste
-// crossing EITHER threshold is collapsed. Tuned so normal multi-line typing
-// (a few paragraphs) stays inline, but dumping a whole file collapses.
+// Thresholds for showing a very large paste as a compact composer card. A
+// paste crossing EITHER threshold is collapsed. The character threshold is
+// only a paste-card safeguard; browser layout still determines text wrapping.
 const PASTE_COLLAPSE_LINES = 20;
 const PASTE_COLLAPSE_CHARS = 2000;
+const COMPOSER_MIN_LINES = 2;
+const COMPOSER_MAX_LINES = 8;
+
+type PendingPasteBlock = {
+	id: number;
+	text: string;
+};
+
+function parseCssPixels(value: string): number {
+	const parsed = Number.parseFloat(value);
+	return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Brand asset when one exists; otherwise a recognizable custom AI mark. */
+function ModelProviderIcon({ provider, size = 16 }: { provider: string; size?: number }) {
+	const preset = findPreset(provider);
+	if (preset?.iconSrc) {
+		return <img src={preset.iconSrc} alt="" aria-hidden="true" className="shrink-0 rounded object-contain" style={{ width: size, height: size }} />;
+	}
+	if (preset) return null;
+	return (
+		<svg
+			width={size}
+			height={size}
+			viewBox="0 0 18 18"
+			fill="none"
+			aria-hidden="true"
+			className="shrink-0"
+		>
+			<path d="M9 2.1v1.8" stroke="var(--inno-accent)" strokeWidth="1.15" strokeLinecap="round" />
+			<circle cx="9" cy="1.8" r="1.05" fill="var(--inno-accent)" />
+			<rect x="2" y="4" width="14" height="11.5" rx="3.5" fill="var(--inno-accent)" />
+			<path d="M2 8.5H.9M16 8.5h1.1" stroke="var(--inno-accent)" strokeWidth="1.15" strokeLinecap="round" />
+			<circle cx="6.3" cy="9.2" r="1.05" fill="white" />
+			<circle cx="11.7" cy="9.2" r="1.05" fill="white" />
+			<path d="M6.2 12.2h5.6" stroke="white" strokeWidth="1.25" strokeLinecap="round" />
+		</svg>
+	);
+}
+
+function resizeComposerTextarea(el: HTMLTextAreaElement): number {
+	const styles = window.getComputedStyle(el);
+	const fontSize = parseCssPixels(styles.fontSize) || 14;
+	const lineHeight = parseCssPixels(styles.lineHeight) || fontSize * 1.25;
+	const verticalPadding = parseCssPixels(styles.paddingTop) + parseCssPixels(styles.paddingBottom);
+	const verticalBorder = parseCssPixels(styles.borderTopWidth) + parseCssPixels(styles.borderBottomWidth);
+	const minHeight = Math.ceil(lineHeight * COMPOSER_MIN_LINES + verticalPadding + verticalBorder);
+	const maxHeight = Math.ceil(lineHeight * COMPOSER_MAX_LINES + verticalPadding + verticalBorder);
+	const selectionStart = el.selectionStart;
+	const selectionEnd = el.selectionEnd;
+
+	// Reset before measuring so shrinking after delete/cut/undo is symmetrical
+	// with growth. scrollHeight is the browser's actual wrapped-text height.
+	el.style.height = "auto";
+	const contentHeight = el.scrollHeight + verticalBorder;
+	const nextHeight = Math.max(minHeight, Math.min(contentHeight, maxHeight));
+	el.style.height = `${nextHeight}px`;
+	el.style.overflowY = contentHeight > maxHeight ? "auto" : "hidden";
+	el.style.overflowX = "hidden";
+
+	// Re-applying the existing selection lets the browser keep the caret in
+	// view after the textarea changes between intrinsic and scrollable height.
+	if (document.activeElement === el && selectionStart >= 0 && selectionEnd >= 0) {
+		const restoreSelection = () => {
+			if (document.activeElement === el) el.setSelectionRange(selectionStart, selectionEnd);
+		};
+		if (typeof requestAnimationFrame === "function") requestAnimationFrame(restoreSelection);
+		else restoreSelection();
+	}
+
+	return minHeight;
+}
 
 // Inline chat images are sent to the provider as base64 inside the JSON body.
 // Full-resolution photos (3–10 MB, +33% once base64-encoded) blow past the
@@ -456,20 +530,24 @@ function PresetPicker({
 export function ChatCenter() {
 	const { t } = useTranslation();
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
+	const welcomeLayoutRef = useRef<HTMLDivElement | null>(null);
+	const welcomeComposerBaseHeightRef = useRef<number | null>(null);
 	const draftRef = useRef("");
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const imageInputRef = useRef<HTMLInputElement | null>(null);
+	const modelPickerRef = useRef<HTMLDivElement | null>(null);
 	const scrollRef = useRef<HTMLDivElement | null>(null);
 	const shouldStickToBottomRef = useRef(true);
 	const [uploads, setUploads] = useState<PendingUpload[]>([]);
 	const [isUploading, setIsUploading] = useState(false);
 	const [inlineImages, setInlineImages] = useState<(InlineImage & { name: string; previewUrl: string })[]>([]);
-	// When the user pastes a large block of text (many lines / chars), we
-	// insert a short placeholder token (e.g. «已粘贴 N 行») into the textarea
-	// at the caret position and hold the real text here. The user can keep
-	// typing before/after the token. On send, the token is replaced by the
-	// real text.
-	const [pasteBlock, setPasteBlock] = useState<{ text: string; lineCount: number } | null>(null);
+	const [draftValue, setDraftValue] = useState(draftRef.current);
+	const [modelPickerOpen, setModelPickerOpen] = useState(false);
+	// Very large text pastes are kept outside the textarea so they do not make
+	// the composer enormous. Each paste keeps its own card and can be removed or
+	// explicitly expanded back into the textarea at the current caret position.
+	const [pasteBlocks, setPasteBlocks] = useState<PendingPasteBlock[]>([]);
+	const pasteBlockIdRef = useRef(0);
 
 	// Inline workspace chooser state (welcome screen only). Seeded from the
 	// user's last choice (P3) so a new chat resumes the workspace they were in
@@ -481,16 +559,32 @@ export function ChatCenter() {
 
 	// Simple Mode surfaces preset workspaces for one-click start.
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
-	// Whether the selected Provider accepts native image message blocks.
-	// Attachments remain available either way: text-only models receive the
-	// persisted workspace path and can use the OCR tool instead.
-	const currentModelSupportsNativeImages = useStoreSnapshot(settingsStore, () => {
-		const s = settingsStore.settings;
-		if (!s) return true;
-		const list = s.availableModels ?? s.configuredModels ?? [];
-		const m = list.find((x) => x.provider === s.defaultProvider && x.id === s.defaultModel);
-		return m ? m.input.includes("image") : true;
+	// Model data is shared with the settings screen. Switching a model here uses
+	// the same backend default-model endpoint, so the next message and the
+	// settings screen stay in sync.
+	const modelState = useStoreSnapshot(settingsStore, () => {
+		const settings = settingsStore.settings;
+		const models = settings?.availableModels ?? settings?.configuredModels ?? [];
+		const current = models.find((model) => model.provider === settings?.defaultProvider && model.id === settings?.defaultModel);
+		return {
+			models,
+			defaultProvider: settings?.defaultProvider ?? "",
+			defaultModel: settings?.defaultModel ?? "",
+			currentModelSupportsNativeImages: current?.input.includes("image") ?? true,
+			isSavingModel: settingsStore.isSavingModel,
+		};
 	});
+	const modelOptions = useMemo(() => {
+		const seen = new Set<string>();
+		return modelState.models.filter((model) => {
+			const key = `${model.provider}:${model.id}`;
+			if (seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		});
+	}, [modelState.models]);
+	const currentModel = modelOptions.find((model) => model.provider === modelState.defaultProvider && model.id === modelState.defaultModel);
+	const currentModelLabel = currentModel?.name || currentModel?.id || modelState.defaultModel || t("chat.modelUnavailable");
 	const [presets, setPresets] = useState<PresetMeta[]>([]);
 	const [openingPresetId, setOpeningPresetId] = useState<string | null>(null);
 	const [togglingMode, setTogglingMode] = useState(false);
@@ -504,6 +598,33 @@ export function ChatCenter() {
 		setTogglingMode(true);
 		void settingsStore.saveSimpleMode(next).finally(() => setTogglingMode(false));
 	}, [togglingMode]);
+
+	const handleModelSelect = useCallback((model: InnoModelInfo) => {
+		setModelPickerOpen(false);
+		if (model.provider === modelState.defaultProvider && model.id === modelState.defaultModel) return;
+		void settingsStore.switchModel(model.provider, model.id);
+	}, [modelState.defaultModel, modelState.defaultProvider]);
+
+	const openModelSettings = useCallback(() => {
+		setModelPickerOpen(false);
+		appStore.openSettings("models");
+	}, []);
+
+	useEffect(() => {
+		if (!modelPickerOpen) return;
+		const handlePointerDown = (event: PointerEvent) => {
+			if (!modelPickerRef.current?.contains(event.target as Node)) setModelPickerOpen(false);
+		};
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") setModelPickerOpen(false);
+		};
+		document.addEventListener("pointerdown", handlePointerDown);
+		window.addEventListener("keydown", handleKeyDown);
+		return () => {
+			document.removeEventListener("pointerdown", handlePointerDown);
+			window.removeEventListener("keydown", handleKeyDown);
+		};
+	}, [modelPickerOpen]);
 
 	// NOTE: high-frequency streaming fields (streamingText / streamingThinking
 	// / streamingTarget) are deliberately excluded — they flush every 40ms and
@@ -570,6 +691,12 @@ export function ChatCenter() {
 				? wsExistingId
 				: null)
 		: activeWorkspaceId;
+	const hasSendableContent = Boolean(
+		draftValue.trim()
+		|| pasteBlocks.some((block) => block.text.trim())
+		|| uploads.length > 0
+		|| inlineImages.length > 0,
+	);
 	const turnIndexByStartMessage = useMemo(
 		() => new Map(buildConversationTurns(chat.messages).map((turn) => [turn.startMessageIndex, turn.index])),
 		[chat.messages],
@@ -687,19 +814,62 @@ export function ChatCenter() {
 		shouldStickToBottomRef.current = false;
 	}, []);
 
+	const resizeInput = useCallback(() => {
+		const el = inputRef.current;
+		if (!el) return;
+
+		const minHeight = resizeComposerTextarea(el);
+		const welcomeLayout = welcomeLayoutRef.current;
+		if (!welcomeLayout) return;
+		const composer = el.closest<HTMLElement>(".inno-composer");
+		if (!composer) return;
+
+		// Use the whole composer height instead of only the textarea height. This
+		// includes image rows and the large-paste card, so wrapping an attachment
+		// also moves the upper welcome block by half of the added height.
+		const textareaHeight = el.getBoundingClientRect().height;
+		const composerHeight = composer.getBoundingClientRect().height;
+		if (welcomeComposerBaseHeightRef.current === null) {
+			welcomeComposerBaseHeightRef.current = composerHeight - textareaHeight + minHeight;
+		}
+		const composerGrowth = Math.max(0, composerHeight - welcomeComposerBaseHeightRef.current);
+		const requestedHalfGrowth = composerGrowth / 2;
+		// Move the upper welcome block up with the composer. The lower preset
+		// content stays in normal flow and is pushed down by the expansion.
+		welcomeLayout.style.setProperty("--inno-welcome-composer-half-growth", `${requestedHalfGrowth}px`);
+	}, []);
+
+	useEffect(() => {
+		welcomeComposerBaseHeightRef.current = null;
+		const el = inputRef.current;
+		if (!el) return;
+		resizeInput();
+		if (typeof ResizeObserver === "undefined") return;
+
+		let lastWidth = Math.round(el.getBoundingClientRect().width);
+		const observer = new ResizeObserver(([entry]) => {
+			const nextWidth = Math.round(entry.contentRect.width);
+			if (nextWidth === lastWidth) return;
+			lastWidth = nextWidth;
+			resizeInput();
+		});
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, [isWelcome, resizeInput]);
+
+	// Attachment rows and the large-paste card change the composer's block size
+	// after React commits; measure again so welcome positioning stays centered.
+	useEffect(() => {
+		if (isWelcome) resizeInput();
+	}, [isWelcome, inlineImages, pasteBlocks, resizeInput]);
+
 	const handleInput = useCallback(() => {
 		const el = inputRef.current;
 		if (!el) return;
 		draftRef.current = el.value;
-		const maxHeight = 200;
-		el.style.height = "auto";
-		const h = Math.min(el.scrollHeight, maxHeight);
-		el.style.height = `${h}px`;
-		// Only show a vertical scrollbar once content overflows the max height;
-		// never show a horizontal scrollbar (long lines wrap).
-		el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
-		el.style.overflowX = "hidden";
-	}, []);
+		setDraftValue(el.value);
+		resizeInput();
+	}, [resizeInput]);
 
 	const buildSessionInput = useCallback((): CreateSessionInput | { __error: string } => {
 		// Simple Mode: no workspace chooser. Direct chat always goes to a temp
@@ -744,16 +914,13 @@ export function ChatCenter() {
 	}, [t]);
 
 	const handleSend = useCallback(() => {
-		const rawValue = inputRef.current?.value ?? "";
-		// Replace any paste-placeholder tokens (e.g. «已粘贴 N 行» / «Pasted N lines»)
-		// with the real pasted text before sending.
-		const expandPaste = (s: string) => {
-			if (!pasteBlock) return s;
-			// Token format from common.pasteCollapsed: «已粘贴 N 行» (zh) or
-			// «Pasted N lines» (en). Replace every occurrence with the real text.
-			return s.replace(/«[^»]*»/g, pasteBlock.text);
-		};
-		const input = expandPaste(rawValue).trim();
+		const rawValue = inputRef.current?.value ?? draftValue;
+		const input = [
+			rawValue.trim(),
+			...pasteBlocks.map((block) => block.text.trim()),
+		]
+			.filter(Boolean)
+			.join("\n\n");
 		if ((!input && uploads.length === 0 && inlineImages.length === 0) || chat.isSending || isUploading) return;
 		shouldStickToBottomRef.current = true;
 		const pendingUploads = [...uploads];
@@ -761,12 +928,12 @@ export function ChatCenter() {
 
 		const resetComposer = () => {
 			draftRef.current = "";
+			setDraftValue("");
 			if (inputRef.current) {
 				inputRef.current.value = "";
-				inputRef.current.style.height = "auto";
-				inputRef.current.style.overflowY = "hidden";
+				resizeInput();
 			}
-			setPasteBlock(null);
+			setPasteBlocks([]);
 		};
 
 		void (async () => {
@@ -836,7 +1003,7 @@ export function ChatCenter() {
 				setIsUploading(false);
 			}
 		})();
-	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, uploadWorkspaceId, pasteBlock, sessions.currentSessionId, t]);
+	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, uploadWorkspaceId, pasteBlocks, draftValue, sessions.currentSessionId, resizeInput, t]);
 
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		// Don't fire Send while the user is composing with an IME (e.g. picking
@@ -871,6 +1038,23 @@ export function ChatCenter() {
 		});
 	}, []);
 
+	const showPasteInTextField = useCallback((blockId: number) => {
+		const el = inputRef.current;
+		const block = pasteBlocks.find((item) => item.id === blockId);
+		if (!block || !el) return;
+		// Browsers retain a textarea's selection after it loses focus to the
+		// card button, so use that last caret/selection rather than appending
+		// blindly to the end.
+		const start = Math.min(el.selectionStart, el.value.length);
+		const end = Math.min(el.selectionEnd, el.value.length);
+		el.focus();
+		el.setRangeText(block.text, start, end, "end");
+		draftRef.current = el.value;
+		setDraftValue(el.value);
+		setPasteBlocks((prev) => prev.filter((item) => item.id !== blockId));
+		resizeInput();
+	}, [pasteBlocks, resizeInput]);
+
 	const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
 		// Image paste: keep existing behavior.
 		const imageItems = Array.from(e.clipboardData.items).filter((item) => item.type.startsWith("image/"));
@@ -880,38 +1064,20 @@ export function ChatCenter() {
 			addImageFiles(files);
 			return;
 		}
-		// Large text paste: insert a placeholder token at the caret and hold
-		// the real text in `pasteBlock`. The user can keep typing before/after
-		// the token. On send the token is replaced with the real text.
+		// Large text paste: keep the real content in a compact card outside the
+		// textarea. The text only enters the textarea when the user asks to show
+		// it there, at which point normal browser sizing and scrolling apply.
 		const text = e.clipboardData.getData("text/plain");
 		if (text) {
 			const lineCount = text.split(/\r\n|\r|\n/).length;
 			const charCount = text.length;
 			if (lineCount > PASTE_COLLAPSE_LINES || charCount > PASTE_COLLAPSE_CHARS) {
 				e.preventDefault();
-				const token = t("common.pasteCollapsed", { count: lineCount });
-				const el = inputRef.current;
-				if (el) {
-					const start = el.selectionStart;
-					const end = el.selectionEnd;
-					const before = el.value.slice(0, start);
-					const after = el.value.slice(end);
-					el.value = `${before}${token}${after}`;
-					// Place caret right after the inserted token.
-					const caret = start + token.length;
-					el.setSelectionRange(caret, caret);
-					el.dispatchEvent(new Event("input", { bubbles: true }));
-				}
-				// Merge into any existing paste block (rare: second large paste
-				// before sending the first). Keep total text + recompute lines.
-				setPasteBlock((prev) => {
-					if (!prev) return { text, lineCount };
-					const merged = `${prev.text}\n${text}`;
-					return { text: merged, lineCount: merged.split(/\r\n|\r|\n/).length };
-				});
+				const id = pasteBlockIdRef.current++;
+				setPasteBlocks((prev) => [...prev, { id, text }]);
 			}
 		}
-	}, [addImageFiles, t]);
+	}, [addImageFiles]);
 
 	const handleImageFiles = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
 		const files = Array.from(event.target.files ?? []).filter((f) => f.type.startsWith("image/"));
@@ -959,7 +1125,7 @@ export function ChatCenter() {
 
 	const renderInlineImagePreviews = () => (
 		inlineImages.length > 0 ? (
-			<div className="mb-2 flex flex-wrap gap-1.5">
+			<div className="flex flex-wrap gap-1.5">
 				{inlineImages.map((img, index) => (
 					<span key={`${img.name}-${index}`} className="relative inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-1 shadow-sm">
 						<img src={img.previewUrl} alt={img.name} className="h-12 w-12 rounded object-cover" />
@@ -974,6 +1140,102 @@ export function ChatCenter() {
 				))}
 			</div>
 		) : null
+	);
+
+	const renderPasteBlock = (block: PendingPasteBlock) => {
+		const preview = block.text.split(/\r\n|\r|\n/)[0].trim() || t("common.pasteCardTitle");
+		return (
+			<div className="inno-paste-card" role="group" aria-label={t("common.pasteCardTitle")}>
+				<span className="inno-paste-card-icon" aria-hidden="true">
+					<FileText size={16} />
+				</span>
+				<div className="min-w-0 flex-1">
+					<div className="truncate text-xs text-[var(--inno-text)]" title={preview}>{preview}</div>
+					<div className="mt-0.5 flex items-center gap-1 text-[11px] text-[var(--inno-text-muted)]">
+						<button
+							type="button"
+							className="inno-paste-card-action"
+							onClick={() => showPasteInTextField(block.id)}
+						>
+							{t("common.pasteCardShowInTextField")}
+						</button>
+						<span aria-hidden="true">›</span>
+					</div>
+				</div>
+				<button
+					type="button"
+					className="inno-paste-card-remove"
+					title={t("common.pasteCardRemove")}
+					aria-label={t("common.pasteCardRemove")}
+					onClick={() => setPasteBlocks((prev) => prev.filter((item) => item.id !== block.id))}
+				>
+					<X size={14} />
+				</button>
+			</div>
+		);
+	};
+
+	const renderComposerAttachments = () => (
+		inlineImages.length > 0 || pasteBlocks.length > 0 ? (
+			<div className="inno-composer-attachments mb-1 flex min-w-0 flex-wrap items-start gap-2">
+				{renderInlineImagePreviews()}
+				{pasteBlocks.map((block) => (
+					<Fragment key={block.id}>
+						{renderPasteBlock(block)}
+					</Fragment>
+				))}
+			</div>
+		) : null
+	);
+
+	const renderModelPicker = () => (
+		<div ref={modelPickerRef} className="inno-composer-model-picker relative ml-auto shrink-0">
+			<button
+				type="button"
+				className="inno-composer-model-trigger flex h-8 shrink-0 items-center gap-1 px-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+				title={t("chat.selectModel")}
+				aria-label={t("chat.selectModel")}
+				aria-haspopup="menu"
+				aria-expanded={modelPickerOpen}
+				disabled={modelOptions.length === 0 || modelState.isSavingModel || chat.isSending}
+				onClick={() => setModelPickerOpen((open) => !open)}
+			>
+								{modelState.defaultProvider ? <ModelProviderIcon provider={currentModel?.provider ?? modelState.defaultProvider} /> : null}
+				<span className="whitespace-nowrap">{currentModelLabel}</span>
+				<ChevronDown size={13} className="shrink-0" />
+			</button>
+			{modelPickerOpen && modelOptions.length > 0 ? (
+				<div className="inno-composer-model-menu" role="menu" aria-label={t("chat.selectModel")}>
+					{modelOptions.map((model) => {
+						const selected = model.provider === modelState.defaultProvider && model.id === modelState.defaultModel;
+						return (
+							<button
+								key={`${model.provider}:${model.id}`}
+								type="button"
+								role="menuitemradio"
+								aria-checked={selected}
+								className={`inno-composer-model-option ${selected ? "is-selected" : ""}`}
+								disabled={modelState.isSavingModel || chat.isSending}
+								onClick={() => handleModelSelect(model)}
+									title={model.id}
+							>
+								<span className="flex min-w-0 items-center gap-2">
+									<ModelProviderIcon provider={model.provider} />
+									<span className="min-w-0 truncate">{model.name || model.id}</span>
+								</span>
+								{selected ? <Check size={14} className="shrink-0" /> : null}
+							</button>
+						);
+					})}
+					<div className="inno-composer-model-menu-footer">
+						<button type="button" className="inno-composer-model-manage" role="menuitem" onClick={openModelSettings}>
+							<Settings2 size={14} />
+							<span>{t("chat.manageModels")}</span>
+						</button>
+					</div>
+				</div>
+			) : null}
+		</div>
 	);
 
 	const renderQuestionHint = () => (
@@ -1015,78 +1277,106 @@ export function ChatCenter() {
 		) : null
 	);
 
-	const renderComposer = (placeholder: string) => (
-		<div className="inno-composer flex items-end gap-2 rounded-lg p-2">
-			<input ref={fileInputRef} id="file-input" type="file" className="hidden" multiple onChange={handleFiles} />
-			<input ref={imageInputRef} id="image-input" type="file" className="hidden" multiple accept="image/*" onChange={handleImageFiles} />
-			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={t("chat.uploadFiles")} disabled={chat.isSending || isUploading} onClick={() => fileInputRef.current?.click()}>
-				{isUploading ? <Spinner size={16} /> : <Paperclip size={16} />}
-			</button>
-			<button className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50" title={currentModelSupportsNativeImages ? t("chat.attachImage") : t("chat.attachImageViaOcr")} disabled={chat.isSending || isUploading} onClick={() => imageInputRef.current?.click()}>
-				<Image size={16} />
-			</button>
-			<textarea
-				ref={inputRef}
-				id="chat-input"
-				defaultValue={draftRef.current}
-				className="min-h-[36px] max-h-[200px] flex-1 resize-none overflow-hidden rounded-md border-0 bg-transparent px-2 py-2 text-sm leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
-				placeholder={placeholder}
-				rows={1}
-				onKeyDown={handleKeyDown}
-				onInput={handleInput}
-				onPaste={handlePaste}
-				disabled={chat.isSending || isUploading || !!chat.pendingQuestion}
-			/>
-			{chat.isSending ? (
-				<>
-					{chat.canReconnect ? (
+	const renderComposer = (placeholder: string) => {
+		const sendDisabled = !hasSendableContent || isUploading;
+		return (
+			<div className="inno-composer rounded-2xl p-2">
+				<input ref={fileInputRef} id="file-input" type="file" className="hidden" multiple onChange={handleFiles} />
+				<input ref={imageInputRef} id="image-input" type="file" className="hidden" multiple accept="image/*" onChange={handleImageFiles} />
+				{renderComposerAttachments()}
+				<textarea
+					ref={inputRef}
+					id="chat-input"
+					defaultValue={draftRef.current}
+					className="inno-composer-textarea w-full resize-none border-0 bg-transparent px-2 py-2 text-sm leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
+					placeholder={placeholder}
+					rows={2}
+					onKeyDown={handleKeyDown}
+					onInput={handleInput}
+					onPaste={handlePaste}
+					disabled={chat.isSending || isUploading || !!chat.pendingQuestion}
+				/>
+				<div className="inno-composer-toolbar flex shrink-0 items-center justify-between gap-2">
+					<div className="flex min-w-0 items-center gap-1">
 						<button
-							className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md"
-							title={t("chat.reconnect", "重新连接")}
-							onClick={handleReconnect}
+							type="button"
+							className="inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50"
+							title={t("chat.uploadFiles")}
+							disabled={chat.isSending || isUploading}
+							onClick={() => fileInputRef.current?.click()}
 						>
-							<RotateCcw size={16} />
+							{isUploading ? <Spinner size={16} /> : <Paperclip size={16} />}
 						</button>
-					) : null}
-					<button
-						className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[var(--inno-danger)] text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
-						title={t("chat.stopGeneration")}
-						onClick={handleStop}
-					>
-						<Square size={16} />
-					</button>
-				</>
-			) : (
-				<>
-					{chat.lastUserPrompt ? (
 						<button
-							className="inno-icon-button flex h-9 w-9 shrink-0 rounded-md disabled:opacity-50"
-							title={t("chat.retryLast")}
-							disabled={isUploading}
-							onClick={handleRetry}
+							type="button"
+							className="inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50"
+							title={modelState.currentModelSupportsNativeImages ? t("chat.attachImage") : t("chat.attachImageViaOcr")}
+							disabled={chat.isSending || isUploading}
+								onClick={() => imageInputRef.current?.click()}
 						>
-							<RotateCcw size={16} />
+							<Image size={16} />
 						</button>
-					) : null}
-					<button
-						className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors ${isUploading ? "cursor-not-allowed bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]" : "inno-primary-button"}`}
-						title={t("chat.send")}
-						disabled={isUploading}
-						onClick={handleSend}
-					>
-						<SendHorizonal size={16} />
-					</button>
-				</>
-			)}
-		</div>
-	);
+					</div>
+					{renderModelPicker()}
+					<div className="flex shrink-0 items-center gap-1">
+						{chat.isSending ? (
+							<>
+								{chat.canReconnect ? (
+									<button
+										type="button"
+										className="inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full"
+										title={t("chat.reconnect", "重新连接")}
+										onClick={handleReconnect}
+									>
+										<RotateCcw size={16} />
+									</button>
+								) : null}
+								<button
+									type="button"
+									className="inno-composer-stop flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
+									title={t("chat.stopGeneration")}
+									onClick={handleStop}
+								>
+									<Square size={15} />
+								</button>
+							</>
+						) : (
+							<>
+								{chat.lastUserPrompt ? (
+									<button
+										type="button"
+										className="inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50"
+										title={t("chat.retryLast")}
+										disabled={isUploading}
+										onClick={handleRetry}
+									>
+										<RotateCcw size={16} />
+									</button>
+								) : null}
+								<button
+									type="button"
+									className={`inno-composer-send flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${sendDisabled ? "is-disabled" : ""}`}
+									title={t("chat.send")}
+									disabled={sendDisabled}
+									onClick={handleSend}
+								>
+									<ArrowUp size={16} strokeWidth={2} />
+								</button>
+							</>
+						)}
+					</div>
+				</div>
+			</div>
+		);
+	};
 
 	/* ── Welcome layout: centered composer + inline workspace chooser ── */
 	if (isWelcome) {
 		return (
 			<section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-chat-bg)]">
 				<div className="inno-chat-grid flex flex-1 min-h-0 justify-center overflow-y-auto px-4">
-					<div className="w-full max-w-2xl pt-[18vh] pb-12">
+					<div ref={welcomeLayoutRef} className="inno-welcome-layout w-full max-w-2xl pt-[18vh] pb-12">
+						<div className="inno-welcome-upper">
 						<div className="mb-6 flex flex-col items-center text-center">
 							<button
 								type="button"
@@ -1131,10 +1421,12 @@ export function ChatCenter() {
 						</div>
 
 						{renderUploadChips()}
-						{renderInlineImagePreviews()}
 						{renderQuestionHint()}
 						{renderBusyBlocker()}
-						{renderComposer(t("chat.welcomePlaceholder"))}
+						</div>
+						<div className="inno-welcome-composer-shell">
+							{renderComposer(t("chat.welcomePlaceholder"))}
+						</div>
 
 						{simpleMode && presets.length > 0 ? (
 							<PresetPicker
@@ -1311,7 +1603,6 @@ export function ChatCenter() {
 			<div className="shrink-0 border-t border-[var(--inno-border)] bg-[var(--inno-surface)] p-3">
 				<div className="mx-auto max-w-3xl">
 					{renderUploadChips()}
-					{renderInlineImagePreviews()}
 					{renderQuestionHint()}
 					{renderBusyBlocker()}
 					{wsError ? <p className="mb-2 text-xs text-[var(--inno-danger)]">{wsError}</p> : null}

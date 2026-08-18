@@ -12,6 +12,7 @@ import {
 import {
 	archiveL2NotebookItem,
 	createL2Note,
+	deleteL2NotebookItem,
 	listL2Notes,
 	readNoteContent,
 	saveL2NoteContent,
@@ -348,6 +349,27 @@ export async function handleNotebookRoutes(
 			logger.warn({ err, attachmentId }, "failed to delete note attachment");
 			const message = errorMessage(err, "Delete attachment failed");
 			json(res, message.includes("not found") ? 404 : 500, { error: message });
+		}
+		return true;
+	}
+
+	if (method === "DELETE" && url.startsWith("/api/l2/notes?")) {
+		const rawPath = new URL(url, "http://localhost").searchParams.get("path");
+		if (!rawPath) {
+			json(res, 400, { error: "Missing path" });
+			return true;
+		}
+		const resolved = resolveRawPath(l2DataDir, rawPath);
+		if (!resolved) {
+			json(res, 400, { error: "Invalid raw path" });
+			return true;
+		}
+		try {
+			json(res, 200, deleteL2NotebookItem(l2DataDir, resolved.rawPath));
+		} catch (err) {
+			logger.warn({ err, rawPath: resolved.rawPath }, "failed to delete notebook item");
+			const message = errorMessage(err, "Delete failed");
+			json(res, message.includes("文件不存在") ? 404 : 409, { error: message });
 		}
 		return true;
 	}

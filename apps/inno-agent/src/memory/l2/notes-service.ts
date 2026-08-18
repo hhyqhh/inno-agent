@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
@@ -29,7 +29,11 @@ import {
 import type { ManifestEntry, ManifestStatus, RawSourceType } from "./types.js";
 import { ensureL2Directories } from "./wiki-maintainer.js";
 import { logger } from "../../logger.js";
-import { listNoteAttachments, type NoteAttachmentRecord } from "./note-attachments-service.js";
+import {
+	deleteAttachmentsForNote,
+	listNoteAttachments,
+	type NoteAttachmentRecord,
+} from "./note-attachments-service.js";
 
 export type NotebookItemKind = "markdown" | "orphan" | "archived";
 export type NotebookType = "conversation" | "file" | "note";
@@ -357,4 +361,44 @@ export async function archiveL2Note(
 		},
 		{ model: options.model, modelRegistry: options.modelRegistry, memory: options.memory },
 	);
+}
+
+export interface DeleteNotebookItemResult {
+	rawPath: string;
+	title: string;
+}
+
+export function deleteL2NotebookItem(l2DataDir: string, rawPath: string): DeleteNotebookItemResult {
+	const normalizedPath = rawPath.replace(/\\/g, "/");
+	const isNote = normalizedPath.startsWith("raw/notes/");
+	const prefix = isNote
+		? "raw/notes/"
+		: normalizedPath.startsWith("raw/uploads/")
+			? "raw/uploads/"
+			: normalizedPath.startsWith("raw/conversations/")
+				? "raw/conversations/"
+				: "";
+	const relativePath = prefix ? normalizedPath.slice(prefix.length) : "";
+	if (!prefix || !relativePath || relativePath.includes("/")) throw new Error("Invalid raw path");
+	if (isNote && !relativePath.toLowerCase().endsWith(".md")) throw new Error("Invalid note path");
+	if (findManifestByRawPath(l2DataDir, normalizedPath)) {
+		throw new Error("该内容已归档，不能直接删除");
+	}
+
+	const storageRoot = join(l2DataDir, ...prefix.slice(0, -1).split("/"));
+	const absPath = resolveContainedPath(storageRoot, relativePath);
+	if (!absPath || !existsSync(absPath) || !statSync(absPath).isFile()) throw new Error("文件不存在");
+
+	let title = basename(normalizedPath);
+	if (isNote) {
+		const note = readNoteFile(l2DataDir, normalizedPath);
+		if (note.frontmatter.status !== "draft" || note.frontmatter.source_id) {
+			throw new Error("该笔记可能仍被知识库引用，不能直接删除");
+		}
+		title = note.frontmatter.title || extractNoteTitle(note.body, basename(normalizedPath, ".md"));
+		deleteAttachmentsForNote(l2DataDir, normalizedPath);
+	}
+
+	unlinkSync(absPath);
+	return { rawPath: normalizedPath, title };
 }

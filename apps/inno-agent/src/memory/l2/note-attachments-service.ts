@@ -134,6 +134,15 @@ export function deleteNoteAttachment(l2DataDir: string, attachmentId: string): N
 	return removed;
 }
 
+export function deleteAttachmentsForNote(l2DataDir: string, noteRawPath: string): number {
+	const normalizedPath = normalizeNoteRawPath(noteRawPath);
+	const attachmentIds = readAttachmentIndex(l2DataDir)
+		.filter((record) => normalizeNoteRawPath(record.noteRawPath) === normalizedPath)
+		.map((record) => record.id);
+	for (const attachmentId of attachmentIds) deleteNoteAttachment(l2DataDir, attachmentId);
+	return attachmentIds.length;
+}
+
 export function findNoteAttachment(l2DataDir: string, attachmentId: string): NoteAttachmentRecord | undefined {
 	return readAttachmentIndex(l2DataDir).find((record) => record.id === attachmentId);
 }

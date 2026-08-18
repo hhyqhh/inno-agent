@@ -8,6 +8,7 @@ import type {
 	NotesListResponse,
 	SaveNoteResult,
 	SaveRawMarkdownResult,
+	UnarchiveNoteResult,
 	UploadNoteAttachmentResult,
 	UploadNoteFileResult,
 } from "../types/notes.js";
@@ -95,6 +96,13 @@ export async function uploadNoteFile(file: File): Promise<UploadNoteFileResult> 
 export async function deleteNoteItem(rawPath: string): Promise<DeleteNoteItemResult> {
 	return apiFetch<DeleteNoteItemResult>(`/api/l2/notes?path=${encodeURIComponent(rawPath)}`, {
 		method: "DELETE",
+	});
+}
+
+export async function unarchiveNote(rawPath: string): Promise<UnarchiveNoteResult> {
+	return apiFetch<UnarchiveNoteResult>("/api/l2/notes/unarchive", {
+		method: "POST",
+		body: JSON.stringify({ rawPath }),
 	});
 }
 

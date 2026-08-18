@@ -10,6 +10,7 @@ const apiMocks = vi.hoisted(() => ({
 	listNotes: vi.fn(),
 	saveNoteContent: vi.fn(),
 	saveRawMarkdownContent: vi.fn(),
+	unarchiveNote: vi.fn(),
 	uploadNoteAttachment: vi.fn(),
 	uploadNoteFile: vi.fn(),
 }));
@@ -83,5 +84,27 @@ describe("notesStore item deletion", () => {
 		expect(apiMocks.deleteNoteItem).toHaveBeenCalledWith(orphan.rawPath);
 		expect(notesStore.selected).toBeNull();
 		expect(notesStore.notice).toBe("deleted");
+	});
+});
+
+describe("notesStore unarchive", () => {
+	it("moves the returned item back to drafts and keeps success feedback", async () => {
+		apiMocks.unarchiveNote.mockResolvedValue({
+			rawPath: archivedMarkdown.rawPath,
+			title: archivedMarkdown.title,
+			removedWikiPages: [],
+			backupPaths: [],
+			status: "uploaded",
+		});
+		const orphan = { ...archivedMarkdown, kind: "orphan" as const, status: "uploaded" as const };
+		apiMocks.listNotes.mockResolvedValue({ notes: [orphan] });
+		apiMocks.fetchRawContent.mockResolvedValue("source");
+		notesStore.selected = archivedMarkdown;
+
+		await expect(notesStore.unarchiveSelected()).resolves.toBe(true);
+		expect(apiMocks.unarchiveNote).toHaveBeenCalledWith(archivedMarkdown.rawPath);
+		expect(notesStore.listBox).toBe("drafts");
+		expect(notesStore.selected?.kind).toBe("orphan");
+		expect(notesStore.notice).toBe("unarchived");
 	});
 });

@@ -87,6 +87,14 @@ export interface DeleteNoteItemResult {
 	title: string;
 }
 
+export interface UnarchiveNoteResult {
+	rawPath: string;
+	title: string;
+	removedWikiPages: string[];
+	backupPaths: string[];
+	status: "draft" | "uploaded";
+}
+
 export interface UploadNoteFileResult {
 	fileName: string;
 	mimeType: string;

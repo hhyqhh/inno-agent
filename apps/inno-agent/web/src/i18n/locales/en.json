@@ -190,6 +190,7 @@
 		},
 		"download": "Download",
 		"deleteConfirm": "Delete \"{{title}}\"? This cannot be undone.",
+		"unarchiveConfirm": "Unarchive \"{{title}}\"? Its Wiki links will be detached and generated pages will be backed up for recovery.",
 		"previewBinaryHint": "Binary file — download or archive to view the Wiki summary.",
 		"itemType": {
 			"markdown": "Note",
@@ -217,6 +218,7 @@
 			"archive": "Archive to Wiki",
 			"rearchive": "Re-archive",
 			"delete": "Delete",
+			"unarchive": "Unarchive",
 			"openWiki": "Open Wiki summary",
 			"viewNote": "View original note"
 		},
@@ -226,6 +228,7 @@
 			"saved": "Saved",
 			"archived": "Archived",
 			"deleted": "Deleted",
+			"unarchived": "Unarchived — moved back to drafts",
 			"uploaded": "Upload succeeded",
 			"loadFailed": "Failed to load notes",
 			"loadContentFailed": "Failed to load note content",
@@ -233,6 +236,7 @@
 			"saveFailed": "Save failed",
 			"archiveFailed": "Archive failed",
 			"deleteFailed": "Delete failed",
+			"unarchiveFailed": "Unarchive failed",
 			"uploadFailed": "Upload failed",
 			"attachmentUploaded": "Attachment uploaded",
 			"attachmentUploadFailed": "Failed to upload attachment",

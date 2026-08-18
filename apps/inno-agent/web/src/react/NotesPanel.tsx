@@ -5,6 +5,7 @@ import { NoteAttachments } from "./notebook/NoteAttachments.js";
 import { NoteProperties } from "./notebook/NoteProperties.js";
 import {
 	Archive,
+	ArchiveRestore,
 	ChevronDown,
 	Download,
 	ExternalLink,
@@ -95,6 +96,14 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		await notesStore.deleteSelected();
 	}, [t]);
 
+	const handleUnarchive = useCallback(async () => {
+		const selected = notesStore.selected;
+		if (!selected) return;
+		const confirmed = typeof window === "undefined" ? true : window.confirm(t("notes.unarchiveConfirm", { title: selected.title }));
+		if (!confirmed) return;
+		await notesStore.unarchiveSelected();
+	}, [t]);
+
 	const selected = state.selected;
 	const isMarkdown = selected?.kind === "markdown";
 	const isRawEditableMarkdown = Boolean(selected && selected.kind !== "markdown" && selected.contentType === "markdown");
@@ -110,6 +119,9 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 	const canDelete = Boolean(
 		selected && (selected.kind === "orphan" || (selected.kind === "markdown" && selected.status === "draft")),
 	);
+	const canUnarchive = Boolean(
+		selected && (selected.kind === "archived" || (selected.kind === "markdown" && selected.status !== "draft")),
+	);
 
 	function renderBottomActions() {
 		if (!selected) return null;
@@ -119,6 +131,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 			(canArchiveNow && (selected.status === "draft" || selected.kind === "orphan")) ||
 			showRearchive ||
 			canDelete ||
+			canUnarchive ||
 			showOpenWiki;
 		if (!hasActions) return null;
 		return (
@@ -186,6 +199,17 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					>
 						<Trash2 size={14} />
 						{t("notes.actions.delete")}
+					</button>
+				) : null}
+				{canUnarchive ? (
+					<button
+						type="button"
+						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
+						disabled={state.isArchiving}
+						onClick={() => void handleUnarchive()}
+					>
+						<ArchiveRestore size={14} />
+						{t("notes.actions.unarchive")}
 					</button>
 				) : null}
 			</div>

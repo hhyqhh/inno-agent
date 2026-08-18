@@ -10,6 +10,7 @@ import {
 	listNotes,
 	saveNoteContent,
 	saveRawMarkdownContent,
+	unarchiveNote,
 	uploadNoteAttachment,
 	uploadNoteFile,
 } from "../api/notes.js";
@@ -392,6 +393,29 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 			return false;
 		} finally {
 			this.isDeleting = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async unarchiveSelected(): Promise<boolean> {
+		if (!this.selected) return false;
+		this.isArchiving = true;
+		this.clearMessages();
+		this.emit("change", undefined);
+		try {
+			const result = await unarchiveNote(this.selected.rawPath);
+			this.listBox = "drafts";
+			await this.loadAll();
+			const updated = this.notes.find((note) => note.rawPath === result.rawPath);
+			if (updated) await this.selectNote(updated);
+			else this.selected = null;
+			this.notice = "unarchived";
+			return true;
+		} catch {
+			this.error = "unarchiveFailed";
+			return false;
+		} finally {
+			this.isArchiving = false;
 			this.emit("change", undefined);
 		}
 	}

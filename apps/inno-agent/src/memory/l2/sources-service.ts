@@ -1,8 +1,12 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
+import type { Model } from "@earendil-works/pi-ai";
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 import { readText } from "../../storage/file-store.js";
 import { resolveContainedPath } from "../../utils/path-safety.js";
+import { archiveL2Source, type ArchiveL2Result } from "./l2-archive-service.js";
+import type { L2Memory } from "./l2-memory.js";
 import { readManifest } from "./manifest-store.js";
 import { ensureL2Directories } from "./wiki-maintainer.js";
 import type { ManifestEntry, ManifestStatus, RawSourceType } from "./types.js";
@@ -40,6 +44,8 @@ export interface SourcesListResponse {
 	sources: SourceSummaryDto[];
 	orphans: OrphanRawFileDto[];
 }
+
+export type ArchiveRawResult = ArchiveL2Result;
 
 const RAW_SCAN_DIRS = ["raw/uploads", "raw/conversations"] as const;
 
@@ -122,6 +128,39 @@ export function listL2Sources(l2DataDir: string): SourcesListResponse {
 		sources: entries.map(entryToSummary).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
 		orphans: scanOrphans(l2DataDir, indexedRawPaths),
 	};
+}
+
+function defaultTitleFromPath(rawPath: string): string {
+	const name = basename(rawPath);
+	const extension = extname(name);
+	return name.slice(0, name.length - extension.length) || name;
+}
+
+export function archiveRawFile(
+	l2DataDir: string,
+	rawPath: string,
+	options: {
+		title?: string;
+		tags?: string[];
+		model?: Model<any>;
+		modelRegistry?: ModelRegistry;
+		memory?: L2Memory;
+	},
+): Promise<ArchiveRawResult> {
+	const normalizedPath = rawPath.replace(/\\/g, "/");
+	const sourceType = inferSourceType(basename(normalizedPath));
+	return archiveL2Source(
+		l2DataDir,
+		{
+			title: options.title?.trim() || defaultTitleFromPath(normalizedPath),
+			source: { kind: "existing", rawPath: normalizedPath, sourceType },
+			tags: options.tags,
+			origin: normalizedPath.startsWith("raw/conversations/") ? "conversation" : "user_upload",
+			dedupeBy: "rawPath",
+			logLabel: "notebook sources API",
+		},
+		{ model: options.model, modelRegistry: options.modelRegistry, memory: options.memory },
+	);
 }
 
 export function readRawTextPreview(l2DataDir: string, rawPath: string, maxChars = 12000): string {

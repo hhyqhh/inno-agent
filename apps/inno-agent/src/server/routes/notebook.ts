@@ -19,7 +19,12 @@ import {
 } from "../../memory/l2/notes-service.js";
 import { listNoteTemplates } from "../../memory/l2/note-templates.js";
 import { unarchiveL2NotebookItem } from "../../memory/l2/notebook-unarchive-service.js";
-import { listL2Sources, readRawTextPreview, saveRawMarkdownContent } from "../../memory/l2/sources-service.js";
+import {
+	listL2Sources,
+	readRawTextPreview,
+	regenerateL2Source,
+	saveRawMarkdownContent,
+} from "../../memory/l2/sources-service.js";
 import type { L2Memory } from "../../memory/l2/l2-memory.js";
 import { logger } from "../../logger.js";
 import { safeJoinReal } from "../file-helpers.js";
@@ -401,6 +406,24 @@ export async function handleNotebookRoutes(
 			logger.warn({ err, rawPath: resolved.rawPath }, "failed to unarchive notebook item");
 			const message = errorMessage(err, "Unarchive failed");
 			json(res, message.includes("未归档") ? 409 : 500, { error: message });
+		}
+		return true;
+	}
+
+	if (method === "POST" && url === "/api/l2/sources/regenerate") {
+		const body = (await readBody(req)) as Record<string, unknown>;
+		const sourceId = typeof body.sourceId === "string" ? body.sourceId.trim() : "";
+		if (!sourceId) {
+			json(res, 400, { error: "Missing sourceId" });
+			return true;
+		}
+		try {
+			const result = await regenerateL2Source(l2DataDir, sourceId, ctx.getArchiveRuntime());
+			json(res, 200, result);
+		} catch (err) {
+			logger.warn({ err, sourceId }, "failed to regenerate L2 source");
+			const message = errorMessage(err, "Source regeneration failed");
+			json(res, message.startsWith("Source not found:") ? 404 : 500, { error: message });
 		}
 		return true;
 	}

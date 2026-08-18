@@ -6,15 +6,21 @@ import { PassThrough, Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const unarchiveMock = vi.hoisted(() => vi.fn());
+const regenerateMock = vi.hoisted(() => vi.fn());
 vi.mock("../../memory/l2/notebook-unarchive-service.js", () => ({
 	unarchiveL2NotebookItem: unarchiveMock,
 }));
+vi.mock("../../memory/l2/sources-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../memory/l2/sources-service.js")>();
+	return { ...actual, regenerateL2Source: regenerateMock };
+});
 
 import { handleNotebookRoutes, type NotebookRouteContext } from "./notebook.js";
 
 const roots: string[] = [];
 afterEach(() => {
 	unarchiveMock.mockReset();
+	regenerateMock.mockReset();
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -94,5 +100,26 @@ describe("notebook raw file route", () => {
 		expect(status).toBe(200);
 		expect(headers["Content-Type"]).toBe("image/gif");
 		expect(String(headers["Content-Disposition"])).toContain("inline");
+	});
+});
+
+describe("source regeneration route", () => {
+	it("forwards the source id and archive runtime", async () => {
+		const root = mkdtempSync(join(tmpdir(), "inno-notebook-regenerate-"));
+		roots.push(root);
+		const runtime = { memory: {} as never };
+		const ctx = { l2DataDir: root, codeDir: root, getArchiveRuntime: () => runtime } as NotebookRouteContext;
+		regenerateMock.mockResolvedValue({ sourceId: "l2src_test", status: "indexed" });
+		const { res, result } = response();
+
+		expect(await handleNotebookRoutes(
+			request({ sourceId: "l2src_test" }),
+			res,
+			"POST",
+			"/api/l2/sources/regenerate",
+			ctx,
+		)).toBe(true);
+		expect(result.status).toBe(200);
+		expect(regenerateMock).toHaveBeenCalledWith(root, "l2src_test", runtime);
 	});
 });

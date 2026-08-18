@@ -1,3 +1,5 @@
+import type { Model } from "@earendil-works/pi-ai";
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { basename, extname, join } from "node:path";
@@ -8,6 +10,7 @@ import {
 	uploadNoteAttachment,
 } from "../../memory/l2/note-attachments-service.js";
 import {
+	archiveL2NotebookItem,
 	createL2Note,
 	listL2Notes,
 	readNoteContent,
@@ -15,6 +18,7 @@ import {
 } from "../../memory/l2/notes-service.js";
 import { listNoteTemplates } from "../../memory/l2/note-templates.js";
 import { listL2Sources, readRawTextPreview } from "../../memory/l2/sources-service.js";
+import type { L2Memory } from "../../memory/l2/l2-memory.js";
 import { logger } from "../../logger.js";
 import { safeJoinReal } from "../file-helpers.js";
 import { json, matchRoute, readBody, UPLOAD_MAX_BODY_BYTES } from "../http-helpers.js";
@@ -22,6 +26,7 @@ import { json, matchRoute, readBody, UPLOAD_MAX_BODY_BYTES } from "../http-helpe
 export interface NotebookRouteContext {
 	l2DataDir: string;
 	codeDir: string;
+	getArchiveRuntime: () => { model?: Model<any>; modelRegistry?: ModelRegistry; memory?: L2Memory };
 }
 
 interface ResolvedL2Path {
@@ -315,6 +320,42 @@ export async function handleNotebookRoutes(
 			logger.warn({ err, attachmentId }, "failed to delete note attachment");
 			const message = errorMessage(err, "Delete attachment failed");
 			json(res, message.includes("not found") ? 404 : 500, { error: message });
+		}
+		return true;
+	}
+
+	if (method === "POST" && (url === "/api/l2/notes/archive" || url === "/api/l2/sources/archive")) {
+		const body = (await readBody(req)) as Record<string, unknown>;
+		const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
+		const title = typeof body.title === "string" ? body.title.trim() : undefined;
+		const tags = Array.isArray(body.tags) ? body.tags.filter((tag): tag is string => typeof tag === "string") : undefined;
+		if (!rawPath) {
+			json(res, 400, { error: "Missing rawPath" });
+			return true;
+		}
+		const resolved = resolveRawPath(l2DataDir, rawPath);
+		if (!resolved) {
+			json(res, 400, { error: "Invalid raw path" });
+			return true;
+		}
+		if (!isFile(resolved.fullPath)) {
+			json(res, 404, { error: "Raw file not found" });
+			return true;
+		}
+		try {
+			const runtime = ctx.getArchiveRuntime();
+			const result = await archiveL2NotebookItem(l2DataDir, resolved.rawPath, {
+				title,
+				tags,
+				model: runtime.model,
+				modelRegistry: runtime.modelRegistry,
+				memory: runtime.memory,
+			});
+			json(res, 201, result);
+		} catch (err) {
+			const isNoteRoute = url === "/api/l2/notes/archive";
+			logger.warn({ err, rawPath: resolved.rawPath }, isNoteRoute ? "failed to archive note" : "failed to archive raw file");
+			json(res, 500, { error: errorMessage(err, isNoteRoute ? "Archive note failed" : "Archive failed") });
 		}
 		return true;
 	}

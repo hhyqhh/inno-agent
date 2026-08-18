@@ -1441,6 +1441,10 @@ const server = createServer(async (req, res) => {
 		if (await handleNotebookRoutes(req, res, method, url, {
 			l2DataDir,
 			codeDir: paths.codeDir,
+			getArchiveRuntime: () => {
+				const session = getSession();
+				return { model: session.model, modelRegistry: session.modelRegistry };
+			},
 		})) return;
 
 		// --- Learner profile API (extracted to server/routes/learner.ts) ---

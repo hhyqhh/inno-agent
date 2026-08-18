@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { ensureDir, readJson, writeJson } from "../../storage/file-store.js";
+import { ensureDir, readJson, readText, writeJson, writeText } from "../../storage/file-store.js";
+import { resolveContainedPath } from "../../utils/path-safety.js";
+import { parseFrontmatter, serializeFrontmatter } from "./wiki-maintainer.js";
 
 export interface L2TagRecord {
 	id: string;
@@ -117,4 +119,24 @@ export function wikiPathsForTag(l2DataDir: string, tag: string): string[] {
 	const record = index.tags.find((item) => item.canonicalKey === canonicalizeTag(tag));
 	if (!record) return [];
 	return index.pageTags.filter((item) => item.tagId === record.id).map((item) => item.wikiPath);
+}
+
+export function updateWikiPageTags(l2DataDir: string, wikiPath: string, tags: string[]): string[] {
+	const normalizedPath = wikiPath.replace(/\\/g, "/");
+	if (!normalizedPath.startsWith("wiki/") || !normalizedPath.endsWith(".md")) {
+		throw new Error("Invalid wiki path");
+	}
+	const fullPath = resolveContainedPath(join(l2DataDir, "wiki"), normalizedPath.slice("wiki/".length));
+	if (!fullPath) throw new Error("Invalid wiki path");
+
+	const { frontmatter, body } = parseFrontmatter(readText(fullPath));
+	if (!frontmatter) throw new Error("Wiki page frontmatter is missing");
+	const normalizedTags = normalizeTagList(tags);
+	const nextFrontmatter = {
+		...frontmatter,
+		tags: normalizedTags,
+		updated: new Date().toISOString().slice(0, 10),
+	};
+	writeText(fullPath, `${serializeFrontmatter(nextFrontmatter)}\n${body}`);
+	return normalizedTags;
 }

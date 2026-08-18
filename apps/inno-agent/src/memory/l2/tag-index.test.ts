@@ -7,8 +7,10 @@ import {
 	normalizeTagList,
 	rebuildTagIndex,
 	suggestTags,
+	updateWikiPageTags,
 	wikiPathsForTag,
 } from "./tag-index.js";
+import { readText, writeText } from "../../storage/file-store.js";
 
 const roots: string[] = [];
 
@@ -51,5 +53,30 @@ describe("L2 tag index", () => {
 		expect(second.tags).toHaveLength(1);
 		expect(second.tags[0]?.id).toBe(agentId);
 		expect(suggestTags(root, "age")).toEqual(["Agent"]);
+	});
+
+	it("updates page frontmatter without allowing paths outside the wiki", () => {
+		const root = tempRoot();
+		const pagePath = join(root, "wiki", "concepts", "agent.md");
+		writeText(pagePath, [
+			"---",
+			"title: Agent",
+			"created: 2026-08-18",
+			"type: concept",
+			"tags: [old]",
+			"sources: []",
+			"source_ids: []",
+			"updated: 2026-08-18",
+			"status: draft",
+			"confidence: medium",
+			"---",
+			"",
+			"Body",
+		].join("\n"));
+
+		expect(updateWikiPageTags(root, "wiki/concepts/agent.md", ["AI", "ai", "LLM"])).toEqual(["AI", "LLM"]);
+		expect(readText(pagePath)).toContain("tags: [AI, LLM]");
+		expect(readText(pagePath)).toContain("Body");
+		expect(() => updateWikiPageTags(root, "wiki/../manifest.jsonl", [])).toThrow("Invalid wiki path");
 	});
 });

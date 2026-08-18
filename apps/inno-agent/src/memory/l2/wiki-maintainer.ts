@@ -12,6 +12,7 @@ import type {
 	WikiPrerequisite,
 } from "./types.js";
 import { logger } from "../../logger.js";
+import { normalizeMarkdownForMilkdown } from "./markdown-normalizer.js";
 
 const L2_SCHEMA_VERSION = "1.0";
 
@@ -346,7 +347,8 @@ export function createSourcePage(
 		confidence: "medium",
 	};
 	const ref = extractedPath ? `\n## 来源\n\n完整提取文本: \`${extractedPath}\`\n` : "";
-	const body = `\n# ${entry.title}\n\n${summaryBody}\n${ref}`;
+	const normalizedSummary = normalizeMarkdownForMilkdown(summaryBody);
+	const body = `\n# ${entry.title}\n\n${normalizedSummary}${ref}`;
 	writeText(join(dir, filename), serializeFrontmatter(fm) + body);
 	return wikiPathJoin("wiki", "sources", filename);
 }

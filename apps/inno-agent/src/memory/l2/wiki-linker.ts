@@ -14,6 +14,7 @@ import { splitStructuralChunks } from "./structural-chunker.js";
 import { buildAliasIndex, normalizeWikiLink } from "./wiki-links.js";
 import { logger } from "../../logger.js";
 import { resolveContainedPath } from "../../utils/path-safety.js";
+import { normalizeMarkdownForMilkdown } from "./markdown-normalizer.js";
 
 type LinkablePageType = Extract<WikiPageType, "entity" | "concept">;
 
@@ -387,7 +388,7 @@ function buildNewPage(
 		status: "draft",
 		confidence: "medium",
 	});
-	return `${frontmatter}
+	return normalizeMarkdownForMilkdown(`${frontmatter}
 # ${item.title}
 
 ## 定义
@@ -398,7 +399,7 @@ ${relatedSection(relatedTitles)}
 ## 相关资料
 
 - [[${entry.title}]] — \`${sourcePagePath}\`
-`;
+`);
 }
 
 function addRelatedLinks(content: string, relatedTitles: string[]): string | null {

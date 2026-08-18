@@ -22,7 +22,7 @@ describe("L2 summarizer", () => {
 			content: [{ type: "text", text: "## 摘要\n\n结果" }],
 		});
 
-		await expect(summarizeContent(model, registry, "标题", "短资料正文")).resolves.toBe("## 摘要\n\n结果");
+		await expect(summarizeContent(model, registry, "标题", "短资料正文")).resolves.toBe("## 摘要\n\n结果\n");
 		const prompt = completeMock.mock.calls[0][1].messages[0].content[0].text as string;
 		expect(prompt).toContain("短资料正文");
 		expect(prompt).not.toContain("内容已截断");

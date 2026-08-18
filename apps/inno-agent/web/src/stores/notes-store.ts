@@ -350,13 +350,13 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 				title: this.selected.kind === "markdown" ? this.editorTitle.trim() || this.selected.title : undefined,
 				tags: this.selected.kind === "markdown" ? this.editorTags : undefined,
 			});
-			this.notice = "archived";
 			this.listBox = "archived";
 			await this.loadAll();
 			const updated = this.notes.find((note) => note.rawPath === result.rawPath);
 			if (updated) {
 				await this.selectNote(updated);
 			}
+			this.notice = "archived";
 			return result.wikiPagePath;
 		} catch {
 			this.error = "archiveFailed";

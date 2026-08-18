@@ -108,3 +108,22 @@ describe("notesStore unarchive", () => {
 		expect(notesStore.notice).toBe("unarchived");
 	});
 });
+
+describe("notesStore archive feedback", () => {
+	it("keeps the archived success notice after refreshing and selecting the result", async () => {
+		const orphan = { ...archivedMarkdown, kind: "orphan" as const, status: "uploaded" as const };
+		notesStore.selected = orphan;
+		apiMocks.archiveNote.mockResolvedValue({
+			rawPath: orphan.rawPath,
+			wikiPagePath: "wiki/sources/source.md",
+			wikiPages: ["wiki/sources/source.md"],
+			status: "indexed",
+		});
+		apiMocks.listNotes.mockResolvedValue({ notes: [archivedMarkdown] });
+		apiMocks.fetchRawContent.mockResolvedValue("source");
+
+		await expect(notesStore.archiveSelected()).resolves.toBe("wiki/sources/source.md");
+		expect(notesStore.notice).toBe("archived");
+		expect(notesStore.listBox).toBe("archived");
+	});
+});

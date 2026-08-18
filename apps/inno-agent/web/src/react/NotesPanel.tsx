@@ -11,6 +11,7 @@ import {
 	ExternalLink,
 	FileText,
 	FileUp,
+	LoaderCircle,
 	Plus,
 	RefreshCw,
 	Save,
@@ -169,8 +170,8 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						disabled={state.isArchiving}
 						onClick={() => void handleArchive()}
 					>
-						<Archive size={14} />
-						{t("notes.actions.archive")}
+						{state.isArchiving ? <LoaderCircle size={14} className="animate-spin" /> : <Archive size={14} />}
+						{state.isArchiving ? t("notes.actions.archiving") : t("notes.actions.archive")}
 					</button>
 				) : null}
 				{showRearchive ? (
@@ -180,8 +181,8 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						disabled={state.isArchiving}
 						onClick={() => void handleArchive()}
 					>
-						<Archive size={14} />
-						{t("notes.actions.rearchive")}
+						{state.isArchiving ? <LoaderCircle size={14} className="animate-spin" /> : <Archive size={14} />}
+						{state.isArchiving ? t("notes.actions.archiving") : t("notes.actions.rearchive")}
 					</button>
 				) : null}
 				{showOpenWiki ? (
@@ -361,6 +362,12 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 				{state.error ? (
 					<p className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
 						{t(`notes.flash.${state.error}`)}
+					</p>
+				) : null}
+				{state.isArchiving ? (
+					<p className="flex items-center gap-2 border-b border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+						<LoaderCircle size={13} className="animate-spin" />
+						{t("notes.flash.archiving")}
 					</p>
 				) : null}
 

@@ -1,47 +1,15 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { randomUUID, createHash } from "node:crypto";
-import { join, isAbsolute, resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
 import type { ManifestEntry, RawSourceType } from "./types.js";
-import { saveRaw, saveRawFile } from "./raw-store.js";
-import { convertToExtracted } from "./source-converter.js";
-import { upsertManifest, readManifest, findManifestByHash } from "./manifest-store.js";
-import {
-	createSourcePage,
-	rebuildIndex,
-	appendLog,
-	ensureL2Directories,
-	readMaintenanceContext,
-} from "./wiki-maintainer.js";
 import { queryWikiHybridDetailed } from "./wiki-query.js";
-import { summarizeContent } from "./summarizer.js";
-import { maintainLinkedWikiPages } from "./wiki-linker.js";
-import { fileExists, readText } from "../../storage/file-store.js";
-import { parseDocument, DocumentParseError } from "./document-parser.js";
+import { appendLog, ensureL2Directories } from "./wiki-maintainer.js";
 import { getL2Memory, type L2Memory } from "./l2-memory.js";
-import { regenerateOverview } from "./overview.js";
 import { formatL2LintReport, runL2Lint } from "./l2-lint.js";
+import { archiveL2Source, ArchiveSourceReadError, type ArchiveL2Source } from "./l2-archive-service.js";
 import { logger } from "../../logger.js";
-
-// PI may dispatch several archive tool calls from one turn concurrently.
-const archiveQueueTails = new Map<string, Promise<void>>();
-
-function enqueueArchive<T>(l2DataDir: string, task: () => Promise<T>): Promise<T> {
-	const queueKey = resolve(l2DataDir);
-	const previous = archiveQueueTails.get(queueKey) ?? Promise.resolve();
-	const run = previous.then(task, task);
-	const tail = run.then(
-		() => undefined,
-		() => undefined,
-	);
-	archiveQueueTails.set(queueKey, tail);
-
-	return run.finally(() => {
-		if (archiveQueueTails.get(queueKey) === tail) archiveQueueTails.delete(queueKey);
-	});
-}
 
 /**
  * Create L2 Wiki memory tools for the Inno Agent.
@@ -91,40 +59,17 @@ export function createL2Tools(
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			if (isEnabled && !isEnabled()) return l2DisabledResult();
-			return enqueueArchive(l2DataDir, async () => {
-			ensureL2Directories(l2DataDir);
-			const maintenanceContext = readMaintenanceContext(l2DataDir);
-
 			const sourceType = params.sourceType as RawSourceType;
 			const isFileType = sourceType === "pdf" || sourceType === "word" || sourceType === "image";
-
-			// Resolve content: either from params.content or by parsing a file
-			let content: string;
-			let resolvedFilePath: string | undefined;
-
+			let source: ArchiveL2Source;
 			if (isFileType && params.filePath) {
-				// File-based: parse with LiteParse
 				const workspaceDir = getActiveWorkspaceDir?.() || process.env.INNO_WORKSPACE_DIR || process.cwd();
-				resolvedFilePath = isAbsolute(params.filePath)
+				const resolvedFilePath = isAbsolute(params.filePath)
 					? params.filePath
 					: resolve(workspaceDir, params.filePath);
-
-				let parsed;
-				try {
-					parsed = await parseDocument(resolvedFilePath);
-				} catch (err) {
-					logger.warn({ err, filePath: resolvedFilePath }, "l2_archive: failed to parse document");
-					const msg = err instanceof DocumentParseError ? err.message : String(err);
-					return {
-						content: [{ type: "text" as const, text: `文件解析失败: ${msg}` }],
-						details: { error: err instanceof DocumentParseError ? err.code : "parse_error" },
-					};
-				}
-
-				content = parsed.text;
+				source = { kind: "file", filePath: resolvedFilePath, sourceType };
 			} else if (params.content) {
-				// Text-based: use content directly
-				content = params.content;
+				source = { kind: "content", content: params.content, sourceType };
 			} else {
 				return {
 					content: [{ type: "text" as const, text: "参数错误：必须提供 content（文本内容）或 filePath（文件路径）。" }],
@@ -132,151 +77,71 @@ export function createL2Tools(
 				};
 			}
 
-			const contentHash = createHash("sha256").update(content).digest("hex").slice(0, 16);
-
-				// Completed content is a duplicate. Incomplete records resume below.
-				const existing = !params.force ? findManifestByHash(l2DataDir, contentHash) : undefined;
-				if (existing?.status === "indexed") {
-						return {
+			try {
+				const result = await archiveL2Source(
+					l2DataDir,
+					{
+						title: params.title,
+						source,
+						tags: params.tags,
+						origin: params.origin as ManifestEntry["source"]["origin"] | undefined,
+						url: params.url,
+						sessionId: params.sessionId,
+						force: params.force,
+						dedupeBy: "content",
+						logLabel: "agent tool",
+					},
+					{ model: ctx.model, modelRegistry: ctx.modelRegistry, memory: l2Memory },
+				);
+				if (result.duplicate) {
+					return {
 						content: [
 							{
 								type: "text" as const,
 								text:
 									`该内容已归档，无需重复保存。\n\n` +
-									`- ID: ${existing.id}\n` +
-									`- 标题: ${existing.title}\n` +
-									`- Wiki 页面: ${existing.wikiPages.join(", ") || "无"}\n\n` +
+									`- ID: ${result.id}\n` +
+									`- 标题: ${result.title}\n` +
+									`- Wiki 页面: ${result.wikiPages.join(", ") || "无"}\n\n` +
 									`如需强制归档，请设置 force: true。`,
 							},
 						],
-						details: { id: existing.id, duplicate: true },
+						details: { id: result.id, duplicate: true },
 					};
 				}
 
-				const existingRawPath = existing?.rawPath && fileExists(join(l2DataDir, existing.rawPath))
-					? existing.rawPath
-					: undefined;
-				const rawPath = existingRawPath ?? (resolvedFilePath
-					? saveRawFile(l2DataDir, params.title, resolvedFilePath, sourceType)
-					: saveRaw(l2DataDir, params.title, content, sourceType, params.url));
-
-				const id = existing?.id ?? `l2src_${randomUUID().slice(0, 8)}`;
-				const tags = params.tags ?? [];
-
-				// Convert to extracted markdown
-				const existingExtractedPath = existing?.extractedPath && fileExists(join(l2DataDir, existing.extractedPath))
-					? existing.extractedPath
-					: undefined;
-				const extractedPath = existingExtractedPath
-					?? convertToExtracted(l2DataDir, params.title, content, sourceType);
-
-				// Persist the recoverable source record before model/page work begins.
-				const inferredOrigin = sourceType === "conversation" ? "conversation" : "user_upload";
-				const entry: ManifestEntry = {
-					...existing,
-					id,
-				title: params.title,
-				sourceType,
-				rawPath,
-				extractedPath,
-				wikiPages: [],
-				tags,
-				contentHash,
-				status: "extracted",
-				source: {
-					origin: (params.origin ?? inferredOrigin) as ManifestEntry["source"]["origin"],
-					...(params.url && { url: params.url }),
-					...(params.sessionId && { sessionId: params.sessionId }),
-				},
-					createdAt: existing?.createdAt ?? new Date().toISOString(),
-					updatedAt: new Date().toISOString(),
-				};
-				upsertManifest(l2DataDir, entry);
-
-				let wikiPagePath = "";
-				let linkMaintenance: Awaited<ReturnType<typeof maintainLinkedWikiPages>>;
-				try {
-					// Create wiki source page (with LLM summary)
-					const extractedContent = readText(join(l2DataDir, extractedPath));
-					let summaryBody = `## 摘要\n\n${extractedContent}`;
-					if (ctx.model) {
-						const summary = await summarizeContent(ctx.model, ctx.modelRegistry, params.title, extractedContent);
-						if (summary) summaryBody = summary;
-					}
-					wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, extractedPath);
-					linkMaintenance = await maintainLinkedWikiPages(
-						l2DataDir,
-						entry,
-						wikiPagePath,
-						summaryBody,
-						ctx.model,
-						ctx.modelRegistry,
-					);
-					if (linkMaintenance.sourcePageBody !== summaryBody) {
-						createSourcePage(l2DataDir, entry, linkMaintenance.sourcePageBody, extractedPath);
-					}
-					entry.wikiPages = [wikiPagePath, ...linkMaintenance.pages];
-					entry.status = "indexed";
-					entry.updatedAt = new Date().toISOString();
-					upsertManifest(l2DataDir, entry);
-
-					// Rebuild index
-					const allEntries = readManifest(l2DataDir);
-					rebuildIndex(l2DataDir, allEntries);
-
-					// Keep the retrieval index in sync with the touched pages.
-					for (const wikiPath of entry.wikiPages) {
-						await l2Memory.indexPageByPath(wikiPath);
-					}
-
-					// Regenerate the knowledge-base overview (best-effort; never fails archive).
-					try {
-						const overviewPath = await regenerateOverview(l2DataDir, ctx.model, ctx.modelRegistry);
-						if (overviewPath) await l2Memory.indexPageByPath(overviewPath);
-					} catch (err) {
-						logger.warn({ err }, "l2_archive: overview regeneration failed");
-					}
-				} catch (err) {
-					entry.status = "error";
-					entry.updatedAt = new Date().toISOString();
-					upsertManifest(l2DataDir, entry);
-					throw err;
-				}
-
-			// Append log
-			appendLog(
-				l2DataDir,
-				"ingest",
-				params.title,
-				[
-					`- ID: ${id}`,
-					`- 类型: ${sourceType}`,
-					`- 原始文件: ${rawPath}`,
-					`- 提取文本: ${extractedPath}`,
-					`- Source 页面: ${wikiPagePath}`,
-					`- concepts/entities: 新建 ${linkMaintenance.created.length}, 更新 ${linkMaintenance.updated.length}, 不变 ${linkMaintenance.unchanged.length}, 争议 ${linkMaintenance.contested.length}`,
-					`- 维护前上下文: schema ${maintenanceContext.schema.length} chars, index ${maintenanceContext.index.length} chars, recent log ${maintenanceContext.recentLog.length} chars`,
-				].join("\n"),
-			);
-
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text:
-							`资料已归档到 L2 Wiki。\n\n` +
-							`- ID: ${id}\n` +
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text:
+								`资料已归档到 L2 Wiki。\n\n` +
+							`- ID: ${result.id}\n` +
 							`- 标题: ${params.title}\n` +
-							`- 原始文件: ${rawPath}\n` +
-							`- Wiki 页面: ${wikiPagePath}\n` +
-							`- 自动维护: 新建 ${linkMaintenance.created.length} 个概念/实体页，更新 ${linkMaintenance.updated.length} 个\n` +
-							`- 标签: ${tags.join(", ") || "无"}\n\n` +
+							`- 原始文件: ${result.rawPath}\n` +
+							`- Wiki 页面: ${result.wikiPagePath}\n` +
+							`- 自动维护: 新建 ${result.createdCount} 个概念/实体页，更新 ${result.updatedCount} 个\n` +
+							`- 标签: ${result.tags.join(", ") || "无"}\n\n` +
 							`Wiki 索引已更新。`,
+						},
+					],
+					details: {
+						id: result.id,
+						rawPath: result.rawPath,
+						wikiPagePath: result.wikiPagePath,
+						linkedPages: result.linkedPages,
 					},
-				],
-				details: { id, rawPath, wikiPagePath, linkedPages: linkMaintenance.pages },
-			};
-			});
+				};
+			} catch (err) {
+				if (err instanceof ArchiveSourceReadError) {
+					logger.warn({ err }, "l2_archive: failed to read source");
+					return {
+						content: [{ type: "text" as const, text: `文件解析失败: ${err.message}` }],
+						details: { error: err.code === "READ_ERROR" ? "parse_error" : err.code },
+					};
+				}
+				throw err;
+			}
 		},
 	});
 

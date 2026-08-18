@@ -7,7 +7,7 @@ import { readText, writeText } from "../../storage/file-store.js";
 import { resolveContainedPath } from "../../utils/path-safety.js";
 import { archiveL2Source, type ArchiveL2Result } from "./l2-archive-service.js";
 import type { L2Memory } from "./l2-memory.js";
-import { findManifestByRawPath, readManifest, upsertManifest } from "./manifest-store.js";
+import { findManifestById, findManifestByRawPath, readManifest, upsertManifest } from "./manifest-store.js";
 import { ensureL2Directories } from "./wiki-maintainer.js";
 import type { ManifestEntry, ManifestStatus, RawSourceType } from "./types.js";
 import { logger } from "../../logger.js";
@@ -46,6 +46,7 @@ export interface SourcesListResponse {
 }
 
 export type ArchiveRawResult = ArchiveL2Result;
+export type RegenerateSourceResult = ArchiveL2Result;
 
 export interface SaveRawMarkdownResult {
 	rawPath: string;
@@ -181,6 +182,34 @@ export function readRawTextPreview(l2DataDir: string, rawPath: string, maxChars 
 	if (!absPath) throw new Error("Invalid raw path");
 	const text = readText(absPath);
 	return text.length > maxChars ? `${text.slice(0, maxChars)}\n\n...(已截断)` : text;
+}
+
+export async function regenerateL2Source(
+	l2DataDir: string,
+	sourceId: string,
+	runtime: {
+		model?: Model<any>;
+		modelRegistry?: ModelRegistry;
+		memory?: L2Memory;
+	} = {},
+): Promise<RegenerateSourceResult> {
+	const entry = findManifestById(l2DataDir, sourceId);
+	if (!entry) throw new Error(`Source not found: ${sourceId}`);
+	return archiveL2Source(
+		l2DataDir,
+		{
+			title: entry.title,
+			source: { kind: "existing", rawPath: entry.rawPath, sourceType: entry.sourceType },
+			tags: entry.tags,
+			origin: entry.source.origin,
+			url: entry.source.url,
+			sessionId: entry.source.sessionId,
+			force: true,
+			dedupeBy: "rawPath",
+			logLabel: "source regeneration",
+		},
+		runtime,
+	);
 }
 
 export function saveRawMarkdownContent(

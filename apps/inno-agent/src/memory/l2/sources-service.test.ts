@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { readManifest, upsertManifest } from "./manifest-store.js";
-import { saveRawMarkdownContent } from "./sources-service.js";
+import { regenerateL2Source, saveRawMarkdownContent } from "./sources-service.js";
+import type { L2Memory } from "./l2-memory.js";
 import { writeText } from "../../storage/file-store.js";
 
 const roots: string[] = [];
@@ -50,5 +51,42 @@ describe("saveRawMarkdownContent", () => {
 		const root = tempRoot();
 		expect(() => saveRawMarkdownContent(root, "../outside.md", "x")).toThrow("Invalid raw path");
 		expect(() => saveRawMarkdownContent(root, "raw/notes/note.md", "x")).toThrow("Invalid raw path");
+	});
+});
+
+describe("regenerateL2Source", () => {
+	it("reuses the source identity through the shared archive pipeline", async () => {
+		const root = tempRoot();
+		const rawPath = "raw/uploads/source.md";
+		writeText(join(root, rawPath), "# Agent systems\n\nAgents use tools and memory.\n");
+		upsertManifest(root, {
+			id: "l2src_test",
+			title: "Agent systems",
+			sourceType: "markdown",
+			rawPath,
+			wikiPages: [],
+			tags: ["agents"],
+			contentHash: "old-hash",
+			status: "outdated",
+			source: { origin: "user_upload" },
+			createdAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-01T00:00:00.000Z",
+		});
+		const memory = {
+			indexPageByPath: async () => undefined,
+			removePage: async () => undefined,
+		} as unknown as L2Memory;
+
+		const result = await regenerateL2Source(root, "l2src_test", { memory });
+
+		expect(result.sourceId).toBe("l2src_test");
+		expect(result.duplicate).toBe(false);
+		expect(readManifest(root)).toHaveLength(1);
+		expect(readManifest(root)[0]).toMatchObject({ id: "l2src_test", status: "indexed" });
+	});
+
+	it("rejects an unknown source id", async () => {
+		const root = tempRoot();
+		await expect(regenerateL2Source(root, "missing")).rejects.toThrow("Source not found");
 	});
 });

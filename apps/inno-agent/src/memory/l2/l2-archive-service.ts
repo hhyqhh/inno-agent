@@ -85,7 +85,7 @@ export class ArchiveSourceReadError extends Error {
 
 const archiveQueueTails = new Map<string, Promise<void>>();
 
-function enqueueArchive<T>(l2DataDir: string, task: () => Promise<T>): Promise<T> {
+export function runInL2ArchiveQueue<T>(l2DataDir: string, task: () => Promise<T>): Promise<T> {
 	const queueKey = resolve(l2DataDir);
 	const previous = archiveQueueTails.get(queueKey) ?? Promise.resolve();
 	const run = previous.then(task, task);
@@ -191,7 +191,7 @@ export function archiveL2Source(
 	request: ArchiveL2Request,
 	runtime: ArchiveL2Runtime = {},
 ): Promise<ArchiveL2Result> {
-	return enqueueArchive(l2DataDir, async () => {
+	return runInL2ArchiveQueue(l2DataDir, async () => {
 		ensureL2Directories(l2DataDir);
 		const resolvedSource = await resolveArchiveContent(l2DataDir, request.source);
 		const content = resolvedSource.content;

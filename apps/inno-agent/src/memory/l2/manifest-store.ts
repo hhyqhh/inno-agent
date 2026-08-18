@@ -65,3 +65,12 @@ export function findManifestByRawPath(l2DataDir: string, rawPath: string): Manif
 	const normalized = rawPath.replace(/\\/g, "/");
 	return readManifest(l2DataDir).find((e) => e.rawPath.replace(/\\/g, "/") === normalized);
 }
+
+export function removeManifestEntry(l2DataDir: string, id: string): boolean {
+	const entries = readManifest(l2DataDir);
+	const next = entries.filter((entry) => entry.id !== id);
+	if (next.length === entries.length) return false;
+	const lines = next.map((entry) => JSON.stringify(entry)).join("\n");
+	writeText(getManifestPath(l2DataDir), lines ? `${lines}\n` : "");
+	return true;
+}

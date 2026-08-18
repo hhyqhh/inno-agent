@@ -129,7 +129,10 @@
 			"empty": "Select a node to inspect. Double-click a non-tag node to open its page.",
 			"type": "Type",
 			"tags": "Tags",
-			"openPage": "Open page"
+			"openPage": "Open page",
+			"editTags": "Edit tags",
+			"addTags": "Add tags",
+			"tagsPlaceholder": "Comma-separated tags"
 		},
 		"types": {
 			"source-summary": "Source",

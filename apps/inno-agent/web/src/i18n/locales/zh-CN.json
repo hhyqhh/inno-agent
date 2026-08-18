@@ -129,7 +129,10 @@
 			"empty": "选择节点查看详细信息。双击非标签节点可打开页面。",
 			"type": "类型",
 			"tags": "标签",
-			"openPage": "打开页面"
+			"openPage": "打开页面",
+			"editTags": "编辑标签",
+			"addTags": "添加标签",
+			"tagsPlaceholder": "使用逗号分隔标签"
 		},
 		"types": {
 			"source-summary": "资料摘要",

@@ -339,7 +339,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	}
 
 	findNoteById(noteId: string): NoteSummary | undefined {
-		return this.notes.find((note) => note.noteId === noteId);
+		return this.notes.find((note) => note.noteId === noteId || note.sourceId === noteId);
 	}
 }
 

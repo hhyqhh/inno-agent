@@ -75,9 +75,9 @@ describe("archiveL2Note", () => {
 			content: "第一版 [[笔记流程]]",
 		});
 
-		await archiveL2Note(root, created.rawPath, { memory });
+		const archived = await archiveL2Note(root, created.rawPath, { memory });
 		expect(listL2Notes(root).notes).toMatchObject([
-			{ rawPath: created.rawPath, kind: "markdown", status: "indexed" },
+			{ rawPath: created.rawPath, sourceId: archived.sourceId, kind: "markdown", status: "indexed" },
 		]);
 		saveL2NoteContent(root, created.rawPath, { title: "生命周期", content: "第二版 [[笔记流程]]" });
 		expect(listL2Notes(root).notes).toMatchObject([

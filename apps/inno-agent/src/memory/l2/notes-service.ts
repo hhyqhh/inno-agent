@@ -37,6 +37,7 @@ export type NotebookItemStatus = NoteStatus | ManifestStatus | "uploaded";
 
 export interface NoteSummaryDto {
 	noteId: string;
+	sourceId?: string;
 	rawPath: string;
 	title: string;
 	tags: string[];
@@ -115,6 +116,7 @@ function noteSummaryFromFile(l2DataDir: string, rawPath: string): NoteSummaryDto
 		const title = frontmatter.title || extractNoteTitle(body, basename(rawPath, ".md"));
 		return {
 			noteId: frontmatter.note_id,
+			sourceId: manifest?.id ?? frontmatter.source_id,
 			rawPath,
 			title,
 			tags: frontmatter.tags,
@@ -138,6 +140,7 @@ function manifestToNoteSummary(entry: ManifestEntry): NoteSummaryDto {
 	const rawPath = entry.rawPath.replace(/\\/g, "/");
 	return {
 		noteId: entry.id,
+		sourceId: entry.id,
 		rawPath,
 		title: entry.title,
 		tags: entry.tags,

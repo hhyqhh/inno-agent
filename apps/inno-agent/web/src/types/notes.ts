@@ -7,6 +7,7 @@ export type NotebookItemStatus = NoteStatus | ManifestStatus | "uploaded";
 
 export interface NoteSummary {
 	noteId: string;
+	sourceId?: string;
 	rawPath: string;
 	title: string;
 	tags: string[];

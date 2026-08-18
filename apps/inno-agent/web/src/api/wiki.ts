@@ -1,5 +1,12 @@
 import { apiFetch } from "./client.js";
-import type { WikiPageSummary, WikiPageDetail, WikiGraphData, WikiStats, WikiTagSummary } from "../types/wiki.js";
+import type {
+	RegenerateSourceResult,
+	WikiPageSummary,
+	WikiPageDetail,
+	WikiGraphData,
+	WikiStats,
+	WikiTagSummary,
+} from "../types/wiki.js";
 
 export async function listWikiPages(tag?: string): Promise<WikiPageSummary[]> {
 	const query = tag ? `?tag=${encodeURIComponent(tag)}` : "";
@@ -38,6 +45,13 @@ export async function getWikiGraph(): Promise<WikiGraphData> {
 export async function listWikiTags(): Promise<WikiTagSummary[]> {
 	const result = await apiFetch<{ tags: WikiTagSummary[] }>("/api/l2/tags");
 	return result.tags;
+}
+
+export async function regenerateSource(sourceId: string): Promise<RegenerateSourceResult> {
+	return apiFetch<RegenerateSourceResult>("/api/l2/sources/regenerate", {
+		method: "POST",
+		body: JSON.stringify({ sourceId }),
+	});
 }
 
 export async function getWikiStats(): Promise<WikiStats> {

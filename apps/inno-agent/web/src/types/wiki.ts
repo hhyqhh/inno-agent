@@ -64,6 +64,13 @@ export interface WikiTagSummary {
 	updatedAt: string;
 }
 
+export interface RegenerateSourceResult {
+	sourceId: string;
+	wikiPagePath: string;
+	wikiPages: string[];
+	status: "indexed";
+}
+
 export interface WikiStats {
 	pageCount: number;
 	totalSize: number;

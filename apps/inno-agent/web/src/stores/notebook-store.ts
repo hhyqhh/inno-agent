@@ -7,6 +7,7 @@ import {
 	deleteWikiPage,
 	getWikiGraph,
 	listWikiTags,
+	regenerateSource,
 } from "../api/wiki.js";
 import type {
 	WikiPageSummary,
@@ -35,6 +36,8 @@ class NotebookStoreImpl extends EventEmitter<NotebookStoreEvents> {
 	isLoadingPage = false;
 	isEditing = false;
 	isDeletingPage = false;
+	isRegeneratingSource = false;
+	regeneratingSourceId: string | null = null;
 	editBuffer = "";
 	filterType: WikiPageType | "all" = "all";
 	searchQuery = "";
@@ -216,6 +219,23 @@ class NotebookStoreImpl extends EventEmitter<NotebookStoreEvents> {
 			await this.selectPage(path, { switchView: false });
 		}
 		await Promise.all([this.loadPages(), this.loadGraph(), this.loadTags()]);
+	}
+
+	async regenerateSource(sourceId: string): Promise<void> {
+		const currentPath = this.currentPage?.path ?? null;
+		this.isRegeneratingSource = true;
+		this.regeneratingSourceId = sourceId;
+		this.emit("change", undefined);
+		try {
+			const result = await regenerateSource(sourceId);
+			await Promise.all([this.loadPages(), this.loadGraph(), this.loadTags()]);
+			const nextPath = result.wikiPagePath || currentPath;
+			if (nextPath) await this.selectPage(nextPath, { switchView: false });
+		} finally {
+			this.isRegeneratingSource = false;
+			this.regeneratingSourceId = null;
+			this.emit("change", undefined);
+		}
 	}
 
 	searchByTag(tag: string): void {

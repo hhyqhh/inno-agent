@@ -56,6 +56,14 @@ export interface WikiGraphCommunities {
 	lowCohesion: { community: number; cohesion: number; size: number }[];
 }
 
+export interface WikiTagSummary {
+	id: string;
+	canonicalKey: string;
+	displayName: string;
+	usageCount: number;
+	updatedAt: string;
+}
+
 export interface WikiStats {
 	pageCount: number;
 	totalSize: number;

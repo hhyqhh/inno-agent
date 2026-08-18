@@ -3,11 +3,11 @@ import { basename, extname, join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
-import { readText } from "../../storage/file-store.js";
+import { readText, writeText } from "../../storage/file-store.js";
 import { resolveContainedPath } from "../../utils/path-safety.js";
 import { archiveL2Source, type ArchiveL2Result } from "./l2-archive-service.js";
 import type { L2Memory } from "./l2-memory.js";
-import { readManifest } from "./manifest-store.js";
+import { findManifestByRawPath, readManifest, upsertManifest } from "./manifest-store.js";
 import { ensureL2Directories } from "./wiki-maintainer.js";
 import type { ManifestEntry, ManifestStatus, RawSourceType } from "./types.js";
 import { logger } from "../../logger.js";
@@ -46,6 +46,11 @@ export interface SourcesListResponse {
 }
 
 export type ArchiveRawResult = ArchiveL2Result;
+
+export interface SaveRawMarkdownResult {
+	rawPath: string;
+	status: ManifestStatus | "uploaded";
+}
 
 const RAW_SCAN_DIRS = ["raw/uploads", "raw/conversations"] as const;
 
@@ -176,4 +181,34 @@ export function readRawTextPreview(l2DataDir: string, rawPath: string, maxChars 
 	if (!absPath) throw new Error("Invalid raw path");
 	const text = readText(absPath);
 	return text.length > maxChars ? `${text.slice(0, maxChars)}\n\n...(已截断)` : text;
+}
+
+export function saveRawMarkdownContent(
+	l2DataDir: string,
+	rawPath: string,
+	content: string,
+): SaveRawMarkdownResult {
+	ensureL2Directories(l2DataDir);
+	const normalizedPath = rawPath.replace(/\\/g, "/");
+	if (!normalizedPath.startsWith("raw/") || normalizedPath.startsWith("raw/notes/")) {
+		throw new Error("Invalid raw path");
+	}
+	if (extname(normalizedPath).toLowerCase() !== ".md") {
+		throw new Error("Only Markdown raw files can be edited");
+	}
+	const absPath = resolveContainedPath(join(l2DataDir, "raw"), normalizedPath.slice("raw/".length));
+	if (!absPath || !existsSync(absPath) || !statSync(absPath).isFile()) {
+		throw new Error("文件不存在");
+	}
+
+	writeText(absPath, content.endsWith("\n") ? content : `${content}\n`);
+	const entry = findManifestByRawPath(l2DataDir, normalizedPath);
+	if (!entry) return { rawPath: normalizedPath, status: "uploaded" };
+
+	upsertManifest(l2DataDir, {
+		...entry,
+		status: "outdated",
+		updatedAt: new Date().toISOString(),
+	});
+	return { rawPath: normalizedPath, status: "outdated" };
 }

@@ -17,7 +17,7 @@ import {
 	saveL2NoteContent,
 } from "../../memory/l2/notes-service.js";
 import { listNoteTemplates } from "../../memory/l2/note-templates.js";
-import { listL2Sources, readRawTextPreview } from "../../memory/l2/sources-service.js";
+import { listL2Sources, readRawTextPreview, saveRawMarkdownContent } from "../../memory/l2/sources-service.js";
 import type { L2Memory } from "../../memory/l2/l2-memory.js";
 import { logger } from "../../logger.js";
 import { safeJoinReal } from "../file-helpers.js";
@@ -91,7 +91,9 @@ export async function handleNotebookRoutes(
 	}
 
 	if (method === "GET" && url.startsWith("/api/l2/raw/content?")) {
-		const rawPath = new URL(url, "http://localhost").searchParams.get("path");
+		const params = new URL(url, "http://localhost").searchParams;
+		const rawPath = params.get("path");
+		const full = params.get("full") === "1";
 		if (!rawPath) {
 			json(res, 400, { error: "Missing path parameter" });
 			return true;
@@ -108,11 +110,37 @@ export async function handleNotebookRoutes(
 		try {
 			json(res, 200, {
 				path: resolved.rawPath,
-				content: readRawTextPreview(l2DataDir, resolved.rawPath),
+				content: readRawTextPreview(l2DataDir, resolved.rawPath, full ? Number.MAX_SAFE_INTEGER : undefined),
 			});
 		} catch (err) {
 			logger.warn({ err, rawPath: resolved.rawPath }, "failed to read raw content");
 			json(res, 500, { error: "Failed to read raw content" });
+		}
+		return true;
+	}
+
+	if (method === "PUT" && url === "/api/l2/raw/content") {
+		const body = await readBody(req) as Record<string, unknown>;
+		const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
+		const hasContent = typeof body.content === "string";
+		if (!rawPath || !hasContent) {
+			json(res, 400, { error: "Missing rawPath or content" });
+			return true;
+		}
+		const resolved = resolveRawPath(l2DataDir, rawPath);
+		if (!resolved) {
+			json(res, 400, { error: "Invalid raw path" });
+			return true;
+		}
+		if (!isFile(resolved.fullPath)) {
+			json(res, 404, { error: "Raw file not found" });
+			return true;
+		}
+		try {
+			json(res, 200, saveRawMarkdownContent(l2DataDir, resolved.rawPath, body.content as string));
+		} catch (err) {
+			logger.warn({ err, rawPath: resolved.rawPath }, "failed to save raw Markdown");
+			json(res, 500, { error: errorMessage(err, "Save raw Markdown failed") });
 		}
 		return true;
 	}

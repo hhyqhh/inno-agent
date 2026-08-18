@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
@@ -21,7 +22,7 @@ import {
 	readMaintenanceContext,
 	rebuildIndex,
 } from "./wiki-maintainer.js";
-import { maintainLinkedWikiPages } from "./wiki-linker.js";
+import { maintainLinkedWikiPages, reconcileLinkedWikiSource } from "./wiki-linker.js";
 
 type FileSourceType = Extract<RawSourceType, "pdf" | "word" | "image">;
 
@@ -82,13 +83,6 @@ export class ArchiveSourceReadError extends Error {
 	}
 }
 
-export class ArchiveReplacementRequiredError extends Error {
-	constructor(readonly rawPath: string) {
-		super(`Re-archiving changed content is not enabled for ${rawPath}`);
-		this.name = "ArchiveReplacementRequiredError";
-	}
-}
-
 const archiveQueueTails = new Map<string, Promise<void>>();
 
 function enqueueArchive<T>(l2DataDir: string, task: () => Promise<T>): Promise<T> {
@@ -128,6 +122,13 @@ function reusableStoredFile(l2DataDir: string, storedPath: string | undefined, r
 	if (!normalized.startsWith(prefix) || normalized === prefix) return undefined;
 	const fullPath = resolveContainedPath(join(l2DataDir, rootName), normalized.slice(prefix.length));
 	return fullPath && fileExists(fullPath) ? normalized : undefined;
+}
+
+function resolveWikiSourceFile(l2DataDir: string, wikiPath: string): string | undefined {
+	const normalized = normalizeRawPath(wikiPath);
+	const prefix = "wiki/sources/";
+	if (!normalized.startsWith(prefix) || normalized === prefix) return undefined;
+	return resolveContainedPath(join(l2DataDir, "wiki", "sources"), normalized.slice(prefix.length)) ?? undefined;
 }
 
 async function resolveArchiveContent(
@@ -213,10 +214,6 @@ export function archiveL2Source(
 			await request.onIndexed?.(duplicateResult);
 			return duplicateResult;
 		}
-		if (dedupeByRawPath && existing?.status === "indexed") {
-			throw new ArchiveReplacementRequiredError(resolvedSource.requestedRawPath ?? existing.rawPath);
-		}
-
 		const reusableRawPath = reusableStoredFile(l2DataDir, existing?.rawPath, "raw");
 		const rawPath = resolvedSource.requestedRawPath
 			?? reusableRawPath
@@ -236,6 +233,8 @@ export function archiveL2Source(
 		const sourceUrl = request.url ?? existing?.source.url;
 		const sourceSessionId = request.sessionId ?? existing?.source.sessionId;
 		const previousWikiPages = existing?.wikiPages ?? [];
+		const previousSourcePages = previousWikiPages.filter((path) => path.startsWith("wiki/sources/"));
+		const preferredSourcePagePath = previousSourcePages[0];
 		const entry: ManifestEntry = {
 			...existing,
 			id: existing?.id ?? request.preferredId ?? `l2src_${randomUUID().slice(0, 8)}`,
@@ -269,7 +268,13 @@ export function archiveL2Source(
 				if (summary) summaryBody = summary;
 			}
 
-			const wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, extractedPath);
+			const wikiPagePath = createSourcePage(
+				l2DataDir,
+				entry,
+				summaryBody,
+				extractedPath,
+				preferredSourcePagePath,
+			);
 			linkMaintenance = await maintainLinkedWikiPages(
 				l2DataDir,
 				entry,
@@ -279,10 +284,49 @@ export function archiveL2Source(
 				runtime.modelRegistry,
 			);
 			if (linkMaintenance.sourcePageBody !== summaryBody) {
-				createSourcePage(l2DataDir, entry, linkMaintenance.sourcePageBody, extractedPath);
+				createSourcePage(
+					l2DataDir,
+					entry,
+					linkMaintenance.sourcePageBody,
+					extractedPath,
+					wikiPagePath,
+				);
 			}
 			const nextWikiPages = [wikiPagePath, ...linkMaintenance.pages];
+			const staleSourcePages = previousSourcePages.filter((path) => path !== wikiPagePath);
+			entry.wikiPages = Array.from(new Set([...previousWikiPages, ...nextWikiPages]));
+			entry.updatedAt = new Date().toISOString();
+			upsertManifest(l2DataDir, entry);
+
 			const memory = runtime.memory ?? getL2Memory(l2DataDir);
+			const nextLinkedPages = new Set(linkMaintenance.pages);
+			const previousLinkedPages = previousWikiPages.filter(
+				(path) => path.startsWith("wiki/entities/") || path.startsWith("wiki/concepts/"),
+			);
+			for (const previousLinkedPath of previousLinkedPages) {
+				const reconciled = reconcileLinkedWikiSource(l2DataDir, previousLinkedPath, {
+					sourceId: entry.id,
+					previousSourcePagePaths: previousSourcePages,
+					currentSourcePagePath: wikiPagePath,
+					currentTitle: entry.title,
+					keepSource: nextLinkedPages.has(previousLinkedPath),
+				});
+				if (!nextLinkedPages.has(previousLinkedPath)) {
+					if (reconciled.exists) await memory.indexPageByPath(reconciled.path);
+					else await memory.removePage(reconciled.path);
+				}
+			}
+
+			const manifestsBeforeCleanup = readManifest(l2DataDir);
+			for (const staleWikiPath of staleSourcePages) {
+				const referencedByOtherSource = manifestsBeforeCleanup.some(
+					(candidate) => candidate.id !== entry.id && candidate.wikiPages.includes(staleWikiPath),
+				);
+				if (referencedByOtherSource) continue;
+				const staleFile = resolveWikiSourceFile(l2DataDir, staleWikiPath);
+				if (staleFile && fileExists(staleFile)) unlinkSync(staleFile);
+				await memory.removePage(staleWikiPath);
+			}
 			for (const wikiPath of nextWikiPages) await memory.indexPageByPath(wikiPath);
 
 			entry.wikiPages = nextWikiPages;

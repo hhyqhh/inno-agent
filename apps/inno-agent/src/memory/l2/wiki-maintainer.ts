@@ -301,7 +301,15 @@ export function readMaintenanceContext(l2DataDir: string): { schema: string; ind
 // Source summary page
 // ============================================================================
 
-function sourcePageFilename(title: string, id: string): string {
+function sourcePageFilename(title: string, id: string, preferredWikiPath?: string): string {
+	const normalizedPreferredPath = preferredWikiPath?.replace(/\\/g, "/");
+	const preferredPrefix = "wiki/sources/";
+	if (normalizedPreferredPath?.startsWith(preferredPrefix)) {
+		const preferredName = normalizedPreferredPath.slice(preferredPrefix.length);
+		if (preferredName && !preferredName.includes("/") && preferredName.toLowerCase().endsWith(".md")) {
+			return preferredName;
+		}
+	}
 	const slug = title
 		.toLowerCase()
 		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
@@ -321,10 +329,11 @@ export function createSourcePage(
 	entry: ManifestEntry,
 	summaryBody: string,
 	extractedPath?: string,
+	preferredWikiPath?: string,
 ): string {
 	const dir = join(l2DataDir, "wiki", "sources");
 	ensureDir(dir);
-	const filename = sourcePageFilename(entry.title, entry.id);
+	const filename = sourcePageFilename(entry.title, entry.id, preferredWikiPath);
 	const fm: WikiPageFrontmatter = {
 		title: entry.title,
 		created: new Date().toISOString().slice(0, 10),

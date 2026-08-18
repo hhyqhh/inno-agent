@@ -13,6 +13,7 @@ import { parseFrontmatter, serializeFrontmatter } from "./wiki-maintainer.js";
 import { splitStructuralChunks } from "./structural-chunker.js";
 import { buildAliasIndex, normalizeWikiLink } from "./wiki-links.js";
 import { logger } from "../../logger.js";
+import { resolveContainedPath } from "../../utils/path-safety.js";
 
 type LinkablePageType = Extract<WikiPageType, "entity" | "concept">;
 
@@ -419,8 +420,30 @@ function addRelatedLinks(content: string, relatedTitles: string[]): string | nul
 	return `${content.trimEnd()}\n\n## 相关概念\n\n${bullets}\n`;
 }
 
-function referenceBullet(entry: ManifestEntry, sourcePagePath: string): string {
+function referenceBullet(entry: Pick<ManifestEntry, "title">, sourcePagePath: string): string {
 	return `- [[${entry.title}]] — \`${sourcePagePath}\``;
+}
+
+function refreshReferenceBullet(
+	content: string,
+	entry: Pick<ManifestEntry, "title">,
+	sourcePagePath: string,
+): { content: string; found: boolean; changed: boolean } {
+	const marker = `\`${sourcePagePath}\``;
+	const expected = referenceBullet(entry, sourcePagePath);
+	let found = false;
+	let changed = false;
+	const lines = content.split("\n").flatMap((line) => {
+		if (!line.trimStart().startsWith("- ") || !line.includes(marker)) return [line];
+		if (found) {
+			changed = true;
+			return [];
+		}
+		found = true;
+		if (line !== expected) changed = true;
+		return [expected];
+	});
+	return { content: lines.join("\n"), found, changed };
 }
 
 /**
@@ -455,12 +478,14 @@ function updateFrontmatterReference(content: string, entry: ManifestEntry, sourc
 }
 
 function addReferenceIfMissing(content: string, entry: ManifestEntry, sourcePagePath: string): string | null {
-	const bodyAlreadyReferencesSource = content.includes(sourcePagePath);
 	const metadataUpdate = updateFrontmatterReference(content, entry, sourcePagePath);
 	content = metadataUpdate.content;
 	let changed = metadataUpdate.changed;
 
-	if (bodyAlreadyReferencesSource) return changed ? content : null;
+	const refreshed = refreshReferenceBullet(content, entry, sourcePagePath);
+	content = refreshed.content;
+	changed ||= refreshed.changed;
+	if (refreshed.found) return changed ? content : null;
 
 	const bullet = referenceBullet(entry, sourcePagePath);
 	const sectionHeader = "\n## 相关资料";
@@ -474,6 +499,130 @@ function addReferenceIfMissing(content: string, entry: ManifestEntry, sourcePage
 		return `${before}\n${bullet}${after}`;
 	}
 	return `${content.trimEnd()}\n\n## 相关资料\n\n${bullet}\n`;
+}
+
+export interface ReconcileLinkedWikiSourceResult {
+	status: "unchanged" | "updated";
+	path: string;
+	exists: boolean;
+}
+
+/**
+ * Reconcile one source's provenance after re-archiving it. The helper only
+ * touches generated entity/concept pages and is idempotent so an interrupted
+ * archive can safely retry the cleanup.
+ */
+export function reconcileLinkedWikiSource(
+	l2DataDir: string,
+	wikiPath: string,
+	options: {
+		sourceId: string;
+		previousSourcePagePaths: string[];
+		currentSourcePagePath?: string;
+		currentTitle: string;
+		keepSource: boolean;
+	},
+): ReconcileLinkedWikiSourceResult {
+	const normalizedPath = wikiPath.replace(/\\/g, "/");
+	if (!normalizedPath.startsWith("wiki/entities/") && !normalizedPath.startsWith("wiki/concepts/")) {
+		return { status: "unchanged", path: normalizedPath, exists: false };
+	}
+	const absPath = resolveContainedPath(join(l2DataDir, "wiki"), normalizedPath.slice("wiki/".length));
+	if (!absPath || !existsSync(absPath)) return { status: "unchanged", path: normalizedPath, exists: false };
+
+	const original = readText(absPath);
+	const { frontmatter, body } = parseFrontmatter(original);
+	if (!frontmatter) return { status: "unchanged", path: normalizedPath, exists: true };
+
+	const previousPaths = new Set(options.previousSourcePagePaths.map((path) => path.replace(/\\/g, "/")));
+	const currentPath = options.currentSourcePagePath?.replace(/\\/g, "/");
+	const stalePaths = new Set(
+		[...previousPaths].filter((path) => !options.keepSource || path !== currentPath),
+	);
+	let changed = false;
+
+	const nextSources = frontmatter.sources.filter((path) => !stalePaths.has(path.replace(/\\/g, "/")));
+	if (nextSources.length !== frontmatter.sources.length) {
+		frontmatter.sources = nextSources;
+		changed = true;
+	}
+	if (options.keepSource && currentPath && !frontmatter.sources.includes(currentPath)) {
+		frontmatter.sources.push(currentPath);
+		changed = true;
+	}
+
+	if (options.keepSource) {
+		if (!frontmatter.source_ids.includes(options.sourceId)) {
+			frontmatter.source_ids.push(options.sourceId);
+			changed = true;
+		}
+	} else {
+		const nextSourceIds = frontmatter.source_ids.filter((id) => id !== options.sourceId);
+		if (nextSourceIds.length !== frontmatter.source_ids.length) {
+			frontmatter.source_ids = nextSourceIds;
+			changed = true;
+		}
+		const nextContradictions = (frontmatter.contradictions ?? []).filter((id) => id !== options.sourceId);
+		if (nextContradictions.length !== (frontmatter.contradictions ?? []).length) {
+			frontmatter.contradictions = nextContradictions;
+			changed = true;
+		}
+		if (nextContradictions.length === 0 && frontmatter.contested) {
+			frontmatter.contested = false;
+			changed = true;
+		}
+	}
+
+	let nextBody = body;
+	const sourceIdMarker = `\`${options.sourceId}\``;
+	const filteredLines = nextBody.split("\n").filter((line) => {
+		if (!line.trimStart().startsWith("- ")) return true;
+		if ([...stalePaths].some((path) => line.includes(`\`${path}\``))) return false;
+		if (!options.keepSource && line.includes(sourceIdMarker)) return false;
+		return true;
+	});
+	if (filteredLines.length !== nextBody.split("\n").length) {
+		nextBody = filteredLines.join("\n");
+		changed = true;
+	}
+
+	if (options.keepSource && currentPath) {
+		const entry = { title: options.currentTitle };
+		const refreshed = refreshReferenceBullet(nextBody, entry, currentPath);
+		nextBody = refreshed.content;
+		changed ||= refreshed.changed;
+		const refreshedContradictions = nextBody.split("\n").map((line) => {
+			if (!line.trimStart().startsWith("- ") || !line.includes(sourceIdMarker)) return line;
+			return line.replace(/（来源 \[\[[^\]]+\]\] /, `（来源 [[${options.currentTitle}]] `);
+		});
+		const refreshedBody = refreshedContradictions.join("\n");
+		if (refreshedBody !== nextBody) {
+			nextBody = refreshedBody;
+			changed = true;
+		}
+	}
+
+	const hasProvenance = frontmatter.source_ids.length > 0 || frontmatter.sources.length > 0;
+	if (!options.keepSource && !hasProvenance && changed) {
+		const backupHash = createHash("sha256").update(original).digest("hex").slice(0, 10);
+		const orphanDir = join(l2DataDir, "wiki", "orphans");
+		ensureDir(orphanDir);
+		const backupPath = wikiPathJoin(
+			"wiki",
+			"orphans",
+			`${basename(normalizedPath, ".md")}-${backupHash}.md`,
+		);
+		writeText(join(l2DataDir, backupPath), original);
+		frontmatter.status = "outdated";
+		frontmatter.confidence = "low";
+		frontmatter.contested = false;
+		frontmatter.contradictions = [];
+		nextBody = `# ${frontmatter.title}\n\n## 状态\n\n> 原始来源已更新；旧页面内容已备份到 \`${backupPath}\`，请重新确认。\n`;
+	}
+	if (!changed) return { status: "unchanged", path: normalizedPath, exists: true };
+	frontmatter.updated = new Date().toISOString().slice(0, 10);
+	writeText(absPath, `${serializeFrontmatter(frontmatter)}\n${nextBody}`);
+	return { status: "updated", path: normalizedPath, exists: true };
 }
 
 function upsertLinkedPage(

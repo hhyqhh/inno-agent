@@ -67,6 +67,8 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		isDeleting: notesStore.isDeleting,
 		isUploading: notesStore.isUploading,
 		searchQuery: notesStore.searchQuery,
+		filterTag: notesStore.filterTag,
+		tagSummaries: notesStore.tagSummaries,
 		notice: notesStore.notice,
 		error: notesStore.error,
 	}));
@@ -317,6 +319,21 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 							{t("notes.tabs.archived", { count: state.archivedCount })}
 						</button>
 					</div>
+					{state.tagSummaries.length > 0 ? (
+						<select
+							className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 text-xs text-[var(--inno-text-muted)] outline-none"
+							value={state.filterTag ?? ""}
+							onChange={(event) => notesStore.setFilterTag(event.target.value || null)}
+							aria-label={t("notes.properties.tags")}
+						>
+							<option value="">{t("notes.tagFilterAll")}</option>
+							{state.tagSummaries.map((tag) => (
+								<option key={tag.displayName.toLocaleLowerCase()} value={tag.displayName}>
+									#{tag.displayName} ({tag.usageCount})
+								</option>
+							))}
+						</select>
+					) : null}
 				</div>
 
 				<div className="min-h-0 flex-1 overflow-y-auto">

@@ -20,6 +20,11 @@ interface NotesStoreEvents {
 	change: void;
 }
 
+export interface NotesTagSummary {
+	displayName: string;
+	usageCount: number;
+}
+
 class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	notes: NoteSummary[] = [];
 	selected: NoteSummary | null = null;
@@ -36,6 +41,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	savedPreviewContent = "";
 	listBox: NoteListBox = "drafts";
 	searchQuery = "";
+	filterTag: string | null = null;
 	isLoading = false;
 	isLoadingContent = false;
 	isLoadingPreview = false;
@@ -65,19 +71,34 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 
 	get filteredNotes(): NoteSummary[] {
 		const q = this.searchQuery.trim().toLowerCase();
-		const byBox = this.notes.filter((note) =>
-			this.listBox === "drafts"
-				? note.kind === "orphan" || (note.kind === "markdown" && note.status === "draft")
-				: note.kind === "archived" ||
-					(note.kind === "markdown" &&
-						(note.status === "indexed" || note.status === "outdated" || note.status === "error")),
-		);
-		if (!q) return byBox;
-		return byBox.filter(
+		let result = this.notesForListBox();
+		if (this.filterTag) {
+			const tagKey = this.filterTag.toLocaleLowerCase();
+			result = result.filter((note) => note.tags.some((tag) => tag.toLocaleLowerCase() === tagKey));
+		}
+		if (!q) return result;
+		return result.filter(
 			(note) =>
 				note.title.toLowerCase().includes(q) ||
 				note.rawPath.toLowerCase().includes(q) ||
 				note.tags.some((tag) => tag.toLowerCase().includes(q)),
+		);
+	}
+
+	get tagSummaries(): NotesTagSummary[] {
+		const byKey = new Map<string, NotesTagSummary>();
+		for (const note of this.notesForListBox()) {
+			for (const tag of note.tags) {
+				const displayName = tag.trim();
+				const key = displayName.toLocaleLowerCase();
+				if (!key) continue;
+				const current = byKey.get(key);
+				if (current) current.usageCount += 1;
+				else byKey.set(key, { displayName, usageCount: 1 });
+			}
+		}
+		return [...byKey.values()].sort(
+			(a, b) => b.usageCount - a.usageCount || a.displayName.localeCompare(b.displayName, "zh-CN"),
 		);
 	}
 
@@ -106,9 +127,25 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		this.emit("change", undefined);
 	}
 
+	setFilterTag(tag: string | null) {
+		this.filterTag = tag;
+		this.emit("change", undefined);
+	}
+
 	setListBox(listBox: NoteListBox) {
 		this.listBox = listBox;
+		this.filterTag = null;
 		this.emit("change", undefined);
+	}
+
+	private notesForListBox(): NoteSummary[] {
+		return this.notes.filter((note) =>
+			this.listBox === "drafts"
+				? note.kind === "orphan" || (note.kind === "markdown" && note.status === "draft")
+				: note.kind === "archived" ||
+					(note.kind === "markdown" &&
+						(note.status === "indexed" || note.status === "outdated" || note.status === "error")),
+		);
 	}
 
 	updateEditorTitle(title: string) {

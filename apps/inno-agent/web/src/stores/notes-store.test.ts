@@ -45,6 +45,26 @@ afterEach(() => {
 	notesStore.isDeleting = false;
 	notesStore.error = null;
 	notesStore.notice = null;
+	notesStore.listBox = "drafts";
+	notesStore.searchQuery = "";
+	notesStore.filterTag = null;
+});
+
+describe("notesStore tag filtering", () => {
+	it("summarizes and filters tags in the active list", () => {
+		notesStore.notes = [
+			{ ...archivedMarkdown, kind: "markdown", status: "draft", rawPath: "raw/notes/a.md", tags: ["AI", "TypeScript"] },
+			{ ...archivedMarkdown, kind: "markdown", status: "draft", rawPath: "raw/notes/b.md", tags: ["ai"] },
+			{ ...archivedMarkdown, kind: "markdown", status: "indexed", rawPath: "raw/notes/c.md", tags: ["AI"] },
+		];
+
+		expect(notesStore.tagSummaries).toEqual([
+			{ displayName: "AI", usageCount: 2 },
+			{ displayName: "TypeScript", usageCount: 1 },
+		]);
+		notesStore.setFilterTag("ai");
+		expect(notesStore.filteredNotes.map((note) => note.rawPath)).toEqual(["raw/notes/a.md", "raw/notes/b.md"]);
+	});
 });
 
 describe("notesStore raw Markdown editing", () => {

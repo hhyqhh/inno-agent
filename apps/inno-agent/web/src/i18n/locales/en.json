@@ -163,6 +163,7 @@
 		}
 	},
 	"notes": {
+		"tagFilterAll": "All tags",
 		"search": "Search notes…",
 		"empty": "No notes yet. Upload files, create a draft, or pick a template.",
 		"selectHint": "Select an item on the left to edit or archive",

@@ -10,6 +10,7 @@ import { getL2Memory, type L2Memory } from "./l2-memory.js";
 import { formatL2LintReport, runL2Lint } from "./l2-lint.js";
 import { archiveL2Source, ArchiveSourceReadError, type ArchiveL2Source } from "./l2-archive-service.js";
 import { logger } from "../../logger.js";
+import { regenerateL2Source } from "./sources-service.js";
 
 /**
  * Create L2 Wiki memory tools for the Inno Agent.
@@ -175,7 +176,41 @@ export function createL2Tools(
 		},
 	});
 
-	// ---- Tool 3: l2_lint ----
+	// ---- Tool 3: l2_regenerate ----
+	const regenerateTool = defineTool({
+		name: "l2_regenerate",
+		label: "重新生成 L2 知识",
+		description:
+			"根据已归档资料的当前原文重新生成摘要和知识关系，同时保留原 SourceID。" +
+			"仅在用户明确要求重新生成、刷新或重新整理某个已归档来源时调用。",
+		parameters: Type.Object({
+			sourceId: Type.String({ description: "已有的 L2 source id，例如 l2src_xxxxxxxx。" }),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (isEnabled && !isEnabled()) return l2DisabledResult();
+			const result = await regenerateL2Source(l2DataDir, params.sourceId, {
+				model: ctx.model,
+				modelRegistry: ctx.modelRegistry,
+				memory: l2Memory,
+			});
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text:
+							`已重新生成 L2 来源。\n\n` +
+							`- ID: ${result.sourceId}\n` +
+							`- 标题: ${result.title}\n` +
+							`- 原始文件: ${result.rawPath}\n` +
+							`- Wiki 页面: ${result.wikiPages.join(", ") || "无"}`,
+					},
+				],
+				details: result,
+			};
+		},
+	});
+
+	// ---- Tool 4: l2_lint ----
 	const lintTool = defineTool({
 		name: "l2_lint",
 		label: "检查 L2 Wiki",
@@ -191,5 +226,5 @@ export function createL2Tools(
 		},
 	});
 
-	return [archiveTool, queryTool, lintTool];
+	return [archiveTool, queryTool, regenerateTool, lintTool];
 }

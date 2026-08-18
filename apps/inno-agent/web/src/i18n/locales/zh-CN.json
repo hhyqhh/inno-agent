@@ -118,7 +118,9 @@
 			"empty": "在左侧选择一个页面，或在图中点击一个节点开始阅读。",
 			"selectFromGraph": "在图中选择节点查看",
 			"openInNotebook": "在笔记本中查看",
-			"backToGraph": "返回图谱"
+			"backToGraph": "返回图谱",
+			"regenerate": "重新生成",
+			"regenerating": "生成中..."
 		},
 		"delete": {
 			"button": "删除",

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { RefreshCw } from "lucide-react";
 import { notebookStore } from "../../stores/notebook-store.js";
 import type { WikiPageFrontmatter, WikiPageType } from "../../types/wiki.js";
 import { parseFrontmatter } from "../../utils/frontmatter.js";
@@ -178,9 +179,13 @@ export function PageView({
 		currentPage: notebookStore.currentPage,
 		isEditing: notebookStore.isEditing,
 		isLoading: notebookStore.isLoadingPage,
+		isRegeneratingSource: notebookStore.isRegeneratingSource,
+		regeneratingSourceId: notebookStore.regeneratingSourceId,
 		editBuffer: notebookStore.editBuffer,
 	}));
 	const parsed = state.currentPage ? parseFrontmatter(state.currentPage.content) : null;
+	const sourceId = parsed?.frontmatter?.type === "source-summary" ? parsed.frontmatter.source_ids[0] : undefined;
+	const isCurrentSourceRegenerating = sourceId === state.regeneratingSourceId;
 
 	if (state.isLoading) {
 		return (
@@ -229,6 +234,17 @@ export function PageView({
 				<button className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={() => notebookStore.startEditing()}>
 					{t("common.edit")}
 				</button>
+				{sourceId ? (
+					<button
+						type="button"
+						className="inline-flex items-center gap-1 rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] disabled:opacity-50"
+						disabled={state.isRegeneratingSource}
+						onClick={() => void notebookStore.regenerateSource(sourceId).catch(console.error)}
+					>
+						<RefreshCw size={14} className={isCurrentSourceRegenerating ? "animate-spin" : ""} />
+						{isCurrentSourceRegenerating ? t("notebook.page.regenerating") : t("notebook.page.regenerate")}
+					</button>
+				) : null}
 				<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => notebookStore.setView("graph")}>
 					{t("notebook.page.backToGraph")}
 				</button>

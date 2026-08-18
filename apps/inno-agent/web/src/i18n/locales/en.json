@@ -118,7 +118,9 @@
 			"empty": "Pick a page on the left, or click a node in the graph.",
 			"selectFromGraph": "Select a node in the graph",
 			"openInNotebook": "Open page",
-			"backToGraph": "Back to graph"
+			"backToGraph": "Back to graph",
+			"regenerate": "Regenerate",
+			"regenerating": "Regenerating..."
 		},
 		"delete": {
 			"button": "Delete",

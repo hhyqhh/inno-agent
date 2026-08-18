@@ -69,6 +69,8 @@ function rawFileMime(filePath: string): string {
 	if (ext === ".pdf") return "application/pdf";
 	if (ext === ".png") return "image/png";
 	if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+	if (ext === ".gif") return "image/gif";
+	if (ext === ".webp") return "image/webp";
 	return "application/octet-stream";
 }
 

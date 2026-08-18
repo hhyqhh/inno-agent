@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const unarchiveMock = vi.hoisted(() => vi.fn());
@@ -63,5 +63,36 @@ describe("notebook unarchive route", () => {
 		)).resolves.toBe(true);
 		expect(result.status).toBe(200);
 		expect(unarchiveMock).toHaveBeenCalledWith(root, "raw/uploads/source.md", runtime);
+	});
+});
+
+describe("notebook raw file route", () => {
+	it("serves browser-safe image formats inline", async () => {
+		const root = mkdtempSync(join(tmpdir(), "inno-notebook-image-"));
+		roots.push(root);
+		mkdirSync(join(root, "raw", "uploads"), { recursive: true });
+		writeFileSync(join(root, "raw", "uploads", "image.gif"), Buffer.from("GIF89a", "ascii"));
+		const headers: Record<string, string | number> = {};
+		let status = 0;
+		const res = new PassThrough() as unknown as ServerResponse;
+		res.writeHead = ((nextStatus: number, nextHeaders: Record<string, string | number>) => {
+			status = nextStatus;
+			Object.assign(headers, nextHeaders);
+			return res;
+		}) as ServerResponse["writeHead"];
+		const finished = new Promise<void>((resolve) => res.on("finish", resolve));
+		const ctx = { l2DataDir: root, codeDir: root, getArchiveRuntime: () => ({}) } as NotebookRouteContext;
+
+		await expect(handleNotebookRoutes(
+			request({}),
+			res,
+			"GET",
+			"/api/l2/raw/file?path=raw%2Fuploads%2Fimage.gif",
+			ctx,
+		)).resolves.toBe(true);
+		await finished;
+		expect(status).toBe(200);
+		expect(headers["Content-Type"]).toBe("image/gif");
+		expect(String(headers["Content-Disposition"])).toContain("inline");
 	});
 });

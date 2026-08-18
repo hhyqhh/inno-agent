@@ -33,6 +33,10 @@ function formatSize(bytes?: number): string {
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function rawFileName(rawPath: string): string {
+	return rawPath.split(/[\\/]/).pop() || rawPath;
+}
+
 export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 	const { t } = useTranslation();
 	const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
@@ -417,7 +421,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 							<h3 className="font-medium">{selected.title}</h3>
 							<p className="text-xs text-[var(--inno-text-muted)]">{selected.rawPath}</p>
 						</div>
-						<div className={`min-h-0 flex-1 ${isRawEditableMarkdown ? "overflow-hidden" : "overflow-auto p-4"}`}>
+						<div className={`min-h-0 flex-1 ${isRawEditableMarkdown || selected.contentType === "pdf" || selected.contentType === "image" ? "overflow-hidden" : "overflow-auto p-4"}`}>
 							{state.isLoadingPreview ? (
 								<p className="p-4 text-sm text-[var(--inno-text-muted)]">{t("common.loading")}</p>
 							) : isRawEditableMarkdown ? (
@@ -426,6 +430,20 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 									value={state.previewContent}
 									onChange={(value) => notesStore.updatePreviewContent(value)}
 								/>
+							) : selected.contentType === "pdf" ? (
+								<iframe
+									className="h-full w-full border-0 bg-[var(--inno-surface)]"
+									src={`${l2RawFileUrl(selected.rawPath)}#view=FitH&zoom=page-width`}
+									title={rawFileName(selected.rawPath)}
+								/>
+							) : selected.contentType === "image" ? (
+								<div className="flex h-full items-center justify-center overflow-auto bg-[var(--inno-surface-muted)] p-4">
+									<img
+										className="max-h-full max-w-full object-contain"
+										src={l2RawFileUrl(selected.rawPath)}
+										alt={rawFileName(selected.rawPath)}
+									/>
+								</div>
 							) : state.previewContent ? (
 								<pre className="whitespace-pre-wrap text-sm">{state.previewContent}</pre>
 							) : (

@@ -18,6 +18,7 @@ import {
 	saveL2NoteContent,
 } from "../../memory/l2/notes-service.js";
 import { listNoteTemplates } from "../../memory/l2/note-templates.js";
+import { unarchiveL2NotebookItem } from "../../memory/l2/notebook-unarchive-service.js";
 import { listL2Sources, readRawTextPreview, saveRawMarkdownContent } from "../../memory/l2/sources-service.js";
 import type { L2Memory } from "../../memory/l2/l2-memory.js";
 import { logger } from "../../logger.js";
@@ -370,6 +371,34 @@ export async function handleNotebookRoutes(
 			logger.warn({ err, rawPath: resolved.rawPath }, "failed to delete notebook item");
 			const message = errorMessage(err, "Delete failed");
 			json(res, message.includes("文件不存在") ? 404 : 409, { error: message });
+		}
+		return true;
+	}
+
+	if (method === "POST" && url === "/api/l2/notes/unarchive") {
+		const body = await readBody(req) as Record<string, unknown>;
+		const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
+		if (!rawPath) {
+			json(res, 400, { error: "Missing rawPath" });
+			return true;
+		}
+		const resolved = resolveRawPath(l2DataDir, rawPath);
+		if (!resolved) {
+			json(res, 400, { error: "Invalid raw path" });
+			return true;
+		}
+		if (!isFile(resolved.fullPath)) {
+			json(res, 404, { error: "Raw file not found" });
+			return true;
+		}
+		try {
+			const runtime = ctx.getArchiveRuntime();
+			const result = await unarchiveL2NotebookItem(l2DataDir, resolved.rawPath, runtime);
+			json(res, 200, result);
+		} catch (err) {
+			logger.warn({ err, rawPath: resolved.rawPath }, "failed to unarchive notebook item");
+			const message = errorMessage(err, "Unarchive failed");
+			json(res, message.includes("未归档") ? 409 : 500, { error: message });
 		}
 		return true;
 	}

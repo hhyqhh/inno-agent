@@ -6,6 +6,7 @@ import type {
 	NoteContent,
 	NotesListResponse,
 	SaveNoteResult,
+	SaveRawMarkdownResult,
 	UploadNoteAttachmentResult,
 	UploadNoteFileResult,
 } from "../types/notes.js";
@@ -30,11 +31,23 @@ export async function fetchNoteContent(rawPath: string): Promise<NoteContent> {
 	return apiFetch<NoteContent>(`/api/l2/notes/content?path=${encodeURIComponent(rawPath)}`);
 }
 
-export async function fetchRawContent(rawPath: string): Promise<string> {
+export async function fetchRawContent(rawPath: string, options: { full?: boolean } = {}): Promise<string> {
+	const params = new URLSearchParams({ path: rawPath });
+	if (options.full) params.set("full", "1");
 	const data = await apiFetch<{ path: string; content: string }>(
-		`/api/l2/raw/content?path=${encodeURIComponent(rawPath)}`,
+		`/api/l2/raw/content?${params.toString()}`,
 	);
 	return data.content;
+}
+
+export async function saveRawMarkdownContent(options: {
+	rawPath: string;
+	content: string;
+}): Promise<SaveRawMarkdownResult> {
+	return apiFetch<SaveRawMarkdownResult>("/api/l2/raw/content", {
+		method: "PUT",
+		body: JSON.stringify(options),
+	});
 }
 
 export async function createNote(options: {

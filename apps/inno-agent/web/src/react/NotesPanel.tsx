@@ -87,17 +87,21 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 
 	const selected = state.selected;
 	const isMarkdown = selected?.kind === "markdown";
-	const showRearchive = selected?.kind === "markdown" && selected.status === "outdated";
+	const isRawEditableMarkdown = Boolean(selected && selected.kind !== "markdown" && selected.contentType === "markdown");
+	const showRearchive =
+		(selected?.kind === "markdown" || selected?.kind === "archived") && selected.status === "outdated";
 	const showOpenWiki = Boolean(selected?.wikiPagePath && onOpenWiki);
 	const showDownload = selected && !isMarkdown;
 	const canArchiveNow =
 		selected &&
 		(selected.kind === "orphan" ||
+			(selected.kind === "archived" && selected.status === "outdated") ||
 			(selected.kind === "markdown" && (selected.status === "draft" || selected.status === "outdated")));
 
 	function renderBottomActions() {
 		if (!selected) return null;
 		const hasActions =
+			isRawEditableMarkdown ||
 			showDownload ||
 			(canArchiveNow && (selected.status === "draft" || selected.kind === "orphan")) ||
 			showRearchive ||
@@ -105,6 +109,17 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		if (!hasActions) return null;
 		return (
 			<div className="flex flex-wrap gap-2 border-t border-[var(--inno-border)] p-3">
+				{isRawEditableMarkdown ? (
+					<button
+						type="button"
+						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
+						disabled={!state.isDirty || state.isSaving}
+						onClick={() => void notesStore.saveSelected()}
+					>
+						<Save size={14} />
+						{t("notes.actions.save")}
+					</button>
+				) : null}
 				{showDownload ? (
 					<a
 						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm hover:bg-[var(--inno-surface-muted)]"
@@ -353,13 +368,19 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 							<h3 className="font-medium">{selected.title}</h3>
 							<p className="text-xs text-[var(--inno-text-muted)]">{selected.rawPath}</p>
 						</div>
-						<div className="min-h-0 flex-1 overflow-auto p-4">
+						<div className={`min-h-0 flex-1 ${isRawEditableMarkdown ? "overflow-hidden" : "overflow-auto p-4"}`}>
 							{state.isLoadingPreview ? (
-								<p className="text-sm text-[var(--inno-text-muted)]">{t("common.loading")}</p>
+								<p className="p-4 text-sm text-[var(--inno-text-muted)]">{t("common.loading")}</p>
+							) : isRawEditableMarkdown ? (
+								<MilkdownEditor
+									editorKey={`${selected.rawPath}:raw`}
+									value={state.previewContent}
+									onChange={(value) => notesStore.updatePreviewContent(value)}
+								/>
 							) : state.previewContent ? (
 								<pre className="whitespace-pre-wrap text-sm">{state.previewContent}</pre>
 							) : (
-								<p className="text-sm text-[var(--inno-text-muted)]">{t("notes.previewBinaryHint")}</p>
+								<p className="p-4 text-sm text-[var(--inno-text-muted)]">{t("notes.previewBinaryHint")}</p>
 							)}
 						</div>
 						{renderBottomActions()}

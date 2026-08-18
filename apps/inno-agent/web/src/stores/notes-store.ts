@@ -8,6 +8,7 @@ import {
 	fetchRawContent,
 	listNotes,
 	saveNoteContent,
+	saveRawMarkdownContent,
 	uploadNoteAttachment,
 	uploadNoteFile,
 } from "../api/notes.js";
@@ -30,6 +31,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	savedTags: string[] = [];
 	savedRecordDate = "";
 	previewContent = "";
+	savedPreviewContent = "";
 	listBox: NoteListBox = "drafts";
 	searchQuery = "";
 	isLoading = false;
@@ -45,7 +47,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	notice: string | null = null;
 
 	get isDirty(): boolean {
-		if (!this.selected || this.selected.kind !== "markdown") return false;
+		if (!this.selected) return false;
+		if (this.selected.kind !== "markdown" && this.selected.contentType === "markdown") {
+			return this.previewContent !== this.savedPreviewContent;
+		}
+		if (this.selected.kind !== "markdown") return false;
 		return (
 			this.editorContent !== this.savedContent ||
 			this.editorTitle !== this.savedTitle ||
@@ -112,6 +118,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		this.emit("change", undefined);
 	}
 
+	updatePreviewContent(content: string) {
+		this.previewContent = content;
+		this.emit("change", undefined);
+	}
+
 	updateEditorTags(tags: string[]) {
 		this.editorTags = tags;
 		this.emit("change", undefined);
@@ -130,9 +141,11 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 		this.isLoadingPreview = true;
 		this.emit("change", undefined);
 		try {
-			this.previewContent = await fetchRawContent(rawPath);
+			this.previewContent = await fetchRawContent(rawPath, { full: contentType === "markdown" });
+			this.savedPreviewContent = this.previewContent;
 		} catch {
 			this.previewContent = "";
+			this.savedPreviewContent = "";
 		} finally {
 			this.isLoadingPreview = false;
 			this.emit("change", undefined);
@@ -162,6 +175,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	async selectNote(note: NoteSummary): Promise<void> {
 		this.selected = note;
 		this.previewContent = "";
+		this.savedPreviewContent = "";
 		this.attachments = [];
 		this.clearMessages();
 		this.emit("change", undefined);
@@ -276,11 +290,23 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	}
 
 	async saveSelected(): Promise<boolean> {
-		if (!this.selected || this.selected.kind !== "markdown" || !this.isDirty) return true;
+		if (!this.selected || !this.isDirty) return true;
 		this.isSaving = true;
 		this.clearMessages();
 		this.emit("change", undefined);
 		try {
+			if (this.selected.kind !== "markdown" && this.selected.contentType === "markdown") {
+				const result = await saveRawMarkdownContent({
+					rawPath: this.selected.rawPath,
+					content: this.previewContent,
+				});
+				this.savedPreviewContent = this.previewContent;
+				this.notice = "saved";
+				await this.loadAll();
+				this.selected = this.notes.find((note) => note.rawPath === result.rawPath) ?? this.selected;
+				return true;
+			}
+
 			const result = await saveNoteContent({
 				rawPath: this.selected.rawPath,
 				title: this.editorTitle.trim() || this.selected.title,
@@ -309,7 +335,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 
 	async archiveSelected(): Promise<string | null> {
 		if (!this.selected) return null;
-		if (this.selected.kind === "markdown" && this.isDirty) {
+		if (this.isDirty) {
 			const saved = await this.saveSelected();
 			if (!saved) return null;
 		}

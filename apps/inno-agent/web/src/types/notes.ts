@@ -1,5 +1,5 @@
 export type NoteStatus = "draft" | "indexed" | "outdated" | "error";
-export type ManifestStatus = "pending" | "extracted" | "indexed" | "error";
+export type ManifestStatus = "pending" | "extracted" | "indexed" | "outdated" | "error";
 export type RawSourceType = "text" | "markdown" | "conversation" | "pdf" | "word" | "image";
 export type NotebookType = "conversation" | "file" | "note";
 export type NotebookItemKind = "markdown" | "orphan" | "archived";
@@ -75,6 +75,11 @@ export interface CreateNoteResult {
 export interface SaveNoteResult {
 	rawPath: string;
 	status: NoteStatus;
+}
+
+export interface SaveRawMarkdownResult {
+	rawPath: string;
+	status: ManifestStatus | "uploaded";
 }
 
 export interface UploadNoteFileResult {

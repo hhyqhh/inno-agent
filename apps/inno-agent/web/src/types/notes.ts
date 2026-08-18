@@ -82,6 +82,11 @@ export interface SaveRawMarkdownResult {
 	status: ManifestStatus | "uploaded";
 }
 
+export interface DeleteNoteItemResult {
+	rawPath: string;
+	title: string;
+}
+
 export interface UploadNoteFileResult {
 	fileName: string;
 	mimeType: string;

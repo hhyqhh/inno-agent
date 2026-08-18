@@ -13,6 +13,7 @@ import {
 	Plus,
 	RefreshCw,
 	Save,
+	Trash2,
 } from "lucide-react";
 import { getVisibleNoteTemplates } from "../lib/build-note-from-template.js";
 import { l2RawFileUrl } from "../api/notes.js";
@@ -57,6 +58,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		isCreating: notesStore.isCreating,
 		isSaving: notesStore.isSaving,
 		isArchiving: notesStore.isArchiving,
+		isDeleting: notesStore.isDeleting,
 		isUploading: notesStore.isUploading,
 		searchQuery: notesStore.searchQuery,
 		notice: notesStore.notice,
@@ -85,6 +87,14 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		if (wikiPath && onOpenWiki) onOpenWiki(wikiPath);
 	}, [onOpenWiki]);
 
+	const handleDelete = useCallback(async () => {
+		const selected = notesStore.selected;
+		if (!selected) return;
+		const confirmed = typeof window === "undefined" ? true : window.confirm(t("notes.deleteConfirm", { title: selected.title }));
+		if (!confirmed) return;
+		await notesStore.deleteSelected();
+	}, [t]);
+
 	const selected = state.selected;
 	const isMarkdown = selected?.kind === "markdown";
 	const isRawEditableMarkdown = Boolean(selected && selected.kind !== "markdown" && selected.contentType === "markdown");
@@ -97,6 +107,9 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		(selected.kind === "orphan" ||
 			(selected.kind === "archived" && selected.status === "outdated") ||
 			(selected.kind === "markdown" && (selected.status === "draft" || selected.status === "outdated")));
+	const canDelete = Boolean(
+		selected && (selected.kind === "orphan" || (selected.kind === "markdown" && selected.status === "draft")),
+	);
 
 	function renderBottomActions() {
 		if (!selected) return null;
@@ -105,6 +118,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 			showDownload ||
 			(canArchiveNow && (selected.status === "draft" || selected.kind === "orphan")) ||
 			showRearchive ||
+			canDelete ||
 			showOpenWiki;
 		if (!hasActions) return null;
 		return (
@@ -161,6 +175,17 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					>
 						<ExternalLink size={14} />
 						{t("notes.actions.openWiki")}
+					</button>
+				) : null}
+				{canDelete ? (
+					<button
+						type="button"
+						className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+						disabled={state.isDeleting}
+						onClick={() => void handleDelete()}
+					>
+						<Trash2 size={14} />
+						{t("notes.actions.delete")}
 					</button>
 				) : null}
 			</div>

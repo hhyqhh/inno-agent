@@ -4,6 +4,7 @@ import {
 	archiveNote,
 	createNote,
 	deleteNoteAttachment,
+	deleteNoteItem,
 	fetchNoteContent,
 	fetchRawContent,
 	listNotes,
@@ -40,6 +41,7 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 	isCreating = false;
 	isSaving = false;
 	isArchiving = false;
+	isDeleting = false;
 	isUploading = false;
 	isUploadingAttachment = false;
 	deletingAttachmentId: string | null = null;
@@ -366,6 +368,32 @@ class NotesStoreImpl extends EventEmitter<NotesStoreEvents> {
 
 	findNoteById(noteId: string): NoteSummary | undefined {
 		return this.notes.find((note) => note.noteId === noteId || note.sourceId === noteId);
+	}
+
+	async deleteSelected(): Promise<boolean> {
+		if (!this.selected) return false;
+		this.isDeleting = true;
+		this.clearMessages();
+		this.emit("change", undefined);
+		try {
+			await deleteNoteItem(this.selected.rawPath);
+			this.selected = null;
+			this.editorContent = "";
+			this.editorTitle = "";
+			this.editorTags = [];
+			this.attachments = [];
+			this.previewContent = "";
+			this.savedPreviewContent = "";
+			await this.loadAll();
+			this.notice = "deleted";
+			return true;
+		} catch {
+			this.error = "deleteFailed";
+			return false;
+		} finally {
+			this.isDeleting = false;
+			this.emit("change", undefined);
+		}
 	}
 }
 

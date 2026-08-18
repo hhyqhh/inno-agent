@@ -2,6 +2,7 @@ import { apiFetch } from "./client.js";
 import type {
 	ArchiveNoteResult,
 	CreateNoteResult,
+	DeleteNoteItemResult,
 	NoteAttachment,
 	NoteContent,
 	NotesListResponse,
@@ -89,6 +90,12 @@ export async function archiveNote(
 export async function uploadNoteFile(file: File): Promise<UploadNoteFileResult> {
 	const uploaded = await uploadRawFile(file);
 	return { ...uploaded, notebookType: "file", status: "uploaded" };
+}
+
+export async function deleteNoteItem(rawPath: string): Promise<DeleteNoteItemResult> {
+	return apiFetch<DeleteNoteItemResult>(`/api/l2/notes?path=${encodeURIComponent(rawPath)}`, {
+		method: "DELETE",
+	});
 }
 
 export async function listNoteAttachments(rawPath: string): Promise<NoteAttachment[]> {

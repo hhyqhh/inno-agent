@@ -4,6 +4,7 @@ const apiMocks = vi.hoisted(() => ({
 	archiveNote: vi.fn(),
 	createNote: vi.fn(),
 	deleteNoteAttachment: vi.fn(),
+	deleteNoteItem: vi.fn(),
 	fetchNoteContent: vi.fn(),
 	fetchRawContent: vi.fn(),
 	listNotes: vi.fn(),
@@ -40,6 +41,7 @@ afterEach(() => {
 	notesStore.isLoading = false;
 	notesStore.isLoadingPreview = false;
 	notesStore.isSaving = false;
+	notesStore.isDeleting = false;
 	notesStore.error = null;
 	notesStore.notice = null;
 });
@@ -66,5 +68,20 @@ describe("notesStore raw Markdown editing", () => {
 		});
 		expect(notesStore.selected?.status).toBe("outdated");
 		expect(notesStore.isDirty).toBe(false);
+	});
+});
+
+describe("notesStore item deletion", () => {
+	it("clears the selection after deleting an unarchived item", async () => {
+		apiMocks.fetchRawContent.mockResolvedValue("draft");
+		apiMocks.deleteNoteItem.mockResolvedValue({ rawPath: archivedMarkdown.rawPath, title: "Source" });
+		apiMocks.listNotes.mockResolvedValue({ notes: [] });
+		const orphan = { ...archivedMarkdown, kind: "orphan" as const, status: "uploaded" as const };
+
+		await notesStore.selectNote(orphan);
+		await expect(notesStore.deleteSelected()).resolves.toBe(true);
+		expect(apiMocks.deleteNoteItem).toHaveBeenCalledWith(orphan.rawPath);
+		expect(notesStore.selected).toBeNull();
+		expect(notesStore.notice).toBe("deleted");
 	});
 });

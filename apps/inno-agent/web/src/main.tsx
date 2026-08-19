@@ -8,6 +8,7 @@ import "@mariozechner/mini-lit/dist/MarkdownBlock.js";
 import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./react/App.js";
+import { recoverFromDynamicImportError } from "./utils/dynamic-import-recovery.js";
 
 interface AppErrorBoundaryState {
 	error: Error | null;
@@ -21,6 +22,7 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, AppErrorBounda
 	}
 
 	componentDidCatch(error: Error, info: ErrorInfo): void {
+		if (recoverFromDynamicImportError(error)) return;
 		console.error("[inno-web] uncaught render error", error, info.componentStack);
 	}
 

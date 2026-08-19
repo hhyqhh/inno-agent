@@ -6,6 +6,7 @@ import type { RightPanelTab, WorkspaceMode } from "../stores/app-store.js";
 import { appStore } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { useStoreSnapshot } from "./hooks.js";
+import { recoverFromDynamicImportError } from "../utils/dynamic-import-recovery.js";
 
 const WorkspaceBrowser = lazy(() => import("./WorkspaceBrowser.js").then((mod) => ({ default: mod.WorkspaceBrowser })));
 const Notebook = lazy(() => import("./Notebook.js").then((mod) => ({ default: mod.Notebook })));
@@ -43,6 +44,7 @@ class WorkspaceContentErrorBoundary extends Component<
 	}
 
 	componentDidCatch(error: Error, info: ErrorInfo) {
+		if (recoverFromDynamicImportError(error)) return;
 		console.error("[workspace-panel] failed to render lazy content", error, info);
 	}
 
@@ -60,6 +62,13 @@ class WorkspaceContentErrorBoundary extends Component<
 					<div className="max-w-sm text-xs text-[var(--inno-text-muted)]">
 						Switch tabs or close and reopen the panel to try again.
 					</div>
+					<button
+						type="button"
+						className="inno-primary-button rounded-md px-3 py-1.5 text-xs text-white"
+						onClick={() => window.location.reload()}
+					>
+						Refresh page
+					</button>
 				</div>
 			);
 		}

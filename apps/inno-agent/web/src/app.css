@@ -583,6 +583,347 @@ inno-workspace-panel textarea {
 	cursor: pointer;
 }
 
+/* Workspace context selector — intentionally sits outside the composer so
+   workspace choice reads as session context, not as another input control. */
+.inno-workspace-context-row {
+	display: flex;
+	min-width: 0;
+	align-items: center;
+	gap: 8px;
+	min-height: 36px;
+}
+
+.inno-workspace-context-hint {
+	min-width: 0;
+	color: var(--inno-text-subtle);
+	font-size: 11px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.inno-workspace-switcher {
+	position: relative;
+	min-width: 0;
+}
+
+.inno-workspace-switcher-trigger {
+	display: inline-flex;
+	max-width: min(100%, 320px);
+	height: 36px;
+	align-items: center;
+	gap: 7px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 9px;
+	background: transparent;
+	color: var(--inno-text-muted);
+	font-size: 13px;
+	font-weight: 500;
+	text-align: left;
+	cursor: pointer;
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-workspace-switcher-trigger:hover:not(:disabled),
+.inno-workspace-switcher-trigger[aria-expanded="true"] {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+
+.inno-workspace-switcher-trigger:disabled {
+	cursor: wait;
+	opacity: 0.62;
+}
+
+.inno-workspace-switcher-folder {
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	color: var(--inno-text-subtle);
+}
+
+.inno-workspace-switcher-folder svg {
+	width: 16px;
+	height: 16px;
+}
+
+.inno-workspace-switcher-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.inno-workspace-switcher-spinner {
+	flex: 0 0 auto;
+	animation: inno-workspace-spin 0.8s linear infinite;
+}
+
+@keyframes inno-workspace-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.inno-workspace-switcher-menu {
+	position: absolute;
+	bottom: calc(100% + 8px);
+	left: 0;
+	z-index: 50;
+	display: flex;
+	width: min(292px, calc(100vw - 24px));
+	max-height: min(390px, calc(100vh - 24px));
+	flex-direction: column;
+	gap: 6px;
+	padding: 7px;
+	border: 1px solid color-mix(in srgb, var(--inno-border-strong) 58%, transparent);
+	border-radius: 14px;
+	background: var(--inno-surface-raised);
+	box-shadow: 0 16px 40px rgba(31, 35, 40, 0.16), 0 2px 7px rgba(31, 35, 40, 0.08);
+	transform-origin: bottom left;
+	animation: inno-workspace-menu-in var(--inno-dur-fast) var(--inno-ease-out) both;
+}
+
+@keyframes inno-workspace-menu-in {
+	from {
+		opacity: 0;
+		transform: translateY(5px) scale(0.98);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+.inno-workspace-search {
+	display: flex;
+	height: 32px;
+	align-items: center;
+	gap: 7px;
+	padding: 0 8px;
+	border: 1px solid transparent;
+	border-radius: 9px;
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-subtle);
+}
+
+.inno-workspace-search:focus-within {
+	border-color: var(--inno-border-strong);
+	box-shadow: var(--inno-ring);
+}
+
+.inno-workspace-search input,
+.inno-workspace-search-input {
+	min-width: 0;
+	flex: 1;
+	border: 0;
+	outline: 0;
+	background: transparent;
+	color: var(--inno-text);
+	font-size: 12px;
+}
+
+.inno-workspace-search input:focus,
+.inno-workspace-search input:focus-visible {
+	outline: none;
+	box-shadow: none;
+}
+
+.inno-workspace-search input::placeholder,
+.inno-workspace-search-input::placeholder {
+	color: var(--inno-text-subtle);
+}
+
+.inno-workspace-search-clear {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--inno-text-subtle);
+	cursor: pointer;
+}
+
+.inno-workspace-search-clear:hover {
+	background: var(--inno-surface);
+	color: var(--inno-text);
+}
+
+.inno-workspace-options {
+	max-height: 224px;
+	overflow-y: auto;
+}
+
+.inno-workspace-option,
+.inno-workspace-action {
+	display: flex;
+	width: 100%;
+	min-width: 0;
+	align-items: center;
+	gap: 9px;
+	min-height: 40px;
+	padding: 6px 8px;
+	border: 0;
+	border-radius: 9px;
+	background: transparent;
+	color: var(--inno-text);
+	font-size: 12px;
+	text-align: left;
+	cursor: pointer;
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-workspace-option:hover,
+.inno-workspace-option.is-selected,
+.inno-workspace-action:hover,
+.inno-workspace-action.is-selected {
+	background: var(--inno-accent-soft);
+	color: var(--inno-accent);
+}
+
+.inno-workspace-option-icon,
+.inno-workspace-action-icon {
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	color: var(--inno-text-subtle);
+}
+
+.inno-workspace-option-copy {
+	display: flex;
+	min-width: 0;
+	flex: 1;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.inno-workspace-option-name,
+.inno-workspace-option-path {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.inno-workspace-option-name {
+	font-weight: 500;
+}
+
+.inno-workspace-option-path {
+	color: var(--inno-text-subtle);
+	font-size: 10px;
+}
+
+.inno-workspace-option-check {
+	flex: 0 0 auto;
+	color: var(--inno-accent);
+}
+
+.inno-workspace-menu-divider {
+	height: 1px;
+	margin: 1px 2px;
+	background: var(--inno-border);
+}
+
+.inno-workspace-action {
+	min-height: 36px;
+	color: var(--inno-text-muted);
+}
+
+.inno-workspace-empty {
+	padding: 18px 8px;
+	color: var(--inno-text-subtle);
+	font-size: 12px;
+	text-align: center;
+}
+
+.inno-workspace-create-form {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 3px 2px 1px;
+}
+
+.inno-workspace-menu-heading {
+	padding: 0 6px;
+	color: var(--inno-text);
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.inno-workspace-create-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.inno-workspace-search-input {
+	height: 32px;
+	padding: 0 9px;
+	border: 1px solid var(--inno-border);
+	border-radius: 8px;
+	background: var(--inno-surface);
+}
+
+.inno-workspace-search-input:focus {
+	border-color: var(--inno-focus-border);
+	box-shadow: var(--inno-ring);
+}
+
+.inno-workspace-create-submit {
+	display: inline-flex;
+	width: 32px;
+	height: 32px;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	border: 0;
+	border-radius: 8px;
+	background: var(--inno-accent);
+	color: #fff;
+	cursor: pointer;
+}
+
+.inno-workspace-create-submit:disabled {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-subtle);
+	cursor: not-allowed;
+}
+
+.inno-workspace-menu-back {
+	display: inline-flex;
+	width: fit-content;
+	align-items: center;
+	gap: 5px;
+	padding: 2px 6px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--inno-text-subtle);
+	font-size: 11px;
+	cursor: pointer;
+}
+
+.inno-workspace-menu-back:hover {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.inno-workspace-switcher-menu,
+	.inno-workspace-switcher-spinner {
+		animation: none;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.inno-composer-model-menu {
 		animation: none;

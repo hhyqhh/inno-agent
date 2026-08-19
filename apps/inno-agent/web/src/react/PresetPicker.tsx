@@ -71,14 +71,14 @@ export function PresetPicker({
 				</div>
 			</div>
 			{showSearch ? (
-				<div className="mb-2 flex items-center gap-2 px-2 py-1.5">
+				<div className="mb-2 flex items-center gap-2 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5">
 					<Search size={14} className="shrink-0 text-[var(--inno-text-subtle)]" />
 					<input
 						type="text"
 						value={query}
 						onChange={(event) => onQueryChange(event.target.value)}
 						placeholder={t("presets.searchPlaceholder")}
-						className="min-w-0 flex-1 bg-transparent text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:outline-none"
+						className="min-w-0 flex-1 border-0 bg-transparent text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] outline-none shadow-none focus:border-0 focus:outline-none focus:ring-0 focus:shadow-none focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-none"
 					/>
 					{query ? (
 						<button

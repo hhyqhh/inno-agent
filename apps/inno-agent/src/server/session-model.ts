@@ -6,6 +6,7 @@ import type { PersistedQuestion } from "../agent/question-bridge.js";
  */
 
 export interface SessionMessageSummary {
+	id?: string;
 	role: "user" | "assistant";
 	content: string;
 	timestamp: number;

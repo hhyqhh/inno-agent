@@ -29,6 +29,7 @@ function fakeMemory(root: string): L2Memory {
 	return {
 		dataDir: root,
 		indexPageByPath: vi.fn().mockResolvedValue(undefined),
+		removePage: vi.fn().mockResolvedValue(undefined),
 	} as unknown as L2Memory;
 }
 
@@ -284,5 +285,28 @@ describe("l2_archive", () => {
 			pages: [{ pageNumber: 1, text: "第一个知识库的资料" }],
 		});
 		await firstArchive;
+	});
+});
+
+describe("l2_regenerate", () => {
+	it("reprocesses an existing source without changing its id", async () => {
+		const root = makeTempDir();
+		await archive(root, "初始正文包含 [[Agent]] 概念。");
+		const before = readManifest(root)[0];
+		writeText(join(root, before.rawPath), "更新后的正文仍包含 [[Agent]] 概念。\n");
+		const tool = createL2Tools(root, undefined, fakeMemory(root)).find((candidate) => candidate.name === "l2_regenerate");
+		expect(tool).toBeDefined();
+
+		const result = await (tool!.execute as (...args: any[]) => Promise<any>)(
+			"call-regenerate",
+			{ sourceId: before.id },
+			undefined,
+			undefined,
+			{ model: undefined, modelRegistry: undefined },
+		);
+
+		expect(result.details).toMatchObject({ sourceId: before.id, duplicate: false });
+		expect(readManifest(root)).toHaveLength(1);
+		expect(readManifest(root)[0].id).toBe(before.id);
 	});
 });

@@ -3,8 +3,11 @@ import {
 	listWikiPages,
 	getWikiPage,
 	updateWikiPage,
+	updateWikiPageTags,
 	deleteWikiPage,
 	getWikiGraph,
+	listWikiTags,
+	regenerateSource,
 } from "../api/wiki.js";
 import type {
 	WikiPageSummary,
@@ -12,6 +15,7 @@ import type {
 	WikiGraphNode,
 	WikiGraphEdge,
 	WikiGraphCommunities,
+	WikiTagSummary,
 } from "../types/wiki.js";
 
 export type NotebookView = "graph" | "page";
@@ -24,6 +28,7 @@ class NotebookStoreImpl extends EventEmitter<NotebookStoreEvents> {
 	pages: WikiPageSummary[] = [];
 	nodes: WikiGraphNode[] = [];
 	edges: WikiGraphEdge[] = [];
+	tags: WikiTagSummary[] = [];
 	communities: WikiGraphCommunities | null = null;
 	currentPage: { path: string; content: string } | null = null;
 	isLoadingPages = false;
@@ -31,6 +36,8 @@ class NotebookStoreImpl extends EventEmitter<NotebookStoreEvents> {
 	isLoadingPage = false;
 	isEditing = false;
 	isDeletingPage = false;
+	isRegeneratingSource = false;
+	regeneratingSourceId: string | null = null;
 	editBuffer = "";
 	filterType: WikiPageType | "all" = "all";
 	searchQuery = "";
@@ -69,7 +76,7 @@ class NotebookStoreImpl extends EventEmitter<NotebookStoreEvents> {
 	}
 
 	async loadAll(): Promise<void> {
-		await Promise.all([this.loadPages(), this.loadGraph()]);
+		await Promise.all([this.loadPages(), this.loadGraph(), this.loadTags()]);
 	}
 
 	async loadPages(): Promise<void> {
@@ -162,7 +169,7 @@ class NotebookStoreImpl extends EventEmitter<NotebookStoreEvents> {
 			await updateWikiPage(this.currentPage.path, this.editBuffer);
 			this.currentPage = { ...this.currentPage, content: this.editBuffer };
 			this.isEditing = false;
-			await Promise.all([this.loadPages(), this.loadGraph()]);
+			await Promise.all([this.loadPages(), this.loadGraph(), this.loadTags()]);
 		} catch (err) {
 			console.error("Failed to save wiki page:", err);
 		} finally {
@@ -181,7 +188,7 @@ class NotebookStoreImpl extends EventEmitter<NotebookStoreEvents> {
 				this.isEditing = false;
 			}
 			this.selectedNodeId = null;
-			await Promise.all([this.loadPages(), this.loadGraph()]);
+			await Promise.all([this.loadPages(), this.loadGraph(), this.loadTags()]);
 		} catch (err) {
 			console.error("Failed to delete wiki page:", err);
 			throw err;
@@ -189,6 +196,51 @@ class NotebookStoreImpl extends EventEmitter<NotebookStoreEvents> {
 			this.isDeletingPage = false;
 			this.emit("change", undefined);
 		}
+	}
+
+	async loadTags(): Promise<void> {
+		try {
+			this.tags = await listWikiTags();
+		} catch {
+			this.tags = [];
+		} finally {
+			this.emit("change", undefined);
+		}
+	}
+
+	async updateCurrentPageTags(tags: string[]): Promise<void> {
+		if (!this.currentPage) return;
+		await this.updatePageTags(this.currentPage.path, tags);
+	}
+
+	async updatePageTags(path: string, tags: string[]): Promise<void> {
+		await updateWikiPageTags(path, tags);
+		if (this.currentPage?.path === path) {
+			await this.selectPage(path, { switchView: false });
+		}
+		await Promise.all([this.loadPages(), this.loadGraph(), this.loadTags()]);
+	}
+
+	async regenerateSource(sourceId: string): Promise<void> {
+		const currentPath = this.currentPage?.path ?? null;
+		this.isRegeneratingSource = true;
+		this.regeneratingSourceId = sourceId;
+		this.emit("change", undefined);
+		try {
+			const result = await regenerateSource(sourceId);
+			await Promise.all([this.loadPages(), this.loadGraph(), this.loadTags()]);
+			const nextPath = result.wikiPagePath || currentPath;
+			if (nextPath) await this.selectPage(nextPath, { switchView: false });
+		} finally {
+			this.isRegeneratingSource = false;
+			this.regeneratingSourceId = null;
+			this.emit("change", undefined);
+		}
+	}
+
+	searchByTag(tag: string): void {
+		this.searchQuery = tag;
+		this.emit("change", undefined);
 	}
 
 	setFilterType(type: WikiPageType | "all") {

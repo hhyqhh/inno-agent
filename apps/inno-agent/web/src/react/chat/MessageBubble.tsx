@@ -2,7 +2,7 @@ import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
-import { X, AlertTriangle, FileCode2 } from "lucide-react";
+import { X, AlertTriangle, FileCode2, BookOpen } from "lucide-react";
 import type { ChatMessage, ChatToolRecord } from "../../types/chat.js";
 import { normalizeMarkdownMath } from "../../utils/markdown-math.js";
 import { answeredQuestionnaireFromTool, buildAnsweredQuestionnaireTimeline } from "../../utils/questionnaire.js";
@@ -215,6 +215,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel 
 						</div>
 					) : null}
 					{lightboxSrc ? <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} /> : null}
+					{message.noteReferences?.length ? <div className="mb-2 flex flex-wrap justify-end gap-1">{message.noteReferences.map((note) => <span key={note.rawPath} className="inline-flex max-w-[220px] items-center gap-1 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-0.5 text-[10px] text-[var(--inno-text-muted)]"><BookOpen size={10} /><span className="truncate">{note.title}</span></span>)}</div> : null}
 					{message.content.trim()}
 				</div>
 			</motion.div>

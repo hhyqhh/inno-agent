@@ -9,6 +9,11 @@ import { PageView } from "./notebook/PageView.js";
 
 const FILTER_TYPES: (WikiPageType | "all")[] = ["all", "source-summary", "entity", "concept", "analysis"];
 
+interface NotebookProps {
+	onOpenNoteId?: (noteId: string) => void;
+	onOpenNote?: (rawPath: string) => void;
+}
+
 function typeColor(type?: WikiPageType): string {
 	switch (type) {
 		case "source-summary":
@@ -24,7 +29,7 @@ function typeColor(type?: WikiPageType): string {
 	}
 }
 
-export function Notebook() {
+export function Notebook({ onOpenNoteId, onOpenNote }: NotebookProps = {}) {
 	const { t } = useTranslation();
 	const [sidebarOpen, setSidebarOpen] = useState(
 		() => typeof window === "undefined" || !window.matchMedia("(max-width: 767px)").matches,
@@ -171,7 +176,11 @@ export function Notebook() {
 					<div className="text-xs text-[var(--inno-text-muted)]">{state.currentPagePath ?? ""}</div>
 				</div>
 				<div className={`min-h-0 flex-1 ${state.view === "graph" ? "overflow-hidden" : "overflow-auto"}`}>
-					{state.view === "graph" ? <GraphView /> : <PageView />}
+					{state.view === "graph" ? (
+						<GraphView />
+					) : (
+						<PageView onOpenNoteId={onOpenNoteId} onOpenNote={onOpenNote} />
+					)}
 				</div>
 			</section>
 		</div>

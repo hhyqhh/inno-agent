@@ -45,6 +45,30 @@ export interface RemoteContentSource {
 	downloadItem(category: ContentCategory, name: string, targetDir: string): Promise<void>;
 	/** Drop any cached listing so the next call re-fetches. */
 	invalidate(): void;
+	/**
+	 * Return a cheap revision for the backing catalog when the source supports
+	 * one. Used to detect new content without downloading every marker file.
+	 */
+	getRevision?(category: ContentCategory, forceRefresh?: boolean): Promise<string | null>;
+}
+
+export interface ContentCatalogStatus {
+	hasUpdate: boolean;
+	cachedRevision: string | null;
+	remoteRevision: string | null;
+	checkedAt: string | null;
+}
+
+export interface ContentHubStatus {
+	skills: ContentCatalogStatus;
+}
+
+/** A skill exposed by the remote library and its local install state. */
+export interface SkillLibraryItem {
+	name: string;
+	description: string;
+	installed: boolean;
+	category?: string;
 }
 
 /** The marker file that identifies a directory as an item of each category. */

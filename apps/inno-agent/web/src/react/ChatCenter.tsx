@@ -1,7 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 import { Paperclip, X, ArrowUp, Square, RotateCcw, Image, AlertTriangle, Search, Sparkles, FileText, Check, ChevronDown, Settings2 } from "lucide-react";
 import { Spinner } from "./ui/Spinner.js";
 import type { ChatMessage, ChatToolRecord } from "../types/chat.js";
@@ -14,13 +13,13 @@ import { workspaceStore } from "../stores/workspace-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { appStore } from "../stores/app-store.js";
 import type { CreateSessionInput } from "../api/sessions.js";
-import { listRemotePresets } from "../api/presets.js";
+import { ApiError } from "../api/client.js";
 import type { PresetMeta } from "../types/presets.js";
 import { arrayBufferToBase64 } from "../api/uploads.js";
 import { uploadWorkspaceFiles } from "../api/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { splitStreamingMarkdown } from "../utils/markdown-blocks.js";
-import { groupByCategory, matchesQuery } from "../utils/category-grouping.js";
+import { fetchPresetList, readCachedPresets, removeCachedPreset } from "../utils/preset-cache.js";
 import { answeredQuestionnaireFromTool, buildAnsweredQuestionnaireTimeline } from "../utils/questionnaire.js";
 import type { AnsweredQuestionnaireView } from "../utils/questionnaire.js";
 import { useStoreSnapshot } from "./hooks.js";
@@ -30,6 +29,7 @@ import { buildConversationTurns, ConversationMinimap } from "./ConversationMinim
 import { MarkdownArtifact } from "./MarkdownArtifact.js";
 import { ErrorBlock, MessageBubble, ToolRecordDetails } from "./chat/MessageBubble.js";
 import { findPreset } from "./settings/provider-presets.js";
+import { PresetPicker } from "./PresetPicker.js";
 
 // Thresholds for showing a very large paste as a compact composer card. A
 // paste crossing EITHER threshold is collapsed. The character threshold is
@@ -43,6 +43,8 @@ type PendingPasteBlock = {
 	id: number;
 	text: string;
 };
+
+type PresetRefreshStatus = "success" | "error";
 
 function parseCssPixels(value: string): number {
 	const parsed = Number.parseFloat(value);
@@ -423,110 +425,6 @@ function ModeChip({ selected, onClick, disabled, children }: { selected: boolean
 	);
 }
 
-/**
- * Simple Mode preset grid: searchable, grouped by `category`, vertically
- * bounded so a long preset list doesn't push the composer off-screen.
- * The search input only appears when there are enough presets to make it
- * useful (≥ 4); the scroll container caps height at ~50vh.
- */
-function PresetPicker({
-	presets,
-	openingPresetId,
-	onOpen,
-	query,
-	onQueryChange,
-	t,
-}: {
-	presets: PresetMeta[];
-	openingPresetId: string | null;
-	onOpen: (id: string) => void;
-	query: string;
-	onQueryChange: (v: string) => void;
-	t: TFunction;
-}) {
-	const uncategorizedLabel = t("presets.uncategorized");
-	const groups = useMemo(
-		() => groupByCategory(presets.filter((p) => matchesQuery(p, query, p.category ? t(`categories.${p.category}`, p.category) : undefined)), uncategorizedLabel),
-		[presets, query, uncategorizedLabel, t],
-	);
-	const totalMatched = useMemo(() => groups.reduce((sum, [, items]) => sum + items.length, 0), [groups]);
-	const showSearch = presets.length >= 4;
-
-	return (
-		<div className="mt-5">
-			<div className="mb-2 flex items-center gap-2">
-				<div className="text-xs font-medium text-[var(--inno-text-muted)]">{t("presets.simpleModeHeader")}</div>
-				<span className="text-[10px] text-[var(--inno-text-subtle)]">· {presets.length}</span>
-			</div>
-
-			{showSearch ? (
-				<div className="mb-2 flex items-center gap-2 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5">
-					<Search size={14} className="shrink-0 text-[var(--inno-text-subtle)]" />
-					<input
-						type="text"
-						value={query}
-						onChange={(e) => onQueryChange(e.target.value)}
-						placeholder={t("presets.searchPlaceholder")}
-						className="min-w-0 flex-1 bg-transparent text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:outline-none"
-					/>
-					{query ? (
-						<button
-							type="button"
-							className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-							onClick={() => onQueryChange("")}
-						>
-							<X size={12} />
-						</button>
-					) : null}
-				</div>
-			) : null}
-
-			<div className="max-h-[50vh] overflow-y-auto rounded-md">
-				{totalMatched === 0 ? (
-					<div className="py-6 text-center text-xs text-[var(--inno-text-muted)]">{t("presets.noResults")}</div>
-				) : (
-					groups.map(([category, items]) => (
-						<div key={category} className="mb-3 last:mb-0">
-							{/* Only show the group header when at least one categorized group exists
-							    AND there is more than one group — keeps the single-bucket flat layout
-							    when nothing has been categorized yet. */}
-							{groups.length > 1 ? (
-								<div className="mb-1.5 px-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--inno-text-subtle)]">
-									{t(`categories.${category}`, category)} <span className="ml-1 text-[var(--inno-text-subtle)]">· {items.length}</span>
-								</div>
-							) : null}
-							<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-								{items.map((preset) => (
-									<button
-										key={preset.id}
-										type="button"
-										disabled={openingPresetId !== null}
-										onClick={() => onOpen(preset.id)}
-										title={preset.description}
-										className="group flex flex-col items-start rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2.5 text-left transition-colors hover:border-[var(--inno-accent)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
-									>
-										<span className="text-sm font-medium text-[var(--inno-text)] group-hover:text-[var(--inno-accent)]">
-											{preset.name}
-										</span>
-										{preset.description ? (
-											<span className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-[var(--inno-text-muted)]">
-												{preset.description}
-											</span>
-										) : null}
-										{openingPresetId === preset.id ? (
-											<span className="mt-1 text-[10px] text-[var(--inno-accent)]">{t("presets.opening")}</span>
-										) : null}
-									</button>
-								))}
-							</div>
-						</div>
-					))
-				)}
-			</div>
-		</div>
-	);
-}
-
 export function ChatCenter() {
 	const { t } = useTranslation();
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -585,10 +483,37 @@ export function ChatCenter() {
 	}, [modelState.models]);
 	const currentModel = modelOptions.find((model) => model.provider === modelState.defaultProvider && model.id === modelState.defaultModel);
 	const currentModelLabel = currentModel?.name || currentModel?.id || modelState.defaultModel || t("chat.modelUnavailable");
-	const [presets, setPresets] = useState<PresetMeta[]>([]);
+	const [presets, setPresets] = useState<PresetMeta[]>(() => readCachedPresets() ?? []);
+	const [presetsLoaded, setPresetsLoaded] = useState(() => readCachedPresets() !== null);
+	const [isLoadingPresets, setIsLoadingPresets] = useState(() => readCachedPresets() === null);
+	const [isRefreshingPresets, setIsRefreshingPresets] = useState(false);
+	const [presetsRefreshError, setPresetsRefreshError] = useState<string | null>(null);
+	const [presetRefreshStatus, setPresetRefreshStatus] = useState<PresetRefreshStatus | null>(null);
+	const presetRefreshStatusTimerRef = useRef<number | null>(null);
+	const presetAutoRefreshStartedRef = useRef(false);
 	const [openingPresetId, setOpeningPresetId] = useState<string | null>(null);
 	const [togglingMode, setTogglingMode] = useState(false);
 	const [presetQuery, setPresetQuery] = useState("");
+
+	const cancelPresetRefreshStatusTimer = useCallback(() => {
+		if (presetRefreshStatusTimerRef.current === null) return;
+		window.clearTimeout(presetRefreshStatusTimerRef.current);
+		presetRefreshStatusTimerRef.current = null;
+	}, []);
+
+	const showPresetRefreshStatus = useCallback((status: PresetRefreshStatus) => {
+		cancelPresetRefreshStatusTimer();
+		setPresetRefreshStatus(status);
+		// Keep the failure marker visible until the next refresh attempt. A
+		// successful refresh remains a transient confirmation for five seconds.
+		if (status !== "success") return;
+		presetRefreshStatusTimerRef.current = window.setTimeout(() => {
+			setPresetRefreshStatus(null);
+			presetRefreshStatusTimerRef.current = null;
+		}, 5_000);
+	}, [cancelPresetRefreshStatusTimer]);
+
+	useEffect(() => () => cancelPresetRefreshStatusTimer(), [cancelPresetRefreshStatusTimer]);
 
 	// Toggle between Simple and Normal mode from the welcome screen. The IA icon
 	// plays a flip animation keyed on the resulting mode.
@@ -656,6 +581,14 @@ export function ChatCenter() {
 	const workspaces = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
 	}));
+	const loadedPresetIds = useMemo(
+		() => new Set(
+			workspaces.list
+				.filter((workspace) => workspace.id.startsWith("preset-"))
+				.map((workspace) => workspace.id.slice("preset-".length)),
+		),
+		[workspaces.list],
+	);
 	// Active workspace for the current session — drives upload target + button
 	// availability. Synced by sessionsStore on openSession/createSession, and
 	// pre-seeded by the useEffect below when the welcome screen's "existing"
@@ -885,14 +818,54 @@ export function ChatCenter() {
 		return { workspaceId: wsExistingId };
 	}, [simpleMode, wsMode, wsName, wsExistingId, t]);
 
-	// Load presets from the remote content hub once when the welcome screen is
-	// shown in Simple Mode. Falls back to an empty list on failure (offline /
-	// hub unreachable) so the composer still works.
-	useEffect(() => {
-		if (isWelcome && simpleMode && presets.length === 0) {
-			void listRemotePresets().then(setPresets).catch(() => setPresets([]));
+	const loadPresets = useCallback(async (forceRefresh = false) => {
+		setPresetsRefreshError(null);
+		if (forceRefresh) {
+			cancelPresetRefreshStatusTimer();
+			setPresetRefreshStatus(null);
 		}
-	}, [isWelcome, simpleMode, presets.length]);
+		if (!forceRefresh) {
+			const cached = readCachedPresets();
+			if (cached !== null) {
+				setPresets(cached);
+				setPresetsLoaded(true);
+				setIsLoadingPresets(false);
+				return;
+			}
+		}
+		if (forceRefresh) {
+			setIsRefreshingPresets(true);
+		} else {
+			setIsLoadingPresets(true);
+		}
+		try {
+			const next = await fetchPresetList(forceRefresh);
+			setPresets(next);
+			setPresetsLoaded(true);
+			if (forceRefresh) {
+				showPresetRefreshStatus("success");
+			}
+		} catch {
+			// Keep the last successful list visible and avoid leaking transport
+			// details such as the English "fetch failed" into the localized UI.
+			setPresetsRefreshError(t("presets.refreshFailed"));
+			showPresetRefreshStatus("error");
+		} finally {
+			setIsLoadingPresets(false);
+			setIsRefreshingPresets(false);
+		}
+	}, [cancelPresetRefreshStatusTimer, showPresetRefreshStatus, t]);
+
+	// Refresh the preset catalog once when the app first opens in Simple Mode.
+	// ChatCenter stays mounted across session changes, so this also works when
+	// the app restores an existing session instead of showing the welcome view.
+	// Cached cards render immediately; the forced request updates them in the
+	// background and reuses the same success/error indicator as manual refresh.
+	useEffect(() => {
+		if (!simpleMode || presetAutoRefreshStartedRef.current) return;
+		presetAutoRefreshStartedRef.current = true;
+		void loadPresets(true);
+	}, [simpleMode, loadPresets]);
 
 	// One-click open: instantiate the preset into a fresh workspace + session and
 	// reveal it in the right panel.
@@ -906,7 +879,15 @@ export function ChatCenter() {
 				appStore.setWorkspaceWidth(560);
 				appStore.setWorkspaceMode("half");
 			} catch (err) {
-				setWsError(err instanceof Error ? err.message : t("chat.errOpenPreset"));
+				const unavailable = err instanceof ApiError
+					&& err.status === 404
+					&& err.data?.code === "PRESET_UNAVAILABLE";
+				if (unavailable) {
+					setPresets((current) => current.filter((preset) => preset.id !== presetId));
+					removeCachedPreset(presetId);
+				} else {
+					setWsError(err instanceof Error ? err.message : t("chat.errOpenPreset"));
+				}
 			} finally {
 				setOpeningPresetId(null);
 			}
@@ -1428,11 +1409,16 @@ export function ChatCenter() {
 							{renderComposer(t("chat.welcomePlaceholder"))}
 						</div>
 
-						{simpleMode && presets.length > 0 ? (
+						{simpleMode && (presets.length > 0 || presetsLoaded || isLoadingPresets || presetsRefreshError) ? (
 							<PresetPicker
 								presets={presets}
+								loadedPresetIds={loadedPresetIds}
+								isLoading={isLoadingPresets}
+								isRefreshing={isRefreshingPresets}
+								refreshStatus={presetRefreshStatus}
 								openingPresetId={openingPresetId}
 								onOpen={openPreset}
+								onRefresh={() => void loadPresets(true)}
 								query={presetQuery}
 								onQueryChange={setPresetQuery}
 								t={t}

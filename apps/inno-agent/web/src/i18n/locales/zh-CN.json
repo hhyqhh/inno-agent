@@ -371,12 +371,16 @@
 		"importing": "导入中…",
 		"installed": "已安装",
 		"libraryError": "加载技能库失败",
+		"updateAvailable": "发现新技能，请点击刷新",
 		"searchPlaceholder": "按名称、描述或分类搜索…",
 		"uncategorized": "未分类",
 		"noResults": "无匹配技能"
 	},
 	"presets": {
 		"simpleModeHeader": "开箱即用 · 选一个开始",
+		"refresh": "刷新技能",
+		"refreshSucceeded": "刷新成功",
+		"refreshFailed": "刷新技能失败，仍保留旧列表",
 		"searchPlaceholder": "搜索预设…",
 		"uncategorized": "未分类",
 		"noResults": "无匹配预设",

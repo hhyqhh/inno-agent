@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { InnoContentHubConfig } from "../config.js";
@@ -16,6 +17,7 @@ interface GitTreeEntry {
 	path: string;
 	type: "blob" | "tree";
 	url: string;
+	sha?: string;
 }
 
 interface GitTreeResponse {
@@ -27,6 +29,7 @@ interface GitTreeResponse {
 const IGNORE_DIRS = new Set(["assets", "__MACOSX"]);
 
 const TREE_CACHE_TTL_MS = 5 * 60 * 1000;
+const REVISION_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Fetch content from a GitHub repo. Lifts the battle-tested approach the skill
@@ -41,6 +44,7 @@ const TREE_CACHE_TTL_MS = 5 * 60 * 1000;
  */
 export class GitHubContentSource implements RemoteContentSource {
 	private treeCache: { entries: GitTreeEntry[]; fetchedAt: number } | null = null;
+	private revisionCache = new Map<string, { revision: string | null; fetchedAt: number }>();
 
 	constructor(private readonly hub: InnoContentHubConfig) {}
 
@@ -136,6 +140,30 @@ export class GitHubContentSource implements RemoteContentSource {
 		return data.tree;
 	}
 
+	async getRevision(category: ContentCategory, forceRefresh = false): Promise<string | null> {
+		const now = Date.now();
+		const cacheKey = category;
+		const cached = this.revisionCache.get(cacheKey);
+		if (!forceRefresh && cached && now - cached.fetchedAt < REVISION_CACHE_TTL_MS) {
+			return cached.revision;
+		}
+		try {
+			const tree = await this.getTree(forceRefresh);
+			const prefix = this.prefixFor(category);
+			const entries = tree
+				.filter((entry) => entry.type === "blob" && entry.path.startsWith(prefix))
+				.filter((entry) => entry.path.slice(prefix.length).split("/").length >= 2)
+				.map((entry) => `${entry.path}:${entry.sha ?? ""}`)
+				.sort();
+			const revision = createHash("sha1").update(entries.join("\n")).digest("hex");
+			this.revisionCache.set(cacheKey, { revision, fetchedAt: now });
+			return revision;
+		} catch (err) {
+			logger.warn({ err, category }, "content-source: failed to fingerprint GitHub catalog");
+			return null;
+		}
+	}
+
 	async listItems(category: ContentCategory, opts: ListOpts = {}): Promise<RemoteItem[]> {
 		const tree = await this.getTree(opts.forceRefresh);
 		const prefix = this.prefixFor(category);
@@ -196,5 +224,6 @@ export class GitHubContentSource implements RemoteContentSource {
 
 	invalidate(): void {
 		this.treeCache = null;
+		this.revisionCache.clear();
 	}
 }

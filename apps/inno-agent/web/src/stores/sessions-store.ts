@@ -382,6 +382,9 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 				};
 				this._lastCreateInput = input;
 			} else {
+				// PresetPicker owns the inline error and stale-card removal. Re-throw
+				// preset failures so it can distinguish them from generic session errors.
+				if (input.presetId) throw err;
 				chatStore.showError(err instanceof Error ? err.message : "创建会话失败");
 			}
 			this.emit("change", undefined);

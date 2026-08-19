@@ -8,7 +8,7 @@ import { cpSync, existsSync, readFileSync, readdirSync, realpathSync, rmSync, st
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
-import { loadConfig, normalizeContentHubConfig, type InnoConfig, type InnoContentHubConfig } from "./config.js";
+import { loadConfig, type InnoConfig } from "./config.js";
 import { installFetchLogger } from "./utils/fetch-logger.js";
 import { canonicalContainmentRoot, isWithin } from "./utils/path-safety.js";
 import { applyProviderProxyBypass } from "./utils/proxy-bypass.js";
@@ -40,10 +40,12 @@ import {
 	safeJoinReal,
 	slugifySkillName,
 } from "./server/file-helpers.js";
+import { extractFrontmatterFields } from "./server/skill-frontmatter.js";
 import { handleChannelsRoutes } from "./server/routes/channels.js";
 import { handleJobsRoutes } from "./server/routes/jobs.js";
 import { handleSettingsRoutes } from "./server/routes/settings.js";
-import { handleSkillsRoutes, type SkillLibraryItem } from "./server/routes/skills.js";
+import { handleSkillsRoutes } from "./server/routes/skills.js";
+import { handleContentHubRoutes } from "./server/routes/content-hub.js";
 import { handleWorkspacesRoutes } from "./server/routes/workspaces.js";
 import { handleSessionsRoutes } from "./server/routes/sessions.js";
 import { handleLearnerRoutes } from "./server/routes/learner.js";
@@ -66,8 +68,8 @@ import { installProcessFallbacks } from "./utils/process-fallback.js";
 import { questionBridge } from "./agent/question-bridge.js";
 import { streamRegistry } from "./chat/stream-registry.js";
 import { DEFAULT_WORKSPACE_ID, WorkspaceRegistry } from "./workspace/workspace-registry.js";
-import { createContentSource, type RemoteContentSource } from "./content-source/index.js";
-import { mapWithConcurrency } from "./content-source/types.js";
+import type { RemoteContentSource } from "./content-source/index.js";
+import { ContentHubCatalog } from "./content-source/catalog-service.js";
 import { RunRecordStore } from "./terminal/run-record-store.js";
 import { TerminalSessionManager } from "./terminal/terminal-session-manager.js";
 import type { ClientTerminalEvent, ServerTerminalEvent } from "./terminal/terminal-types.js";
@@ -105,6 +107,12 @@ let config!: InnoConfig;
 const dataDir = paths.dataDir;
 const l2DataDir = paths.l2DataDir;
 const skillsDir = paths.skillsDir;
+const contentHubCatalog = new ContentHubCatalog({
+	dataDir,
+	paths,
+	skillsDir,
+	getConfig: () => config,
+});
 
 // All stateful services are declared with !: — they are guaranteed to be
 // initialised before any API handler that uses them runs, because the HTTP
@@ -313,6 +321,9 @@ async function ensureBootstrapped(): Promise<void> {
 
 		bootstrapped = true;
 		logger.info("[inno-server] bootstrap complete");
+		// Simple Mode cards and the remote skill library are warmed in the
+		// background. Never make the first meaningful API response wait on GitHub.
+		void contentHubCatalog.warm();
 	})().catch((err) => {
 		logger.error({ err }, "[inno-server] bootstrap failed");
 		bootstrapPromise = null; // allow retry on next request
@@ -690,109 +701,26 @@ function installSkillMarkdown(fileName: string, data: Buffer, targetRoot: string
 // recreated whenever the hub config changes, so settings edits take effect
 // without a restart.
 // ---------------------------------------------------------------------------
-
-
-let contentSource: RemoteContentSource | null = null;
-let contentSourceHubKey = "";
-
-/** Stable identity for a hub config, so we recreate the source on change. */
-function hubKey(hub: InnoContentHubConfig): string {
-	return JSON.stringify(hub);
-}
-
 /** Get (or rebuild) the content source for the current config.contentHub. */
 function getContentSource(): RemoteContentSource {
-	const hub = config.contentHub ?? normalizeContentHubConfig(undefined, config.github?.token);
-	const key = hubKey(hub);
-	if (!contentSource || key !== contentSourceHubKey) {
-		contentSource = createContentSource(hub);
-		contentSourceHubKey = key;
-	}
-	return contentSource;
+	return contentHubCatalog.getSource();
 }
 
 /** Drop the source so the next call rebuilds it (and its cache) from config. */
 function invalidateContentSource(): void {
-	contentSource?.invalidate();
-	contentSource = null;
-	contentSourceHubKey = "";
+	contentHubCatalog.invalidate();
 }
 
-/**
- * Extract the `description` and `category` fields from a SKILL.md frontmatter
- * block. Supports both single-line and YAML folded/literal block scalars
- * (`>-`, `|`). Returns `""` for any missing field.
- */
-function extractFrontmatterFields(content: string): { description: string; category: string } {
-	const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-	const fmMatch = normalized.match(/^---\n([\s\S]*?)\n---/);
-	if (!fmMatch) return { description: "", category: "" };
-	const lines = fmMatch[1].split("\n");
-	const extractField = (key: string): string => {
-		const re = new RegExp(`^${key}:\\s*(.*)$`);
-		for (let i = 0; i < lines.length; i++) {
-			const m = lines[i].match(re);
-			if (!m) continue;
-			const inline = m[1].trim();
-			// Block scalar (>- , |, > , |- ...) → gather indented continuation lines.
-			if (/^[>|][+-]?\s*$/.test(inline)) {
-				const block: string[] = [];
-				for (let j = i + 1; j < lines.length; j++) {
-					if (/^\s+\S/.test(lines[j]) || lines[j].trim() === "") {
-						block.push(lines[j].trim());
-					} else {
-						break;
-					}
-				}
-				return block.join(" ").replace(/\s+/g, " ").trim();
-			}
-			return inline.replace(/^["']|["']$/g, "").trim();
-		}
-		return "";
-	};
-	return {
-		description: extractField("description"),
-		category: extractField("category"),
-	};
+function listSkillLibrary(forceRefresh = false) {
+	return contentHubCatalog.listSkillLibrary(forceRefresh);
 }
 
-/**
- * List installable skills from the remote skill library via the content source.
- * Descriptions are best-effort (read from each SKILL.md / item meta).
- */
-async function listSkillLibrary(forceRefresh = false): Promise<SkillLibraryItem[]> {
-	const source = getContentSource();
-	const items = await source.listItems("skills", { forceRefresh });
+function listPresetLibrary(forceRefresh = false) {
+	return contentHubCatalog.listPresetLibrary(forceRefresh);
+}
 
-	const localNames = new Set(
-		existsSync(skillsDir)
-			? readdirSync(skillsDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
-			: [],
-	);
-
-	// One SKILL.md read per item over raw.githubusercontent.com; cap concurrency
-	// so a large library doesn't burst past the raw CDN throttle (429) and lose
-	// descriptions. Matches the preset library's approach.
-	const result = await mapWithConcurrency(items, 5, async (item): Promise<SkillLibraryItem> => {
-		// Prefer inline meta (bundle service); otherwise read SKILL.md frontmatter.
-		let description = typeof item.meta?.description === "string" ? item.meta.description : "";
-		let category = typeof item.meta?.category === "string" ? item.meta.category.trim() : "";
-		if (!description || !category) {
-			const md = await source.readItemTextFile("skills", item.name, "SKILL.md");
-			if (md) {
-				const fields = extractFrontmatterFields(md);
-				if (!description) description = fields.description;
-				if (!category) category = fields.category;
-			}
-		}
-		return {
-			name: item.name,
-			description,
-			category: category || undefined,
-			installed: localNames.has(slugifySkillName(item.name)),
-		};
-	});
-	return result.sort((a, b) => a.name.localeCompare(b.name));
+function getContentHubStatus() {
+	return contentHubCatalog.getStatus();
 }
 
 /**
@@ -1422,9 +1350,12 @@ const server = createServer(async (req, res) => {
 			importSkillFromLibrary,
 		})) return;
 
+		if (await handleContentHubRoutes(req, res, method, url, { getContentHubStatus })) return;
+
 		// --- Sessions API (extracted to server/routes/sessions.ts) ---
 		if (await handleSessionsRoutes(req, res, method, url, {
 			workspaceRegistry, dataDir, paths, getContentSource,
+			getCachedPresetAvailability: (presetId) => contentHubCatalog.getCachedPresetAvailability(presetId),
 			parseSessionFile, sessionRevision,
 			readSessionChannelMetadata, sessionChannelMetadataPath,
 			readSessionTopicMetadata, sessionTopicMetadataPath, writeSessionTopic,
@@ -1447,7 +1378,7 @@ const server = createServer(async (req, res) => {
 		})) return;
 
 		// --- Presets API (extracted to server/routes/presets.ts) ---
-		if (await handlePresetsRoutes(req, res, method, url, { paths, getContentSource })) return;
+		if (await handlePresetsRoutes(req, res, method, url, { paths, listPresetLibrary })) return;
 
 		// --- Terminal sessions + Runs (extracted to server/routes/practice.ts) ---
 		if (await handlePracticeRoutes(req, res, method, url, {

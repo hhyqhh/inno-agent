@@ -371,12 +371,16 @@
 		"importing": "Importing…",
 		"installed": "Installed",
 		"libraryError": "Failed to load skills library",
+		"updateAvailable": "New skills found — click refresh",
 		"searchPlaceholder": "Search by name, description, or category…",
 		"uncategorized": "Uncategorized",
 		"noResults": "No matching skills"
 	},
 	"presets": {
 		"simpleModeHeader": "Ready to go · pick one to start",
+		"refresh": "Refresh skills",
+		"refreshSucceeded": "Refresh succeeded",
+		"refreshFailed": "Refresh failed; keeping the previous list",
 		"searchPlaceholder": "Search presets…",
 		"uncategorized": "Uncategorized",
 		"noResults": "No matching presets",

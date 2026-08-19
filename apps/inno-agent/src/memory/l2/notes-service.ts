@@ -296,7 +296,7 @@ export function createL2Note(
 	},
 ): { rawPath: string; status: NoteStatus; noteId: string; title: string } {
 	ensureL2Directories(l2DataDir);
-	const { title, tags, body } = resolveNoteTemplateContent(codeDir, options);
+	const { title, tags, body } = resolveNoteTemplateContent(codeDir, l2DataDir, options);
 	const noteId = `note_${randomUUID().slice(0, 8)}`;
 	const now = new Date().toISOString();
 	const fileName = noteFileName(title, noteId);

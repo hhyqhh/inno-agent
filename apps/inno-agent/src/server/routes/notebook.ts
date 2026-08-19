@@ -17,7 +17,14 @@ import {
 	readNoteContent,
 	saveL2NoteContent,
 } from "../../memory/l2/notes-service.js";
-import { listNoteTemplates } from "../../memory/l2/note-templates.js";
+import {
+	createCustomNoteTemplate,
+	deleteCustomNoteTemplate,
+	duplicateNoteTemplate,
+	listNoteTemplates,
+	updateCustomNoteTemplate,
+	type NoteTemplateInput,
+} from "../../memory/l2/note-templates.js";
 import { polishNoteContent, type PolishPromptRunner } from "../../memory/l2/note-polish-service.js";
 import { unarchiveL2NotebookItem } from "../../memory/l2/notebook-unarchive-service.js";
 import {
@@ -219,7 +226,7 @@ export async function handleNotebookRoutes(
 
 	if (method === "GET" && url === "/api/l2/notes/templates") {
 		try {
-			json(res, 200, { templates: listNoteTemplates(codeDir) });
+			json(res, 200, { templates: listNoteTemplates(codeDir, l2DataDir) });
 		} catch (err) {
 			logger.warn({ err }, "failed to list note templates");
 			json(res, 500, { error: "Failed to list templates" });
@@ -364,6 +371,48 @@ export async function handleNotebookRoutes(
 		return true;
 	}
 
+	if (method === "POST" && url === "/api/l2/notes/templates") {
+		const body = await readBody(req) as NoteTemplateInput;
+		try {
+			json(res, 201, createCustomNoteTemplate(codeDir, l2DataDir, body));
+		} catch (err) {
+			json(res, 400, { error: errorMessage(err, "Create template failed") });
+		}
+		return true;
+	}
+
+	const duplicateTemplate = matchRoute("POST", method, url, "/api/l2/notes/templates/:templateId/duplicate");
+	if (duplicateTemplate) {
+		const body = await readBody(req) as Record<string, unknown>;
+		const newId = typeof body.id === "string" ? body.id : "";
+		try {
+			json(res, 201, duplicateNoteTemplate(codeDir, l2DataDir, duplicateTemplate.templateId, newId));
+		} catch (err) {
+			json(res, 400, { error: errorMessage(err, "Duplicate template failed") });
+		}
+		return true;
+	}
+
+	const templateRoute = matchRoute(method, method, url, "/api/l2/notes/templates/:templateId");
+	if (templateRoute && method === "PUT") {
+		const body = await readBody(req) as NoteTemplateInput;
+		try {
+			json(res, 200, updateCustomNoteTemplate(codeDir, l2DataDir, templateRoute.templateId, body));
+		} catch (err) {
+			json(res, 400, { error: errorMessage(err, "Update template failed") });
+		}
+		return true;
+	}
+	if (templateRoute && method === "DELETE") {
+		try {
+			deleteCustomNoteTemplate(codeDir, l2DataDir, templateRoute.templateId);
+			json(res, 200, { ok: true });
+		} catch (err) {
+			json(res, 400, { error: errorMessage(err, "Delete template failed") });
+		}
+		return true;
+	}
+
 	if (method === "DELETE" && url.startsWith("/api/l2/notes?")) {
 		const rawPath = new URL(url, "http://localhost").searchParams.get("path");
 		if (!rawPath) {
@@ -450,7 +499,7 @@ export async function handleNotebookRoutes(
 			return true;
 		}
 		try {
-			json(res, 200, await polishNoteContent(codeDir, { title, tags, content }, ctx.completePrompt));
+			json(res, 200, await polishNoteContent(codeDir, { title, tags, content }, ctx.completePrompt, l2DataDir));
 		} catch (err) {
 			logger.warn({ err, rawPath: resolved.rawPath }, "failed to polish note");
 			json(res, 500, { error: errorMessage(err, "Polish note failed") });

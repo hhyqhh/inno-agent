@@ -264,6 +264,10 @@
 			"summarizing": "Summarizing meeting notes…", "summarizingHint": "The transcript is being organized into a summary, decisions, and action items. You may leave this page; the result remains a draft.",
 			"completed": "Meeting draft created", "no_speech": "No speech was recognized", "error": "Meeting processing failed",
 			"status": { "connecting": "Connecting", "recording": "Recording", "paused": "Paused", "finishing": "Finishing", "summarizing": "Summarizing", "completed": "Meeting draft", "no_speech": "No speech recognized", "failed": "Summary failed", "interrupted": "Recording interrupted" }
+		},
+		"templates": {
+			"discardDialogTitle": "Discard template changes", "discardConfirm": "This template has unsaved changes. Discard them?", "discardChanges": "Discard changes",
+			"deleteDialogTitle": "Delete template", "deleteConfirm": "Delete template \"{{title}}\"? This cannot be undone."
 		}
 	},
 	"preview": {

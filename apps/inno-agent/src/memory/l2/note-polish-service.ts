@@ -19,12 +19,13 @@ export async function polishNoteContent(
 	codeDir: string,
 	request: PolishNoteRequest,
 	runPrompt: PolishPromptRunner,
+	templateDataDir?: string,
 ): Promise<PolishNoteResult> {
 	const title = request.title.trim();
 	const content = request.content.trim();
 	if (!title || !content) throw new Error("Missing note title or content");
 
-	const templates = listNoteTemplates(codeDir).filter((template) => !template.hidden && template.id !== "blank");
+	const templates = listNoteTemplates(codeDir, templateDataDir).filter((template) => !template.hidden && template.id !== "blank");
 	const sourceExcerpt = content.slice(0, 60_000);
 	let matchedTemplate = undefined as (typeof templates)[number] | undefined;
 	if (templates.length > 0) {

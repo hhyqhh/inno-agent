@@ -264,6 +264,10 @@
 			"summarizing": "纪要正在总结中…", "summarizingHint": "正在根据会议转写整理摘要、决策事项和待办任务。您可以离开当前页面，完成后纪要仍保存在草稿中。",
 			"completed": "纪要草稿已生成", "no_speech": "未识别到有效语音", "error": "会议处理失败",
 			"status": { "connecting": "连接中", "recording": "录音中", "paused": "已暂停", "finishing": "完成转写中", "summarizing": "总结中", "completed": "纪要草稿", "no_speech": "未识别到有效语音", "failed": "总结失败", "interrupted": "录音中断" }
+		},
+		"templates": {
+			"discardDialogTitle": "放弃模板修改", "discardConfirm": "当前模板尚未保存，是否放弃修改？", "discardChanges": "放弃修改",
+			"deleteDialogTitle": "删除模板", "deleteConfirm": "删除模板「{{title}}」？此操作不可撤回。"
 		}
 	},
 	"preview": {

@@ -6,25 +6,26 @@ import { NoteProperties } from "./notebook/NoteProperties.js";
 import {
 	Archive,
 	ArchiveRestore,
-	ChevronDown,
 	Download,
 	ExternalLink,
 	FileText,
 	FileUp,
 	LoaderCircle,
-	Plus,
 	RefreshCw,
 	Save,
 	Sparkles,
 	Trash2,
 } from "lucide-react";
-import { getVisibleNoteTemplates } from "../lib/build-note-from-template.js";
 import { l2RawFileUrl } from "../api/notes.js";
 import { notesStore } from "../stores/notes-store.js";
 import type { NoteSummary } from "../types/notes.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { MeetingProgress, MeetingRecorder } from "./meetings/MeetingRecorder.js";
 import { meetingStore } from "../stores/meeting-store.js";
+import { TemplateEditor } from "./note-templates/TemplateEditor.js";
+import { TemplateMenu } from "./note-templates/TemplateMenu.js";
+import { TemplateSidebar } from "./note-templates/TemplateSidebar.js";
+import { noteTemplateStore } from "../stores/note-template-store.js";
 
 interface NotesPanelProps {
 	onOpenWiki?(wikiPath: string): void;
@@ -43,8 +44,7 @@ function rawFileName(rawPath: string): string {
 
 export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 	const { t } = useTranslation();
-	const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
-	const templateMenuRef = useRef<HTMLDivElement>(null);
+	const [templateMode, setTemplateMode] = useState(false);
 	const uploadRef = useRef<HTMLInputElement>(null);
 	const meetingState = useStoreSnapshot(meetingStore, () => meetingStore.state);
 	const state = useStoreSnapshot(notesStore, () => ({
@@ -83,18 +83,17 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		void notesStore.loadAll();
 	}, []);
 
-	useEffect(() => {
-		if (!templateMenuOpen) return;
-		const handlePointerDown = (event: PointerEvent) => {
-			const target = event.target;
-			if (!(target instanceof Node) || templateMenuRef.current?.contains(target)) return;
-			setTemplateMenuOpen(false);
-		};
-		document.addEventListener("pointerdown", handlePointerDown, true);
-		return () => document.removeEventListener("pointerdown", handlePointerDown, true);
-	}, [templateMenuOpen]);
-
-	const templates = getVisibleNoteTemplates();
+	const openTemplates = useCallback(async (create = false) => {
+		if (!(await notesStore.saveSelected())) return;
+		await noteTemplateStore.load();
+		if (create) noteTemplateStore.startCreate();
+		else if (!noteTemplateStore.selectedId && noteTemplateStore.templates[0]) noteTemplateStore.select(noteTemplateStore.templates[0].id);
+		setTemplateMode(true);
+	}, []);
+	const closeTemplates = useCallback(() => {
+		if (noteTemplateStore.isDirty && typeof window !== "undefined" && !window.confirm(t("notes.templates.discardConfirm"))) return;
+		setTemplateMode(false);
+	}, [t]);
 
 	const handleArchive = useCallback(async () => {
 		const wikiPath = await notesStore.archiveSelected();
@@ -239,6 +238,15 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		);
 	}
 
+	if (templateMode) {
+		return (
+			<div className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] gap-3 p-3">
+				<TemplateSidebar onBack={closeTemplates} />
+				<TemplateEditor />
+			</div>
+		);
+	}
+
 	return (
 		<div className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] gap-3 p-3">
 			<aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
@@ -251,46 +259,13 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						onChange={(e) => notesStore.setSearchQuery(e.target.value)}
 					/>
 					<div className="flex gap-1">
-						<div className="relative flex flex-1" ref={templateMenuRef}>
-							<button
-								type="button"
-								className="inline-flex flex-1 items-center justify-center gap-1 rounded-l-md border border-[var(--inno-border)] px-2 py-1 text-xs hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
-								disabled={state.isCreating}
-								onClick={() => void notesStore.createFromTemplate("blank")}
-							>
-								<Plus size={13} />
-								{t("notes.actions.createDraft")}
-							</button>
-							<button
-								type="button"
-								className="inline-flex w-7 items-center justify-center rounded-r-md border border-l-0 border-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
-								disabled={state.isCreating}
-								onClick={() => setTemplateMenuOpen((open) => !open)}
-								title={t("notes.actions.templates")}
-							>
-								<ChevronDown size={13} />
-							</button>
-							{templateMenuOpen ? (
-								<div className="absolute left-0 top-full z-20 mt-1 max-h-64 w-64 overflow-y-auto rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] py-1 shadow-lg">
-									{templates.map((template) => (
-										<button
-											key={template.id}
-											type="button"
-											className="w-full px-3 py-2 text-left hover:bg-[var(--inno-surface-muted)]"
-											onClick={() => {
-												setTemplateMenuOpen(false);
-												void notesStore.createFromTemplate(template.id);
-											}}
-										>
-											<div className="text-sm font-medium">{template.label}</div>
-											{template.description ? (
-												<div className="text-xs text-[var(--inno-text-muted)]">{template.description}</div>
-											) : null}
-										</button>
-									))}
-								</div>
-							) : null}
-						</div>
+						<TemplateMenu
+							isCreating={state.isCreating}
+							onCreateBlank={() => void notesStore.createFromTemplate("blank")}
+							onUseTemplate={(id) => void notesStore.createFromTemplate(id)}
+							onCreateTemplate={() => void openTemplates(true)}
+							onManageTemplates={() => void openTemplates(false)}
+						/>
 						<button
 							type="button"
 							className="inline-flex items-center justify-center gap-1 rounded-md border border-[var(--inno-border)] px-2 py-1 text-xs hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"

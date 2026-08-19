@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { basename, join } from "node:path";
 import { wikiPathJoin } from "../../memory/l2/wiki-paths.js";
+import { sanitizeUploadedFileName, uploadExtension } from "../../memory/l2/upload-file-utils.js";
 import { logger } from "../../logger.js";
 import { getL2Memory } from "../../memory/l2/l2-memory.js";
 import { readManifest, removeWikiPathFromManifest } from "../../memory/l2/manifest-store.js";
@@ -46,27 +48,6 @@ function manifestSourceIdByWikiPath(l2DataDir: string): Map<string, string> {
 		}
 	}
 	return map;
-}
-
-function sanitizeUploadName(name: string): string {
-	const cleaned = name
-		.replace(/[/\\?%*:|"<>]/g, "-")
-		.replace(/\s+/g, " ")
-		.trim();
-	return cleaned || "upload";
-}
-
-function uploadExtension(fileName: string, mimeType: string): string {
-	const ext = extname(fileName);
-	if (ext) return ext;
-	if (mimeType === "application/pdf") return ".pdf";
-	if (mimeType.includes("wordprocessingml")) return ".docx";
-	if (mimeType.includes("spreadsheetml")) return ".xlsx";
-	if (mimeType.includes("presentationml")) return ".pptx";
-	if (mimeType === "text/markdown") return ".md";
-	if (mimeType.startsWith("image/")) return `.${mimeType.slice("image/".length).replace("jpeg", "jpg")}`;
-	if (mimeType.startsWith("text/")) return ".txt";
-	return ".bin";
 }
 
 /**
@@ -222,14 +203,18 @@ export async function handleWikiRoutes(
 		const dir = join(l2DataDir, "raw", "uploads");
 		ensureDir(dir);
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-		const safeName = sanitizeUploadName(fileName);
+		const safeName = sanitizeUploadedFileName(fileName, "upload");
 		const ext = uploadExtension(safeName, mimeType);
 		const base = basename(safeName, ext).slice(0, 80) || "upload";
-		const outputName = `${timestamp}-${base}${ext}`;
-		const outputPath = join(dir, outputName);
+		const outputName = `${timestamp}-${randomUUID().slice(0, 8)}-${base}${ext}`;
+		const outputPath = safeJoinReal(dir, outputName);
+		if (!outputPath) {
+			json(res, 400, { error: "Invalid upload path" });
+			return true;
+		}
 		const data = Buffer.from(dataBase64, "base64");
 		writeFileSync(outputPath, data);
-		const rawPath = join("raw", "uploads", outputName);
+		const rawPath = join("raw", "uploads", outputName).replace(/\\/g, "/");
 		json(res, 201, {
 			fileName,
 			mimeType,

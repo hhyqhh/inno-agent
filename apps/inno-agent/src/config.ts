@@ -154,6 +154,19 @@ export interface PersonalILinkChannelConfig extends PersonalChannelConfig {
 	mode?: "ilink";
 }
 
+export interface InnoMeetingConfig {
+	enabled: boolean;
+	transcriptionProvider: "dashscope" | string;
+	language: string;
+	saveAudio: boolean;
+	summaryTemplate: string;
+	websocketUrl: string;
+	apiKey: string;
+	model: string;
+	vocabularyId: string;
+	maxSentenceSilenceMs: number;
+}
+
 export interface InnoConfig {
 	defaultProvider: string;
 	defaultModel: string;
@@ -183,6 +196,7 @@ export interface InnoConfig {
 	subagents?: InnoSubagentsConfig;
 	memory?: InnoMemoryConfig;
 	simpleMode?: InnoSimpleModeConfig;
+	meeting?: InnoMeetingConfig;
 	mcp?: InnoMcpConfig;
 	ui?: InnoUiConfig;
 	scheduler?: InnoSchedulerConfig;
@@ -287,6 +301,24 @@ export function normalizeSimpleModeConfig(simpleMode: Partial<InnoSimpleModeConf
 	};
 }
 
+export function normalizeMeetingConfig(meeting: Partial<InnoMeetingConfig> | undefined): InnoMeetingConfig {
+	const silence = meeting?.maxSentenceSilenceMs;
+	return {
+		enabled: meeting?.enabled === true,
+		transcriptionProvider: meeting?.transcriptionProvider?.trim() || "dashscope",
+		language: meeting?.language?.trim() || "zh",
+		saveAudio: meeting?.saveAudio !== false,
+		summaryTemplate: meeting?.summaryTemplate?.trim() || "default",
+		websocketUrl: meeting?.websocketUrl?.trim() ?? "",
+		apiKey: meeting?.apiKey ?? "",
+		model: meeting?.model?.trim() || "fun-asr-realtime",
+		vocabularyId: meeting?.vocabularyId?.trim() ?? "",
+		maxSentenceSilenceMs: typeof silence === "number" && Number.isFinite(silence)
+			? Math.max(200, Math.min(5000, Math.trunc(silence)))
+			: 800,
+	};
+}
+
 export function normalizeMcpConfig(mcp: Partial<InnoMcpConfig> | undefined): InnoMcpConfig {
 	// MCP defaults OFF; only an explicit `true` enables it.
 	return {
@@ -371,6 +403,7 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		subagents: config.subagents,
 		memory: normalizeMemoryConfig(config.memory),
 		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
+		meeting: normalizeMeetingConfig(config.meeting),
 		mcp: normalizeMcpConfig(config.mcp),
 		ui: normalizeUiConfig(config.ui),
 		scheduler: normalizeSchedulerConfig(config.scheduler),

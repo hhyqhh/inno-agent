@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { fetchNoteVersion, listNoteVersions, restoreNoteVersion } from "../../api/notes.js";
 import type { NoteVersion, NoteVersionSummary } from "../../types/notes.js";
+import { noteImageUrl } from "../../stores/notes-store.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { MilkdownEditor } from "./MilkdownEditor.js";
 
@@ -101,7 +102,7 @@ export function VersionHistoryDialog({
 										<div className="mt-2 flex flex-wrap gap-1">{selected.tags.map((tag) => <span key={tag} className="rounded bg-[var(--inno-surface-muted)] px-2 py-0.5 text-xs">#{tag}</span>)}</div>
 									</div>
 									<div className="min-h-0 flex-1 overflow-hidden">
-										<MilkdownEditor editorKey={`note-version:${selected.versionId}`} value={selected.content} onChange={() => undefined} readOnly />
+										<MilkdownEditor editorKey={`note-version:${selected.versionId}`} value={selected.content} onChange={() => undefined} resolveImageUrl={(url) => noteImageUrl(rawPath, url)} readOnly />
 									</div>
 								</>
 							) : null}

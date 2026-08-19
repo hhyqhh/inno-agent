@@ -49,6 +49,7 @@ export interface NoteContent {
 }
 
 export type NoteAttachmentStatus = "uploaded" | "extracting" | "extracted" | "indexed" | "error";
+export type NoteAttachmentPlacement = "attachment" | "inline";
 
 export interface NoteAttachment {
 	id: string;
@@ -58,6 +59,7 @@ export interface NoteAttachment {
 	mimeType: string;
 	size: number;
 	filePath: string;
+	placement?: NoteAttachmentPlacement;
 	status: NoteAttachmentStatus;
 	createdAt: string;
 	updatedAt: string;

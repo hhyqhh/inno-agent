@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
@@ -34,6 +34,7 @@ import { logger } from "../../logger.js";
 import {
 	deleteAttachmentsForNote,
 	listNoteAttachments,
+	updateNoteAttachmentStatus,
 	type NoteAttachmentRecord,
 } from "./note-attachments-service.js";
 import {
@@ -45,6 +46,143 @@ import {
 	type NoteVersionReason,
 	type NoteVersionSummaryDto,
 } from "./note-history-service.js";
+import { isSupportedFormat, parseDocument } from "./document-parser.js";
+
+const TEXT_ATTACHMENT_EXTENSIONS = new Set([
+	".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".xml", ".yaml", ".yml",
+	".html", ".css", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".java", ".go",
+	".rs", ".sql", ".sh", ".log",
+]);
+const IMAGE_REFERENCE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".tif"]);
+
+interface MarkdownImageReference {
+	alt: string;
+	target: string;
+}
+
+function markdownImageReferences(markdown: string): MarkdownImageReference[] {
+	const references: MarkdownImageReference[] = [];
+	const inlineImage = /!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\s*\)/g;
+	for (const match of markdown.matchAll(inlineImage)) {
+		const target = (match[2] || match[3] || "").trim();
+		if (target) references.push({ alt: match[1].trim(), target });
+	}
+	const htmlImage = /<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1[^>]*>/gi;
+	for (const match of markdown.matchAll(htmlImage)) {
+		const target = match[2].trim();
+		if (target) references.push({ alt: "", target });
+	}
+	return references;
+}
+
+function resolveLocalNoteImage(
+	l2DataDir: string,
+	notePath: string,
+	reference: MarkdownImageReference,
+): { path: string; source: string; alt: string } | null {
+	const rawTarget = reference.target.trim();
+	if (/^(?:https?:|data:|blob:|mailto:)/i.test(rawTarget) || rawTarget.startsWith("#")) return null;
+
+	let decodedTarget: string;
+	try {
+		decodedTarget = decodeURIComponent(rawTarget);
+	} catch {
+		decodedTarget = rawTarget;
+	}
+
+	let candidate: string | null;
+	if (decodedTarget.startsWith("/api/l2/raw/file?")) {
+		const rawPath = new URL(decodedTarget, "http://localhost").searchParams.get("path");
+		candidate = rawPath ? resolveContainedPath(l2DataDir, rawPath) : null;
+	} else {
+		const cleanTarget = decodedTarget.split(/[?#]/, 1)[0].replace(/\\/g, "/");
+		if (!cleanTarget) return null;
+		const lexical = cleanTarget.startsWith("raw/")
+			? resolve(l2DataDir, cleanTarget)
+			: resolve(dirname(notePath), cleanTarget);
+		candidate = resolveContainedPath(l2DataDir, relative(l2DataDir, lexical));
+	}
+
+	if (!candidate || !IMAGE_REFERENCE_EXTENSIONS.has(extname(candidate).toLowerCase())) return null;
+	if (!existsSync(candidate) || !statSync(candidate).isFile()) {
+		throw new Error(`笔记引用图片不存在: ${reference.target}`);
+	}
+	return { path: candidate, source: reference.target, alt: reference.alt };
+}
+
+function isTextAttachment(attachment: NoteAttachmentRecord): boolean {
+	return attachment.mimeType.startsWith("text/")
+		|| ["application/json", "application/xml", "application/javascript", "application/x-yaml"].includes(attachment.mimeType)
+		|| TEXT_ATTACHMENT_EXTENSIONS.has(extname(attachment.fileName).toLowerCase());
+}
+
+function attachmentSignature(attachments: NoteAttachmentRecord[]): string {
+	return attachments
+		.map((attachment) => `${attachment.id}:${attachment.filePath}:${attachment.size}`)
+		.sort()
+		.join("|");
+}
+
+async function prepareNoteArchiveContent(
+	l2DataDir: string,
+	notePath: string,
+	body: string,
+	attachments: NoteAttachmentRecord[],
+): Promise<string> {
+	const attachmentSections: string[] = [];
+	const processedImagePaths = new Set<string>();
+	for (const attachment of attachments) {
+		updateNoteAttachmentStatus(l2DataDir, attachment.id, "extracting");
+		try {
+			const attachmentPath = resolveContainedPath(l2DataDir, attachment.filePath);
+			if (!attachmentPath || !existsSync(attachmentPath) || !statSync(attachmentPath).isFile()) {
+				throw new Error("附件文件不存在或路径无效");
+			}
+			if (IMAGE_REFERENCE_EXTENSIONS.has(extname(attachmentPath).toLowerCase())) {
+				processedImagePaths.add(resolve(attachmentPath));
+			}
+			const extractedContent = isSupportedFormat(attachmentPath)
+				? (await parseDocument(attachmentPath)).text.trim()
+				: isTextAttachment(attachment)
+					? readText(attachmentPath).trim()
+					: "";
+			if (!extractedContent) throw new Error(`不支持或无法提取附件格式: ${extname(attachment.fileName) || attachment.mimeType}`);
+			attachmentSections.push([
+				`## 附件：${attachment.fileName}`,
+				"",
+				`> 来源：[${attachment.fileName}](${attachment.filePath})`,
+				"",
+				extractedContent,
+			].join("\n"));
+			updateNoteAttachmentStatus(l2DataDir, attachment.id, "extracted");
+		} catch (error) {
+			updateNoteAttachmentStatus(l2DataDir, attachment.id, "error");
+			throw new Error(`附件“${attachment.fileName}”内容解析失败: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	const referencedImageSections: string[] = [];
+	for (const reference of markdownImageReferences(body)) {
+		const image = resolveLocalNoteImage(l2DataDir, notePath, reference);
+		if (!image || processedImagePaths.has(resolve(image.path))) continue;
+		processedImagePaths.add(resolve(image.path));
+		try {
+			const extractedContent = (await parseDocument(image.path)).text.trim();
+			if (!extractedContent) throw new Error("OCR 结果为空");
+			referencedImageSections.push([
+				`## 引用图片：${image.alt || basename(image.path)}`,
+				"",
+				`> 来源：${image.source}`,
+				"",
+				extractedContent,
+			].join("\n"));
+		} catch (error) {
+			throw new Error(`引用图片“${image.alt || image.source}”内容解析失败: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	return [body.trim(), ...attachmentSections, ...referencedImageSections].filter(Boolean).join("\n\n");
+}
 
 export type NotebookItemKind = "markdown" | "orphan" | "archived";
 export type NotebookType = "conversation" | "file" | "note";
@@ -425,15 +563,23 @@ export async function archiveL2Note(
 	ensureL2Directories(l2DataDir);
 	const normalizedPath = rawPath.replace(/\\/g, "/");
 	const snapshot = readNoteFile(l2DataDir, normalizedPath);
-	const archivedContent = snapshot.body.trim();
+	const attachments = listNoteAttachments(l2DataDir, normalizedPath);
+	const archivedContent = await prepareNoteArchiveContent(
+		l2DataDir,
+		snapshot.absPath,
+		snapshot.body,
+		attachments,
+	);
 	if (!archivedContent) throw new Error("笔记内容为空，无法归档");
+	const snapshotBodyHash = createHash("sha256").update(snapshot.body.trim()).digest("hex").slice(0, 16);
+	const snapshotAttachments = attachmentSignature(attachments);
 
 	const title = options.title?.trim()
 		|| snapshot.frontmatter.title
 		|| extractNoteTitle(snapshot.body, basename(normalizedPath, ".md"));
 	const tags = options.tags ?? snapshot.frontmatter.tags;
 
-	return archiveL2Source(
+	const result = await archiveL2Source(
 		l2DataDir,
 		{
 			title,
@@ -452,18 +598,19 @@ export async function archiveL2Note(
 			createdAt: snapshot.frontmatter.created,
 			force: snapshot.frontmatter.status === "outdated",
 			logLabel: "notebook notes API",
-			onIndexed: (result) => {
+			onIndexed: (archiveResult) => {
 				const current = readNoteFile(l2DataDir, normalizedPath);
 				const currentHash = createHash("sha256").update(current.body.trim()).digest("hex").slice(0, 16);
 				const sameTags = current.frontmatter.tags.length === tags.length
 					&& current.frontmatter.tags.every((tag, index) => tag === tags[index]);
-				const unchanged = currentHash === result.contentHash
+				const unchanged = currentHash === snapshotBodyHash
 					&& current.frontmatter.title === title
-					&& sameTags;
+					&& sameTags
+					&& attachmentSignature(listNoteAttachments(l2DataDir, normalizedPath)) === snapshotAttachments;
 				const nextFrontmatter: NoteFrontmatter = {
 					...current.frontmatter,
 					status: unchanged ? "indexed" : "outdated",
-					source_id: result.sourceId,
+					source_id: archiveResult.sourceId,
 					updated: new Date().toISOString(),
 				};
 				writeText(current.absPath, serializeNoteFile(nextFrontmatter, current.body));
@@ -471,6 +618,8 @@ export async function archiveL2Note(
 		},
 		{ model: options.model, modelRegistry: options.modelRegistry, memory: options.memory },
 	);
+	for (const attachment of attachments) updateNoteAttachmentStatus(l2DataDir, attachment.id, "indexed");
+	return result;
 }
 
 export interface DeleteNotebookItemResult {

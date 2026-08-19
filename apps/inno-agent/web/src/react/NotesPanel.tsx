@@ -464,6 +464,8 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 										editorKey={selected.rawPath}
 										value={state.editorContent}
 										onChange={(value) => notesStore.updateEditorContent(value)}
+										onUploadImage={(file) => notesStore.uploadInlineImage(file)}
+										resolveImageUrl={(url) => notesStore.resolveInlineImageUrl(url)}
 										toolbarAction={(<>
 											<MeetingRecorder toolbar rawPath={selected.rawPath} title={state.editorTitle || selected.title} />
 											<button

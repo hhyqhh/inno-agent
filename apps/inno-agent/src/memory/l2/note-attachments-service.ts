@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
-import { readJson, writeJson, readText } from "../../storage/file-store.js";
+import { readJson, writeJson, readText, writeText } from "../../storage/file-store.js";
 import { resolveContainedPath } from "../../utils/path-safety.js";
-import { parseNoteFrontmatter } from "./note-frontmatter.js";
+import { parseNoteFrontmatter, serializeNoteFile } from "./note-frontmatter.js";
 import { sanitizeUploadedFileName, uploadExtension } from "./upload-file-utils.js";
 
 export type NoteAttachmentStatus = "uploaded" | "extracting" | "extracted" | "indexed" | "error";
+export type NoteAttachmentPlacement = "attachment" | "inline";
 
 export interface NoteAttachmentRecord {
 	id: string;
@@ -17,6 +18,7 @@ export interface NoteAttachmentRecord {
 	mimeType: string;
 	size: number;
 	filePath: string;
+	placement?: NoteAttachmentPlacement;
 	status: NoteAttachmentStatus;
 	createdAt: string;
 	updatedAt: string;
@@ -40,6 +42,21 @@ function normalizeNoteRawPath(rawPath: string): string {
 	return rawPath.replace(/\\/g, "/");
 }
 
+function markNoteOutdated(l2DataDir: string, noteRawPath: string): void {
+	const normalizedPath = normalizeNoteRawPath(noteRawPath);
+	const relativePath = normalizedPath.slice("raw/notes/".length);
+	if (!normalizedPath.startsWith("raw/notes/") || relativePath.includes("/")) return;
+	const notePath = resolveContainedPath(join(l2DataDir, "raw", "notes"), relativePath);
+	if (!notePath || !existsSync(notePath)) return;
+	const parsed = parseNoteFrontmatter(readText(notePath));
+	if (!parsed.frontmatter || (parsed.frontmatter.status !== "indexed" && !parsed.frontmatter.source_id)) return;
+	writeText(notePath, serializeNoteFile({
+		...parsed.frontmatter,
+		status: "outdated",
+		updated: new Date().toISOString(),
+	}, parsed.body));
+}
+
 export function listNoteAttachments(l2DataDir: string, noteRawPath: string): NoteAttachmentRecord[] {
 	const normalizedPath = normalizeNoteRawPath(noteRawPath);
 	return readAttachmentIndex(l2DataDir)
@@ -50,7 +67,7 @@ export function listNoteAttachments(l2DataDir: string, noteRawPath: string): Not
 export function uploadNoteAttachment(
 	l2DataDir: string,
 	noteRawPath: string,
-	options: { fileName: string; mimeType: string; dataBase64: string },
+	options: { fileName: string; mimeType: string; dataBase64: string; placement?: NoteAttachmentPlacement },
 ): NoteAttachmentRecord {
 	const normalizedPath = normalizeNoteRawPath(noteRawPath);
 	const noteRelativePath = normalizedPath.slice("raw/notes/".length);
@@ -95,6 +112,7 @@ export function uploadNoteAttachment(
 		mimeType: options.mimeType,
 		size: data.length,
 		filePath: join("raw/notes/attachments", noteId, storedName).replace(/\\/g, "/"),
+		placement: options.placement ?? "attachment",
 		status: "uploaded",
 		createdAt: now,
 		updatedAt: now,
@@ -103,6 +121,7 @@ export function uploadNoteAttachment(
 	const records = readAttachmentIndex(l2DataDir);
 	records.push(record);
 	writeAttachmentIndex(l2DataDir, records);
+	markNoteOutdated(l2DataDir, normalizedPath);
 	return record;
 }
 
@@ -131,6 +150,7 @@ export function deleteNoteAttachment(l2DataDir: string, attachmentId: string): N
 	if (existsSync(absPath)) {
 		unlinkSync(absPath);
 	}
+	markNoteOutdated(l2DataDir, removed.noteRawPath);
 	return removed;
 }
 
@@ -145,4 +165,18 @@ export function deleteAttachmentsForNote(l2DataDir: string, noteRawPath: string)
 
 export function findNoteAttachment(l2DataDir: string, attachmentId: string): NoteAttachmentRecord | undefined {
 	return readAttachmentIndex(l2DataDir).find((record) => record.id === attachmentId);
+}
+
+export function updateNoteAttachmentStatus(
+	l2DataDir: string,
+	attachmentId: string,
+	status: NoteAttachmentStatus,
+): NoteAttachmentRecord {
+	const records = readAttachmentIndex(l2DataDir);
+	const index = records.findIndex((record) => record.id === attachmentId);
+	if (index < 0) throw new Error("Attachment not found");
+	const updated = { ...records[index], status, updatedAt: new Date().toISOString() };
+	records[index] = updated;
+	writeAttachmentIndex(l2DataDir, records);
+	return updated;
 }

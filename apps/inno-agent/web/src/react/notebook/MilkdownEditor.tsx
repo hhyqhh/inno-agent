@@ -12,6 +12,8 @@ export interface MilkdownEditorProps {
 	editorKey?: string;
 	readOnly?: boolean;
 	toolbarAction?: ReactNode;
+	onUploadImage?: (file: File) => Promise<string>;
+	resolveImageUrl?: (url: string) => string;
 }
 
 function splitMarkdownFrontmatter(markdown: string): { frontmatter: string; body: string } {
@@ -23,7 +25,7 @@ function splitMarkdownFrontmatter(markdown: string): { frontmatter: string; body
 	};
 }
 
-export function MilkdownEditor({ value, onChange, editorKey, readOnly = false, toolbarAction }: MilkdownEditorProps) {
+export function MilkdownEditor({ value, onChange, editorKey, readOnly = false, toolbarAction, onUploadImage, resolveImageUrl }: MilkdownEditorProps) {
 	const { i18n, t } = useTranslation();
 	const rootRef = useRef<HTMLDivElement>(null);
 	const crepeRef = useRef<Crepe | null>(null);
@@ -33,6 +35,8 @@ export function MilkdownEditor({ value, onChange, editorKey, readOnly = false, t
 	const onChangeRef = useRef(onChange);
 	const markdownRef = useRef(value);
 	const readOnlyRef = useRef(readOnly);
+	const onUploadImageRef = useRef(onUploadImage);
+	const resolveImageUrlRef = useRef(resolveImageUrl);
 	const [ready, setReady] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [toolbarTarget, setToolbarTarget] = useState<HTMLElement | null>(null);
@@ -44,6 +48,14 @@ export function MilkdownEditor({ value, onChange, editorKey, readOnly = false, t
 	useEffect(() => {
 		onChangeRef.current = onChange;
 	}, [onChange]);
+
+	useEffect(() => {
+		onUploadImageRef.current = onUploadImage;
+	}, [onUploadImage]);
+
+	useEffect(() => {
+		resolveImageUrlRef.current = resolveImageUrl;
+	}, [resolveImageUrl]);
 
 	useEffect(() => {
 		readOnlyRef.current = readOnly;
@@ -78,6 +90,13 @@ export function MilkdownEditor({ value, onChange, editorKey, readOnly = false, t
 				[Crepe.Feature.Placeholder]: {
 					text: uiLanguage === "en" ? "Start writing..." : "开始输入内容...",
 					mode: "block",
+				},
+				[Crepe.Feature.ImageBlock]: {
+					onUpload: async (file) => {
+						const uploadImage = onUploadImageRef.current;
+						return uploadImage ? uploadImage(file) : URL.createObjectURL(file);
+					},
+					proxyDomURL: (url) => resolveImageUrlRef.current?.(url) ?? url,
 				},
 			},
 		});

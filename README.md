@@ -221,6 +221,7 @@ Exported cases land in `runtime/data/showcase-exports/cases/` with automatic pat
 
 ## Use Cases & Docs
 
+- [Knowledge Management Guide](./docs/knowledge-management-guide.md) — notes, templates, meetings, version history, Wiki archival, and knowledge graph workflows (中文；另有 [PDF](./docs/knowledge-management-guide.pdf)).
 - [Skill Tutorial — Building a Workspace Agent](./docs/use-cases/skill-tutorial.md) — use `agent.md` and `.skills/` to build a custom learning agent scoped to a workspace.
 - [QUICKSTART.md](./QUICKSTART.md) — 5-minute setup guide (中文).
 - [apps/inno-agent/README.md](./apps/inno-agent/README.md) — backend API route table (中文).

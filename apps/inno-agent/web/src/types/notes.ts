@@ -114,4 +114,10 @@ export interface ArchiveNoteResult {
 	status: "indexed";
 }
 
+export interface PolishNoteResult {
+	content: string;
+	templateId: string | null;
+	templateLabel: string | null;
+}
+
 export type NoteListBox = "drafts" | "archived";

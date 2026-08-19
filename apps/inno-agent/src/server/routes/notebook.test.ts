@@ -56,6 +56,7 @@ describe("notebook unarchive route", () => {
 			l2DataDir: root,
 			codeDir: root,
 			getArchiveRuntime: () => runtime,
+			completePrompt: async () => "",
 		} as NotebookRouteContext;
 		unarchiveMock.mockResolvedValue({ rawPath: "raw/uploads/source.md", status: "uploaded" });
 		const { res, result } = response();
@@ -87,7 +88,12 @@ describe("notebook raw file route", () => {
 			return res;
 		}) as ServerResponse["writeHead"];
 		const finished = new Promise<void>((resolve) => res.on("finish", resolve));
-		const ctx = { l2DataDir: root, codeDir: root, getArchiveRuntime: () => ({}) } as NotebookRouteContext;
+		const ctx = {
+			l2DataDir: root,
+			codeDir: root,
+			getArchiveRuntime: () => ({}),
+			completePrompt: async () => "",
+		} as NotebookRouteContext;
 
 		await expect(handleNotebookRoutes(
 			request({}),
@@ -108,7 +114,12 @@ describe("source regeneration route", () => {
 		const root = mkdtempSync(join(tmpdir(), "inno-notebook-regenerate-"));
 		roots.push(root);
 		const runtime = { memory: {} as never };
-		const ctx = { l2DataDir: root, codeDir: root, getArchiveRuntime: () => runtime } as NotebookRouteContext;
+		const ctx = {
+			l2DataDir: root,
+			codeDir: root,
+			getArchiveRuntime: () => runtime,
+			completePrompt: async () => "",
+		} as NotebookRouteContext;
 		regenerateMock.mockResolvedValue({ sourceId: "l2src_test", status: "indexed" });
 		const { res, result } = response();
 
@@ -121,5 +132,32 @@ describe("source regeneration route", () => {
 		)).toBe(true);
 		expect(result.status).toBe(200);
 		expect(regenerateMock).toHaveBeenCalledWith(root, "l2src_test", runtime);
+	});
+});
+
+describe("note polish route", () => {
+	it("validates the note path and returns normalized model output", async () => {
+		const root = mkdtempSync(join(tmpdir(), "inno-notebook-polish-"));
+		roots.push(root);
+		mkdirSync(join(root, "raw", "notes"), { recursive: true });
+		writeFileSync(join(root, "raw", "notes", "note.md"), "note", "utf-8");
+		const completePrompt = vi.fn().mockResolvedValue("```markdown\n# Note\n\nPolished.\n```");
+		const ctx = {
+			l2DataDir: root,
+			codeDir: root,
+			getArchiveRuntime: () => ({}),
+			completePrompt,
+		} satisfies NotebookRouteContext;
+		const { res, result } = response();
+
+		expect(await handleNotebookRoutes(
+			request({ rawPath: "raw/notes/note.md", title: "Note", tags: [], content: "Draft" }),
+			res,
+			"POST",
+			"/api/l2/notes/polish",
+			ctx,
+		)).toBe(true);
+		expect(result.status).toBe(200);
+		expect(JSON.parse(result.body)).toMatchObject({ content: "# Note\n\nPolished.\n" });
 	});
 });

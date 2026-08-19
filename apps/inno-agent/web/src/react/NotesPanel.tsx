@@ -15,6 +15,7 @@ import {
 	Plus,
 	RefreshCw,
 	Save,
+	Sparkles,
 	Trash2,
 } from "lucide-react";
 import { getVisibleNoteTemplates } from "../lib/build-note-from-template.js";
@@ -63,6 +64,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		isLoadingPreview: notesStore.isLoadingPreview,
 		isCreating: notesStore.isCreating,
 		isSaving: notesStore.isSaving,
+		isPolishing: notesStore.isPolishing,
 		isArchiving: notesStore.isArchiving,
 		isDeleting: notesStore.isDeleting,
 		isUploading: notesStore.isUploading,
@@ -70,6 +72,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		filterTag: notesStore.filterTag,
 		tagSummaries: notesStore.tagSummaries,
 		notice: notesStore.notice,
+		polishTemplateLabel: notesStore.polishTemplateLabel,
 		error: notesStore.error,
 	}));
 
@@ -373,7 +376,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
 				{state.notice ? (
 					<p className="border-b border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-						{t(`notes.flash.${state.notice}`)}
+						{t(`notes.flash.${state.notice}`, { template: state.polishTemplateLabel ?? "" })}
 					</p>
 				) : null}
 				{state.error ? (
@@ -424,6 +427,17 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 										editorKey={selected.rawPath}
 										value={state.editorContent}
 										onChange={(value) => notesStore.updateEditorContent(value)}
+										toolbarAction={(
+											<button
+												type="button"
+												className="top-bar-item inno-milkdown-polish-button"
+												disabled={state.isPolishing || !state.editorContent.trim() || state.isArchiving}
+												onClick={() => void notesStore.polishSelected()}
+												title={state.isPolishing ? t("notes.actions.polishing") : t("notes.actions.polish")}
+											>
+												{state.isPolishing ? <LoaderCircle size={17} className="animate-spin" /> : <Sparkles size={17} />}
+											</button>
+										)}
 									/>
 								</>
 							)}

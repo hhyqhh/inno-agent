@@ -1451,6 +1451,7 @@ const server = createServer(async (req, res) => {
 		if (await handleNotebookRoutes(req, res, method, url, {
 			l2DataDir,
 			codeDir: paths.codeDir,
+			completePrompt: completePromptOnce,
 			getArchiveRuntime: () => {
 				const session = getSession();
 				return { model: session.model, modelRegistry: session.modelRegistry };

@@ -18,6 +18,7 @@ import {
 	saveL2NoteContent,
 } from "../../memory/l2/notes-service.js";
 import { listNoteTemplates } from "../../memory/l2/note-templates.js";
+import { polishNoteContent, type PolishPromptRunner } from "../../memory/l2/note-polish-service.js";
 import { unarchiveL2NotebookItem } from "../../memory/l2/notebook-unarchive-service.js";
 import {
 	listL2Sources,
@@ -34,6 +35,7 @@ export interface NotebookRouteContext {
 	l2DataDir: string;
 	codeDir: string;
 	getArchiveRuntime: () => { model?: Model<any>; modelRegistry?: ModelRegistry; memory?: L2Memory };
+	completePrompt: PolishPromptRunner;
 }
 
 interface ResolvedL2Path {
@@ -424,6 +426,32 @@ export async function handleNotebookRoutes(
 			logger.warn({ err, sourceId }, "failed to regenerate L2 source");
 			const message = errorMessage(err, "Source regeneration failed");
 			json(res, message.startsWith("Source not found:") ? 404 : 500, { error: message });
+		}
+		return true;
+	}
+
+	if (method === "POST" && url === "/api/l2/notes/polish") {
+		const body = (await readBody(req)) as Record<string, unknown>;
+		const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
+		const title = typeof body.title === "string" ? body.title.trim() : "";
+		const content = typeof body.content === "string" ? body.content : "";
+		const tags = Array.isArray(body.tags)
+			? body.tags.filter((tag): tag is string => typeof tag === "string" && Boolean(tag.trim()))
+			: [];
+		const resolved = resolveNotePath(l2DataDir, rawPath);
+		if (!resolved || !isFile(resolved.fullPath)) {
+			json(res, 404, { error: "Note not found" });
+			return true;
+		}
+		if (!title || !content.trim()) {
+			json(res, 400, { error: "Missing title or content" });
+			return true;
+		}
+		try {
+			json(res, 200, await polishNoteContent(codeDir, { title, tags, content }, ctx.completePrompt));
+		} catch (err) {
+			logger.warn({ err, rawPath: resolved.rawPath }, "failed to polish note");
+			json(res, 500, { error: errorMessage(err, "Polish note failed") });
 		}
 		return true;
 	}

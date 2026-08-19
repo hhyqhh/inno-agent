@@ -1196,6 +1196,22 @@ inno-workspace-panel textarea {
 }
 
 /* Note properties (KnowledgeMap-style) */
+.inno-milkdown-editor-shell .inno-milkdown-toolbar-actions {
+	display: flex;
+	align-items: center;
+	margin-left: auto;
+}
+
+.inno-milkdown-editor-shell .inno-milkdown-polish-button svg {
+	color: var(--inno-accent) !important;
+	stroke: var(--inno-accent) !important;
+}
+
+.inno-milkdown-editor-shell .inno-milkdown-polish-button:disabled {
+	cursor: not-allowed;
+	opacity: 0.45;
+}
+
 .inno-milkdown-editor-shell .inno-note-properties {
 	position: relative;
 	z-index: 30;

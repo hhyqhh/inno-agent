@@ -8,6 +8,7 @@ const apiMocks = vi.hoisted(() => ({
 	fetchNoteContent: vi.fn(),
 	fetchRawContent: vi.fn(),
 	listNotes: vi.fn(),
+	polishNote: vi.fn(),
 	saveNoteContent: vi.fn(),
 	saveRawMarkdownContent: vi.fn(),
 	unarchiveNote: vi.fn(),
@@ -42,9 +43,11 @@ afterEach(() => {
 	notesStore.isLoading = false;
 	notesStore.isLoadingPreview = false;
 	notesStore.isSaving = false;
+	notesStore.isPolishing = false;
 	notesStore.isDeleting = false;
 	notesStore.error = null;
 	notesStore.notice = null;
+	notesStore.polishTemplateLabel = null;
 	notesStore.listBox = "drafts";
 	notesStore.searchQuery = "";
 	notesStore.filterTag = null;
@@ -145,5 +148,27 @@ describe("notesStore archive feedback", () => {
 		await expect(notesStore.archiveSelected()).resolves.toBe("wiki/sources/source.md");
 		expect(notesStore.notice).toBe("archived");
 		expect(notesStore.listBox).toBe("archived");
+	});
+});
+
+describe("notesStore AI polish", () => {
+	it("applies the proposal to the editor without saving it", async () => {
+		const note = { ...archivedMarkdown, kind: "markdown" as const, status: "draft" as const, rawPath: "raw/notes/note.md" };
+		notesStore.selected = note;
+		notesStore.editorTitle = "Note";
+		notesStore.editorTags = ["ai"];
+		notesStore.editorContent = "Draft";
+		apiMocks.polishNote.mockResolvedValue({ content: "# Note\n\nPolished\n", templateId: null, templateLabel: null });
+
+		await notesStore.polishSelected();
+
+		expect(apiMocks.polishNote).toHaveBeenCalledWith({
+			rawPath: note.rawPath,
+			title: "Note",
+			tags: ["ai"],
+			content: "Draft",
+		});
+		expect(notesStore.editorContent).toBe("# Note\n\nPolished\n");
+		expect(notesStore.notice).toBe("polished");
 	});
 });

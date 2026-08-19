@@ -11,6 +11,7 @@ import {
 	deleteModel,
 	deleteProvider,
 	normalizeContentHubConfig,
+	normalizeMeetingConfig,
 	saveConfig,
 	setDefaultModel,
 	upsertProvider,
@@ -121,6 +122,9 @@ function buildSafeSettings(config: InnoConfig) {
 			: undefined,
 		contentHub: config.contentHub
 			? { ...config.contentHub, token: maskSecret(config.contentHub.token) }
+			: undefined,
+		meeting: config.meeting
+			? { ...config.meeting, apiKey: maskSecret(config.meeting.apiKey) }
 			: undefined,
 	};
 }
@@ -419,6 +423,31 @@ export async function handleSettingsRoutes(
 		config.simpleMode = { enabled: body.enabled };
 		save(saveConfig(paths.configPath, config));
 		syncConfig(config);
+		json(res, 200, buildSafeSettings(config));
+		return true;
+	}
+
+	if (method === "PUT" && url === "/api/settings/meeting") {
+		const body = (await readBody(req)) as Record<string, unknown>;
+		const current = config.meeting ?? normalizeMeetingConfig(undefined);
+		if (body.transcriptionProvider !== undefined && body.transcriptionProvider !== "dashscope") {
+			json(res, 400, { error: "Only the dashscope transcription provider is available" });
+			return true;
+		}
+		config.meeting = normalizeMeetingConfig({
+			...current,
+			enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled,
+			transcriptionProvider: typeof body.transcriptionProvider === "string" ? body.transcriptionProvider : current.transcriptionProvider,
+			language: typeof body.language === "string" ? body.language : current.language,
+			saveAudio: typeof body.saveAudio === "boolean" ? body.saveAudio : current.saveAudio,
+			summaryTemplate: typeof body.summaryTemplate === "string" ? body.summaryTemplate : current.summaryTemplate,
+			websocketUrl: typeof body.websocketUrl === "string" ? body.websocketUrl : current.websocketUrl,
+			apiKey: typeof body.apiKey === "string" && !body.apiKey.startsWith("****") ? body.apiKey : current.apiKey,
+			model: typeof body.model === "string" ? body.model : current.model,
+			vocabularyId: typeof body.vocabularyId === "string" ? body.vocabularyId : current.vocabularyId,
+			maxSentenceSilenceMs: typeof body.maxSentenceSilenceMs === "number" ? body.maxSentenceSilenceMs : current.maxSentenceSilenceMs,
+		});
+		save(saveConfig(paths.configPath, config));
 		json(res, 200, buildSafeSettings(config));
 		return true;
 	}

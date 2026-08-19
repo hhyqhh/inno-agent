@@ -1,5 +1,5 @@
 import { apiFetch } from "./client.js";
-import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload, WindowCloseBehavior } from "../types/settings.js";
+import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload, WindowCloseBehavior, MeetingSettings } from "../types/settings.js";
 
 export async function getSettings(): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings");
@@ -70,6 +70,13 @@ export async function saveSimpleModeSettings(enabled: boolean): Promise<InnoSett
 	return apiFetch<InnoSettings>("/api/settings/simple-mode", {
 		method: "PUT",
 		body: JSON.stringify({ enabled }),
+	});
+}
+
+export async function saveMeetingSettings(payload: MeetingSettings): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>("/api/settings/meeting", {
+		method: "PUT",
+		body: JSON.stringify(payload),
 	});
 }
 

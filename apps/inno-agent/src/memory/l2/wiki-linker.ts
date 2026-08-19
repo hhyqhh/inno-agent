@@ -3,7 +3,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import { wikiPathJoin } from "./wiki-paths.js";
 
-import { complete } from "@earendil-works/pi-ai";
+import { complete } from "@earendil-works/pi-ai/compat";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 

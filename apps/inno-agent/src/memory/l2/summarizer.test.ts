@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const completeMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@earendil-works/pi-ai", () => ({ complete: completeMock }));
+vi.mock("@earendil-works/pi-ai/compat", () => ({ complete: completeMock }));
 
 import { summarizeContent } from "./summarizer.js";
 

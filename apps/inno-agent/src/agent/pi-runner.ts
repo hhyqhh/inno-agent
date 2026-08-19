@@ -3,6 +3,8 @@ import {
 	createAgentSessionRuntime,
 	createAgentSessionServices,
 	getAgentDir,
+	ModelRegistry,
+	type ModelRuntime,
 	SessionManager,
 	SettingsManager,
 	type AgentSession,
@@ -12,7 +14,8 @@ import {
 	type ExtensionFactory,
 	type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
-import { complete, type AssistantMessage, type ImageContent, type Model, type UserMessage } from "@earendil-works/pi-ai";
+import { complete } from "@earendil-works/pi-ai/compat";
+import type { AssistantMessage, ImageContent, Model, UserMessage } from "@earendil-works/pi-ai";
 import { basename, join, resolve } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInnoExtension, type ConfigHolder, type InnoExtensionDeps } from "./inno-extension.js";
@@ -33,6 +36,16 @@ let _cwdResolver: ((sessionPath: string) => string | null) | null = null;
 let _activePromptToken: string | null = null;
 /** Provider IDs registered into the active model registry by Inno's config. */
 const _registeredProviderIds = new Set<string>();
+
+/**
+ * pi >= 0.80.8 removed `modelRegistry` from AgentSession/AgentSessionServices
+ * in favour of the async `modelRuntime`. `ModelRegistry` remains as the
+ * synchronous facade the SDK itself exposes to extensions, so we wrap the
+ * runtime on demand — it is a stateless delegate, cheap to construct.
+ */
+function registryOf(source: { modelRuntime: ModelRuntime }): ModelRegistry {
+	return new ModelRegistry(source.modelRuntime);
+}
 
 export type RuntimeChannelHint = "web" | "feishu" | "wechat" | "qq" | "scheduler" | "cli" | "unknown";
 
@@ -241,8 +254,9 @@ export async function initSession(
 		// reference goes stale once server.ts reassigns its own `config` variable
 		// via saveConfig, which returns a new normalised object).
 		const currentConfig = configHolder.current;
+		const registry = registryOf(services);
 		for (const [providerId, providerConfig] of Object.entries(currentConfig.providers)) {
-			services.modelRegistry.registerProvider(providerId, {
+			registry.registerProvider(providerId, {
 				baseUrl: providerConfig.baseUrl,
 				apiKey: providerConfig.apiKey || "local",
 				api: providerConfig.api ?? "openai-completions",
@@ -252,8 +266,10 @@ export async function initSession(
 			});
 			_registeredProviderIds.add(providerId);
 		}
-		services.modelRegistry.refresh();
-		const defaultModel = services.modelRegistry.find(currentConfig.defaultProvider, currentConfig.defaultModel);
+		// refresh() became async in pi 0.80.8 — must await so find() below sees
+		// the freshly loaded models.json.
+		await registry.refresh();
+		const defaultModel = registry.find(currentConfig.defaultProvider, currentConfig.defaultModel);
 		const created = await createAgentSessionFromServices({
 			services,
 			sessionManager,
@@ -350,9 +366,10 @@ export async function refreshConfiguredProviders(config: InnoConfig): Promise<vo
 	// surviving provider is handled by re-registering below — but a fully removed
 	// provider must be explicitly unregistered or its models linger in the
 	// registry (and keep showing up in getAvailableModels / the settings UI).
+	const registry = registryOf(_runtime.session);
 	for (const providerId of _registeredProviderIds) {
 		if (!config.providers[providerId]) {
-			_runtime.session.modelRegistry.unregisterProvider(providerId);
+			registry.unregisterProvider(providerId);
 			_registeredProviderIds.delete(providerId);
 		}
 	}
@@ -360,7 +377,7 @@ export async function refreshConfiguredProviders(config: InnoConfig): Promise<vo
 	const providerIds: string[] = [];
 	let modelCount = 0;
 	for (const [providerId, providerConfig] of Object.entries(config.providers)) {
-		_runtime.session.modelRegistry.registerProvider(providerId, {
+		registry.registerProvider(providerId, {
 			baseUrl: providerConfig.baseUrl,
 			apiKey: providerConfig.apiKey || "local",
 			api: providerConfig.api ?? "openai-completions",
@@ -372,7 +389,7 @@ export async function refreshConfiguredProviders(config: InnoConfig): Promise<vo
 		providerIds.push(providerId);
 		modelCount += providerConfig.models.length;
 	}
-	_runtime.session.modelRegistry.refresh();
+	await registry.refresh();
 	logger.info({ providerIds, modelCount }, "Providers refreshed");
 }
 
@@ -759,8 +776,12 @@ export function getCurrentSessionId(): string {
  */
 export function getAvailableModels(): Model<any>[] {
 	if (!_runtime) return [];
-	_runtime.session.modelRegistry.refresh();
-	return _runtime.session.modelRegistry.getAvailable();
+	const registry = registryOf(_runtime.session);
+	// Fire-and-forget: refresh() is async since pi 0.80.8; getAvailable()
+	// returns the current snapshot synchronously, refreshed list lands on the
+	// next read.
+	void registry.refresh();
+	return registry.getAvailable();
 }
 
 /**
@@ -770,8 +791,9 @@ export function getAvailableModels(): Model<any>[] {
  */
 export async function switchModel(provider: string, modelId: string): Promise<void> {
 	if (!_runtime) throw new Error("Session not initialized. Call initSession() first.");
-	_runtime.session.modelRegistry.refresh();
-	const model = _runtime.session.modelRegistry.find(provider, modelId);
+	const registry = registryOf(_runtime.session);
+	await registry.refresh();
+	const model = registry.find(provider, modelId);
 	if (!model) {
 		logger.error({ provider, modelId }, "Model not found in registry");
 		throw new Error(`Model ${provider}/${modelId} not found`);
@@ -1120,7 +1142,7 @@ export async function completePromptOnce(prompt: string, maxTokens = 64, timeout
 	const model = session.model;
 	if (!model) return "";
 
-	const auth = await session.modelRegistry.getApiKeyAndHeaders(model);
+	const auth = await registryOf(session).getApiKeyAndHeaders(model);
 	if (!auth.ok || !auth.apiKey) return "";
 
 	const controller = new AbortController();

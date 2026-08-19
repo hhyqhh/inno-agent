@@ -3,19 +3,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	fauxAssistantMessage,
+	fauxProvider,
 	fauxToolCall,
-	registerFauxProvider,
+	InMemoryCredentialStore,
 	type Context,
-} from "../../../../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/index.js";
+} from "@earendil-works/pi-ai";
 import {
-	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
 	ModelRegistry,
+	ModelRuntime,
 	SessionManager,
 	SettingsManager,
 	type AgentSession,
-} from "../../../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
+} from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
 import type { InnoConfig } from "../config.js";
 import type { RuntimePaths } from "../runtime.js";
@@ -148,15 +149,21 @@ describe("teaching entry gate through a real AgentSession", () => {
 		});
 		saveProfile(paths.learnerDataDir, initialProfile);
 
-		const provider = registerFauxProvider({
+		const provider = fauxProvider({
 			provider: `faux-inno-${Date.now()}`,
 			tokenSize: { min: 1000, max: 1000 },
 		});
 		const settingsManager = SettingsManager.inMemory({
 			compaction: { enabled: false },
 		});
-		const authStorage = AuthStorage.create(join(paths.configDir, "auth.json"));
-		authStorage.setRuntimeApiKey(provider.models[0].provider, "faux-test-key");
+		// pi >= 0.80.8 replaced AuthStorage with ModelRuntime + CredentialStore.
+		const credentials = new InMemoryCredentialStore();
+		await credentials.modify(provider.models[0].provider, async () => ({ type: "api_key", key: "faux-test-key" }));
+		const modelRuntime = await ModelRuntime.create({
+			credentials,
+			modelsPath: null,
+			refreshOnCreate: false,
+		});
 		const config: InnoConfig = {
 			defaultProvider: provider.models[0].provider,
 			defaultModel: provider.models[0].id,
@@ -242,14 +249,14 @@ describe("teaching entry gate through a real AgentSession", () => {
 			},
 		]);
 
-		const modelRegistry = ModelRegistry.inMemory(authStorage);
+		const modelRegistry = new ModelRegistry(modelRuntime);
+		modelRegistry.registerProvider(provider.provider);
 		const { session } = await createAgentSession({
 			cwd: paths.workspaceDir,
 			agentDir: paths.configDir,
 			model: provider.models[0],
 			thinkingLevel: "off",
-			authStorage,
-			modelRegistry,
+			modelRuntime,
 			resourceLoader,
 			sessionManager: SessionManager.inMemory(paths.workspaceDir),
 			settingsManager,
@@ -321,7 +328,6 @@ describe("teaching entry gate through a real AgentSession", () => {
 			expect(provider.state.callCount).toBe(8);
 		} finally {
 			session.dispose();
-			provider.unregister();
 		}
 	});
 });

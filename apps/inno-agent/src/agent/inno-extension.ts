@@ -20,6 +20,7 @@ import { createPracticeTools } from "./practice-tools.js";
 import { createDocumentTools } from "./document-tools.js";
 import { createOcrTools } from "./ocr-tools.js";
 import { createTavilyTools } from "./tavily-tools.js";
+import { createNoteTools } from "./note-tools.js";
 import { checkWorkspaceMutationPath } from "./workspace-path-guard.js";
 import { INNO_SYSTEM_PROMPT, ONBOARDING_GUIDE } from "./system-prompt.js";
 import { syncProvidersForSubagents } from "./provider-sync.js";
@@ -238,6 +239,9 @@ export function createInnoExtension(
 			() => resolveActiveWorkspaceDir(paths, deps),
 		);
 		for (const tool of l2Tools) {
+			pi.registerTool(tool);
+		}
+		for (const tool of createNoteTools(paths.l2DataDir, paths.codeDir, isL2Enabled, deps?.getCurrentSessionId)) {
 			pi.registerTool(tool);
 		}
 		// Backfill the retrieval index from existing wiki pages; never block boot.

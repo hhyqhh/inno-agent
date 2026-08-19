@@ -1,12 +1,22 @@
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { basename, join } from "node:path";
 import { wikiPathJoin } from "../../memory/l2/wiki-paths.js";
+import { sanitizeUploadedFileName, uploadExtension } from "../../memory/l2/upload-file-utils.js";
 import { logger } from "../../logger.js";
 import { getL2Memory } from "../../memory/l2/l2-memory.js";
 import { readManifest, removeWikiPathFromManifest } from "../../memory/l2/manifest-store.js";
 import { buildWikiGraph } from "../../memory/l2/wiki-graph.js";
 import { parseFrontmatter } from "../../memory/l2/wiki-maintainer.js";
+import {
+	listTags,
+	rebuildTagIndex,
+	suggestTags,
+	updateWikiPageTags,
+	wikiPathsForTag,
+	type WikiPageTagSource,
+} from "../../memory/l2/tag-index.js";
 import { ensureDir, readText, writeText } from "../../storage/file-store.js";
 import { safeJoinReal } from "../file-helpers.js";
 import { json, readBody, UPLOAD_MAX_BODY_BYTES } from "../http-helpers.js";
@@ -48,25 +58,19 @@ function manifestSourceIdByWikiPath(l2DataDir: string): Map<string, string> {
 	return map;
 }
 
-function sanitizeUploadName(name: string): string {
-	const cleaned = name
-		.replace(/[/\\?%*:|"<>]/g, "-")
-		.replace(/\s+/g, " ")
-		.trim();
-	return cleaned || "upload";
+function collectWikiPageTagSources(l2DataDir: string): WikiPageTagSource[] {
+	const pages: WikiPageTagSource[] = [];
+	for (const wikiPath of listWikiPagePaths(l2DataDir)) {
+		const fullPath = safeJoinReal(l2DataDir, wikiPath);
+		if (!fullPath || !existsSync(fullPath)) continue;
+		const { frontmatter } = parseFrontmatter(readText(fullPath));
+		if (frontmatter) pages.push({ wikiPath, tags: frontmatter.tags });
+	}
+	return pages;
 }
 
-function uploadExtension(fileName: string, mimeType: string): string {
-	const ext = extname(fileName);
-	if (ext) return ext;
-	if (mimeType === "application/pdf") return ".pdf";
-	if (mimeType.includes("wordprocessingml")) return ".docx";
-	if (mimeType.includes("spreadsheetml")) return ".xlsx";
-	if (mimeType.includes("presentationml")) return ".pptx";
-	if (mimeType === "text/markdown") return ".md";
-	if (mimeType.startsWith("image/")) return `.${mimeType.slice("image/".length).replace("jpeg", "jpg")}`;
-	if (mimeType.startsWith("text/")) return ".txt";
-	return ".bin";
+function refreshTagIndex(l2DataDir: string): void {
+	rebuildTagIndex(l2DataDir, collectWikiPageTagSources(l2DataDir));
 }
 
 /**
@@ -85,11 +89,15 @@ export async function handleWikiRoutes(
 	const { l2DataDir } = ctx;
 
 	// --- Wiki API ---
-	if (method === "GET" && url === "/api/wiki/pages") {
+	if (method === "GET" && (url === "/api/wiki/pages" || url.startsWith("/api/wiki/pages?"))) {
 		try {
+			refreshTagIndex(l2DataDir);
+			const tag = new URL(url, "http://localhost").searchParams.get("tag");
+			const allowedPaths = tag ? new Set(wikiPathsForTag(l2DataDir, tag)) : null;
 			const sourceIds = manifestSourceIdByWikiPath(l2DataDir);
 			const pages: unknown[] = [];
 			for (const wikiPath of listWikiPagePaths(l2DataDir)) {
+				if (allowedPaths && !allowedPaths.has(wikiPath)) continue;
 				const fullPath = join(l2DataDir, wikiPath);
 				if (existsSync(fullPath)) {
 					const content = readText(fullPath);
@@ -106,6 +114,29 @@ export async function handleWikiRoutes(
 		} catch (err) {
 			logger.warn({ err }, "failed to list wiki pages");
 			json(res, 200, []);
+		}
+		return true;
+	}
+
+	if (method === "GET" && url.startsWith("/api/l2/tags/suggest")) {
+		try {
+			refreshTagIndex(l2DataDir);
+			const query = new URL(url, "http://localhost").searchParams.get("query") ?? "";
+			json(res, 200, { suggestions: suggestTags(l2DataDir, query) });
+		} catch (err) {
+			logger.warn({ err }, "failed to suggest L2 tags");
+			json(res, 200, { suggestions: [] });
+		}
+		return true;
+	}
+
+	if (method === "GET" && (url === "/api/l2/tags" || url.startsWith("/api/l2/tags?"))) {
+		try {
+			refreshTagIndex(l2DataDir);
+			json(res, 200, { tags: listTags(l2DataDir) });
+		} catch (err) {
+			logger.warn({ err }, "failed to list L2 tags");
+			json(res, 200, { tags: [] });
 		}
 		return true;
 	}
@@ -147,6 +178,29 @@ export async function handleWikiRoutes(
 		writeText(fullPath, content);
 		await getL2Memory(l2DataDir).indexPageByPath(path);
 		json(res, 200, { path, saved: true });
+		return true;
+	}
+
+	if (method === "PATCH" && url === "/api/wiki/page/tags") {
+		const body = (await readBody(req)) as Record<string, unknown>;
+		const path = typeof body.path === "string" ? body.path.trim() : "";
+		const tags = Array.isArray(body.tags)
+			? body.tags.filter((tag): tag is string => typeof tag === "string")
+			: [];
+		if (!path) {
+			json(res, 400, { error: "Missing wiki path" });
+			return true;
+		}
+		try {
+			const updatedTags = updateWikiPageTags(l2DataDir, path, tags);
+			await getL2Memory(l2DataDir).indexPageByPath(path);
+			refreshTagIndex(l2DataDir);
+			json(res, 200, { path, tags: updatedTags });
+		} catch (err) {
+			logger.warn({ err, path }, "failed to update wiki page tags");
+			const message = err instanceof Error ? err.message : "Failed to update wiki tags";
+			json(res, message === "Invalid wiki path" ? 400 : 404, { error: message });
+		}
 		return true;
 	}
 
@@ -222,14 +276,18 @@ export async function handleWikiRoutes(
 		const dir = join(l2DataDir, "raw", "uploads");
 		ensureDir(dir);
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-		const safeName = sanitizeUploadName(fileName);
+		const safeName = sanitizeUploadedFileName(fileName, "upload");
 		const ext = uploadExtension(safeName, mimeType);
 		const base = basename(safeName, ext).slice(0, 80) || "upload";
-		const outputName = `${timestamp}-${base}${ext}`;
-		const outputPath = join(dir, outputName);
+		const outputName = `${timestamp}-${randomUUID().slice(0, 8)}-${base}${ext}`;
+		const outputPath = safeJoinReal(dir, outputName);
+		if (!outputPath) {
+			json(res, 400, { error: "Invalid upload path" });
+			return true;
+		}
 		const data = Buffer.from(dataBase64, "base64");
 		writeFileSync(outputPath, data);
-		const rawPath = join("raw", "uploads", outputName);
+		const rawPath = join("raw", "uploads", outputName).replace(/\\/g, "/");
 		json(res, 201, {
 			fileName,
 			mimeType,

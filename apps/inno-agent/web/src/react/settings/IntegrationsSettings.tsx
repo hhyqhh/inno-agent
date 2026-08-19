@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, Database, KeyRound, Globe } from "lucide-react";
+import { ChevronDown, Database, KeyRound, Globe, Mic } from "lucide-react";
 import { settingsStore } from "../../stores/settings-store.js";
-import type { InnoSettings } from "../../types/settings.js";
+import type { InnoSettings, MeetingSettings } from "../../types/settings.js";
 import { inputCls } from "../ui/input.js";
 import { SettingsSection } from "./primitives.js";
 
@@ -370,10 +370,76 @@ function TavilySettings({ settings }: { settings: InnoSettings }) {
 
 /* ---------- Integrations category page ---------- */
 
+const DEFAULT_MEETING: MeetingSettings = {
+	enabled: false,
+	transcriptionProvider: "dashscope",
+	language: "zh",
+	saveAudio: true,
+	summaryTemplate: "default",
+	websocketUrl: "wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference/",
+	apiKey: "",
+	model: "fun-asr-realtime",
+	vocabularyId: "",
+	maxSentenceSilenceMs: 800,
+};
+
+function MeetingSettingsCard({ settings }: { settings: InnoSettings }) {
+	const { t } = useTranslation();
+	const [open, setOpen] = useState(false);
+	const [form, setForm] = useState<MeetingSettings>(settings.meeting ?? DEFAULT_MEETING);
+	const [saving, setSaving] = useState(false);
+	const [saved, setSaved] = useState(false);
+
+	useEffect(() => {
+		setForm(settings.meeting ?? DEFAULT_MEETING);
+		setSaved(false);
+	}, [settings.meeting]);
+
+	async function handleSave() {
+		setSaving(true);
+		setSaved(false);
+		try {
+			await settingsStore.saveMeeting(form);
+			setSaved(true);
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	return (
+		<div className="min-w-0 rounded-lg bg-[var(--inno-surface)] p-4">
+			<button className="inno-settings-card-toggle flex w-full items-start gap-2 text-left" onClick={() => setOpen((value) => !value)}>
+				<Mic size={16} className="mt-0.5 shrink-0 text-[var(--inno-text)]" />
+				<div className="min-w-0 flex-1">
+					<h4 className="text-sm font-medium text-[var(--inno-text)]">{t("settings.meeting.title", "会议录音与实时转写")}</h4>
+					<p className="mt-1 text-xs leading-relaxed text-[var(--inno-text-muted)]">{t("settings.meeting.desc", "使用 DashScope 实时语音识别生成会议纪要草稿。")}</p>
+				</div>
+				<ChevronDown size={14} className={`mt-1 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+			</button>
+			{open ? <div className="mt-3 grid gap-2.5">
+				<label className="flex items-center gap-2 text-xs text-[var(--inno-text-muted)]"><input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />{t("settings.meeting.enabled", "启用会议转写")}</label>
+				<div className="grid gap-2 sm:grid-cols-2">
+					<input className={inputCls} type="password" value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} placeholder="DashScope API Key" autoComplete="off" />
+					<input className={inputCls} value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} placeholder="fun-asr-realtime" />
+				</div>
+				<input className={inputCls} value={form.websocketUrl} onChange={(event) => setForm({ ...form, websocketUrl: event.target.value })} placeholder="WebSocket URL" />
+				<div className="grid gap-2 sm:grid-cols-3">
+					<input className={inputCls} value={form.language} onChange={(event) => setForm({ ...form, language: event.target.value })} placeholder="zh" />
+					<input className={inputCls} value={form.vocabularyId} onChange={(event) => setForm({ ...form, vocabularyId: event.target.value })} placeholder={t("settings.meeting.vocabulary", "热词表 ID（可选）") ?? ""} />
+					<input className={inputCls} type="number" min={200} max={5000} value={form.maxSentenceSilenceMs} onChange={(event) => setForm({ ...form, maxSentenceSilenceMs: Number(event.target.value) })} />
+				</div>
+				<label className="flex items-center gap-2 text-xs text-[var(--inno-text-muted)]"><input type="checkbox" checked={form.saveAudio} onChange={(event) => setForm({ ...form, saveAudio: event.target.checked })} />{t("settings.meeting.saveAudio", "保留会议录音")}</label>
+				<button disabled={saving} onClick={() => void handleSave()} className="flex h-8 w-fit items-center rounded-md inno-primary-button px-3 text-xs text-white disabled:opacity-50">{saving ? t("common.loading") : saved ? t("settings.meeting.saved", "已保存") : t("common.save")}</button>
+			</div> : null}
+		</div>
+	);
+}
+
 export function IntegrationsSettings({ settings }: { settings: InnoSettings }) {
 	const { t } = useTranslation();
 	return (
 		<SettingsSection title={t("settings.tabs.integrations")} description={t("settings.sections.integrations.desc", "内容源、OCR 与联网搜索等外部服务")}>
+			<MeetingSettingsCard settings={settings} />
 			<ContentHubSettings settings={settings} />
 			<OcrSettings settings={settings} />
 			<TavilySettings settings={settings} />

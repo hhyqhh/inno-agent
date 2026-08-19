@@ -1,7 +1,7 @@
 import { EventEmitter } from "./event-emitter.js";
 import { streamChat, abortChat, getChatStatus, streamSessionEvents, submitChatQuestion, formatQuestionnaireAsPrompt } from "../api/chat.js";
 import type { InlineImage } from "../api/chat.js";
-import type { ChatMessage, ChatStreamEvent, ChatToolRecord, PendingQuestion, QuestionnaireResult, StreamEventEnvelope, StreamSnapshot, WorkspaceFileChange } from "../types/chat.js";
+import type { ChatMessage, ChatNoteReference, ChatStreamEvent, ChatToolRecord, PendingQuestion, QuestionnaireResult, StreamEventEnvelope, StreamSnapshot, WorkspaceFileChange } from "../types/chat.js";
 import { notebookStore } from "./notebook-store.js";
 import { appStore } from "./app-store.js";
 import { workspaceStore, type StreamingWorkspacePreview } from "./workspace-store.js";
@@ -81,9 +81,9 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	private activeOwner: ActiveStreamOwner | null = null;
 	private ownerGeneration = 0;
 	private currentSessionContext: string | null = null;
-	private retryInputBySession = new Map<string, { prompt: string; images?: InlineImage[] }>();
+	private retryInputBySession = new Map<string, { prompt: string; images?: InlineImage[]; noteReferences?: ChatNoteReference[] }>();
 
-	async send(prompt: string, images?: InlineImage[], sessionIdOverride?: string | null): Promise<void> {
+	async send(prompt: string, images?: InlineImage[], sessionIdOverride?: string | null, noteReferences?: ChatNoteReference[]): Promise<void> {
 		if ((!prompt.trim() && !images?.length) || this.isSending) return;
 		const { sessionsStore } = await import("./sessions-store.js");
 		const targetSessionId = sessionIdOverride === undefined
@@ -93,7 +93,8 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 
 		this.detachMode = false;
 		this.currentSessionContext = targetSessionId;
-		this.retryInputBySession.set(targetSessionId, { prompt, images });
+		const selectedNotes = noteReferences?.length ? noteReferences.map((note) => ({ ...note })) : undefined;
+		this.retryInputBySession.set(targetSessionId, { prompt, images, noteReferences: selectedNotes });
 		this.lastUserPrompt = prompt;
 		this.lastImages = images;
 		this.messages = [...this.messages, {
@@ -104,6 +105,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				previewUrl: `data:${mimeType};base64,${data}`,
 				mimeType,
 			})),
+			noteReferences: selectedNotes,
 			transient: true,
 			complete: false,
 		}];
@@ -127,7 +129,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.emit("change", undefined);
 
 		try {
-			for await (const envelope of streamChat(prompt, targetSessionId, owner.clientRequestId, controller.signal, images)) {
+			for await (const envelope of streamChat(prompt, targetSessionId, owner.clientRequestId, controller.signal, images, selectedNotes)) {
 				await this._handleStreamEnvelope(owner, envelope);
 			}
 			if (this.owns(owner) && !owner.terminalEvent) {
@@ -265,7 +267,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		if (this.isSending || !this.currentSessionContext) return;
 		const input = this.retryInputBySession.get(this.currentSessionContext);
 		if (!input) return;
-		await this.send(input.prompt, input.images);
+		await this.send(input.prompt, input.images, this.currentSessionContext, input.noteReferences);
 	}
 
 	/** Retry a failed event reconnect or final-history confirmation. */

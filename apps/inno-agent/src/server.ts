@@ -48,6 +48,7 @@ import { handleWorkspacesRoutes } from "./server/routes/workspaces.js";
 import { handleSessionsRoutes } from "./server/routes/sessions.js";
 import { handleLearnerRoutes } from "./server/routes/learner.js";
 import { handleWikiRoutes } from "./server/routes/wiki.js";
+import { handleNotebookRoutes } from "./server/routes/notebook.js";
 import { handlePresetsRoutes } from "./server/routes/presets.js";
 import { handlePracticeRoutes } from "./server/routes/practice.js";
 import { handleChatRoutes } from "./server/routes/chat.js";
@@ -1020,13 +1021,18 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 			const message = msgObj;
 			const role = message.role;
 			const ts = timestamp ? Date.parse(timestamp) : Date.now();
+			const messageId = typeof message.id === "string"
+				? message.id
+				: typeof entry.id === "string"
+					? entry.id
+					: undefined;
 
 			if (role === "user") {
 				finalizeAssistant();
 				const content = textFromContent(message.content);
 				if (!content) continue;
 				const images = imagesFromContent(message.content);
-				const msg: SessionMessageSummary = { role: "user", content, timestamp: ts, channel: entryChannel };
+				const msg: SessionMessageSummary = { id: messageId, role: "user", content, timestamp: ts, channel: entryChannel };
 				if (images.length > 0) msg.images = images;
 				messages.push(msg);
 				continue;
@@ -1034,6 +1040,7 @@ function parseSessionFile(filePath: string): { summary: SessionSummary; messages
 
 			if (role === "assistant") {
 				const pending = ensureAssistant(ts);
+				if (messageId && !pending.id) pending.id = messageId;
 				if (entryChannel && !pending.channel) pending.channel = entryChannel;
 				const content = message.content;
 				if (Array.isArray(content)) {
@@ -1424,17 +1431,32 @@ const server = createServer(async (req, res) => {
 
 		// --- Sessions API (extracted to server/routes/sessions.ts) ---
 		if (await handleSessionsRoutes(req, res, method, url, {
-			workspaceRegistry, dataDir, paths, getContentSource,
+			workspaceRegistry, dataDir, l2DataDir, paths, getContentSource,
 			parseSessionFile, sessionRevision,
 			readSessionChannelMetadata, sessionChannelMetadataPath,
 			readSessionTopicMetadata, sessionTopicMetadataPath, writeSessionTopic,
 			readSessionQuestionMetadata, writeSessionQuestionMetadata,
 			recordCurrentSessionChannel, generateSessionTopic,
 			sessionFileFromId, releaseQueueFromQuestionBlockedTurn, runQueueOpWithTimeout,
+			getArchiveRuntime: () => {
+				const session = getSession();
+				return { model: session.model, modelRegistry: session.modelRegistry };
+			},
 		})) return;
 
 		// --- Wiki + L2 raw upload API (extracted to server/routes/wiki.ts) ---
 		if (await handleWikiRoutes(req, res, method, url, { l2DataDir })) return;
+
+		// --- L2 Notebook API (extracted to server/routes/notebook.ts) ---
+		if (await handleNotebookRoutes(req, res, method, url, {
+			l2DataDir,
+			codeDir: paths.codeDir,
+			completePrompt: completePromptOnce,
+			getArchiveRuntime: () => {
+				const session = getSession();
+				return { model: session.model, modelRegistry: session.modelRegistry };
+			},
+		})) return;
 
 		// --- Learner profile API (extracted to server/routes/learner.ts) ---
 		if (await handleLearnerRoutes(req, res, method, url, { paths })) return;

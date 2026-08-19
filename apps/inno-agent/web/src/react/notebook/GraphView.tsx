@@ -533,7 +533,7 @@ export function GraphView() {
 		const visibleIds = new Set(
 			state.nodes.filter((n) => visibleCategories.has(n.type as NodeCategory)).map((n) => n.id),
 		);
-		return state.edges.filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target)).length;
+		return deduplicateEdges(state.edges).filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target)).length;
 	}, [state.nodes, state.edges, visibleCategories]);
 
 	const selectedNode = useMemo(

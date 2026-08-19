@@ -1,7 +1,7 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveMcpSettings, saveCloseBehavior, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveMeetingSettings, saveMcpSettings, saveCloseBehavior, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
 import type { WindowCloseBehavior } from "../types/settings.js";
-import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
+import type { InnoSettings, UpsertProviderRequest, ChannelsSettingsPayload, MeetingSettings } from "../types/settings.js";
 
 interface SettingsStoreEvents {
 	change: void;
@@ -19,6 +19,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingTavily = false;
 	isSavingContentHub = false;
 	isSavingSimpleMode = false;
+	isSavingMeeting = false;
 	isSavingMcp = false;
 	isSavingCloseBehavior = false;
 	error: string | null = null;
@@ -155,6 +156,21 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			throw err;
 		} finally {
 			this.isSavingSimpleMode = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveMeeting(payload: MeetingSettings): Promise<void> {
+		this.isSavingMeeting = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveMeetingSettings(payload);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save meeting settings";
+			throw err;
+		} finally {
+			this.isSavingMeeting = false;
 			this.emit("change", undefined);
 		}
 	}

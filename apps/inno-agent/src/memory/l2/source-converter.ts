@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { ensureDir, writeText } from "../../storage/file-store.js";
 import type { RawSourceType } from "./types.js";
 import { logger } from "../../logger.js";
+import { normalizeMarkdownForMilkdown } from "./markdown-normalizer.js";
 
 /**
  * Convert raw content to extracted markdown and save to data/l2/extracted/.
@@ -30,10 +31,11 @@ export function convertToExtracted(
 function convertContent(content: string, sourceType: RawSourceType): string {
 	switch (sourceType) {
 		case "text":
-		case "markdown":
 			return content;
+		case "markdown":
+			return normalizeMarkdownForMilkdown(content);
 		case "conversation":
-			return formatConversation(content);
+			return normalizeMarkdownForMilkdown(formatConversation(content));
 		case "pdf":
 		case "word":
 		case "image":

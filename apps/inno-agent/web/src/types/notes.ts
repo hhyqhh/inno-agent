@@ -130,4 +130,22 @@ export interface PolishNoteResult {
 	templateLabel: string | null;
 }
 
+export type NoteVersionReason = "created" | "autosave" | "manual" | "restore";
+
+export interface NoteVersionSummary {
+	versionId: string;
+	noteId: string;
+	createdAt: string;
+	reason: NoteVersionReason;
+	title: string;
+	contentLength: number;
+}
+
+export interface NoteVersion extends NoteVersionSummary {
+	tags: string[];
+	recordDate: string;
+	content: string;
+	contentHash: string;
+}
+
 export type NoteListBox = "drafts" | "archived";

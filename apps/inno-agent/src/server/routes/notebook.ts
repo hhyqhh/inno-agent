@@ -14,7 +14,10 @@ import {
 	createL2Note,
 	deleteL2NotebookItem,
 	listL2Notes,
+	listL2NoteVersions,
 	readNoteContent,
+	readL2NoteVersion,
+	restoreL2NoteVersion,
 	saveL2NoteContent,
 } from "../../memory/l2/notes-service.js";
 import {
@@ -367,6 +370,57 @@ export async function handleNotebookRoutes(
 			logger.warn({ err, attachmentId }, "failed to delete note attachment");
 			const message = errorMessage(err, "Delete attachment failed");
 			json(res, message.includes("not found") ? 404 : 500, { error: message });
+		}
+		return true;
+	}
+
+	if (method === "GET" && url.startsWith("/api/l2/notes/versions?")) {
+		const rawPath = new URL(url, "http://localhost").searchParams.get("path") ?? "";
+		const resolved = resolveNotePath(l2DataDir, rawPath);
+		if (!resolved || !isFile(resolved.fullPath)) {
+			json(res, 404, { error: "Note not found" });
+			return true;
+		}
+		try {
+			json(res, 200, { versions: listL2NoteVersions(l2DataDir, resolved.rawPath) });
+		} catch (err) {
+			json(res, 500, { error: errorMessage(err, "Failed to list versions") });
+		}
+		return true;
+	}
+
+	if (method === "GET" && url.startsWith("/api/l2/notes/version?")) {
+		const params = new URL(url, "http://localhost").searchParams;
+		const rawPath = params.get("path") ?? "";
+		const versionId = params.get("versionId") ?? "";
+		const resolved = resolveNotePath(l2DataDir, rawPath);
+		if (!resolved || !versionId || !isFile(resolved.fullPath)) {
+			json(res, 404, { error: "Note or version not found" });
+			return true;
+		}
+		try {
+			json(res, 200, readL2NoteVersion(l2DataDir, resolved.rawPath, versionId));
+		} catch (err) {
+			const message = errorMessage(err, "Failed to read version");
+			json(res, message.includes("not found") ? 404 : 400, { error: message });
+		}
+		return true;
+	}
+
+	if (method === "POST" && url === "/api/l2/notes/versions/restore") {
+		const body = (await readBody(req)) as Record<string, unknown>;
+		const rawPath = typeof body.rawPath === "string" ? body.rawPath.trim() : "";
+		const versionId = typeof body.versionId === "string" ? body.versionId.trim() : "";
+		const resolved = resolveNotePath(l2DataDir, rawPath);
+		if (!resolved || !versionId || !isFile(resolved.fullPath)) {
+			json(res, 404, { error: "Note or version not found" });
+			return true;
+		}
+		try {
+			json(res, 200, restoreL2NoteVersion(l2DataDir, resolved.rawPath, versionId));
+		} catch (err) {
+			const message = errorMessage(err, "Failed to restore version");
+			json(res, message.includes("not found") ? 404 : 400, { error: message });
 		}
 		return true;
 	}

@@ -194,6 +194,20 @@
 			"confirm": "Confirm",
 			"cancel": "Cancel"
 		},
+		"history": {
+			"title": "Version history",
+			"empty": "No versions yet",
+			"characters": "characters",
+			"restore": "Restore this version",
+			"restoreTitle": "Restore version",
+			"restoreConfirm": "The current content will remain in version history before the selected version is restored.",
+			"reason": {
+				"created": "Created",
+				"autosave": "Autosave",
+				"manual": "Manual save",
+				"restore": "Restored"
+			}
+		},
 		"download": "Download",
 		"deleteConfirm": "Delete \"{{title}}\"? This cannot be undone.",
 		"unarchiveConfirm": "Unarchive \"{{title}}\"? Its Wiki links will be detached and generated pages will be backed up for recovery.",

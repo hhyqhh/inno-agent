@@ -36,6 +36,15 @@ import {
 	listNoteAttachments,
 	type NoteAttachmentRecord,
 } from "./note-attachments-service.js";
+import {
+	deleteNoteHistory,
+	listNoteVersions,
+	readNoteVersion,
+	recordNoteVersion,
+	type NoteVersionDto,
+	type NoteVersionReason,
+	type NoteVersionSummaryDto,
+} from "./note-history-service.js";
 
 export type NotebookItemKind = "markdown" | "orphan" | "archived";
 export type NotebookType = "conversation" | "file" | "note";
@@ -324,16 +333,40 @@ export function createL2Note(
 		updated: now,
 	};
 	writeText(join(l2DataDir, rawPath), serializeNoteFile(frontmatter, body));
+	recordNoteVersion(l2DataDir, {
+		noteId,
+		title,
+		tags,
+		recordDate: frontmatter.record_date,
+		content: body,
+		reason: "created",
+	});
 	return { rawPath, status: "draft", noteId, title };
 }
 
 export function saveL2NoteContent(
 	l2DataDir: string,
 	rawPath: string,
-	options: { title: string; tags?: string[]; recordDate?: string; content: string },
+	options: {
+		title: string;
+		tags?: string[];
+		recordDate?: string;
+		content: string;
+		saveReason?: Exclude<NoteVersionReason, "created">;
+	},
 ): { rawPath: string; status: NoteStatus } {
 	const normalizedPath = rawPath.replace(/\\/g, "/");
-	const { absPath, frontmatter, body: _oldBody } = readNoteFile(l2DataDir, normalizedPath);
+	const { absPath, frontmatter, body: oldBody } = readNoteFile(l2DataDir, normalizedPath);
+	if (listNoteVersions(l2DataDir, frontmatter.note_id).length === 0) {
+		recordNoteVersion(l2DataDir, {
+			noteId: frontmatter.note_id,
+			title: frontmatter.title,
+			tags: frontmatter.tags,
+			recordDate: frontmatter.record_date || recordDateFromIso(frontmatter.created),
+			content: oldBody,
+			reason: "created",
+		});
+	}
 	const wasIndexed = frontmatter.status === "indexed" || Boolean(frontmatter.source_id);
 	const nextStatus: NoteStatus = wasIndexed ? "outdated" : "draft";
 	const now = new Date().toISOString();
@@ -346,7 +379,42 @@ export function saveL2NoteContent(
 		updated: now,
 	};
 	writeText(absPath, serializeNoteFile(nextFrontmatter, options.content));
+	recordNoteVersion(l2DataDir, {
+		noteId: nextFrontmatter.note_id,
+		title: nextFrontmatter.title,
+		tags: nextFrontmatter.tags,
+		recordDate: nextFrontmatter.record_date,
+		content: options.content,
+		reason: options.saveReason ?? "manual",
+	});
 	return { rawPath: normalizedPath, status: nextStatus };
+}
+
+export function listL2NoteVersions(l2DataDir: string, rawPath: string): NoteVersionSummaryDto[] {
+	const { frontmatter } = readNoteFile(l2DataDir, rawPath.replace(/\\/g, "/"));
+	return listNoteVersions(l2DataDir, frontmatter.note_id);
+}
+
+export function readL2NoteVersion(l2DataDir: string, rawPath: string, versionId: string): NoteVersionDto {
+	const { frontmatter } = readNoteFile(l2DataDir, rawPath.replace(/\\/g, "/"));
+	return readNoteVersion(l2DataDir, frontmatter.note_id, versionId);
+}
+
+export function restoreL2NoteVersion(
+	l2DataDir: string,
+	rawPath: string,
+	versionId: string,
+): { rawPath: string; status: NoteStatus; versionId: string } {
+	const normalizedPath = rawPath.replace(/\\/g, "/");
+	const version = readL2NoteVersion(l2DataDir, normalizedPath, versionId);
+	const result = saveL2NoteContent(l2DataDir, normalizedPath, {
+		title: version.title,
+		tags: version.tags,
+		recordDate: version.recordDate,
+		content: version.content,
+		saveReason: "restore",
+	});
+	return { ...result, versionId };
 }
 
 export async function archiveL2Note(
@@ -439,6 +507,7 @@ export function deleteL2NotebookItem(l2DataDir: string, rawPath: string): Delete
 		}
 		title = note.frontmatter.title || extractNoteTitle(note.body, basename(normalizedPath, ".md"));
 		deleteAttachmentsForNote(l2DataDir, normalizedPath);
+		deleteNoteHistory(l2DataDir, note.frontmatter.note_id);
 	}
 
 	unlinkSync(absPath);

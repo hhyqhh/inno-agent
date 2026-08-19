@@ -10,6 +10,7 @@ import {
 	ExternalLink,
 	FileText,
 	FileUp,
+	History,
 	LoaderCircle,
 	MessageSquareText,
 	RefreshCw,
@@ -27,6 +28,7 @@ import { TemplateEditor } from "./note-templates/TemplateEditor.js";
 import { TemplateMenu } from "./note-templates/TemplateMenu.js";
 import { TemplateSidebar } from "./note-templates/TemplateSidebar.js";
 import { noteTemplateStore } from "../stores/note-template-store.js";
+import { VersionHistoryDialog } from "./notebook/VersionHistoryDialog.js";
 
 interface NotesPanelProps {
 	onOpenWiki?(wikiPath: string): void;
@@ -46,6 +48,7 @@ function rawFileName(rawPath: string): string {
 export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 	const { t } = useTranslation();
 	const [templateMode, setTemplateMode] = useState(false);
+	const [historyOpen, setHistoryOpen] = useState(false);
 	const uploadRef = useRef<HTMLInputElement>(null);
 	const meetingState = useStoreSnapshot(meetingStore, () => meetingStore.state);
 	const state = useStoreSnapshot(notesStore, () => ({
@@ -128,6 +131,19 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		if (!confirmed) return;
 		await notesStore.unarchiveSelected();
 	}, [t]);
+
+	const openHistory = useCallback(async () => {
+		if (!(await notesStore.saveSelected())) return;
+		setHistoryOpen(true);
+	}, []);
+
+	const reloadAfterRestore = useCallback(async () => {
+		const rawPath = notesStore.selected?.rawPath;
+		if (!rawPath) return;
+		await notesStore.loadAll();
+		const restored = notesStore.notes.find((note) => note.rawPath === rawPath);
+		if (restored) await notesStore.selectNote(restored);
+	}, []);
 
 	const selected = state.selected;
 	const isMarkdown = selected?.kind === "markdown";
@@ -410,7 +426,15 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					</div>
 				) : isMarkdown ? (
 					<div className="flex min-h-0 flex-1 flex-col">
-						<div className="flex items-center justify-end border-b border-[var(--inno-border)] px-4 py-2">
+						<div className="flex items-center justify-end gap-2 border-b border-[var(--inno-border)] px-4 py-2">
+							<button
+								type="button"
+								className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-2 py-1 text-xs hover:bg-[var(--inno-surface-muted)]"
+								onClick={() => void openHistory()}
+							>
+								<History size={13} />
+								{t("notes.history.title")}
+							</button>
 							<button
 								type="button"
 								className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-2 py-1 text-xs hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
@@ -506,6 +530,14 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					</div>
 				)}
 			</section>
+			{selected?.kind === "markdown" ? (
+				<VersionHistoryDialog
+					open={historyOpen}
+					rawPath={selected.rawPath}
+					onClose={() => setHistoryOpen(false)}
+					onRestored={reloadAfterRestore}
+				/>
+			) : null}
 		</div>
 	);
 }

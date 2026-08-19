@@ -194,6 +194,20 @@
 			"confirm": "确定",
 			"cancel": "取消"
 		},
+		"history": {
+			"title": "版本历史",
+			"empty": "暂无历史版本",
+			"characters": "字",
+			"restore": "恢复此版本",
+			"restoreTitle": "恢复历史版本",
+			"restoreConfirm": "当前内容会保留在版本历史中，然后恢复所选版本。",
+			"reason": {
+				"created": "创建",
+				"autosave": "自动保存",
+				"manual": "手动保存",
+				"restore": "版本恢复"
+			}
+		},
 		"download": "下载",
 		"deleteConfirm": "删除「{{title}}」？此操作不可撤回。",
 		"unarchiveConfirm": "撤回归档「{{title}}」？将解除其 Wiki 关联，并为生成页面保留可恢复备份。",

@@ -5,6 +5,8 @@ import type {
 	DeleteNoteItemResult,
 	NoteAttachment,
 	NoteContent,
+	NoteVersion,
+	NoteVersionSummary,
 	NotesListResponse,
 	PolishNoteResult,
 	SaveNoteResult,
@@ -41,6 +43,25 @@ export async function fetchRawContent(rawPath: string, options: { full?: boolean
 		`/api/l2/raw/content?${params.toString()}`,
 	);
 	return data.content;
+}
+
+export async function listNoteVersions(rawPath: string): Promise<NoteVersionSummary[]> {
+	const data = await apiFetch<{ versions: NoteVersionSummary[] }>(
+		`/api/l2/notes/versions?path=${encodeURIComponent(rawPath)}`,
+	);
+	return data.versions;
+}
+
+export async function fetchNoteVersion(rawPath: string, versionId: string): Promise<NoteVersion> {
+	const params = new URLSearchParams({ path: rawPath, versionId });
+	return apiFetch<NoteVersion>(`/api/l2/notes/version?${params.toString()}`);
+}
+
+export async function restoreNoteVersion(rawPath: string, versionId: string): Promise<SaveNoteResult & { versionId: string }> {
+	return apiFetch<SaveNoteResult & { versionId: string }>("/api/l2/notes/versions/restore", {
+		method: "POST",
+		body: JSON.stringify({ rawPath, versionId }),
+	});
 }
 
 export async function saveRawMarkdownContent(options: {

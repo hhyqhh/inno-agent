@@ -13,6 +13,7 @@ import { workspaceStore } from "../stores/workspace-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { appStore } from "../stores/app-store.js";
 import type { CreateSessionInput } from "../api/sessions.js";
+import { bindSessionWorkspace } from "../api/workspaces.js";
 import { ApiError } from "../api/client.js";
 import type { PresetMeta } from "../types/presets.js";
 import { arrayBufferToBase64 } from "../api/uploads.js";
@@ -30,6 +31,7 @@ import { MarkdownArtifact } from "./MarkdownArtifact.js";
 import { ErrorBlock, MessageBubble, ToolRecordDetails } from "./chat/MessageBubble.js";
 import { findPreset } from "./settings/provider-presets.js";
 import { PresetPicker } from "./PresetPicker.js";
+import { WorkspaceSwitcher, type WorkspaceChoice } from "./WorkspaceSwitcher.js";
 
 // Thresholds for showing a very large paste as a compact composer card. A
 // paste crossing EITHER threshold is collapsed. The character threshold is
@@ -408,23 +410,6 @@ function rememberWsChoice(mode: WsMode, existingId: string): void {
 	}
 }
 
-function ModeChip({ selected, onClick, disabled, children }: { selected: boolean; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			disabled={disabled}
-			className={`rounded-full border px-1.5 py-px text-[10px] leading-tight transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-				selected
-					? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
-					: "border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
-			}`}
-		>
-			{children}
-		</button>
-	);
-}
-
 export function ChatCenter() {
 	const { t } = useTranslation();
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -454,6 +439,7 @@ export function ChatCenter() {
 	const [wsName, setWsName] = useState("");
 	const [wsExistingId, setWsExistingId] = useState(() => readLastWsId());
 	const [wsError, setWsError] = useState("");
+	const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
 
 	// Simple Mode surfaces preset workspaces for one-click start.
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
@@ -614,6 +600,62 @@ export function ChatCenter() {
 
 	// Welcome state: derived once in the sessions store (single source of truth).
 	const isWelcome = sessions.isWelcome;
+
+	const handleWorkspaceChange = useCallback(async (choice: WorkspaceChoice) => {
+		setWsError("");
+
+		// On the welcome screen the choice is only draft state. The session is
+		// created later by handleSend, so no workspace binding request is needed.
+		if (isWelcome) {
+			if (choice.kind === "temp") {
+				setWsMode("temp");
+				setWsName("");
+				setWsExistingId("");
+			} else if (choice.kind === "workspace") {
+				setWsMode("existing");
+				setWsExistingId(choice.workspaceId);
+				setWsName("");
+			} else {
+				setWsMode("new");
+				setWsName(choice.name);
+				setWsExistingId("");
+			}
+			return;
+		}
+
+		const sessionId = sessions.currentSessionId;
+		if (!sessionId) return;
+		if (chat.isSending || isUploading) {
+			setWsError(t("chat.workspaceBusy"));
+			return;
+		}
+
+		setIsSwitchingWorkspace(true);
+		try {
+			let workspaceId: string;
+			if (choice.kind === "workspace") {
+				workspaceId = choice.workspaceId;
+			} else if (choice.kind === "new") {
+				const created = await workspacesStore.create({ name: choice.name, isTemp: false });
+				workspaceId = created.id;
+			} else {
+				const tempWorkspace = workspaces.list.find((workspace) => workspace.isTemp);
+				if (!tempWorkspace) throw new Error(t("chat.workspaceUnavailable"));
+				workspaceId = tempWorkspace.id;
+			}
+
+			if (workspaceId !== activeWorkspaceId) {
+				await bindSessionWorkspace(sessionId, workspaceId);
+				await workspaceStore.setActiveWorkspace(workspaceId);
+			}
+			await workspacesStore.load();
+		} catch (error) {
+			setWsError(error instanceof Error ? error.message : t("chat.workspaceSwitchFailed"));
+		} finally {
+			setIsSwitchingWorkspace(false);
+		}
+	}, [activeWorkspaceId, chat.isSending, isUploading, isWelcome, sessions.currentSessionId, t, workspaces.list]);
+
 	// Workspace that will receive pending attachments when Send is clicked.
 	// File selection itself never writes to this workspace, so attachments may
 	// safely follow the composer across session switches.
@@ -1258,6 +1300,35 @@ export function ChatCenter() {
 		) : null
 	);
 
+	const renderWorkspaceSwitcher = (context: "welcome" | "session") => {
+		const draftWorkspaceId = context === "welcome" && wsMode === "existing" ? wsExistingId : null;
+		const sessionWorkspace = context === "session" && activeWorkspaceId
+			? workspaces.list.find((workspace) => workspace.id === activeWorkspaceId)
+			: undefined;
+		const selectionKind = context === "welcome"
+			? wsMode === "existing" ? "workspace" : wsMode
+			: sessionWorkspace?.isTemp || !activeWorkspaceId
+				? "temp"
+				: "workspace";
+
+		return (
+			<div className="inno-workspace-context-row">
+				<WorkspaceSwitcher
+					workspaces={workspaces.list}
+					selectedWorkspaceId={context === "welcome" ? draftWorkspaceId : activeWorkspaceId}
+					selectedKind={selectionKind}
+					newWorkspaceName={context === "welcome" && wsMode === "new" ? wsName : ""}
+					busy={isSwitchingWorkspace}
+					disabled={isUploading || Boolean(chat.pendingQuestion) || (context === "session" && chat.isSending)}
+					onChange={handleWorkspaceChange}
+				/>
+				{context === "welcome" && preselectedWs ? (
+					<span className="inno-workspace-context-hint">{t("chat.newChatHere")}</span>
+				) : null}
+			</div>
+		);
+	};
+
 	const renderComposer = (placeholder: string) => {
 		const sendDisabled = !hasSendableContent || isUploading;
 		return (
@@ -1407,6 +1478,7 @@ export function ChatCenter() {
 						</div>
 						<div className="inno-welcome-composer-shell">
 							{renderComposer(t("chat.welcomePlaceholder"))}
+							{simpleMode ? null : <div className="mt-2">{renderWorkspaceSwitcher("welcome")}</div>}
 						</div>
 
 						{simpleMode && (presets.length > 0 || presetsLoaded || isLoadingPresets || presetsRefreshError) ? (
@@ -1424,46 +1496,6 @@ export function ChatCenter() {
 								t={t}
 							/>
 						) : null}
-
-						{simpleMode ? null : preselectedWs ? (
-							<div className="mt-3 flex flex-wrap items-center gap-2">
-								<span className="text-xs text-[var(--inno-text-subtle)]">{t("workspace.title")}</span>
-								<span className="rounded-full bg-[var(--inno-accent-soft)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--inno-accent)]">
-									{preselectedWs.name}
-								</span>
-								<span className="text-[10px] text-[var(--inno-text-subtle)]">{t("chat.newChatHere")}</span>
-							</div>
-						) : (
-							<div className="mt-3 flex flex-wrap items-center gap-2">
-								<span className="text-xs text-[var(--inno-text-subtle)]">{t("workspace.title")}</span>
-								<ModeChip selected={wsMode === "temp"} onClick={() => setWsMode("temp")}>{t("chat.wsTemp")}</ModeChip>
-								<ModeChip selected={wsMode === "new"} onClick={() => setWsMode("new")}>{t("chat.wsNew")}</ModeChip>
-								{selectableWorkspaces.length > 0 ? (
-									<ModeChip selected={wsMode === "existing"} onClick={() => setWsMode("existing")}>{t("chat.wsExisting")}</ModeChip>
-								) : null}
-								{wsMode === "new" ? (
-									<input
-										type="text"
-										placeholder={t("chat.wsNamePlaceholder")}
-										value={wsName}
-										onChange={(e) => setWsName(e.target.value)}
-										className="ml-1 w-[200px] rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-px text-[10px] leading-tight outline-none focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
-									/>
-								) : null}
-								{wsMode === "existing" ? (
-									<select
-										value={wsExistingId}
-										onChange={(e) => setWsExistingId(e.target.value)}
-										className="ml-1 max-w-[220px] rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-px text-[10px] leading-tight outline-none focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
-									>
-										<option value="">{t("chat.wsSelectPlaceholder")}</option>
-										{selectableWorkspaces.map((w) => (
-											<option key={w.id} value={w.id}>{w.name}</option>
-										))}
-									</select>
-								) : null}
-							</div>
-						)}
 
 						{wsError ? <p className="mt-2 text-xs text-[var(--inno-danger)]">{wsError}</p> : null}
 					</div>
@@ -1593,6 +1625,7 @@ export function ChatCenter() {
 					{renderBusyBlocker()}
 					{wsError ? <p className="mb-2 text-xs text-[var(--inno-danger)]">{wsError}</p> : null}
 					{renderComposer(t("chat.composerPlaceholder"))}
+					<div className="mt-2">{renderWorkspaceSwitcher("session")}</div>
 				</div>
 			</div>
 		</section>

@@ -45,7 +45,6 @@ import { handleChannelsRoutes } from "./server/routes/channels.js";
 import { handleJobsRoutes } from "./server/routes/jobs.js";
 import { handleSettingsRoutes } from "./server/routes/settings.js";
 import { handleSkillsRoutes } from "./server/routes/skills.js";
-import { handleContentHubRoutes } from "./server/routes/content-hub.js";
 import { handleWorkspacesRoutes } from "./server/routes/workspaces.js";
 import { handleSessionsRoutes } from "./server/routes/sessions.js";
 import { handleLearnerRoutes } from "./server/routes/learner.js";
@@ -719,10 +718,6 @@ function listPresetLibrary(forceRefresh = false) {
 	return contentHubCatalog.listPresetLibrary(forceRefresh);
 }
 
-function getContentHubStatus() {
-	return contentHubCatalog.getStatus();
-}
-
 /**
  * Import a skill from the remote library into the global skills directory.
  * Downloads the item's files into a temp dir, then installs through the same
@@ -1349,8 +1344,6 @@ const server = createServer(async (req, res) => {
 			listSkillLibrary,
 			importSkillFromLibrary,
 		})) return;
-
-		if (await handleContentHubRoutes(req, res, method, url, { getContentHubStatus })) return;
 
 		// --- Sessions API (extracted to server/routes/sessions.ts) ---
 		if (await handleSessionsRoutes(req, res, method, url, {

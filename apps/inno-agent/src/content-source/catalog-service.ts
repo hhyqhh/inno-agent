@@ -10,7 +10,6 @@ import { createContentSource, type RemoteContentSource } from "./index.js";
 import {
 	mapWithConcurrency,
 	type ContentCategory,
-	type ContentHubStatus,
 	type SkillLibraryItem,
 } from "./types.js";
 
@@ -22,9 +21,9 @@ export interface ContentHubCatalogOptions {
 }
 
 /**
- * Owns remote catalog lifecycle: source reuse, persistent snapshots, revision
- * checks, and background warming. The HTTP server only wires these methods to
- * routes, so catalog behavior stays out of the request dispatcher.
+ * Owns remote catalog lifecycle: source reuse, persistent snapshots, and
+ * background warming. The HTTP server only wires these methods to routes, so
+ * catalog behavior stays out of the request dispatcher.
  */
 export class ContentHubCatalog {
 	private readonly cache: CatalogSnapshotCache;
@@ -84,15 +83,6 @@ export class ContentHubCatalog {
 		return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
 	}
 
-	async getStatus(): Promise<ContentHubStatus> {
-		const source = this.getSource();
-		const checkedAt = new Date().toISOString();
-		const skillsRevision = await this.readRevision(source, "skills");
-		return {
-			skills: this.cachedStatus("skills", skillsRevision, checkedAt),
-		};
-	}
-
 	async warm(): Promise<void> {
 		if (this.options.getConfig().simpleMode?.enabled !== true) return;
 		for (const [category, load] of [
@@ -106,11 +96,6 @@ export class ContentHubCatalog {
 			} catch (err) {
 				logger.warn({ err, category }, "content-source: catalog preload failed");
 			}
-		}
-		try {
-			await this.getStatus();
-		} catch (err) {
-			logger.warn({ err }, "content-source: initial revision check failed");
 		}
 	}
 
@@ -127,22 +112,8 @@ export class ContentHubCatalog {
 		return this.cache.getItems<T>(category);
 	}
 
-	private saveEntry(category: ContentCategory, items: unknown[], revision: string | null, key: string): void {
-		this.cache.save(category, items, revision, key);
-	}
-
-	private cachedStatus(category: ContentCategory, remoteRevision: string | null, checkedAt: string) {
-		return this.cache.status(category, remoteRevision, checkedAt);
-	}
-
-	private async readRevision(source: RemoteContentSource, category: ContentCategory, forceRefresh = false): Promise<string | null> {
-		if (!source.getRevision) return null;
-		try {
-			return await source.getRevision(category, forceRefresh);
-		} catch (err) {
-			logger.warn({ err }, "content-source: revision check failed");
-			return null;
-		}
+	private saveEntry(category: ContentCategory, items: unknown[], key: string): void {
+		this.cache.save(category, items, key);
 	}
 
 	private async loadCatalog<T>(
@@ -159,10 +130,7 @@ export class ContentHubCatalog {
 		const key = this.hubKey(this.currentHub());
 		const task = (async () => {
 			const items = await loader();
-			const revision = category === "skills"
-				? await this.readRevision(this.getSource(), category, forceRefresh)
-				: null;
-			this.saveEntry(category, items, revision, key);
+			this.saveEntry(category, items, key);
 			return items;
 		})();
 		this.loads.set(category, task);

@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -73,17 +72,6 @@ export class BundleServiceSource implements RemoteContentSource {
 		const index = JSON.parse(body) as BundleIndex;
 		this.indexCache = { index, fetchedAt: now };
 		return index;
-	}
-
-	async getRevision(category: ContentCategory, forceRefresh = false): Promise<string | null> {
-		try {
-			const index = await this.getIndex(forceRefresh);
-			const entries = category === "skills" ? index.skills ?? [] : index.presets ?? [];
-			return createHash("sha1").update(JSON.stringify(entries)).digest("hex");
-		} catch (err) {
-			logger.warn({ err }, "content-source: failed to read bundle catalog revision");
-			return null;
-		}
 	}
 
 	async listItems(category: ContentCategory, opts: ListOpts = {}): Promise<RemoteItem[]> {

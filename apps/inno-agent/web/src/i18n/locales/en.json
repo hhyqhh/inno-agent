@@ -371,7 +371,6 @@
 		"importing": "Importing…",
 		"installed": "Installed",
 		"libraryError": "Failed to load skills library",
-		"updateAvailable": "New skills found — click refresh",
 		"searchPlaceholder": "Search by name, description, or category…",
 		"uncategorized": "Uncategorized",
 		"noResults": "No matching skills"

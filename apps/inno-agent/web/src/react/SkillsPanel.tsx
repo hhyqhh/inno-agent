@@ -335,7 +335,6 @@ function SkillLibraryModal({ onClose }: { onClose: () => void }) {
 		library: skillsStore.library,
 		isLoading: skillsStore.isLoadingLibrary,
 		error: skillsStore.libraryError,
-		updateAvailable: skillsStore.libraryUpdateAvailable,
 		importing: skillsStore.importing,
 	}));
 	const [query, setQuery] = useState("");
@@ -362,15 +361,13 @@ function SkillLibraryModal({ onClose }: { onClose: () => void }) {
 							<div className="truncate text-[11px] text-[var(--inno-text-muted)]">{t("skills.librarySubtitle")}</div>
 						</div>
 					</div>
-						<div className="flex shrink-0 items-center gap-1">
+					<div className="flex shrink-0 items-center gap-1">
 						<button
-							className={`relative flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:cursor-wait disabled:opacity-50 ${state.updateAvailable ? "text-[var(--inno-accent)]" : ""}`}
-							disabled={state.isLoading}
-							title={state.updateAvailable ? t("skills.updateAvailable") : t("skills.reload")}
+							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							title={t("skills.reload")}
 							onClick={() => void skillsStore.loadLibrary(true)}
 						>
-							{state.isLoading ? <Spinner size={13} /> : <RefreshCw size={14} />}
-							{state.updateAvailable ? <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[var(--inno-accent)]" /> : null}
+							<RefreshCw size={14} />
 						</button>
 						<button
 							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
@@ -380,12 +377,6 @@ function SkillLibraryModal({ onClose }: { onClose: () => void }) {
 						</button>
 					</div>
 				</div>
-				{state.updateAvailable ? (
-					<div className="flex items-center justify-between gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-accent-soft)] px-4 py-2 text-[11px] text-[var(--inno-accent)]">
-						<span>{t("skills.updateAvailable")}</span>
-						<button className="shrink-0 font-medium hover:underline" onClick={() => void skillsStore.loadLibrary(true)}>{t("common.refresh")}</button>
-					</div>
-				) : null}
 
 				{/* Search */}
 				<div className="flex items-center gap-2 border-b border-[var(--inno-border)] px-4 py-2">

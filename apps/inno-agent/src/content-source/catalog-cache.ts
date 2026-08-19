@@ -1,11 +1,9 @@
 import { join } from "node:path";
 import { readJson, writeJson } from "../storage/file-store.js";
-import type { ContentCatalogStatus, ContentCategory } from "./types.js";
+import type { ContentCategory } from "./types.js";
 
 type CatalogCacheEntry = {
 	items: unknown[];
-	revision: string | null;
-	fetchedAt: string;
 };
 
 type CatalogCacheFile = {
@@ -30,30 +28,17 @@ export class CatalogSnapshotCache {
 		return entry ? entry.items as T[] : null;
 	}
 
-	save(category: ContentCategory, items: unknown[], revision: string | null, key: string): void {
+	save(category: ContentCategory, items: unknown[], key: string): void {
 		if (this.getHubKey() !== key) return;
 		this.ensureLoaded(key);
 		this.entries[category] = {
 			items,
-			revision,
-			fetchedAt: new Date().toISOString(),
 		};
 		writeJson<CatalogCacheFile>(this.cachePath, {
 			version: 1,
 			hubKey: key,
 			entries: this.entries,
 		}, { mode: 0o600 });
-	}
-
-	status(category: ContentCategory, remoteRevision: string | null, checkedAt: string): ContentCatalogStatus {
-		this.ensureLoaded();
-		const entry = this.entries[category];
-		return {
-			hasUpdate: Boolean(entry?.revision && remoteRevision && entry.revision !== remoteRevision),
-			cachedRevision: entry?.revision ?? null,
-			remoteRevision,
-			checkedAt,
-		};
 	}
 
 	invalidate(): void {

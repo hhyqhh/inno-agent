@@ -1,6 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
 import { deleteSkill, listSkills, reloadSkills, inlineSkillHtml, updateSkill, uploadSkill, getSkillTree, getSkillFile, saveSkillFile, listSkillLibrary, importSkillFromLibrary } from "../api/skills.js";
-import { getContentHubStatus } from "../api/content-hub.js";
 import type { SkillInfo, SkillLibraryItem } from "../types/skills.js";
 import type { WorkspaceTreeNode, WorkspaceFileDetail } from "../types/workspace.js";
 
@@ -27,11 +26,8 @@ export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 	// Remote skill library state
 	libraryOpen = false;
 	library: SkillLibraryItem[] = [];
-	libraryLoaded = false;
 	isLoadingLibrary = false;
 	libraryError: string | null = null;
-	libraryUpdateAvailable = false;
-	isCheckingLibraryUpdate = false;
 	/** Names currently being imported (for per-row spinners). */
 	importing = new Set<string>();
 	private treeRequestId = 0;
@@ -100,10 +96,7 @@ export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 	openLibrary() {
 		this.libraryOpen = true;
 		this.emit("change", undefined);
-		void (async () => {
-			if (!this.libraryLoaded) await this.loadLibrary();
-			await this.checkLibraryUpdate();
-		})();
+		void this.loadLibrary();
 	}
 
 	closeLibrary() {
@@ -112,36 +105,16 @@ export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 	}
 
 	async loadLibrary(forceRefresh = false) {
-		const previous = this.library;
 		this.isLoadingLibrary = true;
 		this.libraryError = null;
 		this.emit("change", undefined);
 		try {
 			this.library = await listSkillLibrary(forceRefresh);
-			this.libraryLoaded = true;
-			if (forceRefresh) this.libraryUpdateAvailable = false;
 		} catch (err) {
 			this.libraryError = err instanceof Error ? err.message : "Failed to load skill library";
-			// Keep the last known catalog visible when a refresh is offline or
-			// GitHub is temporarily unavailable.
-			this.library = previous;
+			this.library = [];
 		} finally {
 			this.isLoadingLibrary = false;
-			this.emit("change", undefined);
-		}
-	}
-
-	async checkLibraryUpdate() {
-		if (this.isCheckingLibraryUpdate) return;
-		this.isCheckingLibraryUpdate = true;
-		this.emit("change", undefined);
-		try {
-			const status = await getContentHubStatus();
-			this.libraryUpdateAvailable = status.skills.hasUpdate;
-		} catch {
-			// A failed check must not hide the catalog or show a false update.
-		} finally {
-			this.isCheckingLibraryUpdate = false;
 			this.emit("change", undefined);
 		}
 	}

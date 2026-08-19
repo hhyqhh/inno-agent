@@ -23,6 +23,8 @@ import { l2RawFileUrl } from "../api/notes.js";
 import { notesStore } from "../stores/notes-store.js";
 import type { NoteSummary } from "../types/notes.js";
 import { useStoreSnapshot } from "./hooks.js";
+import { MeetingProgress, MeetingRecorder } from "./meetings/MeetingRecorder.js";
+import { meetingStore } from "../stores/meeting-store.js";
 
 interface NotesPanelProps {
 	onOpenWiki?(wikiPath: string): void;
@@ -44,6 +46,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 	const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
 	const templateMenuRef = useRef<HTMLDivElement>(null);
 	const uploadRef = useRef<HTMLInputElement>(null);
+	const meetingState = useStoreSnapshot(meetingStore, () => meetingStore.state);
 	const state = useStoreSnapshot(notesStore, () => ({
 		notes: notesStore.filteredNotes,
 		selected: notesStore.selected,
@@ -132,6 +135,16 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 	const canUnarchive = Boolean(
 		selected && (selected.kind === "archived" || (selected.kind === "markdown" && selected.status !== "draft")),
 	);
+	const meetingBusy = ["connecting", "recording", "paused", "finishing", "importing", "summarizing"].includes(meetingState);
+
+	const handleFiles = useCallback(async (files: FileList) => {
+		const audioExtensions = new Set(["wav", "mp3", "m4a", "webm", "ogg", "mp4", "aac", "flac"]);
+		const all = Array.from(files);
+		const audio = all.filter((file) => audioExtensions.has(file.name.split(".").pop()?.toLowerCase() ?? ""));
+		const documents = all.filter((file) => !audio.includes(file));
+		for (const file of audio) await meetingStore.importAudio(file);
+		if (documents.length) await notesStore.uploadFiles(documents);
+	}, []);
 
 	function renderBottomActions() {
 		if (!selected) return null;
@@ -281,7 +294,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						<button
 							type="button"
 							className="inline-flex items-center justify-center gap-1 rounded-md border border-[var(--inno-border)] px-2 py-1 text-xs hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
-							disabled={state.isUploading}
+							disabled={state.isUploading || meetingBusy}
 							onClick={() => uploadRef.current?.click()}
 							title={t("notes.actions.upload")}
 						>
@@ -302,7 +315,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						className="hidden"
 						multiple
 						onChange={(e) => {
-							if (e.target.files?.length) void notesStore.uploadFiles(e.target.files);
+							if (e.target.files?.length) void handleFiles(e.target.files);
 							e.target.value = "";
 						}}
 					/>
@@ -390,6 +403,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 						{t("notes.flash.archiving")}
 					</p>
 				) : null}
+				{selected ? <MeetingProgress rawPath={selected.rawPath} meetingId={selected.meetingId} /> : null}
 
 				{!selected ? (
 					<div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--inno-text-muted)]">
@@ -427,7 +441,8 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 										editorKey={selected.rawPath}
 										value={state.editorContent}
 										onChange={(value) => notesStore.updateEditorContent(value)}
-										toolbarAction={(
+										toolbarAction={(<>
+											<MeetingRecorder toolbar rawPath={selected.rawPath} title={state.editorTitle || selected.title} />
 											<button
 												type="button"
 												className="top-bar-item inno-milkdown-polish-button"
@@ -437,7 +452,7 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 											>
 												{state.isPolishing ? <LoaderCircle size={17} className="animate-spin" /> : <Sparkles size={17} />}
 											</button>
-										)}
+										</>)}
 									/>
 								</>
 							)}

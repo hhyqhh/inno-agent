@@ -4,6 +4,7 @@ export type RawSourceType = "text" | "markdown" | "conversation" | "pdf" | "word
 export type NotebookType = "conversation" | "file" | "note";
 export type NotebookItemKind = "markdown" | "orphan" | "archived";
 export type NotebookItemStatus = NoteStatus | ManifestStatus | "uploaded";
+export type MeetingStatus = "connecting" | "recording" | "paused" | "finishing" | "summarizing" | "completed" | "no_speech" | "failed" | "interrupted";
 
 export interface NoteSummary {
 	noteId: string;
@@ -22,6 +23,8 @@ export interface NoteSummary {
 	size?: number;
 	createdAt: string;
 	updatedAt: string;
+	meetingId?: string;
+	meetingStatus?: MeetingStatus;
 }
 
 export interface NoteContent {
@@ -36,6 +39,8 @@ export interface NoteContent {
 	attachments: NoteAttachment[];
 	createdAt: string;
 	updatedAt: string;
+	meetingId?: string;
+	meetingStatus?: MeetingStatus;
 }
 
 export type NoteAttachmentStatus = "uploaded" | "extracting" | "extracted" | "indexed" | "error";

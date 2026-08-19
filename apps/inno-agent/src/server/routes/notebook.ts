@@ -36,6 +36,7 @@ export interface NotebookRouteContext {
 	codeDir: string;
 	getArchiveRuntime: () => { model?: Model<any>; modelRegistry?: ModelRegistry; memory?: L2Memory };
 	completePrompt: PolishPromptRunner;
+	cancelMeetingForRawPath?: (rawPath: string) => void;
 }
 
 interface ResolvedL2Path {
@@ -375,6 +376,7 @@ export async function handleNotebookRoutes(
 			return true;
 		}
 		try {
+			ctx.cancelMeetingForRawPath?.(resolved.rawPath);
 			json(res, 200, deleteL2NotebookItem(l2DataDir, resolved.rawPath));
 		} catch (err) {
 			logger.warn({ err, rawPath: resolved.rawPath }, "failed to delete notebook item");

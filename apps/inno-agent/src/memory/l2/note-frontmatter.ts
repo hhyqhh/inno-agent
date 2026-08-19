@@ -1,4 +1,5 @@
 export type NoteStatus = "draft" | "indexed" | "outdated" | "error";
+export type MeetingStatus = "connecting" | "recording" | "paused" | "finishing" | "summarizing" | "completed" | "no_speech" | "failed" | "interrupted";
 
 export interface NoteFrontmatter {
 	note_id: string;
@@ -6,6 +7,8 @@ export interface NoteFrontmatter {
 	tags: string[];
 	record_date: string;
 	status: NoteStatus;
+	meeting_id?: string;
+	meeting_status?: MeetingStatus;
 	source_id?: string;
 	created: string;
 	updated: string;
@@ -116,6 +119,13 @@ export function parseNoteFrontmatter(content: string): { frontmatter: NoteFrontm
 		status === "indexed" || status === "outdated" || status === "error" ? status : "draft";
 	const created = parseScalar(String(fm.created ?? ""));
 	const recordDateRaw = parseScalar(String(fm.record_date ?? fm.recordDate ?? ""));
+	const rawMeetingStatus = parseScalar(String(fm.meeting_status ?? ""));
+	const meetingStatus: MeetingStatus | undefined =
+		rawMeetingStatus === "recording" || rawMeetingStatus === "summarizing" || rawMeetingStatus === "completed" ||
+		rawMeetingStatus === "connecting" || rawMeetingStatus === "paused" || rawMeetingStatus === "finishing" ||
+		rawMeetingStatus === "no_speech" || rawMeetingStatus === "failed" || rawMeetingStatus === "interrupted"
+			? rawMeetingStatus
+			: undefined;
 
 	return {
 		frontmatter: {
@@ -124,6 +134,8 @@ export function parseNoteFrontmatter(content: string): { frontmatter: NoteFrontm
 			tags: Array.isArray(fm.tags) ? (fm.tags as string[]) : parseTagList(String(fm.tags ?? "")),
 			record_date: normalizeRecordDateValue(recordDateRaw) || recordDateFromIso(created),
 			status: validStatus,
+			meeting_id: fm.meeting_id ? parseScalar(String(fm.meeting_id)) : undefined,
+			meeting_status: meetingStatus,
 			source_id: fm.source_id ? parseScalar(String(fm.source_id)) : undefined,
 			created,
 			updated: parseScalar(String(fm.updated ?? "")),
@@ -155,6 +167,8 @@ export function serializeNoteFile(frontmatter: NoteFrontmatter, body: string): s
 	}
 	lines.push(`record_date: ${yamlQuote(frontmatter.record_date)}`);
 	lines.push(`status: ${frontmatter.status}`);
+	if (frontmatter.meeting_id) lines.push(`meeting_id: ${yamlQuote(frontmatter.meeting_id)}`);
+	if (frontmatter.meeting_status) lines.push(`meeting_status: ${frontmatter.meeting_status}`);
 	if (frontmatter.source_id) {
 		lines.push(`source_id: ${yamlQuote(frontmatter.source_id)}`);
 	}

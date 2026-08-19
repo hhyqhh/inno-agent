@@ -49,6 +49,7 @@ import { handleSessionsRoutes } from "./server/routes/sessions.js";
 import { handleLearnerRoutes } from "./server/routes/learner.js";
 import { handleWikiRoutes } from "./server/routes/wiki.js";
 import { handleNotebookRoutes } from "./server/routes/notebook.js";
+import { handleMeetingRoutes } from "./server/routes/meetings.js";
 import { handlePresetsRoutes } from "./server/routes/presets.js";
 import { handlePracticeRoutes } from "./server/routes/practice.js";
 import { handleChatRoutes } from "./server/routes/chat.js";
@@ -73,6 +74,7 @@ import { RunRecordStore } from "./terminal/run-record-store.js";
 import { TerminalSessionManager } from "./terminal/terminal-session-manager.js";
 import type { ClientTerminalEvent, ServerTerminalEvent } from "./terminal/terminal-types.js";
 import { WebSocketServer, type WebSocket } from "ws";
+import { MeetingManager } from "./meeting/meeting-manager.js";
 
 // ---------------------------------------------------------------------------
 // Bootstrap
@@ -115,6 +117,7 @@ let channelRegistry!: ChannelRegistry;
 let workspaceRegistry!: WorkspaceRegistry;
 let runRecordStore!: RunRecordStore;
 let terminalManager!: TerminalSessionManager;
+let meetingManager!: MeetingManager;
 let feishuChannel: FeishuChannel | null = null;
 let wechatChannel: WeChatChannel | null = null;
 let dispatcher: PersonalChannelDispatcher | null = null;
@@ -254,6 +257,13 @@ async function ensureBootstrapped(): Promise<void> {
 				getCurrentSessionId,
 				recordChannelInteraction: (channel) => recordCurrentSessionChannel(channel as SessionChannel),
 			},
+		});
+		meetingManager = new MeetingManager({
+			l2DataDir,
+			codeDir: paths.codeDir,
+			meetingsDir: join(dataDir, "meetings"),
+			getConfig: () => config.meeting,
+			summarize: (prompt) => completePromptOnce(prompt, 4096, 120_000),
 		});
 
 		// ---- post-init: dispatcher, channels, cron, WebSocket ----
@@ -1452,11 +1462,14 @@ const server = createServer(async (req, res) => {
 			l2DataDir,
 			codeDir: paths.codeDir,
 			completePrompt: completePromptOnce,
+			cancelMeetingForRawPath: (rawPath) => meetingManager.cancelForDeletedRawPath(rawPath),
 			getArchiveRuntime: () => {
 				const session = getSession();
 				return { model: session.model, modelRegistry: session.modelRegistry };
 			},
 		})) return;
+
+		if (await handleMeetingRoutes(req, res, method, url, { dataDir, meetingManager })) return;
 
 		// --- Learner profile API (extracted to server/routes/learner.ts) ---
 		if (await handleLearnerRoutes(req, res, method, url, { paths })) return;
@@ -1541,9 +1554,14 @@ const server = createServer(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 const wss = new WebSocketServer({ noServer: true });
+const meetingWss = new WebSocketServer({ noServer: true });
 server.on("upgrade", (req, socket, head) => {
 	const url = req.url ?? "";
-		if (!bootstrapped) { socket.destroy(); return; }
+	if (!bootstrapped) { socket.destroy(); return; }
+	if (url.split("?")[0] === "/api/meetings/ws") {
+		meetingWss.handleUpgrade(req, socket, head, (ws) => meetingManager.bind(ws));
+		return;
+	}
 	const m = /^\/api\/terminal\/sessions\/([^/?]+)\/ws$/.exec(url.split("?")[0]);
 	if (!m) {
 		socket.destroy();

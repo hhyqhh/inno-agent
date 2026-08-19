@@ -71,7 +71,7 @@ export function PresetPicker({
 				</div>
 			</div>
 			{showSearch ? (
-				<div className="mb-2 flex items-center gap-2 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5">
+				<div className="mb-2 flex items-center gap-2 px-2 py-1.5">
 					<Search size={14} className="shrink-0 text-[var(--inno-text-subtle)]" />
 					<input
 						type="text"

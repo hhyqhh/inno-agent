@@ -2,7 +2,7 @@ import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } fro
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Paperclip, X, ArrowUp, Square, RotateCcw, Image, AlertTriangle, Search, Sparkles, FileText, Check, ChevronDown, Settings2 } from "lucide-react";
+import { Paperclip, X, ArrowUp, Square, RotateCcw, Image, AlertTriangle, Search, Sparkles, FileText, Check, ChevronDown, Settings2, BookOpen } from "lucide-react";
 import { Spinner } from "./ui/Spinner.js";
 import type { ChatMessage, ChatToolRecord } from "../types/chat.js";
 import type { InnoModelInfo } from "../types/settings.js";
@@ -13,6 +13,7 @@ import { workspacesStore } from "../stores/workspaces-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { appStore } from "../stores/app-store.js";
+import { notesStore } from "../stores/notes-store.js";
 import type { CreateSessionInput } from "../api/sessions.js";
 import { listRemotePresets } from "../api/presets.js";
 import type { PresetMeta } from "../types/presets.js";
@@ -661,6 +662,7 @@ export function ChatCenter() {
 	// pre-seeded by the useEffect below when the welcome screen's "existing"
 	// workspace picker selects one.
 	const activeWorkspaceId = useStoreSnapshot(workspaceStore, () => workspaceStore.activeWorkspaceId);
+	const selectedNotes = useStoreSnapshot(notesStore, () => notesStore.aiContextNotes);
 
 	// Workspace preselected from the sidebar ("+ 新建对话" on a group), if any.
 	const preselectedWs = useMemo(
@@ -991,19 +993,20 @@ export function ChatCenter() {
 				const imagesToSend = pendingImages.length > 0
 					? pendingImages.map(({ data, mimeType }) => ({ data, mimeType }))
 					: undefined;
+				const noteReferences = selectedNotes.map((note) => ({ rawPath: note.rawPath, title: note.title }));
 
 				resetComposer();
 				setUploads([]);
 				setInlineImages([]);
 				setWsError("");
-				void chatStore.send(messageContent, imagesToSend, targetSessionId);
+				void chatStore.send(messageContent, imagesToSend, targetSessionId, noteReferences);
 			} catch (err) {
 				setWsError(err instanceof Error ? err.message : t("chat.errCreateSession"));
 			} finally {
 				setIsUploading(false);
 			}
 		})();
-	}, [isWelcome, buildSessionInput, uploads, inlineImages, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, uploadWorkspaceId, pasteBlocks, draftValue, sessions.currentSessionId, resizeInput, t]);
+	}, [isWelcome, buildSessionInput, uploads, inlineImages, selectedNotes, chat.isSending, isUploading, simpleMode, wsMode, wsExistingId, uploadWorkspaceId, pasteBlocks, draftValue, sessions.currentSessionId, resizeInput, t]);
 
 	const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		// Don't fire Send while the user is composing with an IME (e.g. picking
@@ -1141,6 +1144,13 @@ export function ChatCenter() {
 			</div>
 		) : null
 	);
+
+	const renderNoteReferences = () => selectedNotes.length ? (
+		<div className="mb-2 rounded-md border border-blue-100 bg-[var(--inno-accent-soft)] px-2.5 py-2">
+			<div className="mb-1.5 flex items-center gap-2 text-xs text-[var(--inno-text-muted)]"><BookOpen size={13} className="text-[var(--inno-accent)]" /><span>{t("notes.context.referencing", { count: selectedNotes.length })}</span><button type="button" className="ml-auto text-[11px] text-[var(--inno-accent)] hover:underline" onClick={() => notesStore.clearAiContext()}>{t("notes.context.clearAll")}</button></div>
+			<div className="flex flex-wrap gap-1.5">{selectedNotes.map((note) => <span key={note.rawPath} className="inline-flex max-w-[240px] items-center gap-1 rounded-full border border-blue-100 bg-[var(--inno-surface)] px-2 py-0.5 text-xs text-[var(--inno-text-muted)]"><span className="truncate">{note.title}</span><button type="button" onClick={() => notesStore.removeAiContext(note.rawPath)} aria-label={t("notes.context.remove", { title: note.title })}><X size={11} /></button></span>)}</div>
+		</div>
+	) : null;
 
 	const renderPasteBlock = (block: PendingPasteBlock) => {
 		const preview = block.text.split(/\r\n|\r|\n/)[0].trim() || t("common.pasteCardTitle");
@@ -1421,6 +1431,7 @@ export function ChatCenter() {
 						</div>
 
 						{renderUploadChips()}
+						{renderNoteReferences()}
 						{renderQuestionHint()}
 						{renderBusyBlocker()}
 						</div>
@@ -1603,6 +1614,7 @@ export function ChatCenter() {
 			<div className="shrink-0 border-t border-[var(--inno-border)] bg-[var(--inno-surface)] p-3">
 				<div className="mx-auto max-w-3xl">
 					{renderUploadChips()}
+					{renderNoteReferences()}
 					{renderQuestionHint()}
 					{renderBusyBlocker()}
 					{wsError ? <p className="mb-2 text-xs text-[var(--inno-danger)]">{wsError}</p> : null}

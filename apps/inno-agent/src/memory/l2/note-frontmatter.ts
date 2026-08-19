@@ -1,5 +1,6 @@
 export type NoteStatus = "draft" | "indexed" | "outdated" | "error";
 export type MeetingStatus = "connecting" | "recording" | "paused" | "finishing" | "summarizing" | "completed" | "no_speech" | "failed" | "interrupted";
+export type ConversationCaptureMode = "transcript" | "summary";
 
 export interface NoteFrontmatter {
 	note_id: string;
@@ -9,6 +10,8 @@ export interface NoteFrontmatter {
 	status: NoteStatus;
 	meeting_id?: string;
 	meeting_status?: MeetingStatus;
+	source_session_id?: string;
+	capture_mode?: ConversationCaptureMode;
 	source_id?: string;
 	created: string;
 	updated: string;
@@ -126,6 +129,8 @@ export function parseNoteFrontmatter(content: string): { frontmatter: NoteFrontm
 		rawMeetingStatus === "no_speech" || rawMeetingStatus === "failed" || rawMeetingStatus === "interrupted"
 			? rawMeetingStatus
 			: undefined;
+	const rawCaptureMode = parseScalar(String(fm.capture_mode ?? ""));
+	const captureMode: ConversationCaptureMode | undefined = rawCaptureMode === "transcript" || rawCaptureMode === "summary" ? rawCaptureMode : undefined;
 
 	return {
 		frontmatter: {
@@ -136,6 +141,8 @@ export function parseNoteFrontmatter(content: string): { frontmatter: NoteFrontm
 			status: validStatus,
 			meeting_id: fm.meeting_id ? parseScalar(String(fm.meeting_id)) : undefined,
 			meeting_status: meetingStatus,
+			source_session_id: fm.source_session_id ? parseScalar(String(fm.source_session_id)) : undefined,
+			capture_mode: captureMode,
 			source_id: fm.source_id ? parseScalar(String(fm.source_id)) : undefined,
 			created,
 			updated: parseScalar(String(fm.updated ?? "")),
@@ -169,6 +176,8 @@ export function serializeNoteFile(frontmatter: NoteFrontmatter, body: string): s
 	lines.push(`status: ${frontmatter.status}`);
 	if (frontmatter.meeting_id) lines.push(`meeting_id: ${yamlQuote(frontmatter.meeting_id)}`);
 	if (frontmatter.meeting_status) lines.push(`meeting_status: ${frontmatter.meeting_status}`);
+	if (frontmatter.source_session_id) lines.push(`source_session_id: ${yamlQuote(frontmatter.source_session_id)}`);
+	if (frontmatter.capture_mode) lines.push(`capture_mode: ${frontmatter.capture_mode}`);
 	if (frontmatter.source_id) {
 		lines.push(`source_id: ${yamlQuote(frontmatter.source_id)}`);
 	}

@@ -11,6 +11,7 @@ import {
 	FileText,
 	FileUp,
 	LoaderCircle,
+	MessageSquareText,
 	RefreshCw,
 	Save,
 	Sparkles,
@@ -49,6 +50,9 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 	const meetingState = useStoreSnapshot(meetingStore, () => meetingStore.state);
 	const state = useStoreSnapshot(notesStore, () => ({
 		notes: notesStore.filteredNotes,
+		aiContextRawPaths: notesStore.aiContextRawPaths,
+		aiContextNotes: notesStore.aiContextNotes,
+		aiContextLimit: notesStore.aiContextLimit,
 		selected: notesStore.selected,
 		listBox: notesStore.listBox,
 		draftCount: notesStore.draftCount,
@@ -78,6 +82,15 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 		polishTemplateLabel: notesStore.polishTemplateLabel,
 		error: notesStore.error,
 	}));
+	const focusChatWithSummaryPrompt = useCallback(() => {
+		const input = document.getElementById("chat-input") as HTMLTextAreaElement | null;
+		if (!input) return;
+		if (!input.value.trim()) {
+			input.value = t("notes.context.defaultPrompt");
+			input.dispatchEvent(new Event("input", { bubbles: true }));
+		}
+		input.focus();
+	}, [t]);
 
 	useEffect(() => {
 		void notesStore.loadAll();
@@ -336,13 +349,17 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 					) : null}
 					{state.notes.map((note: NoteSummary) => {
 						const isSelected = state.selected?.rawPath === note.rawPath;
+						const isInAiContext = state.aiContextRawPaths.has(note.rawPath);
+						const canUseAsAiContext = notesStore.canUseAsAiContext(note);
 						return (
-							<button
+							<div
 								key={note.rawPath}
-								type="button"
-								className={`w-full border-b border-[var(--inno-border)] px-3 py-2 text-left text-sm ${isSelected ? "bg-[var(--inno-accent-soft)]" : "hover:bg-[var(--inno-surface-muted)]"}`}
-								onClick={() => void notesStore.selectNote(note)}
+								className={`flex w-full border-b border-[var(--inno-border)] text-sm ${isSelected ? "bg-[var(--inno-accent-soft)]" : "hover:bg-[var(--inno-surface-muted)]"}`}
 							>
+								<label className={`flex w-8 shrink-0 items-center justify-center ${canUseAsAiContext ? "cursor-pointer" : "cursor-not-allowed opacity-40"}`} title={canUseAsAiContext ? t("notes.context.add") : t("notes.context.unavailable")}>
+									<input type="checkbox" checked={isInAiContext} disabled={!canUseAsAiContext || (!isInAiContext && state.aiContextRawPaths.size >= state.aiContextLimit)} onChange={() => notesStore.toggleAiContext(note)} />
+								</label>
+								<button type="button" className="min-w-0 flex-1 px-1 py-2 pr-3 text-left" onClick={() => void notesStore.selectNote(note)}>
 								<div className="flex items-center gap-1 truncate font-medium">
 									<FileText size={13} className="shrink-0 text-[var(--inno-text-muted)]" />
 									<span className="truncate">{note.title}</span>
@@ -355,10 +372,17 @@ export function NotesPanel({ onOpenWiki }: NotesPanelProps) {
 										<span key={tag}>#{tag}</span>
 									))}
 								</div>
-							</button>
+								</button>
+							</div>
 						);
 					})}
 				</div>
+				{state.aiContextNotes.length ? (
+					<div className="shrink-0 border-t border-[var(--inno-border)] bg-[var(--inno-accent-soft)] p-2">
+						<div className="mb-2 flex items-center justify-between text-xs text-[var(--inno-text-muted)]"><span>{t("notes.context.selected", { count: state.aiContextNotes.length, limit: state.aiContextLimit })}</span><button type="button" className="text-[var(--inno-accent)] hover:underline" onClick={() => notesStore.clearAiContext()}>{t("notes.context.clear")}</button></div>
+						<button type="button" className="inno-primary-button flex h-8 w-full items-center justify-center gap-1.5 rounded-md text-xs" onClick={focusChatWithSummaryPrompt}><MessageSquareText size={13} />{t("notes.context.useInChat")}</button>
+					</div>
+				) : null}
 			</aside>
 
 			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">

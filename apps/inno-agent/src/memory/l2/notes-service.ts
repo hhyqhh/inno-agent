@@ -18,6 +18,7 @@ import {
 	type NoteFrontmatter,
 	type NoteStatus,
 	type MeetingStatus,
+	type ConversationCaptureMode,
 } from "./note-frontmatter.js";
 import { resolveNoteTemplateContent } from "./note-templates.js";
 import {
@@ -59,6 +60,8 @@ export interface NoteSummaryDto {
 	updatedAt: string;
 	meetingId?: string;
 	meetingStatus?: MeetingStatus;
+	sourceSessionId?: string;
+	captureMode?: ConversationCaptureMode;
 }
 
 export interface NoteContentDto {
@@ -75,6 +78,8 @@ export interface NoteContentDto {
 	updatedAt: string;
 	meetingId?: string;
 	meetingStatus?: MeetingStatus;
+	sourceSessionId?: string;
+	captureMode?: ConversationCaptureMode;
 }
 
 export interface NotesListResponse {
@@ -140,6 +145,8 @@ function noteSummaryFromFile(l2DataDir: string, rawPath: string): NoteSummaryDto
 			updatedAt: frontmatter.updated || frontmatter.created || statSync(join(l2DataDir, rawPath)).mtime.toISOString(),
 			meetingId: frontmatter.meeting_id,
 			meetingStatus: frontmatter.meeting_status,
+			sourceSessionId: frontmatter.source_session_id,
+			captureMode: frontmatter.capture_mode,
 		};
 	} catch (err) {
 		logger.warn({ err, rawPath }, "failed to read note file");
@@ -262,6 +269,8 @@ export function readNoteContent(l2DataDir: string, rawPath: string): NoteContent
 		updatedAt: frontmatter.updated,
 		meetingId: frontmatter.meeting_id,
 		meetingStatus: frontmatter.meeting_status,
+		sourceSessionId: frontmatter.source_session_id,
+		captureMode: frontmatter.capture_mode,
 	};
 }
 
@@ -293,6 +302,8 @@ export function createL2Note(
 		templateId?: string;
 		tags?: string[];
 		content?: string;
+		sourceSessionId?: string;
+		captureMode?: ConversationCaptureMode;
 	},
 ): { rawPath: string; status: NoteStatus; noteId: string; title: string } {
 	ensureL2Directories(l2DataDir);
@@ -307,6 +318,8 @@ export function createL2Note(
 		tags,
 		record_date: getTodayRecordDate(),
 		status: "draft",
+		source_session_id: options.sourceSessionId,
+		capture_mode: options.captureMode,
 		created: now,
 		updated: now,
 	};

@@ -5,6 +5,7 @@ export type NotebookType = "conversation" | "file" | "note";
 export type NotebookItemKind = "markdown" | "orphan" | "archived";
 export type NotebookItemStatus = NoteStatus | ManifestStatus | "uploaded";
 export type MeetingStatus = "connecting" | "recording" | "paused" | "finishing" | "summarizing" | "completed" | "no_speech" | "failed" | "interrupted";
+export type ConversationCaptureMode = "transcript" | "summary";
 
 export interface NoteSummary {
 	noteId: string;
@@ -25,6 +26,8 @@ export interface NoteSummary {
 	updatedAt: string;
 	meetingId?: string;
 	meetingStatus?: MeetingStatus;
+	sourceSessionId?: string;
+	captureMode?: ConversationCaptureMode;
 }
 
 export interface NoteContent {
@@ -41,6 +44,8 @@ export interface NoteContent {
 	updatedAt: string;
 	meetingId?: string;
 	meetingStatus?: MeetingStatus;
+	sourceSessionId?: string;
+	captureMode?: ConversationCaptureMode;
 }
 
 export type NoteAttachmentStatus = "uploaded" | "extracting" | "extracted" | "indexed" | "error";

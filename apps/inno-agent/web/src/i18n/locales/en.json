@@ -268,6 +268,10 @@
 		"templates": {
 			"discardDialogTitle": "Discard template changes", "discardConfirm": "This template has unsaved changes. Discard them?", "discardChanges": "Discard changes",
 			"deleteDialogTitle": "Delete template", "deleteConfirm": "Delete template \"{{title}}\"? This cannot be undone."
+		},
+		"context": {
+			"add": "Add to AI references", "unavailable": "Archive and extract this file before referencing it", "selected": "{{count}} / {{limit}} selected", "clear": "Clear", "clearAll": "Clear all",
+			"useInChat": "Summarize in chat", "referencing": "Referencing {{count}} notes", "remove": "Remove {{title}}", "defaultPrompt": "Summarize the selected content, extract the key ideas and action items, and identify the sources."
 		}
 	},
 	"preview": {

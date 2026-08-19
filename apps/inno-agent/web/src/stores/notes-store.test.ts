@@ -51,6 +51,7 @@ afterEach(() => {
 	notesStore.listBox = "drafts";
 	notesStore.searchQuery = "";
 	notesStore.filterTag = null;
+	notesStore.aiContextRawPaths = new Set();
 });
 
 describe("notesStore tag filtering", () => {
@@ -170,5 +171,18 @@ describe("notesStore AI polish", () => {
 		});
 		expect(notesStore.editorContent).toBe("# Note\n\nPolished\n");
 		expect(notesStore.notice).toBe("polished");
+	});
+});
+
+describe("notesStore AI context", () => {
+	it("selects readable notes and prunes missing references on reload", async () => {
+		const note = { ...archivedMarkdown, rawPath: "raw/notes/context.md", kind: "markdown" as const, status: "draft" as const };
+		notesStore.notes = [note];
+		notesStore.toggleAiContext(note);
+		expect(notesStore.aiContextNotes).toEqual([note]);
+
+		apiMocks.listNotes.mockResolvedValue({ notes: [] });
+		await notesStore.loadAll();
+		expect(notesStore.aiContextNotes).toEqual([]);
 	});
 });

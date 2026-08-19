@@ -1,0 +1,103 @@
+import type { ReactNode, RefObject } from "react";
+import { motion } from "motion/react";
+import { useTranslation } from "react-i18next";
+import type { PresetMeta } from "../../types/presets.js";
+import { PresetPicker } from "./PresetPicker.js";
+
+interface ChatWelcomeProps {
+	welcomeLayoutRef: RefObject<HTMLDivElement | null>;
+	simpleMode: boolean;
+	togglingMode: boolean;
+	onToggleMode: () => void;
+	uploadChips: ReactNode;
+	questionHint: ReactNode;
+	busyBlocker: ReactNode;
+	composer: ReactNode;
+	workspaceContext: ReactNode;
+	presets: PresetMeta[];
+	openingPresetId: string | null;
+	onOpenPreset: (presetId: string) => void;
+	presetQuery: string;
+	onPresetQueryChange: (value: string) => void;
+	wsError: string;
+}
+
+export function ChatWelcome({
+	welcomeLayoutRef,
+	simpleMode,
+	togglingMode,
+	onToggleMode,
+	uploadChips,
+	questionHint,
+	busyBlocker,
+	composer,
+	workspaceContext,
+	presets,
+	openingPresetId,
+	onOpenPreset,
+	presetQuery,
+	onPresetQueryChange,
+	wsError,
+}: ChatWelcomeProps) {
+	const { t } = useTranslation();
+	return (
+		<section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-chat-bg)]">
+			<div className="inno-chat-grid flex flex-1 min-h-0 justify-center overflow-y-auto px-4">
+				<div ref={welcomeLayoutRef} className="inno-welcome-layout w-full max-w-2xl pt-[18vh] pb-12">
+					<div className="inno-welcome-upper">
+						<div className="mb-6 flex flex-col items-center text-center">
+							<button
+								type="button"
+								onClick={onToggleMode}
+								disabled={togglingMode}
+								title={simpleMode ? t("mode.currentSimpleClickNormal") : t("mode.currentNormalClickSimple")}
+								aria-label={simpleMode ? t("mode.switchToNormal") : t("mode.switchToSimple")}
+								className="flip-card-scene mb-3 rounded-xl outline-none focus-visible:shadow-[var(--inno-ring)] disabled:cursor-wait"
+							>
+								<motion.div
+									animate={{ rotateY: simpleMode ? 180 : 0 }}
+									transition={{ type: "spring", stiffness: 320, damping: 22 }}
+									className="flip-card flex h-12 w-12 items-center justify-center"
+								>
+									<span className="flip-card-face absolute inset-0 flex items-center justify-center rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] text-base font-semibold text-[var(--inno-accent)] shadow-sm transition-colors hover:border-[var(--inno-accent)]">IA</span>
+									<span className="flip-card-back absolute inset-0 flex items-center justify-center rounded-xl border border-[var(--inno-accent)] bg-[var(--inno-accent)] text-base font-semibold text-white shadow-sm">IA</span>
+								</motion.div>
+							</button>
+							<h2 className="text-lg font-medium text-[var(--inno-text)]">Inno Agent</h2>
+							<button
+								type="button"
+								onClick={onToggleMode}
+								disabled={togglingMode}
+								className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1 text-[11px] text-[var(--inno-text-muted)] transition-colors hover:border-[var(--inno-accent)] hover:text-[var(--inno-accent)] disabled:cursor-wait disabled:opacity-60"
+							>
+								<span className={`h-1.5 w-1.5 rounded-full ${simpleMode ? "bg-[var(--inno-accent)]" : "bg-[var(--inno-border-strong)]"}`} />
+								{simpleMode ? t("mode.simpleShort") : t("mode.normalShort")}
+							</button>
+						</div>
+
+						{uploadChips}
+						{questionHint}
+						{busyBlocker}
+					</div>
+
+					<div className="inno-welcome-composer-shell">
+						{composer}
+						{simpleMode ? null : <div className="mt-2">{workspaceContext}</div>}
+					</div>
+
+					{simpleMode && presets.length > 0 ? (
+						<PresetPicker
+							presets={presets}
+							openingPresetId={openingPresetId}
+							onOpen={onOpenPreset}
+							query={presetQuery}
+							onQueryChange={onPresetQueryChange}
+						/>
+					) : null}
+
+					{wsError ? <p className="mt-2 text-xs text-[var(--inno-danger)]">{wsError}</p> : null}
+				</div>
+			</div>
+		</section>
+	);
+}

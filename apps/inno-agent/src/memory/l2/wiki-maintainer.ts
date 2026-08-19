@@ -12,6 +12,7 @@ import type {
 	WikiPrerequisite,
 } from "./types.js";
 import { logger } from "../../logger.js";
+import { normalizeMarkdownForMilkdown } from "./markdown-normalizer.js";
 
 const L2_SCHEMA_VERSION = "1.0";
 
@@ -301,7 +302,15 @@ export function readMaintenanceContext(l2DataDir: string): { schema: string; ind
 // Source summary page
 // ============================================================================
 
-function sourcePageFilename(title: string, id: string): string {
+function sourcePageFilename(title: string, id: string, preferredWikiPath?: string): string {
+	const normalizedPreferredPath = preferredWikiPath?.replace(/\\/g, "/");
+	const preferredPrefix = "wiki/sources/";
+	if (normalizedPreferredPath?.startsWith(preferredPrefix)) {
+		const preferredName = normalizedPreferredPath.slice(preferredPrefix.length);
+		if (preferredName && !preferredName.includes("/") && preferredName.toLowerCase().endsWith(".md")) {
+			return preferredName;
+		}
+	}
 	const slug = title
 		.toLowerCase()
 		.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
@@ -321,10 +330,11 @@ export function createSourcePage(
 	entry: ManifestEntry,
 	summaryBody: string,
 	extractedPath?: string,
+	preferredWikiPath?: string,
 ): string {
 	const dir = join(l2DataDir, "wiki", "sources");
 	ensureDir(dir);
-	const filename = sourcePageFilename(entry.title, entry.id);
+	const filename = sourcePageFilename(entry.title, entry.id, preferredWikiPath);
 	const fm: WikiPageFrontmatter = {
 		title: entry.title,
 		created: new Date().toISOString().slice(0, 10),
@@ -337,7 +347,8 @@ export function createSourcePage(
 		confidence: "medium",
 	};
 	const ref = extractedPath ? `\n## 来源\n\n完整提取文本: \`${extractedPath}\`\n` : "";
-	const body = `\n# ${entry.title}\n\n${summaryBody}\n${ref}`;
+	const normalizedSummary = normalizeMarkdownForMilkdown(summaryBody);
+	const body = `\n# ${entry.title}\n\n${normalizedSummary}${ref}`;
 	writeText(join(dir, filename), serializeFrontmatter(fm) + body);
 	return wikiPathJoin("wiki", "sources", filename);
 }
@@ -437,6 +448,7 @@ export function appendLog(l2DataDir: string, action: string, title: string, deta
 export function ensureL2Directories(l2DataDir: string): void {
 	const dirs = [
 		"raw/uploads",
+		"raw/notes",
 		"raw/web",
 		"raw/conversations",
 		"raw/research",

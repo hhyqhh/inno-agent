@@ -15,6 +15,13 @@ interface ChatWelcomeProps {
 	composer: ReactNode;
 	workspaceContext: ReactNode;
 	presets: PresetMeta[];
+	presetsLoaded: boolean;
+	isLoadingPresets: boolean;
+	isRefreshingPresets: boolean;
+	presetsRefreshError: string | null;
+	presetRefreshStatus: "success" | "error" | null;
+	loadedPresetIds: ReadonlySet<string>;
+	onRefreshPresets: () => void;
 	openingPresetId: string | null;
 	onOpenPreset: (presetId: string) => void;
 	presetQuery: string;
@@ -33,6 +40,13 @@ export function ChatWelcome({
 	composer,
 	workspaceContext,
 	presets,
+	presetsLoaded,
+	isLoadingPresets,
+	isRefreshingPresets,
+	presetsRefreshError,
+	presetRefreshStatus,
+	loadedPresetIds,
+	onRefreshPresets,
 	openingPresetId,
 	onOpenPreset,
 	presetQuery,
@@ -85,11 +99,16 @@ export function ChatWelcome({
 						{simpleMode ? null : <div className="mt-2">{workspaceContext}</div>}
 					</div>
 
-					{simpleMode && presets.length > 0 ? (
+					{simpleMode && (presets.length > 0 || presetsLoaded || isLoadingPresets || presetsRefreshError) ? (
 						<PresetPicker
 							presets={presets}
+							loadedPresetIds={loadedPresetIds}
+							isLoading={isLoadingPresets}
+							isRefreshing={isRefreshingPresets}
+							refreshStatus={presetRefreshStatus}
 							openingPresetId={openingPresetId}
 							onOpen={onOpenPreset}
+							onRefresh={onRefreshPresets}
 							query={presetQuery}
 							onQueryChange={onPresetQueryChange}
 						/>

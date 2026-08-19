@@ -33,6 +33,18 @@ export interface PresetMeta {
 	category?: string;
 }
 
+export const PRESET_UNAVAILABLE_CODE = "PRESET_UNAVAILABLE";
+
+/** A remote catalog confirmed that the requested preset no longer exists. */
+export class PresetUnavailableError extends Error {
+	readonly code = PRESET_UNAVAILABLE_CODE;
+
+	constructor(public readonly presetId: string) {
+		super();
+		this.name = "PresetUnavailableError";
+	}
+}
+
 /** Only simple, single-segment ids — blocks path traversal. */
 const PRESET_ID_RE = /^[a-zA-Z0-9._-]+$/;
 
@@ -87,15 +99,9 @@ function readPresetMeta(dir: string, id: string): PresetMeta | null {
 	return parsePresetMeta(readFileSync(metaPath, "utf-8"), id);
 }
 
-/**
- * List presets available offline: the union of the local cache and the presets
- * bundled with the app (cache wins on id collision). Best-effort — invalid
- * presets are skipped. Used as a fallback when the remote hub is unreachable.
- */
-export function listPresets(paths: RuntimePaths): PresetMeta[] {
+function listPresetsFromRoots(roots: string[]): PresetMeta[] {
 	const byId = new Map<string, PresetMeta>();
-	// Bundled first, then cache overrides (a downloaded preset is fresher).
-	for (const root of [bundledPresetsDir(paths), presetsDir(paths)]) {
+	for (const root of roots) {
 		if (!existsSync(root)) continue;
 		for (const entry of readdirSync(root, { withFileTypes: true })) {
 			if (!entry.isDirectory()) continue;
@@ -108,11 +114,26 @@ export function listPresets(paths: RuntimePaths): PresetMeta[] {
 	return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** List only the presets shipped with the app. */
+export function listBundledPresets(paths: RuntimePaths): PresetMeta[] {
+	return listPresetsFromRoots([bundledPresetsDir(paths)]);
+}
+
+/**
+ * List presets available offline: the union of the local cache and the presets
+ * bundled with the app (cache wins on id collision). Best-effort — invalid
+ * presets are skipped. Used as a fallback when the remote hub is unreachable.
+ */
+export function listPresets(paths: RuntimePaths): PresetMeta[] {
+	// Bundled first, then cache overrides (a downloaded preset is fresher).
+	return listPresetsFromRoots([bundledPresetsDir(paths), presetsDir(paths)]);
+}
+
 /**
  * List presets available from the remote content hub. For each preset, the
  * metadata comes from inline source meta (bundle service) or by reading its
- * `preset.json` (GitHub). Best-effort: presets with invalid metadata are
- * skipped.
+ * `preset.json` (GitHub). A refresh is only successful when every remote item
+ * has valid metadata; incomplete results must not replace the cached snapshot.
  */
 export async function listRemotePresets(source: RemoteContentSource, forceRefresh = false): Promise<PresetMeta[]> {
 	const items = await source.listItems("presets", { forceRefresh });
@@ -139,7 +160,15 @@ export async function listRemotePresets(source: RemoteContentSource, forceRefres
 		}
 		return parsePresetMeta(text, item.name);
 	});
-	return metas.filter((m): m is PresetMeta => m !== null).sort((a, b) => a.name.localeCompare(b.name));
+	const parsed = metas.filter((m): m is PresetMeta => m !== null);
+	if (parsed.length !== items.length) {
+		logger.warn(
+			{ expected: items.length, loaded: parsed.length },
+			"remote preset catalog incomplete",
+		);
+		throw new Error(`Preset catalog incomplete: loaded ${parsed.length} of ${items.length}`);
+	}
+	return parsed.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -181,6 +210,53 @@ export async function ensurePresetCached(
 			writeFileSync(join(cacheDir, "preset.json"), readFileSync(join(bundledDir, "preset.json")));
 			logger.info({ presetId: id, cacheDir }, "seeded preset from bundled copy (remote unavailable)");
 			return cacheDir;
+		}
+		throw err;
+	}
+}
+
+function isMissingPresetError(err: unknown): boolean {
+	const message = err instanceof Error ? err.message : String(err);
+	return message.includes("not found in the presets library")
+		|| message.includes("did not provide a preset.json")
+		|| /Failed to download .*\/.* \(404(?:\s|\))/.test(message);
+}
+
+/**
+ * Validate a preset against the current remote catalog before opening it.
+ * A cached preset remains usable when the hub cannot be reached, but a
+ * successful catalog refresh that omits the id is authoritative: the card is
+ * stale and must be reported as unavailable.
+ */
+export async function ensurePresetAvailable(
+	paths: RuntimePaths,
+	source: RemoteContentSource,
+	presetId: string,
+	cachedRemoteAvailability: boolean | null = null,
+): Promise<string> {
+	const id = presetId.trim();
+	if (!isValidPresetId(id)) {
+		throw new Error(`Invalid preset id: ${presetId}`);
+	}
+	let remoteItems: Awaited<ReturnType<RemoteContentSource["listItems"]>> | null = null;
+	try {
+		remoteItems = await source.listItems("presets", { forceRefresh: true });
+	} catch (err) {
+		if (cachedRemoteAvailability === false) {
+			throw new PresetUnavailableError(id);
+		}
+		// Offline use is still allowed when the local cache contains the preset.
+		logger.warn({ err, presetId: id }, "failed to validate remote preset; falling back to cache");
+	}
+	if (remoteItems && !remoteItems.some((item) => item.name === id)) {
+		throw new PresetUnavailableError(id);
+	}
+
+	try {
+		return await ensurePresetCached(paths, source, id);
+	} catch (err) {
+		if (isMissingPresetError(err)) {
+			throw new PresetUnavailableError(id);
 		}
 		throw err;
 	}

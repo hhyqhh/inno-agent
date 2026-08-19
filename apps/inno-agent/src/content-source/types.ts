@@ -47,6 +47,14 @@ export interface RemoteContentSource {
 	invalidate(): void;
 }
 
+/** A skill exposed by the remote library and its local install state. */
+export interface SkillLibraryItem {
+	name: string;
+	description: string;
+	installed: boolean;
+	category?: string;
+}
+
 /** The marker file that identifies a directory as an item of each category. */
 export const CATEGORY_MARKER: Record<ContentCategory, string> = {
 	skills: "SKILL.md",

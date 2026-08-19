@@ -19,10 +19,11 @@ import { settingsStore } from "../stores/settings-store.js";
 import { appStore } from "../stores/app-store.js";
 import type { CreateSessionInput } from "../api/sessions.js";
 import { bindSessionWorkspace } from "../api/workspaces.js";
-import { listRemotePresets } from "../api/presets.js";
+import { ApiError } from "../api/client.js";
 import type { PresetMeta } from "../types/presets.js";
 import { arrayBufferToBase64 } from "../api/uploads.js";
 import { uploadWorkspaceFiles } from "../api/workspace.js";
+import { fetchPresetList, readCachedPresets, removeCachedPreset } from "../utils/preset-cache.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { ChatComposer } from "./chat/ChatComposer.js";
 import { ChatConversation } from "./chat/ChatConversation.js";
@@ -39,6 +40,9 @@ import {
 	type PendingUpload,
 	type PreparedInlineImage,
 } from "./chat/composer-utils.js";
+
+type PresetRefreshStatus = "success" | "error";
+
 
 type WsMode = "temp" | "new" | "existing";
 
@@ -115,10 +119,37 @@ export function ChatCenter() {
 	}, [modelState.models]);
 	const currentModel = modelOptions.find((model) => model.provider === modelState.defaultProvider && model.id === modelState.defaultModel);
 
-	const [presets, setPresets] = useState<PresetMeta[]>([]);
+	const [presets, setPresets] = useState<PresetMeta[]>(() => readCachedPresets() ?? []);
+	const [presetsLoaded, setPresetsLoaded] = useState(() => readCachedPresets() !== null);
+	const [isLoadingPresets, setIsLoadingPresets] = useState(() => readCachedPresets() === null);
+	const [isRefreshingPresets, setIsRefreshingPresets] = useState(false);
+	const [presetsRefreshError, setPresetsRefreshError] = useState<string | null>(null);
+	const [presetRefreshStatus, setPresetRefreshStatus] = useState<PresetRefreshStatus | null>(null);
+	const presetRefreshStatusTimerRef = useRef<number | null>(null);
+	const presetAutoRefreshStartedRef = useRef(false);
 	const [openingPresetId, setOpeningPresetId] = useState<string | null>(null);
 	const [togglingMode, setTogglingMode] = useState(false);
 	const [presetQuery, setPresetQuery] = useState("");
+
+	const cancelPresetRefreshStatusTimer = useCallback(() => {
+		if (presetRefreshStatusTimerRef.current === null) return;
+		window.clearTimeout(presetRefreshStatusTimerRef.current);
+		presetRefreshStatusTimerRef.current = null;
+	}, []);
+
+	const showPresetRefreshStatus = useCallback((status: PresetRefreshStatus) => {
+		cancelPresetRefreshStatusTimer();
+		setPresetRefreshStatus(status);
+		// Keep the failure marker visible until the next refresh attempt. A
+		// successful refresh remains a transient confirmation for five seconds.
+		if (status !== "success") return;
+		presetRefreshStatusTimerRef.current = window.setTimeout(() => {
+			setPresetRefreshStatus(null);
+			presetRefreshStatusTimerRef.current = null;
+		}, 5_000);
+	}, [cancelPresetRefreshStatusTimer]);
+
+	useEffect(() => () => cancelPresetRefreshStatusTimer(), [cancelPresetRefreshStatusTimer]);
 
 	const chat = useStoreSnapshot(chatStore, () => ({
 		messages: chatStore.messages,
@@ -139,7 +170,21 @@ export function ChatCenter() {
 		busyBlocker: sessionsStore.busyBlocker,
 		isWelcome: sessionsStore.isWelcomeView,
 	}));
-	const workspaces = useStoreSnapshot(workspacesStore, () => ({ list: workspacesStore.workspaces }));
+	const workspaces = useStoreSnapshot(workspacesStore, () => ({
+		list: workspacesStore.workspaces,
+	}));
+	const loadedPresetIds = useMemo(
+		() => new Set(
+			workspaces.list
+				.filter((workspace) => workspace.id.startsWith("preset-"))
+				.map((workspace) => workspace.id.slice("preset-".length)),
+		),
+		[workspaces.list],
+	);
+	// Active workspace for the current session — drives upload target + button
+	// availability. Synced by sessionsStore on openSession/createSession, and
+	// pre-seeded by the useEffect below when the welcome screen's "existing"
+	// workspace picker selects one.
 	const activeWorkspaceId = useStoreSnapshot(workspaceStore, () => workspaceStore.activeWorkspaceId);
 	const isWelcome = sessions.isWelcome;
 
@@ -365,11 +410,54 @@ export function ChatCenter() {
 		return { workspaceId: wsExistingId };
 	}, [simpleMode, wsMode, wsName, wsExistingId, t]);
 
-	useEffect(() => {
-		if (isWelcome && simpleMode && presets.length === 0) {
-			void listRemotePresets().then(setPresets).catch(() => setPresets([]));
+	const loadPresets = useCallback(async (forceRefresh = false) => {
+		setPresetsRefreshError(null);
+		if (forceRefresh) {
+			cancelPresetRefreshStatusTimer();
+			setPresetRefreshStatus(null);
 		}
-	}, [isWelcome, simpleMode, presets.length]);
+		if (!forceRefresh) {
+			const cached = readCachedPresets();
+			if (cached !== null) {
+				setPresets(cached);
+				setPresetsLoaded(true);
+				setIsLoadingPresets(false);
+				return;
+			}
+		}
+		if (forceRefresh) {
+			setIsRefreshingPresets(true);
+		} else {
+			setIsLoadingPresets(true);
+		}
+		try {
+			const next = await fetchPresetList(forceRefresh);
+			setPresets(next);
+			setPresetsLoaded(true);
+			if (forceRefresh) {
+				showPresetRefreshStatus("success");
+			}
+		} catch {
+			// Keep the last successful list visible and avoid leaking transport
+			// details such as the English "fetch failed" into the localized UI.
+			setPresetsRefreshError(t("presets.refreshFailed"));
+			showPresetRefreshStatus("error");
+		} finally {
+			setIsLoadingPresets(false);
+			setIsRefreshingPresets(false);
+		}
+	}, [cancelPresetRefreshStatusTimer, showPresetRefreshStatus, t]);
+
+	// Refresh the preset catalog once when the app first opens in Simple Mode.
+	// ChatCenter stays mounted across session changes, so this also works when
+	// the app restores an existing session instead of showing the welcome view.
+	// Cached cards render immediately; the forced request updates them in the
+	// background and reuses the same success/error indicator as manual refresh.
+	useEffect(() => {
+		if (!simpleMode || presetAutoRefreshStartedRef.current) return;
+		presetAutoRefreshStartedRef.current = true;
+		void loadPresets(true);
+	}, [simpleMode, loadPresets]);
 
 	const openPreset = useCallback((presetId: string) => {
 		setWsError("");
@@ -380,8 +468,16 @@ export function ChatCenter() {
 				appStore.setRightPanelTab("preview");
 				appStore.setWorkspaceWidth(560);
 				appStore.setWorkspaceMode("half");
-			} catch (error) {
-				setWsError(error instanceof Error ? error.message : t("chat.errOpenPreset"));
+			} catch (err) {
+				const unavailable = err instanceof ApiError
+					&& err.status === 404
+					&& err.data?.code === "PRESET_UNAVAILABLE";
+				if (unavailable) {
+					setPresets((current) => current.filter((preset) => preset.id !== presetId));
+					removeCachedPreset(presetId);
+				} else {
+					setWsError(err instanceof Error ? err.message : t("chat.errOpenPreset"));
+				}
 			} finally {
 				setOpeningPresetId(null);
 			}
@@ -628,6 +724,13 @@ export function ChatCenter() {
 				composer={renderComposer(t("chat.welcomePlaceholder"))}
 				workspaceContext={renderWorkspaceContext("welcome")}
 				presets={presets}
+				presetsLoaded={presetsLoaded}
+				isLoadingPresets={isLoadingPresets}
+				isRefreshingPresets={isRefreshingPresets}
+				presetsRefreshError={presetsRefreshError}
+				presetRefreshStatus={presetRefreshStatus}
+				loadedPresetIds={loadedPresetIds}
+				onRefreshPresets={() => void loadPresets(true)}
 				openingPresetId={openingPresetId}
 				onOpenPreset={openPreset}
 				presetQuery={presetQuery}

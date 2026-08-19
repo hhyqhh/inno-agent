@@ -68,7 +68,8 @@ export class BundleServiceSource implements RemoteContentSource {
 		if (!res.ok) {
 			throw new Error(`Bundle service index request failed (${res.status} ${res.statusText})`);
 		}
-		const index = (await res.json()) as BundleIndex;
+		const body = await res.text();
+		const index = JSON.parse(body) as BundleIndex;
 		this.indexCache = { index, fetchedAt: now };
 		return index;
 	}

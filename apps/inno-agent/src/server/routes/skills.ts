@@ -3,6 +3,7 @@ import type { Dirent } from "node:fs";
 import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 import { logger } from "../../logger.js";
+import type { SkillLibraryItem } from "../../content-source/types.js";
 import { isWithin } from "../../utils/path-safety.js";
 import {
 	canonicalTreeRoot,
@@ -14,17 +15,6 @@ import {
 	type WorkspaceTreeNode,
 } from "../file-helpers.js";
 import { json, matchRoute, readBody, UPLOAD_MAX_BODY_BYTES } from "../http-helpers.js";
-
-export interface SkillLibraryItem {
-	/** Directory name under the skills path (used as the skill name). */
-	name: string;
-	/** description from SKILL.md frontmatter (may be empty). */
-	description: string;
-	/** Whether a skill with this slug already exists locally. */
-	installed: boolean;
-	/** Optional `category` from SKILL.md frontmatter; surfaces grouping in the UI. */
-	category?: string;
-}
 
 /**
  * Skill-management dependencies owned by server.ts. These helpers close over

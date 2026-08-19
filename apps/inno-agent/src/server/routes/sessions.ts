@@ -10,7 +10,12 @@ import {
 import { streamRegistry } from "../../chat/stream-registry.js";
 import type { RemoteContentSource } from "../../content-source/index.js";
 import { logger } from "../../logger.js";
-import { ensurePresetCached, instantiatePreset } from "../../presets/preset-store.js";
+import {
+	PRESET_UNAVAILABLE_CODE,
+	PresetUnavailableError,
+	ensurePresetAvailable,
+	instantiatePreset,
+} from "../../presets/preset-store.js";
 import type { RuntimePaths } from "../../runtime.js";
 import {
 	buildPathRewrites,
@@ -45,6 +50,7 @@ export interface SessionsRouteContext {
 	dataDir: string;
 	paths: RuntimePaths;
 	getContentSource: () => RemoteContentSource;
+	getCachedPresetAvailability?: (presetId: string) => boolean | null;
 	parseSessionFile: (filePath: string) => { summary: SessionSummary; messages: SessionMessageSummary[] } | null;
 	sessionRevision: (filePath: string) => string;
 	readSessionChannelMetadata: () => SessionChannelMetadata;
@@ -240,6 +246,7 @@ export async function handleSessionsRoutes(
 		dataDir,
 		paths,
 		getContentSource,
+		getCachedPresetAvailability,
 		parseSessionFile,
 		sessionRevision,
 		readSessionChannelMetadata,
@@ -465,6 +472,48 @@ export async function handleSessionsRoutes(
 			if (err instanceof HttpError && err.statusCode === 413) throw err;
 			return {};
 		}) as Record<string, unknown>;
+		const explicitWorkspaceId = typeof body.workspaceId === "string" ? body.workspaceId.trim() : "";
+		const presetId = typeof body.presetId === "string" ? body.presetId.trim() : "";
+		const newWorkspaceSpec = body.newWorkspace && typeof body.newWorkspace === "object"
+			? body.newWorkspace as { name?: unknown; isTemp?: unknown }
+			: null;
+		const existingPresetWorkspace = presetId
+			? workspaceRegistry.getWorkspace(`preset-${presetId}`)
+			: null;
+
+		// Validate stale preset cards before creating a session. A preset that has
+		// already been loaded keeps working through its stable workspace even if
+		// the remote catalog later removes it. New cards still require a current
+		// catalog entry; if the hub is temporarily unreachable,
+		// ensurePresetAvailable can still use an existing cache.
+		if (presetId && !existingPresetWorkspace) {
+			try {
+				await ensurePresetAvailable(
+					paths,
+					getContentSource(),
+					presetId,
+					getCachedPresetAvailability?.(presetId) ?? null,
+				);
+			} catch (err) {
+				if (err instanceof PresetUnavailableError) {
+					json(res, 404, {
+						code: PRESET_UNAVAILABLE_CODE,
+						presetId,
+					});
+				} else if (err instanceof Error && err.message.startsWith("Invalid preset id:")) {
+					json(res, 400, { error: err.message, code: "INVALID_PRESET_ID", presetId });
+				} else {
+					logger.warn({ err, presetId }, "failed to prepare preset for session");
+					json(res, 503, {
+						error: "预设暂时不可用，请稍后重试",
+						code: "PRESET_TEMPORARILY_UNAVAILABLE",
+						presetId,
+					});
+				}
+				return true;
+			}
+		}
+
 		// A new session is always a different session — release the queue
 		// from a question-blocked turn before enqueueing (issue #124).
 		releaseQueueFromQuestionBlockedTurn("");
@@ -480,11 +529,6 @@ export async function handleSessionsRoutes(
 		// takes precedence: it instantiates a bundled preset into a fresh
 		// workspace (copying its agent.md + .skills) and binds the session to it.
 		let workspaceId: string = TEMP_WORKSPACE_ID;
-		const explicitWorkspaceId = typeof body.workspaceId === "string" ? body.workspaceId.trim() : "";
-		const presetId = typeof body.presetId === "string" ? body.presetId.trim() : "";
-		const newWorkspaceSpec = body.newWorkspace && typeof body.newWorkspace === "object"
-			? body.newWorkspace as { name?: unknown; isTemp?: unknown }
-			: null;
 		// The follow-up cwd apply re-enters the queue; if the client goes
 		// away, cancel it while queued rather than switching the runtime's
 		// cwd out from under whatever the user moved on to.
@@ -492,11 +536,12 @@ export async function handleSessionsRoutes(
 		res.on("close", () => { if (!res.writableFinished) cwdAborter.abort(); });
 		try {
 			if (presetId) {
-				// Ensure the preset's files are in the local cache (download on
-				// first use), then instantiate it into a fresh workspace.
-				await ensurePresetCached(paths, getContentSource(), presetId);
-				const created = instantiatePreset(paths, workspaceRegistry, presetId);
-				workspaceId = created.id;
+				if (existingPresetWorkspace) {
+					workspaceId = existingPresetWorkspace.id;
+				} else {
+					const created = instantiatePreset(paths, workspaceRegistry, presetId);
+					workspaceId = created.id;
+				}
 			} else if (newWorkspaceSpec) {
 				const created = workspaceRegistry.createWorkspace({
 					name: typeof newWorkspaceSpec.name === "string" ? newWorkspaceSpec.name : undefined,

@@ -78,7 +78,7 @@ export function PresetPicker({
 						value={query}
 						onChange={(event) => onQueryChange(event.target.value)}
 						placeholder={t("presets.searchPlaceholder")}
-						className="min-w-0 flex-1 border-0 bg-transparent text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] outline-none shadow-none focus:border-0 focus:outline-none focus:ring-0 focus:shadow-none focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-none"
+						className="min-w-0 flex-1 !border-0 !bg-transparent !outline-none !shadow-none text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:border-0 focus:outline-none focus:ring-0 focus:shadow-none focus-visible:!border-0 focus-visible:!outline-none focus-visible:!shadow-none focus-visible:ring-0"
 					/>
 					{query ? (
 						<button

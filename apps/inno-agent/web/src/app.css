@@ -590,7 +590,7 @@ inno-workspace-panel textarea {
 	min-width: 0;
 	align-items: center;
 	gap: 8px;
-	min-height: 32px;
+	min-height: 36px;
 }
 
 .inno-workspace-context-hint {
@@ -609,16 +609,17 @@ inno-workspace-panel textarea {
 
 .inno-workspace-switcher-trigger {
 	display: inline-flex;
-	max-width: min(100%, 280px);
-	height: 32px;
+	max-width: min(100%, 320px);
+	height: 36px;
 	align-items: center;
-	gap: 6px;
-	padding: 0 8px;
+	gap: 7px;
+	padding: 0 10px;
 	border: 0;
-	border-radius: 8px;
+	border-radius: 9px;
 	background: transparent;
 	color: var(--inno-text-muted);
-	font-size: 12px;
+	font-size: 13px;
+	font-weight: 500;
 	text-align: left;
 	cursor: pointer;
 	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
@@ -641,6 +642,11 @@ inno-workspace-panel textarea {
 	align-items: center;
 	justify-content: center;
 	color: var(--inno-text-subtle);
+}
+
+.inno-workspace-switcher-folder svg {
+	width: 16px;
+	height: 16px;
 }
 
 .inno-workspace-switcher-label {

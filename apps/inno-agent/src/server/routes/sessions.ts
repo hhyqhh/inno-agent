@@ -10,6 +10,10 @@ import {
 import { streamRegistry } from "../../chat/stream-registry.js";
 import type { RemoteContentSource } from "../../content-source/index.js";
 import { logger } from "../../logger.js";
+import {
+	archiveConversation,
+	type ArchiveConversationOptions,
+} from "../../memory/l2/conversation-archive-service.js";
 import { ensurePresetCached, instantiatePreset } from "../../presets/preset-store.js";
 import type { RuntimePaths } from "../../runtime.js";
 import {
@@ -43,6 +47,7 @@ import {
 export interface SessionsRouteContext {
 	workspaceRegistry: WorkspaceRegistry;
 	dataDir: string;
+	l2DataDir: string;
 	paths: RuntimePaths;
 	getContentSource: () => RemoteContentSource;
 	parseSessionFile: (filePath: string) => { summary: SessionSummary; messages: SessionMessageSummary[] } | null;
@@ -64,6 +69,7 @@ export interface SessionsRouteContext {
 		op: (signal: AbortSignal) => Promise<T>,
 		timeoutMs?: number,
 	) => Promise<T | null>;
+	getArchiveRuntime: () => Pick<ArchiveConversationOptions, "model" | "modelRegistry" | "memory">;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,6 +244,7 @@ export async function handleSessionsRoutes(
 	const {
 		workspaceRegistry,
 		dataDir,
+		l2DataDir,
 		paths,
 		getContentSource,
 		parseSessionFile,
@@ -254,6 +261,7 @@ export async function handleSessionsRoutes(
 		sessionFileFromId,
 		releaseQueueFromQuestionBlockedTurn,
 		runQueueOpWithTimeout,
+		getArchiveRuntime,
 	} = ctx;
 
 	// --- Sessions API ---
@@ -276,6 +284,55 @@ export async function handleSessionsRoutes(
 					.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
 			: [];
 		json(res, 200, sessions);
+		return true;
+	}
+
+	if (method === "POST" && url === "/api/l2/conversations/archive") {
+		const body = await readBody(req) as Record<string, unknown>;
+		const sessionId = (typeof body.sessionId === "string" ? body.sessionId : "").trim();
+		const title = (typeof body.title === "string" ? body.title : "").trim();
+		const messageIds = Array.isArray(body.messageIds)
+			? body.messageIds.filter((id): id is string => typeof id === "string").map((id) => id.trim()).filter(Boolean)
+			: undefined;
+		const tags = Array.isArray(body.tags)
+			? body.tags.filter((tag): tag is string => typeof tag === "string").map((tag) => tag.trim()).filter(Boolean)
+			: undefined;
+		if (!sessionId) {
+			json(res, 400, { error: "Missing sessionId" });
+			return true;
+		}
+
+		const sessionPath = sessionFileFromId(join(dataDir, "sessions"), sessionId);
+		if (!sessionPath || !existsSync(sessionPath)) {
+			json(res, 404, { error: "Session not found" });
+			return true;
+		}
+		const parsed = parseSessionFile(sessionPath);
+		if (!parsed) {
+			json(res, 422, { error: "Unable to parse session" });
+			return true;
+		}
+
+		try {
+			const result = await archiveConversation(l2DataDir, {
+				sessionId,
+				title: title || parsed.summary.name,
+				tags,
+				messageIds,
+				messages: parsed.messages.map((message) => ({
+					id: message.id,
+					role: message.role,
+					content: message.content,
+					timestamp: message.timestamp,
+				})),
+				...getArchiveRuntime(),
+			});
+			json(res, 201, result);
+		} catch (err) {
+			logger.warn({ err, sessionId }, "failed to archive conversation");
+			const message = err instanceof Error ? err.message : "Archive conversation failed";
+			json(res, message === "没有可归档的对话消息" ? 422 : 500, { error: message });
+		}
 		return true;
 	}
 

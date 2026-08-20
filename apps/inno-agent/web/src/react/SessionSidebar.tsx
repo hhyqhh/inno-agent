@@ -38,6 +38,7 @@ import { Spinner } from "./ui/Spinner.js";
 
 interface SessionSidebarProps {
 	collapsed: boolean;
+	onOpen(): void;
 }
 
 const CHANNEL_FILTER_ORDER = ["web", "feishu", "wechat", "cli", "scheduler"] as const;
@@ -488,7 +489,7 @@ function SessionCard({
 
 /* ── Main sidebar ── */
 
-export function SessionSidebar({ collapsed }: SessionSidebarProps) {
+export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 	const { t } = useTranslation();
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [editingName, setEditingName] = useState("");
@@ -845,7 +846,7 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 				<button
 					className="absolute left-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--inno-text-subtle)] transition-colors hover:bg-white/90 hover:text-[var(--inno-text)] hover:shadow-sm"
 					title={t("sidebar.expand")}
-					onClick={() => appStore.setSidebarCollapsed(false)}
+					onClick={onOpen}
 				>
 					<PanelLeftOpen size={16} />
 				</button>

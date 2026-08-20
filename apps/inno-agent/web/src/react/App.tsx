@@ -10,9 +10,15 @@ import { SessionSidebar } from "./SessionSidebar.js";
 import { WorkspacePanel } from "./WorkspacePanel.js";
 import { SettingsOverlay } from "./settings/SettingsOverlay.js";
 
-/** Breakpoint below which sidebars auto-collapse */
-const SIDEBAR_COLLAPSE_BP = 960;
-const WORKSPACE_COLLAPSE_BP = 820;
+/** Below this width the chat takes the whole window. */
+const CHAT_ONLY_BP = 960;
+/** The Electron window's minimum usable width: the chat-only baseline. */
+const CHAT_BASELINE_WIDTH = 800;
+const SIDEBAR_WIDTH = 264;
+const WORKSPACE_MIN_WIDTH = 320;
+const WORKSPACE_MAX_WIDTH = 920;
+
+type WindowExpansionSide = "left" | "right";
 
 let initializationPromise: Promise<void> | null = null;
 
@@ -26,6 +32,30 @@ function initializeApp(): Promise<void> {
 	return initializationPromise;
 }
 
+function getEffectiveWorkspaceWidth(width: number): number {
+	return Math.max(WORKSPACE_MIN_WIDTH, Math.min(WORKSPACE_MAX_WIDTH, Math.round(width)));
+}
+
+function waitForViewportWidth(minWidth: number): Promise<boolean> {
+	if (window.innerWidth >= minWidth) return Promise.resolve(true);
+
+	return new Promise((resolve) => {
+		const startedAt = performance.now();
+		const check = () => {
+			if (window.innerWidth >= minWidth) {
+				resolve(true);
+				return;
+			}
+			if (performance.now() - startedAt >= 600) {
+				resolve(false);
+				return;
+			}
+			window.requestAnimationFrame(check);
+		};
+		check();
+	});
+}
+
 export function App() {
 	const app = useStoreSnapshot(appStore, () => ({
 		rightPanelTab: appStore.rightPanelTab,
@@ -33,6 +63,7 @@ export function App() {
 		workspaceMode: appStore.workspaceMode,
 		workspaceWidth: appStore.workspaceWidth,
 	}));
+	const pendingExpansion = useRef<WindowExpansionSide | null>(null);
 
 	useEffect(() => {
 		void initializeApp();
@@ -61,57 +92,62 @@ export function App() {
 		return unsubscribe;
 	}, []);
 
-	// Track whether user manually toggled the sidebar so we don't fight them
-	const userExpandedSidebar = useRef(false);
-	const userExpandedWorkspace = useRef(false);
-
-	// Auto-collapse left sidebar when viewport narrows
+	// At narrow widths the chat is the primary surface: remove both optional
+	// columns together so they cannot squeeze the conversation into a sliver.
+	// We intentionally do not restore either column when the window widens again;
+	// reopening a panel is an explicit user action.
 	useEffect(() => {
-		const mql = window.matchMedia(`(max-width: ${SIDEBAR_COLLAPSE_BP}px)`);
-		const handler = (e: MediaQueryListEvent | MediaQueryList) => {
-			if (e.matches) {
-				// Narrow: collapse if expanded
-				if (!appStore.sidebarCollapsed) {
-					userExpandedSidebar.current = false;
-					appStore.setSidebarCollapsed(true);
-				}
-			} else {
-				// Wide: restore if not manually collapsed
-				if (appStore.sidebarCollapsed && !userExpandedSidebar.current) {
-					appStore.setSidebarCollapsed(false);
-				}
-			}
+		const mql = window.matchMedia(`(max-width: ${CHAT_ONLY_BP}px)`);
+		const enforceChatOnly = (e: MediaQueryListEvent | MediaQueryList) => {
+			if (!e.matches) return;
+			if (!appStore.sidebarCollapsed) appStore.setSidebarCollapsed(true);
+			if (appStore.workspaceMode !== "collapsed") appStore.setWorkspaceMode("collapsed");
 		};
-		handler(mql);
-		mql.addEventListener("change", handler);
-		return () => mql.removeEventListener("change", handler);
-	}, []);
-
-	// Auto-collapse right workspace panel when viewport narrows
-	useEffect(() => {
-		const mql = window.matchMedia(`(max-width: ${WORKSPACE_COLLAPSE_BP}px)`);
-		const handler = (e: MediaQueryListEvent | MediaQueryList) => {
-			if (e.matches) {
-				if (appStore.workspaceMode === "half") {
-					userExpandedWorkspace.current = false;
-					appStore.setWorkspaceMode("collapsed");
-				}
-			} else {
-				if (appStore.workspaceMode === "collapsed" && !userExpandedWorkspace.current) {
-					// Don't auto-expand workspace — it starts collapsed by default
-				}
-			}
-		};
-		handler(mql);
-		mql.addEventListener("change", handler);
-		return () => mql.removeEventListener("change", handler);
-	}, []);
+		enforceChatOnly(mql);
+		mql.addEventListener("change", enforceChatOnly);
+		return () => mql.removeEventListener("change", enforceChatOnly);
+	}, [app.sidebarCollapsed, app.workspaceMode]);
 
 	const setTab = useCallback((tab: RightPanelTab) => appStore.setRightPanelTab(tab), []);
+	const ensureWindowForPanel = useCallback(async (side: WindowExpansionSide): Promise<boolean> => {
+		const leftWidth = app.sidebarCollapsed && side !== "left" ? 0 : SIDEBAR_WIDTH;
+		const rightWidth = app.workspaceMode === "collapsed" && side !== "right"
+			? 0
+			: getEffectiveWorkspaceWidth(app.workspaceWidth);
+		const requiredWidth = CHAT_BASELINE_WIDTH + leftWidth + rightWidth;
+		const additionalWidth = Math.max(0, requiredWidth - window.innerWidth);
+		if (additionalWidth === 0) return true;
+
+		const expandWindowWidth = window.innoDesktop?.expandWindowWidth;
+		if (!expandWindowWidth) return true;
+		if (pendingExpansion.current) return false;
+		pendingExpansion.current = side;
+		try {
+			const expanded = await expandWindowWidth(side, additionalWidth);
+			if (!expanded) return false;
+			return waitForViewportWidth(requiredWidth);
+		} finally {
+			pendingExpansion.current = null;
+		}
+	}, [app.sidebarCollapsed, app.workspaceMode, app.workspaceWidth]);
+
+	const openSidebar = useCallback(() => {
+		void (async () => {
+			if (!(await ensureWindowForPanel("left"))) return;
+			appStore.setSidebarCollapsed(false);
+		})();
+	}, [ensureWindowForPanel]);
+
 	const setWorkspaceMode = useCallback((mode: WorkspaceMode) => {
-		userExpandedWorkspace.current = mode !== "collapsed";
-		appStore.setWorkspaceMode(mode);
-	}, []);
+		if (mode === "collapsed" || app.workspaceMode !== "collapsed") {
+			appStore.setWorkspaceMode(mode);
+			return;
+		}
+		void (async () => {
+			if (!(await ensureWindowForPanel("right"))) return;
+			appStore.setWorkspaceMode(mode);
+		})();
+	}, [app.workspaceMode, ensureWindowForPanel]);
 	const setWorkspaceWidth = useCallback((width: number) => appStore.setWorkspaceWidth(width), []);
 
 	return (
@@ -120,7 +156,7 @@ export function App() {
 				className={`app-layout app-layout--sidebar-${app.sidebarCollapsed ? "collapsed" : "expanded"} app-layout--workspace-${app.workspaceMode}`}
 				style={{ "--inno-workspace-width": `${app.workspaceWidth}px` } as React.CSSProperties}
 			>
-				<SessionSidebar collapsed={app.sidebarCollapsed} />
+				<SessionSidebar collapsed={app.sidebarCollapsed} onOpen={openSidebar} />
 				<ChatCenter />
 				<WorkspacePanel
 					activeTab={app.rightPanelTab}

@@ -20,6 +20,7 @@ type CloseDialogCopy = {
 
 type DesktopBridge = {
 	setCloseDialogCopy(copy: CloseDialogCopy): void;
+	expandWindowWidth(side: "left" | "right", additionalWidth: number): Promise<boolean>;
 };
 
 declare global {

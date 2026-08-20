@@ -18,6 +18,7 @@ import {
 	getCurrentSessionId,
 	getLoadedSkills,
 	getSession,
+	getSessionModelRegistry,
 	getActivePromptToken,
 	initSession,
 	isQueueTaskCancelled,
@@ -48,7 +49,9 @@ import { handleSkillsRoutes } from "./server/routes/skills.js";
 import { handleWorkspacesRoutes } from "./server/routes/workspaces.js";
 import { handleSessionsRoutes } from "./server/routes/sessions.js";
 import { handleLearnerRoutes } from "./server/routes/learner.js";
+import { handleL2SourceRoutes } from "./server/routes/l2-sources.js";
 import { handleWikiRoutes } from "./server/routes/wiki.js";
+import { createModelEvidenceSelector } from "./memory/l2/evidence-selector.js";
 import { handlePresetsRoutes } from "./server/routes/presets.js";
 import { handlePracticeRoutes } from "./server/routes/practice.js";
 import { handleChatRoutes } from "./server/routes/chat.js";
@@ -1357,8 +1360,17 @@ const server = createServer(async (req, res) => {
 			sessionFileFromId, releaseQueueFromQuestionBlockedTurn, runQueueOpWithTimeout,
 		})) return;
 
+		// --- L2 source content and evidence API ---
+		if (await handleL2SourceRoutes(req, res, method, url, { l2DataDir })) return;
+
 		// --- Wiki + L2 raw upload API (extracted to server/routes/wiki.ts) ---
-		if (await handleWikiRoutes(req, res, method, url, { l2DataDir })) return;
+		if (await handleWikiRoutes(req, res, method, url, {
+			l2DataDir,
+			getEvidenceSelector: () => {
+				const session = getSession();
+				return createModelEvidenceSelector(session.model, getSessionModelRegistry());
+			},
+		})) return;
 
 		// --- Learner profile API (extracted to server/routes/learner.ts) ---
 		if (await handleLearnerRoutes(req, res, method, url, { paths })) return;

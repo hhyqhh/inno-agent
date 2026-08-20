@@ -405,6 +405,11 @@ export function getSession(): AgentSession {
 	return _runtime.session;
 }
 
+/** Return the SDK registry facade for the active session runtime. */
+export function getSessionModelRegistry(): ModelRegistry {
+	return registryOf(getSession());
+}
+
 function nativeImagesForSession(
 	session: AgentSession,
 	images?: ImageContent[],

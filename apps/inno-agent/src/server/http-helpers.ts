@@ -56,7 +56,7 @@ export function readBody(req: HttpReq, options?: { maxBytes?: number }): Promise
 			return;
 		}
 
-		let data = "";
+		const chunks: Buffer[] = [];
 		let received = 0;
 		req.on("data", (chunk: Buffer) => {
 			received += chunk.length;
@@ -64,10 +64,11 @@ export function readBody(req: HttpReq, options?: { maxBytes?: number }): Promise
 				tooLarge();
 				return;
 			}
-			data += chunk.toString();
+			chunks.push(chunk);
 		});
 		req.on("end", () => {
 			try {
+				const data = Buffer.concat(chunks, received).toString("utf8");
 				resolve(data ? JSON.parse(data) : {});
 			} catch (err) {
 				reject(new HttpError(400, "Invalid JSON body"));

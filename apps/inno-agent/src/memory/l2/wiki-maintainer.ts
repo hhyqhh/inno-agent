@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { wikiPathJoin } from "./wiki-paths.js";
@@ -54,6 +55,7 @@ export function serializeFrontmatter(fm: WikiPageFrontmatter): string {
 	if (fm.contradictions && fm.contradictions.length > 0) obj.contradictions = fm.contradictions;
 	if (fm.concept_id) obj.concept_id = fm.concept_id;
 	if (fm.prerequisites && fm.prerequisites.length > 0) obj.prerequisites = fm.prerequisites;
+	if (fm.evidence_refs !== undefined) obj.evidence_refs = fm.evidence_refs;
 
 	const doc = new YamlDocument(obj);
 	const tagsNode = doc.get("tags", true) as { flow?: boolean } | undefined;
@@ -66,7 +68,7 @@ export function serializeFrontmatter(fm: WikiPageFrontmatter): string {
 }
 
 export function parseFrontmatter(content: string): { frontmatter: WikiPageFrontmatter | null; body: string } {
-	const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n)?([\s\S]*)$/);
 	if (!match) return { frontmatter: null, body: content };
 
 	const body = match[2];
@@ -81,7 +83,7 @@ export function parseFrontmatter(content: string): { frontmatter: WikiPageFrontm
 
 	const asString = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
 	const asStringArray = (v: unknown): string[] =>
-		Array.isArray(v) ? v.map((x) => asString(x)).filter(Boolean) : [];
+		Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
 	const contestedRaw = raw.contested;
 	const contested =
 		contestedRaw === true || contestedRaw === "true"
@@ -131,11 +133,18 @@ export function parseFrontmatter(content: string): { frontmatter: WikiPageFrontm
 	const conceptId = asString(raw.concept_id).trim();
 	if (conceptId) frontmatter.concept_id = conceptId;
 	if (prerequisites.length > 0) frontmatter.prerequisites = prerequisites;
+	if (Array.isArray(raw.evidence_refs)) frontmatter.evidence_refs = raw.evidence_refs;
 
-	return {
-		frontmatter,
-		body,
-	};
+	return { frontmatter, body };
+}
+
+export function bodyRevision(body: string): string {
+	const normalized = body.replace(/\r\n?/g, "\n");
+	return `sha256:${createHash("sha256").update(normalized, "utf8").digest("hex")}`;
+}
+
+export function fileRevision(bytes: Uint8Array): string {
+	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
 function defaultSchemaContent(): string {
@@ -310,6 +319,32 @@ function sourcePageFilename(title: string, id: string): string {
 	return `${slug}-${id.slice(-6)}.md`;
 }
 
+export function sourcePagePath(entry: ManifestEntry): string {
+	return wikiPathJoin("wiki", "sources", sourcePageFilename(entry.title, entry.id));
+}
+
+function sourcePageContent(
+	entry: ManifestEntry,
+	summaryBody: string,
+	extractedPath?: string,
+	created = new Date().toISOString().slice(0, 10),
+): string {
+	const fm: WikiPageFrontmatter = {
+		title: entry.title,
+		created,
+		type: "source-summary",
+		tags: mergeUniqueTags(["source-summary"], entry.tags),
+		sources: [entry.rawPath],
+		source_ids: [entry.id],
+		updated: new Date().toISOString().slice(0, 10),
+		status: "draft",
+		confidence: "medium",
+	};
+	const ref = extractedPath ? `\n## 来源\n\n完整提取文本: \`${extractedPath}\`\n` : "";
+	const body = `\n# ${entry.title}\n\n${summaryBody}\n${ref}`;
+	return serializeFrontmatter(fm) + body;
+}
+
 /**
  * Create a wiki source summary page.
  * @param summaryBody - LLM-generated summary markdown (or full content as fallback)
@@ -324,22 +359,46 @@ export function createSourcePage(
 ): string {
 	const dir = join(l2DataDir, "wiki", "sources");
 	ensureDir(dir);
-	const filename = sourcePageFilename(entry.title, entry.id);
-	const fm: WikiPageFrontmatter = {
-		title: entry.title,
-		created: new Date().toISOString().slice(0, 10),
-		type: "source-summary",
-		tags: mergeUniqueTags(["source-summary"], entry.tags),
-		sources: [entry.rawPath],
-		source_ids: [entry.id],
-		updated: new Date().toISOString().slice(0, 10),
-		status: "draft",
-		confidence: "medium",
-	};
-	const ref = extractedPath ? `\n## 来源\n\n完整提取文本: \`${extractedPath}\`\n` : "";
-	const body = `\n# ${entry.title}\n\n${summaryBody}\n${ref}`;
-	writeText(join(dir, filename), serializeFrontmatter(fm) + body);
-	return wikiPathJoin("wiki", "sources", filename);
+	const relativePath = sourcePagePath(entry);
+	const absolutePath = join(l2DataDir, relativePath);
+	if (!fileExists(absolutePath)) {
+		writeText(absolutePath, sourcePageContent(entry, summaryBody, extractedPath));
+	} else {
+		const existing = parseFrontmatter(readText(absolutePath)).frontmatter;
+		if (!existing?.source_ids.includes(entry.id)) {
+			throw new Error(`Source summary path is owned by another source: ${relativePath}`);
+		}
+	}
+	return relativePath;
+}
+
+export function sourcePageHasExpectedContent(
+	l2DataDir: string,
+	entry: ManifestEntry,
+	summaryBody: string,
+	extractedPath?: string,
+): boolean {
+	const absolutePath = join(l2DataDir, sourcePagePath(entry));
+	if (!fileExists(absolutePath)) return false;
+	const current = readText(absolutePath);
+	const created = parseFrontmatter(current).frontmatter?.created;
+	return current === sourcePageContent(entry, summaryBody, extractedPath, created);
+}
+
+export function replaceSourcePageIfRevision(
+	l2DataDir: string,
+	entry: ManifestEntry,
+	summaryBody: string,
+	expectedFileRevision: string,
+	extractedPath?: string,
+): boolean {
+	const absolutePath = join(l2DataDir, sourcePagePath(entry));
+	if (!fileExists(absolutePath)) return false;
+	const current = readText(absolutePath);
+	if (fileRevision(Buffer.from(current, "utf8")) !== expectedFileRevision) return false;
+	const created = parseFrontmatter(current).frontmatter?.created;
+	writeText(absolutePath, sourcePageContent(entry, summaryBody, extractedPath, created));
+	return true;
 }
 
 // ============================================================================
@@ -441,6 +500,7 @@ export function ensureL2Directories(l2DataDir: string): void {
 		"raw/conversations",
 		"raw/research",
 		"extracted",
+		"extracted/evidence/by-id",
 		"wiki/sources",
 		"wiki/entities",
 		"wiki/concepts",

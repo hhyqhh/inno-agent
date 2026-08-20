@@ -239,6 +239,10 @@ export default defineConfig({
 		},
 	},
 	build: {
+		// The editor and office-preview dependencies are intentionally lazy-loaded
+		// and can produce large, standalone chunks. Keep the warning focused on
+		// accidental growth of the initial application payload.
+		chunkSizeWarningLimit: 2048,
 		modulePreload: {
 			resolveDependencies: (_filename, deps) => deps.filter((dep) => !HEAVY_LAZY_CHUNK_PATTERNS.some((pattern) => dep.includes(pattern))),
 		},
@@ -256,16 +260,6 @@ export default defineConfig({
 						return "vite-preload-helper";
 					}
 					if (!id.includes("node_modules")) return undefined;
-					if (
-						id.includes("/node_modules/react/") ||
-						id.includes("/node_modules/react-dom/") ||
-						id.includes("/node_modules/scheduler/")
-					) {
-						return "react-vendor";
-					}
-					if (id.includes("/node_modules/@uiw/react-codemirror/") || id.includes("/node_modules/@codemirror/")) {
-						return "codemirror";
-					}
 					if (
 						id.includes("/node_modules/@uiw/react-md-editor/") ||
 						id.includes("/node_modules/@uiw/react-markdown-preview/")

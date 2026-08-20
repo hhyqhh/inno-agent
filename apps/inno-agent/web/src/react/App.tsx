@@ -186,10 +186,8 @@ export function App() {
 
 		const rightResult = await ensureWindowForPanel("right", previewWidth, "half");
 		if (rightResult === "busy") return;
-		if (rightResult === "unavailable" && !appStore.sidebarCollapsed) {
-			// Preserve the chat when the display cannot fit both panels.
-			appStore.setSidebarCollapsed(true);
-		}
+		// Do not force the sidebar closed here: setWorkspaceMode below already
+		// collapses it if (and only if) that is what makes the panel fit.
 		appStore.setRightPanelTab("preview");
 		appStore.setWorkspaceWidth(previewWidth);
 		appStore.setWorkspaceMode("half");
@@ -204,11 +202,8 @@ export function App() {
 			: Math.max(minimumWidth, appStore.workspaceWidth);
 		const result = await ensureWindowForPanel("right", previewWidth, "half");
 		if (result === "busy") return;
-		if (result === "unavailable" && !appStore.sidebarCollapsed) {
-			appStore.setSidebarCollapsed(true);
-		}
-		// Expand the native window before changing panel width so the chat is not
-		// temporarily squeezed by the preview pane.
+		// Do not force the sidebar closed here: setWorkspaceWidth/setWorkspaceMode
+		// below already collapse it if (and only if) that is what makes the panel fit.
 		appStore.setWorkspaceWidth(previewWidth);
 		appStore.setWorkspaceMode("half");
 	}, [ensureWindowForPanel]);
@@ -231,9 +226,9 @@ export function App() {
 		void (async () => {
 			const result = await ensureWindowForPanel("right");
 			if (result === "busy") return;
-			if (result === "unavailable" && !appStore.sidebarCollapsed) {
-				appStore.setSidebarCollapsed(true);
-			}
+			// Do not force the sidebar closed here: setWorkspaceMode below already
+			// collapses it if (and only if) that is what makes the panel fit, and
+			// otherwise leaves the layout untouched instead of collapsing for nothing.
 			appStore.setWorkspaceMode(mode);
 		})();
 	}, [app.workspaceMode, ensureWindowForPanel]);

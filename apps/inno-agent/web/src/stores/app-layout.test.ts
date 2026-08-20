@@ -29,4 +29,18 @@ describe("fitPanelLayout", () => {
 	it("returns no layout when even the smallest workspace would squeeze chat", () => {
 		expect(fitPanelLayout(1_000, true, "half", 560)).toBeNull();
 	});
+
+	it("returns null without collapsing the sidebar when collapsing would not help either", () => {
+		// At this width, even fully collapsing the sidebar leaves less room than
+		// the smallest workspace needs, so the caller must not collapse it for nothing.
+		expect(fitPanelLayout(1_000, false, "half", 560)).toBeNull();
+	});
+
+	it("collapses the sidebar on its own when that is what makes the panel fit", () => {
+		expect(fitPanelLayout(1_080, false, "half", 560)).toEqual({
+			sidebarCollapsed: true,
+			workspaceMode: "quarter",
+			workspaceWidth: 280,
+		});
+	});
 });

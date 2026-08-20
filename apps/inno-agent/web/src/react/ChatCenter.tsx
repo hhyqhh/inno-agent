@@ -389,11 +389,26 @@ export function ChatCenter({ onOpenPresetPanels }: ChatCenterProps) {
 		if (isWelcome) resizeInput();
 	}, [isWelcome, inlineImages, pasteBlocks, resizeInput]);
 
+	const isComposingRef = useRef(false);
+
 	const handleInput = useCallback(() => {
 		const el = inputRef.current;
 		if (!el) return;
 		draftRef.current = el.value;
 		setDraftValue(el.value);
+		// Safari drops in-progress IME composition (e.g. Chinese/Japanese input)
+		// when the textarea's height/overflow/selection is mutated mid-composition,
+		// which is what resizeInput does. Defer the resize until compositionend.
+		if (isComposingRef.current) return;
+		resizeInput();
+	}, [resizeInput]);
+
+	const handleCompositionStart = useCallback(() => {
+		isComposingRef.current = true;
+	}, []);
+
+	const handleCompositionEnd = useCallback(() => {
+		isComposingRef.current = false;
 		resizeInput();
 	}, [resizeInput]);
 
@@ -664,6 +679,8 @@ export function ChatCenter({ onOpenPresetPanels }: ChatCenterProps) {
 			hasSendableContent={hasSendableContent}
 			hasPendingQuestion={Boolean(chat.pendingQuestion)}
 			onInput={handleInput}
+			onCompositionStart={handleCompositionStart}
+			onCompositionEnd={handleCompositionEnd}
 			onKeyDown={handleKeyDown}
 			onPaste={handlePaste}
 			onFiles={handleFiles}

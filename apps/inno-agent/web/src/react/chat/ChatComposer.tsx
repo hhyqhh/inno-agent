@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ChangeEvent, type ClipboardEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
+import { useEffect, useRef, type ChangeEvent, type ClipboardEvent, type CompositionEvent as ReactCompositionEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
 import { Paperclip, X, ArrowUp, Square, RotateCcw, Image, FileText, Check, ChevronDown, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "../ui/Spinner.js";
@@ -33,6 +33,8 @@ export interface ChatComposerProps {
 	hasSendableContent: boolean;
 	hasPendingQuestion: boolean;
 	onInput: () => void;
+	onCompositionStart: (event: ReactCompositionEvent<HTMLTextAreaElement>) => void;
+	onCompositionEnd: (event: ReactCompositionEvent<HTMLTextAreaElement>) => void;
 	onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
 	onPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
 	onFiles: (event: ChangeEvent<HTMLInputElement>) => void;
@@ -69,6 +71,8 @@ export function ChatComposer({
 	hasSendableContent,
 	hasPendingQuestion,
 	onInput,
+	onCompositionStart,
+	onCompositionEnd,
 	onKeyDown,
 	onPaste,
 	onFiles,
@@ -228,6 +232,8 @@ export function ChatComposer({
 				rows={2}
 				onKeyDown={onKeyDown}
 				onInput={onInput}
+				onCompositionStart={onCompositionStart}
+				onCompositionEnd={onCompositionEnd}
 				onPaste={onPaste}
 				disabled={chatIsSending || isUploading || hasPendingQuestion}
 			/>

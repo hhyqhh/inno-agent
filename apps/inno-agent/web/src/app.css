@@ -637,15 +637,6 @@ inno-workspace-panel textarea {
 	min-height: 36px;
 }
 
-.inno-workspace-context-hint {
-	min-width: 0;
-	color: var(--inno-text-subtle);
-	font-size: 11px;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
 .inno-workspace-switcher {
 	position: relative;
 	min-width: 0;

@@ -673,7 +673,6 @@
 		"send": "Send",
 		"describeImage": "Please describe this image",
 		"uploadedToWorkspace": "[Uploaded to workspace]",
-		"newChatHere": "New conversations will be created in this workspace",
 		"wsTemp": "Temporary · disposable",
 		"wsNew": "New workspace",
 		"wsExisting": "Existing workspace",

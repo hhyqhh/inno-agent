@@ -192,12 +192,6 @@ export function ChatCenter({ onOpenPresetPanels }: ChatCenterProps) {
 	const activeWorkspaceId = useStoreSnapshot(workspaceStore, () => workspaceStore.activeWorkspaceId);
 	const isWelcome = sessions.isWelcome;
 
-	const preselectedWs = useMemo(
-		() => sessions.preselectedWorkspaceId
-			? workspaces.list.find((workspace) => workspace.id === sessions.preselectedWorkspaceId) ?? null
-			: null,
-		[sessions.preselectedWorkspaceId, workspaces.list],
-	);
 	const selectableWorkspaces = useMemo(
 		() => workspaces.list.filter((workspace) => !workspace.isTemp && !workspace.id.startsWith("channel-")),
 		[workspaces.list],
@@ -693,25 +687,20 @@ export function ChatCenter({ onOpenPresetPanels }: ChatCenterProps) {
 	);
 
 	const renderWorkspaceContext = (context: "welcome" | "session") => {
-		const draftWorkspaceId = context === "welcome" && wsMode === "existing" ? wsExistingId : null;
-		const sessionWorkspace = context === "session" && activeWorkspaceId
-			? workspaces.list.find((workspace) => workspace.id === activeWorkspaceId)
-			: undefined;
-		const selectedWorkspaceId = context === "welcome" ? draftWorkspaceId : activeWorkspaceId;
-		if (selectedWorkspaceId) return null;
-		const selectedKind: "workspace" | "temp" | "new" = context === "welcome"
-			? wsMode === "existing" ? "workspace" : wsMode
-			: sessionWorkspace?.isTemp || !activeWorkspaceId ? "temp" : "workspace";
+		// The workspace selector belongs to the new-chat home page. A real
+		// conversation already has a fixed workspace context and should keep the
+		// composer uncluttered.
+		if (context === "session") return null;
+		const selectedWorkspaceId = wsMode === "existing" ? wsExistingId : null;
+		const selectedKind: "workspace" | "temp" | "new" = wsMode === "existing" ? "workspace" : wsMode;
 		return (
 			<WorkspaceContext
-				context={context}
 				workspaces={workspaces.list}
 				selectedWorkspaceId={selectedWorkspaceId}
 				selectedKind={selectedKind}
-				newWorkspaceName={context === "welcome" && wsMode === "new" ? wsName : ""}
+				newWorkspaceName={wsMode === "new" ? wsName : ""}
 				busy={isSwitchingWorkspace}
-				disabled={isUploading || Boolean(chat.pendingQuestion) || (context === "session" && chat.isSending)}
-				showHint={Boolean(preselectedWs)}
+				disabled={isUploading || Boolean(chat.pendingQuestion)}
 				onChange={handleWorkspaceChange}
 			/>
 		);

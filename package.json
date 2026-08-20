@@ -46,6 +46,7 @@
 			"electron/**/*",
 			"apps/inno-agent/dist/**/*",
 			"apps/inno-agent/web/dist/**/*",
+			"apps/inno-agent/note-templates/**/*",
 			"apps/inno-agent/presets/**/*",
 			"apps/inno-agent/scripts/**/*",
 			"node_modules/**/*",

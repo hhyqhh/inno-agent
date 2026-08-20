@@ -5,7 +5,7 @@ import type { WikiPageFrontmatter, WikiPageType, WikiPageStatus, ConfidenceLevel
  * Ported from backend src/memory/l2/wiki-maintainer.ts
  */
 export function parseFrontmatter(content: string): { frontmatter: WikiPageFrontmatter | null; body: string } {
-	const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n)?([\s\S]*)$/);
 	if (!match) return { frontmatter: null, body: content };
 
 	const yamlBlock = match[1];
@@ -14,7 +14,7 @@ export function parseFrontmatter(content: string): { frontmatter: WikiPageFrontm
 	let currentKey = "";
 	let currentArray: string[] = [];
 
-	for (const line of yamlBlock.split("\n")) {
+	for (const line of yamlBlock.split(/\r?\n/u)) {
 		const kvMatch = line.match(/^(\w+):\s*(.*)$/);
 		if (kvMatch) {
 			if (currentKey && currentArray.length > 0) {

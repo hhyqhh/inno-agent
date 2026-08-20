@@ -124,9 +124,135 @@
 		},
 		"page": {
 			"empty": "Pick a page on the left, or click a node in the graph.",
+			"loading": "Loading page…",
+			"loadError": "Could not load this page: {{error}}",
+			"revisionWarning": "The page changed; evidence references need to be reviewed.",
+			"saveError": "Could not save this page: {{error}}",
+			"mutationError": "Could not update evidence references: {{error}}",
+			"summaryNavigation": {
+				"loading": "Opening the source summary...",
+				"back": "Back to knowledge page",
+				"noSummary": "No verifiable source summary was found; staying on this knowledge page.",
+				"ambiguousSummary": "Multiple source summaries matched; staying on this knowledge page.",
+				"notFound": "The source summary is open, but this citation could not be located.",
+				"ambiguousMarker": "The source summary is open, but this citation has multiple matches.",
+				"sentenceNotFound": "The summary is open, but the sentence containing this citation could not be located.",
+				"returnError": "Could not return to the knowledge page: {{error}}"
+			},
 			"selectFromGraph": "Select a node in the graph",
 			"openInNotebook": "Open page",
-			"backToGraph": "Back to graph"
+			"backToGraph": "Back to graph",
+			"provenance": {
+				"title": "Sources & evidence",
+				"sources": "Source paths",
+				"sourceIds": "Source IDs",
+				"refresh": "Refresh references",
+				"removeStale": "Remove stale references",
+				"refreshing": "Refreshing evidence references",
+				"removingStale": "Removing stale evidence references",
+				"refreshConfirm": "Refresh references? This may call the configured model.",
+				"removeStaleConfirm": "Remove references that are no longer verified? This works offline.",
+				"quote": "Quoted text",
+				"referenceIssues": "{{count}} reference records could not be parsed",
+				"format": {
+					"pdf": "PDF",
+					"markdown": "Markdown",
+					"word": "Word",
+					"text": "Text",
+					"conversation": "Conversation",
+					"image": "Image"
+				},
+				"acquisition": {
+					"uploaded": "User upload",
+					"archived": "Archived text",
+					"local": "Local source"
+				},
+				"location": {
+					"pdfPage": "Page {{page}}",
+					"paragraph": "Paragraph {{paragraph}}",
+					"headingParagraph": "{{heading}} · Paragraph {{paragraph}}",
+					"none": "No precise location"
+				},
+				"selected": {
+					"model": "Model selected",
+					"user": "User provided"
+				},
+				"status": {
+					"verified": "Position verified",
+					"missing-source": "Source record missing",
+					"missing-file": "Source file missing",
+					"stale-source": "Source changed",
+					"stale-page": "Page changed; reference needs review",
+					"missing-index": "Evidence index missing",
+					"corrupt-index": "Evidence index corrupt",
+					"index-version-mismatch": "Evidence index version incompatible",
+					"locator-invalid": "Original location is invalid",
+					"quote-mismatch": "Original quote not found",
+					"drifted": "Location drifted"
+				},
+				"action": {
+					"exact": "View source and locate",
+					"file": "Open source",
+					"exactAria": "View source and locate: {{title}}, {{location}}",
+					"fileAria": "Open source: {{title}}, {{location}}"
+				}
+			},
+			"sourceViewer": {
+				"region": "Source viewer",
+				"back": "Back to knowledge page",
+				"download": "Download original",
+				"downloading": "Downloading...",
+				"opening": "Opening source...",
+				"noPreview": "The original file is available for download, but no inline preview is available.",
+				"location": {
+					"page": "Page {{page}}",
+					"paragraph": "Paragraph {{paragraph}}",
+					"headingParagraph": "{{heading}} · paragraph {{paragraph}}",
+					"file": "File level · no precise location"
+				},
+				"status": {
+					"stalePage": "Page changed; confirm this citation again.",
+					"drifted": "The evidence location has drifted",
+					"ambiguous": "The quote appears in multiple locations",
+					"notFound": "The original quote was not found",
+					"ambiguousText": "The quote occurs more than once in this evidence block",
+					"candidateAria": "Candidate {{index}}: {{location}}"
+				},
+				"error": {
+					"openSource": "Unable to open this source.",
+					"openLocation": "Unable to open this location.",
+					"download": "Download failed."
+				},
+				"evidence": {
+					"empty": "No extracted evidence is available.",
+					"originalDownload": "The original file is still available for download."
+				},
+				"markdown": {
+					"targetMissing": "The indexed evidence block could not be mapped to the complete Markdown document. No highlight was added.",
+					"targetAmbiguous": "The indexed evidence block maps to more than one block in the complete Markdown document. No highlight was added.",
+					"extractedFallback": "Showing extracted evidence only; this is not the complete Markdown document."
+				},
+				"docx": {
+					"forced": "The quote could not be resolved safely. Showing extracted evidence instead.",
+					"ambiguous": "The Word layout contains the quote multiple times. Showing extracted evidence instead.",
+					"none": "The Word layout could not map the quote. Showing extracted evidence instead.",
+					"error": "Word preview failed{{detail}}. Showing extracted evidence instead.",
+					"rendering": "Rendering Word document..."
+				},
+				"pdf": {
+					"forced": "Visual highlight was disabled because the quote could not be resolved safely.",
+					"error": "PDF preview failed{{detail}}.",
+					"empty": "Visual highlight was unavailable because this PDF has no selectable text.",
+					"ambiguous": "Visual highlight was unavailable because the PDF text layer contains the quote multiple times.",
+					"none": "Visual highlight was unavailable because the PDF text layer could not map the quote.",
+					"unavailable": "Visual highlight was unavailable.",
+					"showExtracted": " Showing extracted evidence instead.",
+					"pageVisible": " The original page remains visible.",
+					"downloadInspect": " Download the original file to inspect it.",
+					"rendering": "Rendering PDF page...",
+					"pageAria": "PDF page {{page}}"
+				}
+			}
 		},
 		"delete": {
 			"button": "Delete",

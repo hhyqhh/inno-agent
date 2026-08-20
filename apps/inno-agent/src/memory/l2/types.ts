@@ -39,8 +39,14 @@ export interface ManifestEntry {
 	rawPath: string;
 	extractedPath?: string;
 	wikiPages: string[];
+	/** Last full-file revision published by source-page generation. */
+	sourcePageFileRevision?: string;
 	tags: string[];
 	contentHash: string;
+	rawContentHash?: string;
+	rawSize?: number;
+	rawMtimeMs?: number;
+	rawKind?: "uploaded-original" | "archived-text";
 	status: ManifestStatus;
 	source: {
 		origin: "user_upload" | "conversation" | "web" | "research" | "agent_inferred";
@@ -70,6 +76,8 @@ export interface WikiPageFrontmatter {
 	concept_id?: string;
 	/** Explicit teaching dependencies. Ordinary wikilinks remain non-directional relatedness. */
 	prerequisites?: WikiPrerequisite[];
+	/** Persisted raw data. Only decodeEvidenceRefs output is trusted. */
+	evidence_refs?: unknown[];
 }
 
 /**

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -22,6 +23,7 @@ const REPO_ROOT = resolve(import.meta.dirname, "../../..");
 const DUMMY_API_KEY = "sk-test-secret-key-12345";
 
 let home: string;
+let dataDir: string;
 let workspace: string;
 let port: number;
 let child: ChildProcess;
@@ -44,6 +46,7 @@ function api(path: string): Promise<Response> {
 
 beforeAll(async () => {
 	home = mkdtempSync(join(tmpdir(), "inno-smoke-home-"));
+	dataDir = join(home, "data");
 	workspace = mkdtempSync(join(tmpdir(), "inno-smoke-ws-"));
 	mkdirSync(join(home, "config"), { recursive: true });
 	writeFileSync(
@@ -66,7 +69,19 @@ beforeAll(async () => {
 	port = await getFreePort();
 	child = spawn(
 		process.execPath,
-		["--import", "tsx", SERVER_ENTRY, "--home", home, "--workspace", workspace, "--port", String(port)],
+		[
+			"--import",
+			"tsx",
+			SERVER_ENTRY,
+			"--home",
+			home,
+			"--data-dir",
+			dataDir,
+			"--workspace",
+			workspace,
+			"--port",
+			String(port),
+		],
 		{ cwd: REPO_ROOT, stdio: ["ignore", "pipe", "pipe"] },
 	);
 	child.stdout?.on("data", (chunk) => (childLog += chunk));
@@ -300,6 +315,127 @@ describe("server smoke", () => {
 		expect((await api("/api/wiki/page?path=wiki/concepts/nope.md")).status).toBe(404);
 		expect((await api("/api/wiki/page?path=../escape.md")).status).toBe(400);
 	});
+
+	it("wiki page routes cannot read, overwrite, or delete internal L2 files", async () => {
+		const l2DataDir = join(dataDir, "l2");
+		const fixtures = [
+			["raw/uploads/route-secret.md", "immutable raw bytes"],
+			["manifest.jsonl", "{\"id\":\"private-manifest-record\"}\n"],
+			["extracted/evidence/by-id/route-secret.json", "{\"private\":true}\n"],
+			["wiki/index.md", "private navigation bytes"],
+		] as const;
+		const snapshots = fixtures.map(([relativePath]) => {
+			const absolutePath = join(l2DataDir, relativePath);
+			return {
+				absolutePath,
+				existed: existsSync(absolutePath),
+				bytes: existsSync(absolutePath) ? readFileSync(absolutePath) : undefined,
+			};
+		});
+
+		try {
+			for (const [relativePath, content] of fixtures) {
+				const absolutePath = join(l2DataDir, relativePath);
+				mkdirSync(join(absolutePath, ".."), { recursive: true });
+				writeFileSync(absolutePath, content, "utf8");
+				const originalBytes = readFileSync(absolutePath);
+				const encodedPath = encodeURIComponent(relativePath);
+
+				const get = await api(`/api/wiki/page?path=${encodedPath}`);
+				expect(get.status).toBe(400);
+				expect(await get.json()).toEqual({ error: "Invalid wiki path", code: "invalid_wiki_path" });
+				expect(readFileSync(absolutePath)).toEqual(originalBytes);
+
+				const put = await fetch(`http://127.0.0.1:${port}/api/wiki/page`, {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ path: relativePath, content: "overwritten" }),
+				});
+				expect(put.status).toBe(400);
+				expect(await put.json()).toEqual({ error: "Invalid wiki path", code: "invalid_wiki_path" });
+				expect(readFileSync(absolutePath)).toEqual(originalBytes);
+
+				const remove = await fetch(`http://127.0.0.1:${port}/api/wiki/page?path=${encodedPath}`, {
+					method: "DELETE",
+				});
+				expect(remove.status).toBe(400);
+				expect(await remove.json()).toEqual({ error: "Invalid wiki path", code: "invalid_wiki_path" });
+				expect(readFileSync(absolutePath)).toEqual(originalBytes);
+			}
+		} finally {
+			for (const snapshot of snapshots) {
+				if (snapshot.existed) writeFileSync(snapshot.absolutePath, snapshot.bytes!);
+				else rmSync(snapshot.absolutePath, { force: true });
+			}
+		}
+	}, 60_000);
+
+	it("serves immutable L2 source bytes only by manifest id and strong revision", async () => {
+		const l2DataDir = join(dataDir, "l2");
+		const sourceId = "l2src_smoke_content";
+		const rawPath = "raw/uploads/source-route-smoke.md";
+		const rawAbsolutePath = join(l2DataDir, rawPath);
+		const manifestPath = join(l2DataDir, "manifest.jsonl");
+		const rawBytes = Buffer.from("# Smoke source\n\nImmutable source bytes.\n", "utf8");
+		const rawContentHash = createHash("sha256").update(rawBytes).digest("hex");
+		const sourceRevision = `sha256:${rawContentHash}`;
+		const snapshots = [rawAbsolutePath, manifestPath].map((absolutePath) => ({
+			absolutePath,
+			existed: existsSync(absolutePath),
+			bytes: existsSync(absolutePath) ? readFileSync(absolutePath) : undefined,
+		}));
+
+		try {
+			mkdirSync(join(rawAbsolutePath, ".."), { recursive: true });
+			writeFileSync(rawAbsolutePath, rawBytes);
+			const existingManifest = existsSync(manifestPath) ? readFileSync(manifestPath, "utf8") : "";
+			writeFileSync(manifestPath, `${existingManifest}${JSON.stringify({
+				id: sourceId,
+				title: "Smoke source",
+				sourceType: "markdown",
+				rawPath,
+				extractedPath: "extracted/source-route-smoke.md",
+				wikiPages: [],
+				tags: [],
+				contentHash: rawContentHash.slice(0, 16),
+				rawContentHash,
+				rawSize: rawBytes.length,
+				rawMtimeMs: 0,
+				rawKind: "uploaded-original",
+				status: "indexed",
+				source: { origin: "user_upload" },
+				createdAt: "2026-08-16T00:00:00.000Z",
+				updatedAt: "2026-08-16T00:00:00.000Z",
+			})}\n`, "utf8");
+
+			const missingPrecondition = await api(`/api/l2/sources/${sourceId}/content`);
+			expect(missingPrecondition.status).toBe(428);
+			expect(await missingPrecondition.json()).toEqual(expect.objectContaining({ code: "if_match_required" }));
+
+			const content = await fetch(`http://127.0.0.1:${port}/api/l2/sources/${sourceId}/content`, {
+				headers: { "If-Match": `"${sourceRevision}"` },
+			});
+			expect(content.status).toBe(200);
+			expect(content.headers.get("etag")).toBe(`"${sourceRevision}"`);
+			expect(content.headers.get("content-type")).toContain("text/markdown");
+			expect(content.headers.get("x-content-type-options")).toBe("nosniff");
+			expect(Buffer.from(await content.arrayBuffer())).toEqual(rawBytes);
+
+			const forgedPathId = await fetch(
+				`http://127.0.0.1:${port}/api/l2/sources/${encodeURIComponent("../manifest.jsonl")}/content`,
+				{ headers: { "If-Match": `"${sourceRevision}"` } },
+			);
+			expect(forgedPathId.status).toBe(404);
+			const forgedPathError = await forgedPathId.json() as { code: string; error: string };
+			expect(forgedPathError.code).toBe("source_not_found");
+			expect(JSON.stringify(forgedPathError)).not.toContain("private-manifest-record");
+		} finally {
+			for (const snapshot of snapshots) {
+				if (snapshot.existed) writeFileSync(snapshot.absolutePath, snapshot.bytes!);
+				else rmSync(snapshot.absolutePath, { force: true });
+			}
+		}
+	}, 60_000);
 
 	it("POST /api/l2/raw/upload stores a file and rejects empty payloads", async () => {
 		const bad = await fetch(`http://127.0.0.1:${port}/api/l2/raw/upload`, {

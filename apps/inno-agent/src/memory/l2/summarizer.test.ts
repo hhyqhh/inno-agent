@@ -4,7 +4,7 @@ const completeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@earendil-works/pi-ai/compat", () => ({ complete: completeMock }));
 
-import { summarizeContent } from "./summarizer.js";
+import { summarizeContent, summarizeContentGrounded } from "./summarizer.js";
 
 const model = {} as never;
 const registry = {
@@ -13,6 +13,76 @@ const registry = {
 
 afterEach(() => {
 	completeMock.mockReset();
+});
+
+describe("grounded summaries", () => {
+	it("accepts a grounded body only when markers and citations match exactly", async () => {
+		completeMock.mockResolvedValue({
+			stopReason: "stop",
+			content: [{
+				type: "text",
+				text: "## Summary\n\nThe index reduces scans [1].\n\n```json\n{\"citations\":[{\"marker\":1,\"quote\":\"The index reduces scans.\"}]}\n```",
+			}],
+		});
+
+		await expect(summarizeContentGrounded(model, registry, "Title", "The index reduces scans."))
+			.resolves.toEqual({
+				body: "## Summary\n\nThe index reduces scans [1].",
+				citations: [{ marker: 1, quote: "The index reduces scans." }],
+			});
+		expect(completeMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("falls back without citation markers when grounded JSON is malformed", async () => {
+		completeMock
+			.mockResolvedValueOnce({
+				stopReason: "stop",
+				content: [{
+					type: "text",
+					text: "## Summary\n\nThe index reduces scans [1].\n\n```json\n{\"citations\":[}\n```",
+				}],
+			})
+			.mockResolvedValueOnce({
+				stopReason: "stop",
+				content: [{ type: "text", text: "## Summary\n\nThe index reduces scans [1]." }],
+			});
+
+		await expect(summarizeContentGrounded(model, registry, "Title", "The index reduces scans."))
+			.resolves.toEqual({ body: "## Summary\n\nThe index reduces scans .", citations: null });
+		expect(completeMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("rejects citation gaps and trailing prose", async () => {
+		completeMock
+			.mockResolvedValueOnce({
+				stopReason: "stop",
+				content: [{
+					type: "text",
+					text: "Summary [1] [3].\n\n```json\n{\"citations\":[{\"marker\":1,\"quote\":\"one\"},{\"marker\":3,\"quote\":\"three\"}]}\n```\nextra",
+				}],
+			})
+			.mockResolvedValueOnce({
+				stopReason: "stop",
+				content: [{ type: "text", text: "Plain fallback" }],
+			});
+
+		await expect(summarizeContentGrounded(model, registry, "Title", "one three"))
+			.resolves.toEqual({ body: "Plain fallback", citations: null });
+		expect(completeMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("ignores citation-looking text inside code when validating the body", async () => {
+		completeMock.mockResolvedValue({
+			stopReason: "stop",
+			content: [{
+				type: "text",
+				text: "Summary [1].\n\n`[9]`\n\n```json\n{\"citations\":[{\"marker\":1,\"quote\":\"one\"}]}\n```",
+			}],
+		});
+
+		await expect(summarizeContentGrounded(model, registry, "Title", "one"))
+			.resolves.toMatchObject({ citations: [{ marker: 1 }] });
+	});
 });
 
 describe("L2 summarizer", () => {

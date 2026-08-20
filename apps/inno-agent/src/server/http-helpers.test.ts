@@ -28,6 +28,20 @@ describe("readBody", () => {
 		await expect(body).resolves.toEqual({ hello: "world" });
 	});
 
+	it("preserves a UTF-8 character split across request chunks", async () => {
+		const req = fakeReq();
+		const body = readBody(req);
+		const expected = { message: "证据定位" };
+		const encoded = Buffer.from(JSON.stringify(expected), "utf8");
+		const characterStart = encoded.indexOf(Buffer.from("证", "utf8"));
+
+		expect(characterStart).toBeGreaterThanOrEqual(0);
+		req.write(encoded.subarray(0, characterStart + 1));
+		req.end(encoded.subarray(characterStart + 1));
+
+		await expect(body).resolves.toEqual(expected);
+	});
+
 	it("resolves to {} for an empty body", async () => {
 		const req = fakeReq();
 		const body = readBody(req);

@@ -1,4 +1,7 @@
 export class ApiError extends Error {
+	public readonly code: string | undefined;
+	public readonly details: Record<string, unknown> | undefined;
+
 	constructor(
 		public status: number,
 		message: string,
@@ -7,20 +10,39 @@ export class ApiError extends Error {
 	) {
 		super(message);
 		this.name = "ApiError";
+		this.code = typeof data?.code === "string" ? data.code : undefined;
+		this.details = isRecord(data?.details) ? data.details : undefined;
 	}
 }
 
 const BASE_URL = ""; // Same origin — Vite proxy in dev
 
-export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+async function apiErrorFromResponse(res: Response): Promise<ApiError> {
+	const parsed: unknown = await res.json().catch(() => undefined);
+	const data = isRecord(parsed) ? parsed : undefined;
+	const message = typeof data?.error === "string" && data.error.length > 0
+		? data.error
+		: (res.statusText || `Request failed (${res.status})`);
+	return new ApiError(res.status, message, data);
+}
+
+export async function apiFetchResponse(path: string, options?: RequestInit): Promise<Response> {
+	const headers = new Headers(options?.headers);
+	if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
 	const res = await fetch(`${BASE_URL}${path}`, {
-		headers: { "Content-Type": "application/json", ...options?.headers },
 		...options,
+		headers,
 	});
-	if (!res.ok) {
-		const body = await res.json().catch(() => ({}));
-		throw new ApiError(res.status, (body as Record<string, string>).error || res.statusText, body as Record<string, unknown>);
-	}
+	if (!res.ok) throw await apiErrorFromResponse(res);
+	return res;
+}
+
+export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+	const res = await apiFetchResponse(path, options);
 	// 204 No Content
 	if (res.status === 204) return undefined as T;
 	return res.json() as Promise<T>;
@@ -109,8 +131,7 @@ export async function* streamSSE<T>(url: string, body: unknown, signal?: AbortSi
 		throw err;
 	}
 	if (!res.ok) {
-		const errBody = await res.json().catch(() => ({}));
-		throw new ApiError(res.status, (errBody as Record<string, string>).error || res.statusText);
+		throw await apiErrorFromResponse(res);
 	}
 	yield* readSSEStream<T>(res, signal);
 }
@@ -136,8 +157,7 @@ export async function* streamSSEGet<T>(url: string, signal?: AbortSignal, option
 		throw new ApiError(404, "Stream not found");
 	}
 	if (!res.ok) {
-		const errBody = await res.json().catch(() => ({}));
-		throw new ApiError(res.status, (errBody as Record<string, string>).error || res.statusText);
+		throw await apiErrorFromResponse(res);
 	}
 	yield* readSSEStream<T>(res, signal);
 }

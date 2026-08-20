@@ -124,9 +124,135 @@
 		},
 		"page": {
 			"empty": "在左侧选择一个页面，或在图中点击一个节点开始阅读。",
+			"loading": "正在加载页面…",
+			"loadError": "页面加载失败：{{error}}",
+			"revisionWarning": "页面已修改，引用关系待重新确认。",
+			"saveError": "页面保存失败：{{error}}",
+			"mutationError": "证据引用更新失败：{{error}}",
+			"summaryNavigation": {
+				"loading": "正在打开来源摘要…",
+				"back": "返回知识页",
+				"noSummary": "没有找到可验证的来源摘要，已停留在当前知识页。",
+				"ambiguousSummary": "找到多个可能的来源摘要，无法安全定位，已停留在当前知识页。",
+				"notFound": "已打开来源摘要，但未能定位这条摘要引用。",
+				"ambiguousMarker": "已打开来源摘要，但这条引用对应多个位置。",
+				"sentenceNotFound": "摘要已打开，但未能定位包含该引用数字的整句。",
+				"returnError": "无法返回知识页：{{error}}"
+			},
 			"selectFromGraph": "在图中选择节点查看",
 			"openInNotebook": "在笔记本中查看",
-			"backToGraph": "返回图谱"
+			"backToGraph": "返回图谱",
+			"provenance": {
+				"title": "来源与证据",
+				"sources": "来源路径",
+				"sourceIds": "来源 ID",
+				"refresh": "刷新引用",
+				"removeStale": "移除失效引用",
+				"refreshing": "正在刷新引用",
+				"removingStale": "正在移除失效引用",
+				"refreshConfirm": "要刷新引用吗？此操作可能调用已配置的模型。",
+				"removeStaleConfirm": "要移除不再验证的引用吗？此操作不调用模型。",
+				"quote": "引用原文",
+				"referenceIssues": "{{count}} 条引用数据无法解析",
+				"format": {
+					"pdf": "PDF",
+					"markdown": "Markdown",
+					"word": "Word",
+					"text": "文本",
+					"conversation": "对话",
+					"image": "图片"
+				},
+				"acquisition": {
+					"uploaded": "用户上传",
+					"archived": "归档文本",
+					"local": "本地来源"
+				},
+				"location": {
+					"pdfPage": "第 {{page}} 页",
+					"paragraph": "第 {{paragraph}} 段",
+					"headingParagraph": "{{heading}} · 第 {{paragraph}} 段",
+					"none": "暂无精确定位"
+				},
+				"selected": {
+					"model": "模型选择",
+					"user": "用户提供"
+				},
+				"status": {
+					"verified": "位置已验证",
+					"missing-source": "来源记录缺失",
+					"missing-file": "来源文件缺失",
+					"stale-source": "来源已变化",
+					"stale-page": "页面已修改，引用关系待重新确认",
+					"missing-index": "证据索引缺失",
+					"corrupt-index": "证据索引损坏",
+					"index-version-mismatch": "证据索引版本不兼容",
+					"locator-invalid": "原定位已失效",
+					"quote-mismatch": "未找到原引用",
+					"drifted": "定位已漂移"
+				},
+				"action": {
+					"exact": "查看原文并定位",
+					"file": "打开来源",
+					"exactAria": "查看原文并定位：{{title}}，{{location}}",
+					"fileAria": "打开来源：{{title}}，{{location}}"
+				}
+			},
+			"sourceViewer": {
+				"region": "来源查看器",
+				"back": "返回知识页",
+				"download": "下载原文",
+				"downloading": "下载中…",
+				"opening": "正在打开来源…",
+				"noPreview": "原文件可供下载，但当前不支持内嵌预览。",
+				"location": {
+					"page": "第 {{page}} 页",
+					"paragraph": "第 {{paragraph}} 段",
+					"headingParagraph": "{{heading}} · 第 {{paragraph}} 段",
+					"file": "文件级 · 暂无精确位置"
+				},
+				"status": {
+					"stalePage": "页面已变化，请重新确认这条引用。",
+					"drifted": "证据定位已漂移",
+					"ambiguous": "该引用在原文中出现于多个位置",
+					"notFound": "未找到原引用",
+					"ambiguousText": "该引用在当前证据块中出现多次",
+					"candidateAria": "候选位置 {{index}}：{{location}}"
+				},
+				"error": {
+					"openSource": "无法打开此来源。",
+					"openLocation": "无法打开此位置。",
+					"download": "下载失败。"
+				},
+				"evidence": {
+					"empty": "暂无可用的抽取证据。",
+					"originalDownload": "仍可下载原文件查看。"
+				},
+				"markdown": {
+					"targetMissing": "无法将索引证据块唯一映射到完整 Markdown 原文，未添加高亮。",
+					"targetAmbiguous": "索引证据块在完整 Markdown 原文中对应多个区块，未添加高亮。",
+					"extractedFallback": "当前仅显示抽取证据，并非完整 Markdown 原文。"
+				},
+				"docx": {
+					"forced": "无法安全定位引用，已改为显示抽取的证据。",
+					"ambiguous": "Word 排版中多次出现该引用，已改为显示抽取的证据。",
+					"none": "无法在 Word 排版中映射该引用，已改为显示抽取的证据。",
+					"error": "Word 预览失败{{detail}}，已改为显示抽取的证据。",
+					"rendering": "正在渲染 Word 文档…"
+				},
+				"pdf": {
+					"forced": "因无法安全定位引用，已关闭可视高亮，",
+					"error": "PDF 预览失败{{detail}}。",
+					"empty": "该 PDF 没有可选择的文本，无法进行可视高亮。",
+					"ambiguous": "PDF 文本层中多次出现该引用，无法进行可视高亮。",
+					"none": "无法在 PDF 文本层中映射该引用，无法进行可视高亮。",
+					"unavailable": "当前无法进行可视高亮。",
+					"showExtracted": "改为显示抽取的证据。",
+					"pageVisible": "原页面仍保持可见。",
+					"downloadInspect": "请下载原文件查看。",
+					"rendering": "正在渲染 PDF 页面…",
+					"pageAria": "PDF 第 {{page}} 页"
+				}
+			}
 		},
 		"delete": {
 			"button": "删除",

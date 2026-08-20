@@ -1,5 +1,6 @@
-import { existsSync, statSync } from "node:fs";
-import { extname, resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { extname, join, resolve } from "node:path";
 import type { LiteParse, ParseResult, ScreenshotResult } from "@llamaindex/liteparse";
 
 // ============================================================================
@@ -17,7 +18,11 @@ const SUPPORTED_EXTENSIONS = new Set([
 	".gif",
 	".webp",
 	".tiff",
+	".md",
+	".markdown",
 ]);
+
+const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
 
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100MB
 
@@ -75,12 +80,56 @@ function validateFile(filePath: string): void {
 	}
 }
 
+function parseMarkdownBytes(bytes: Uint8Array): ParsedDocumentResult {
+	let text: string;
+	try {
+		text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+	} catch {
+		throw new DocumentParseError("Markdown 文件不是有效的 UTF-8。", "PARSE_ERROR");
+	}
+	if (!text.trim()) {
+		throw new DocumentParseError("Markdown 文件内容为空。", "EMPTY_RESULT");
+	}
+	return {
+		text,
+		pageCount: 1,
+		pages: [{ pageNumber: 1, text }],
+	};
+}
+
+function parsedResult(result: ParseResult): ParsedDocumentResult {
+	const text = result.text?.trim() ?? "";
+	if (!text) {
+		throw new DocumentParseError(
+			"文件解析结果为空。可能是扫描件（需要 OCR）或文件内容为空。",
+			"EMPTY_RESULT",
+		);
+	}
+	return {
+		text,
+		pageCount: result.pages.length,
+		pages: result.pages.map((page) => ({
+			pageNumber: page.pageNum,
+			text: page.text,
+		})),
+	};
+}
+
 /**
  * Parse a document and extract text content.
  */
 export async function parseDocument(filePath: string): Promise<ParsedDocumentResult> {
 	const resolved = resolve(filePath);
 	validateFile(resolved);
+	if (MARKDOWN_EXTENSIONS.has(extname(resolved).toLowerCase())) {
+		let bytes: Buffer;
+		try {
+			bytes = readFileSync(resolved);
+		} catch {
+			throw new DocumentParseError("Markdown 文件无法读取。", "PARSE_ERROR");
+		}
+		return parseMarkdownBytes(bytes);
+	}
 
 	const parser = await getParser();
 	let result: ParseResult;
@@ -94,22 +143,55 @@ export async function parseDocument(filePath: string): Promise<ParsedDocumentRes
 		);
 	}
 
-	const text = result.text?.trim() ?? "";
-	if (!text) {
+	return parsedResult(result);
+}
+
+/** Parse an already verified byte snapshot without reopening its original path. */
+export async function parseDocumentBytes(displayFilePath: string, bytes: Buffer): Promise<ParsedDocumentResult> {
+	const extension = extname(displayFilePath).toLowerCase();
+	if (!SUPPORTED_EXTENSIONS.has(extension)) {
 		throw new DocumentParseError(
-			"文件解析结果为空。可能是扫描件（需要 OCR）或文件内容为空。",
-			"EMPTY_RESULT",
+			`不支持的文件格式: ${extension}。支持的格式: ${[...SUPPORTED_EXTENSIONS].join(", ")}`,
+			"UNSUPPORTED_FORMAT",
 		);
 	}
+	if (bytes.byteLength > MAX_FILE_SIZE_BYTES) {
+		throw new DocumentParseError(
+			`文件过大 (${(bytes.byteLength / 1024 / 1024).toFixed(1)}MB)，上限为 100MB`,
+			"FILE_TOO_LARGE",
+		);
+	}
+	if (MARKDOWN_EXTENSIONS.has(extension)) return parseMarkdownBytes(bytes);
 
-	return {
-		text,
-		pageCount: result.pages.length,
-		pages: result.pages.map((p) => ({
-			pageNumber: p.pageNum,
-			text: p.text,
-		})),
-	};
+	const parser = await getParser();
+	const snapshot = Buffer.from(bytes);
+	let privateTempDir: string | undefined;
+	try {
+		if (extension === ".pdf") {
+			return parsedResult(await parser.parse(snapshot, true));
+		}
+
+		privateTempDir = mkdtempSync(join(tmpdir(), "inno-document-"));
+		const privateTempPath = join(privateTempDir, `input${extension}`);
+		writeFileSync(privateTempPath, snapshot, { flag: "wx", mode: 0o600 });
+		return parsedResult(await parser.parse(privateTempPath, true));
+	} catch (error) {
+		if (error instanceof DocumentParseError) throw error;
+		throw new DocumentParseError("Document parsing failed.", "PARSE_ERROR");
+	} finally {
+		if (privateTempDir !== undefined) {
+			try {
+				rmSync(privateTempDir, {
+					recursive: true,
+					force: true,
+					maxRetries: 3,
+					retryDelay: 50,
+				});
+			} catch {
+				// Temporary conversion input cleanup must not mask the parse result.
+			}
+		}
+	}
 }
 
 /**

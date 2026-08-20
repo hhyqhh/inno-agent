@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { appendJsonl, readJsonl, writeText } from "../../storage/file-store.js";
-import type { ManifestEntry } from "./types.js";
+import type { ManifestEntry, RawSourceType } from "./types.js";
 
 const MANIFEST_FILE = "manifest.jsonl";
 
@@ -59,4 +59,18 @@ export function findManifestByTitle(l2DataDir: string, title: string): ManifestE
 
 export function findManifestByHash(l2DataDir: string, contentHash: string): ManifestEntry | undefined {
 	return readManifest(l2DataDir).find((e) => e.contentHash === contentHash);
+}
+
+/** Find the newest failed record that can be retried from its already archived raw source. */
+export function findRecoverableManifest(
+	l2DataDir: string,
+	title: string,
+	sourceType: RawSourceType,
+): ManifestEntry | undefined {
+	const entries = readManifest(l2DataDir);
+	for (let index = entries.length - 1; index >= 0; index -= 1) {
+		const entry = entries[index];
+		if (entry.status === "error" && entry.title === title && entry.sourceType === sourceType) return entry;
+	}
+	return undefined;
 }

@@ -1,32 +1,76 @@
-import { StringEnum } from "@earendil-works/pi-ai";
-import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { StringEnum, type Model } from "@earendil-works/pi-ai";
+import { defineTool, type ModelRegistry, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { randomUUID, createHash } from "node:crypto";
 import { join, isAbsolute, resolve } from "node:path";
 
 import type { ManifestEntry, RawSourceType } from "./types.js";
-import { saveRaw, saveRawFile } from "./raw-store.js";
+import { decodeEvidenceRefs, type EvidenceRef } from "./evidence-types.js";
+import { archiveRawContent, archiveRawFile, RawArchiveError, type ArchivedRaw } from "./raw-store.js";
+import { SourceFormatError, type ArchivableFileType } from "./source-format.js";
 import { convertToExtracted } from "./source-converter.js";
-import { upsertManifest, readManifest, findManifestByHash } from "./manifest-store.js";
+import {
+	upsertManifest,
+	readManifest,
+	findRecoverableManifest,
+} from "./manifest-store.js";
 import {
 	createSourcePage,
+	fileRevision,
+	replaceSourcePageIfRevision,
 	rebuildIndex,
 	appendLog,
 	ensureL2Directories,
+	parseFrontmatter,
 	readMaintenanceContext,
+	sourcePageHasExpectedContent,
+	sourcePagePath,
 } from "./wiki-maintainer.js";
 import { queryWikiHybridDetailed } from "./wiki-query.js";
-import { summarizeContent } from "./summarizer.js";
+import { summarizeContent, summarizeContentGrounded, type GroundedCitation } from "./summarizer.js";
 import { maintainLinkedWikiPages } from "./wiki-linker.js";
 import { fileExists, readText } from "../../storage/file-store.js";
-import { parseDocument, DocumentParseError } from "./document-parser.js";
+import {
+	parseDocument,
+	parseDocumentBytes,
+	DocumentParseError,
+	type ParsedDocumentResult,
+} from "./document-parser.js";
 import { getL2Memory, type L2Memory } from "./l2-memory.js";
 import { regenerateOverview } from "./overview.js";
 import { formatL2LintReport, runL2Lint } from "./l2-lint.js";
 import { logger } from "../../logger.js";
+import { buildEvidenceIndex, writeEvidenceIndexAtomic } from "./evidence-index.js";
+import {
+	createModelEvidenceSelector,
+	type EvidenceCandidateSelector,
+} from "./evidence-selector.js";
+import { attachEvidenceToPages, attachGroundedCitations } from "./evidence-page-writer.js";
+import { getWikiPageWriteQueue } from "./wiki-page-write-queue.js";
+import { resolveRawSourcePath } from "./source-path.js";
+import { readSourceBytes } from "./source-revision.js";
+
+export interface ArchiveModelContext {
+	model?: Model<any>;
+	modelRegistry?: ModelRegistry;
+}
+
+export interface L2ToolDependencies {
+	parseDocument?: typeof parseDocument;
+	selectorFactory?: (ctx: ArchiveModelContext) => EvidenceCandidateSelector | null;
+}
 
 // PI may dispatch several archive tool calls from one turn concurrently.
 const archiveQueueTails = new Map<string, Promise<void>>();
+
+function readGroundedEvidenceReferences(l2DataDir: string, pagePath: string, sourceId: string): EvidenceRef[] {
+	const absolutePath = join(l2DataDir, pagePath);
+	if (!fileExists(absolutePath)) return [];
+	const parsed = parseFrontmatter(readText(absolutePath));
+	return decodeEvidenceRefs(parsed.frontmatter?.evidence_refs, [sourceId]).valid.filter((reference) => (
+		reference.selected_by === "model" && reference.marker !== undefined
+	));
+}
 
 function enqueueArchive<T>(l2DataDir: string, task: () => Promise<T>): Promise<T> {
 	const queueKey = resolve(l2DataDir);
@@ -43,6 +87,54 @@ function enqueueArchive<T>(l2DataDir: string, task: () => Promise<T>): Promise<T
 	});
 }
 
+interface RecoveredArchivedRaw {
+	archivedRaw: ArchivedRaw;
+	rawBytes: Buffer;
+}
+
+function archivedRawFromManifest(
+	l2DataDir: string,
+	entry: ManifestEntry | undefined,
+	fallbackOriginLabel: ArchivedRaw["originLabel"],
+): RecoveredArchivedRaw | undefined {
+	if (!entry) return undefined;
+	const paths = resolveRawSourcePath(l2DataDir, entry);
+	if (paths.status !== "ready") return undefined;
+	const snapshot = readSourceBytes(paths);
+	if (snapshot.status !== "ready") return undefined;
+	if (entry.rawContentHash && snapshot.rawContentHash !== entry.rawContentHash) return undefined;
+	return {
+		archivedRaw: {
+			rawPath: entry.rawPath,
+			absolutePath: paths.rawAbsolutePath,
+			rawContentHash: snapshot.rawContentHash,
+			rawSize: snapshot.rawSize,
+			rawMtimeMs: snapshot.rawMtimeMs,
+			originLabel: entry.rawKind ?? fallbackOriginLabel,
+		},
+		rawBytes: snapshot.rawBytes,
+	};
+}
+
+function findManifestWithRaw(
+	l2DataDir: string,
+	predicate: (entry: ManifestEntry) => boolean,
+	fallbackOriginLabel: ArchivedRaw["originLabel"],
+	expectedRawContentHash?: string,
+): { entry: ManifestEntry; archivedRaw: ArchivedRaw; rawBytes: Buffer } | undefined {
+	const entries = readManifest(l2DataDir);
+	for (let index = entries.length - 1; index >= 0; index -= 1) {
+		const entry = entries[index];
+		if (!predicate(entry)) continue;
+		const recovered = archivedRawFromManifest(l2DataDir, entry, fallbackOriginLabel);
+		if (!recovered || (expectedRawContentHash && recovered.archivedRaw.rawContentHash !== expectedRawContentHash)) {
+			continue;
+		}
+		return { entry, archivedRaw: recovered.archivedRaw, rawBytes: recovered.rawBytes };
+	}
+	return undefined;
+}
+
 /**
  * Create L2 Wiki memory tools for the Inno Agent.
  * When `isEnabled` is provided and returns false, the archive/query tools
@@ -52,13 +144,24 @@ function enqueueArchive<T>(l2DataDir: string, task: () => Promise<T>): Promise<T
  * `getActiveWorkspaceDir` resolves relative file paths for the current
  * session; server callers must keep this dynamic because sessions can switch
  * workspaces without recreating the extension.
+ * The final argument accepts the legacy parser function or a dependency object.
  */
 export function createL2Tools(
 	l2DataDir: string,
 	isEnabled?: () => boolean,
 	l2Memory: L2Memory = getL2Memory(l2DataDir),
 	getActiveWorkspaceDir?: () => string,
+	dependenciesOrParser: L2ToolDependencies | typeof parseDocument = {},
 ): ToolDefinition[] {
+	const dependencies: L2ToolDependencies = typeof dependenciesOrParser === "function"
+		? { parseDocument: dependenciesOrParser }
+		: dependenciesOrParser;
+	const documentParser = dependencies.parseDocument ?? parseDocument;
+	const selectorFactory = dependencies.selectorFactory
+		?? ((archiveContext: ArchiveModelContext) => createModelEvidenceSelector(
+			archiveContext.model,
+			archiveContext.modelRegistry,
+		));
 	const l2DisabledResult = () => ({
 		content: [{ type: "text" as const, text: "L2 Wiki 知识库已在设置中关闭，当前不归档也不检索知识库内容。" }],
 		details: { disabled: true },
@@ -75,7 +178,7 @@ export function createL2Tools(
 		parameters: Type.Object({
 			title: Type.String({ description: "资料标题" }),
 			content: Type.Optional(Type.String({ description: "要归档的文本内容（与 filePath 二选一）" })),
-			filePath: Type.Optional(Type.String({ description: "要归档的文件路径（PDF/Word/Image），与 content 二选一" })),
+			filePath: Type.Optional(Type.String({ description: "要归档的文件路径（PDF/Word/Markdown/Image），与 content 二选一" })),
 			sourceType: StringEnum(["text", "markdown", "conversation", "pdf", "word", "image"] as const, {
 				description: "资料类型：text（纯文本）、markdown、conversation（对话片段）、pdf、word、image",
 			}),
@@ -96,35 +199,143 @@ export function createL2Tools(
 			const maintenanceContext = readMaintenanceContext(l2DataDir);
 
 			const sourceType = params.sourceType as RawSourceType;
-			const isFileType = sourceType === "pdf" || sourceType === "word" || sourceType === "image";
+			const isFileType = sourceType === "pdf"
+				|| sourceType === "word"
+				|| sourceType === "markdown"
+				|| sourceType === "image";
+			const hasPreciseEvidence = sourceType === "pdf" || sourceType === "word" || sourceType === "markdown";
+			const tags = params.tags ?? [];
+			const inferredOrigin = sourceType === "conversation" ? "conversation" : "user_upload";
+			let existing: ManifestEntry | undefined;
+			if ((sourceType === "pdf" || sourceType === "word") && !params.filePath) {
+				return {
+					content: [{ type: "text" as const, text: "PDF and Word archives require filePath." }],
+					details: { error: "file_path_required" },
+				};
+			}
 
 			// Resolve content: either from params.content or by parsing a file
 			let content: string;
-			let resolvedFilePath: string | undefined;
+			let archivedRaw: ArchivedRaw | undefined;
+			let recoveredRawBytes: Buffer | undefined;
+			let parsedDocument: ParsedDocumentResult | undefined;
+
+			const duplicateResult = (entry: ManifestEntry) => ({
+				content: [{
+					type: "text" as const,
+					text: `Source already archived: ${entry.title} (${entry.id}).`,
+				}],
+				details: { id: entry.id, duplicate: true },
+			});
+
+			const archiveFailureResult = (error: unknown) => {
+				const controlledError = error instanceof DocumentParseError
+					|| error instanceof SourceFormatError
+					|| error instanceof RawArchiveError;
+				const message = controlledError ? error.message : String(error);
+				return {
+					content: [{ type: "text" as const, text: `Failed to archive or parse source: ${message}` }],
+					details: { error: controlledError ? error.code : "parse_error" },
+				};
+			};
+
+			const persistParseFailure = (error: unknown, knownContentHash = "") => {
+				if (!archivedRaw) return archiveFailureResult(error);
+				const failedId = existing?.id ?? `l2src_${randomUUID().slice(0, 8)}`;
+				const failedEntry: ManifestEntry = {
+					...existing,
+					id: failedId,
+					title: params.title,
+					sourceType,
+					rawPath: archivedRaw.rawPath,
+					extractedPath: existing?.extractedPath,
+					wikiPages: existing?.wikiPages ?? [],
+					tags,
+					contentHash: knownContentHash || existing?.contentHash || "",
+					rawContentHash: archivedRaw.rawContentHash,
+					rawSize: archivedRaw.rawSize,
+					rawMtimeMs: archivedRaw.rawMtimeMs,
+					rawKind: archivedRaw.originLabel,
+					status: "error",
+					source: {
+						origin: (params.origin ?? inferredOrigin) as ManifestEntry["source"]["origin"],
+						...(params.url && { url: params.url }),
+						...(params.sessionId && { sessionId: params.sessionId }),
+					},
+					createdAt: existing?.createdAt ?? new Date().toISOString(),
+					updatedAt: new Date().toISOString(),
+				};
+				upsertManifest(l2DataDir, failedEntry);
+				const result = archiveFailureResult(error);
+				return { ...result, details: { ...result.details, id: failedId } };
+			};
 
 			if (isFileType && params.filePath) {
-				// File-based: parse with LiteParse
+				// File-based: preserve the immutable original before any validation or parsing.
+				existing = !params.force
+					? findRecoverableManifest(l2DataDir, params.title, sourceType)
+					: undefined;
+				const recoveredRaw = archivedRawFromManifest(l2DataDir, existing, "uploaded-original");
+				archivedRaw = recoveredRaw?.archivedRaw;
+				recoveredRawBytes = recoveredRaw?.rawBytes;
+				if (existing && !recoveredRaw) existing = undefined;
 				const workspaceDir = getActiveWorkspaceDir?.() || process.env.INNO_WORKSPACE_DIR || process.cwd();
-				resolvedFilePath = isAbsolute(params.filePath)
+				const resolvedFilePath = isAbsolute(params.filePath)
 					? params.filePath
 					: resolve(workspaceDir, params.filePath);
 
-				let parsed;
 				try {
-					parsed = await parseDocument(resolvedFilePath);
+					if (!archivedRaw) {
+						archivedRaw = sourceType === "image"
+							? archiveRawFile(l2DataDir, params.title, resolvedFilePath, "image")
+							: archiveRawFile(l2DataDir, params.title, resolvedFilePath, sourceType as ArchivableFileType);
+					}
 				} catch (err) {
-					logger.warn({ err, filePath: resolvedFilePath }, "l2_archive: failed to parse document");
-					const msg = err instanceof DocumentParseError ? err.message : String(err);
+					logger.warn({ err, filePath: resolvedFilePath }, "l2_archive: failed to archive or parse document");
+					const controlledError = err instanceof DocumentParseError
+						|| err instanceof SourceFormatError
+						|| err instanceof RawArchiveError;
+					const msg = controlledError ? err.message : String(err);
 					return {
-						content: [{ type: "text" as const, text: `文件解析失败: ${msg}` }],
-						details: { error: err instanceof DocumentParseError ? err.code : "parse_error" },
+						content: [{ type: "text" as const, text: `文件归档或解析失败: ${msg}` }],
+						details: { error: controlledError ? err.code : "parse_error" },
 					};
 				}
 
-				content = parsed.text;
+				try {
+					parsedDocument = recoveredRawBytes
+						? await parseDocumentBytes(archivedRaw.absolutePath, recoveredRawBytes)
+						: await documentParser(archivedRaw.absolutePath);
+				} catch (error) {
+					logger.warn({ sourceId: existing?.id, code: "parse-failed" }, "l2_archive: failed to parse archived document");
+					return persistParseFailure(error);
+				}
+				content = parsedDocument.text;
 			} else if (params.content) {
-				// Text-based: use content directly
 				content = params.content;
+				const prospectiveHash = createHash("sha256").update(content).digest("hex").slice(0, 16);
+				const recovered = !params.force
+					? findManifestWithRaw(
+						l2DataDir,
+						(entry) => entry.contentHash === prospectiveHash && entry.sourceType === sourceType,
+						"archived-text",
+					)
+					: undefined;
+				existing = recovered?.entry;
+				archivedRaw = recovered?.archivedRaw;
+				recoveredRawBytes = recovered?.rawBytes;
+				if (existing?.status === "indexed") return duplicateResult(existing);
+				archivedRaw ??= archiveRawContent(l2DataDir, params.title, content, sourceType, params.url);
+				if (sourceType === "markdown") {
+					try {
+						parsedDocument = recoveredRawBytes
+							? await parseDocumentBytes(archivedRaw.absolutePath, recoveredRawBytes)
+							: await documentParser(archivedRaw.absolutePath);
+					} catch (error) {
+						logger.warn({ sourceId: existing?.id, code: "parse-failed" }, "l2_archive: failed to parse archived Markdown");
+						return persistParseFailure(error, prospectiveHash);
+					}
+				}
 			} else {
 				return {
 					content: [{ type: "text" as const, text: "参数错误：必须提供 content（文本内容）或 filePath（文件路径）。" }],
@@ -135,7 +346,19 @@ export function createL2Tools(
 			const contentHash = createHash("sha256").update(content).digest("hex").slice(0, 16);
 
 				// Completed content is a duplicate. Incomplete records resume below.
-				const existing = !params.force ? findManifestByHash(l2DataDir, contentHash) : undefined;
+				if (!existing && !params.force && params.filePath) {
+					const recovered = findManifestWithRaw(
+						l2DataDir,
+						(entry) => entry.contentHash === contentHash && entry.sourceType === sourceType,
+						"uploaded-original",
+						archivedRaw.rawContentHash,
+					);
+					if (recovered) {
+						existing = recovered.entry;
+						archivedRaw = recovered.archivedRaw;
+						recoveredRawBytes = recovered.rawBytes;
+					}
+				}
 				if (existing?.status === "indexed") {
 						return {
 						content: [
@@ -153,15 +376,12 @@ export function createL2Tools(
 					};
 				}
 
-				const existingRawPath = existing?.rawPath && fileExists(join(l2DataDir, existing.rawPath))
-					? existing.rawPath
-					: undefined;
-				const rawPath = existingRawPath ?? (resolvedFilePath
-					? saveRawFile(l2DataDir, params.title, resolvedFilePath, sourceType)
-					: saveRaw(l2DataDir, params.title, content, sourceType, params.url));
+				if (!archivedRaw) {
+					archivedRaw = archiveRawContent(l2DataDir, params.title, content, sourceType, params.url);
+				}
+				const rawPath = archivedRaw.rawPath;
 
 				const id = existing?.id ?? `l2src_${randomUUID().slice(0, 8)}`;
-				const tags = params.tags ?? [];
 
 				// Convert to extracted markdown
 				const existingExtractedPath = existing?.extractedPath && fileExists(join(l2DataDir, existing.extractedPath))
@@ -171,7 +391,6 @@ export function createL2Tools(
 					?? convertToExtracted(l2DataDir, params.title, content, sourceType);
 
 				// Persist the recoverable source record before model/page work begins.
-				const inferredOrigin = sourceType === "conversation" ? "conversation" : "user_upload";
 				const entry: ManifestEntry = {
 					...existing,
 					id,
@@ -182,6 +401,10 @@ export function createL2Tools(
 				wikiPages: [],
 				tags,
 				contentHash,
+				rawContentHash: archivedRaw.rawContentHash,
+				rawSize: archivedRaw.rawSize,
+				rawMtimeMs: archivedRaw.rawMtimeMs,
+				rawKind: archivedRaw.originLabel,
 				status: "extracted",
 				source: {
 					origin: (params.origin ?? inferredOrigin) as ManifestEntry["source"]["origin"],
@@ -196,14 +419,54 @@ export function createL2Tools(
 				let wikiPagePath = "";
 				let linkMaintenance: Awaited<ReturnType<typeof maintainLinkedWikiPages>>;
 				try {
+					let evidenceIndexReady = false;
+					if (hasPreciseEvidence && parsedDocument) {
+						const evidenceIndex = buildEvidenceIndex({
+							sourceId: entry.id,
+							sourceType: sourceType as "pdf" | "word" | "markdown",
+							rawContentHash: archivedRaw.rawContentHash,
+							parsed: parsedDocument,
+							...(sourceType === "markdown" && archivedRaw.originLabel === "archived-text"
+								? { markdownContent: recoveredRawBytes?.toString("utf8") ?? readText(archivedRaw.absolutePath) }
+								: {}),
+						});
+						writeEvidenceIndexAtomic(l2DataDir, evidenceIndex);
+						evidenceIndexReady = true;
+					}
+
 					// Create wiki source page (with LLM summary)
 					const extractedContent = readText(join(l2DataDir, extractedPath));
 					let summaryBody = `## 摘要\n\n${extractedContent}`;
+					let groundedCitations: GroundedCitation[] | null = null;
+					let groundedCanonicalReferences: EvidenceRef[] | undefined;
 					if (ctx.model) {
-						const summary = await summarizeContent(ctx.model, ctx.modelRegistry, params.title, extractedContent);
-						if (summary) summaryBody = summary;
+						if (evidenceIndexReady) {
+							const result = await summarizeContentGrounded(ctx.model, ctx.modelRegistry, params.title, extractedContent);
+							if (result.body) summaryBody = result.body;
+							groundedCitations = result.citations;
+						} else {
+							const result = await summarizeContent(ctx.model, ctx.modelRegistry, params.title, extractedContent);
+							if (result) summaryBody = result;
+						}
 					}
-					wikiPagePath = createSourcePage(l2DataDir, entry, summaryBody, extractedPath);
+					wikiPagePath = sourcePagePath(entry);
+					const sourcePageAbsolutePath = join(l2DataDir, wikiPagePath);
+					const sourcePageQueue = getWikiPageWriteQueue(l2DataDir);
+					let sourcePageManaged = false;
+					let sourcePageFileRevision = "";
+					await sourcePageQueue.run(wikiPagePath, () => {
+						const existed = fileExists(sourcePageAbsolutePath);
+						createSourcePage(l2DataDir, entry, summaryBody, extractedPath);
+						const currentContent = readText(sourcePageAbsolutePath);
+						sourcePageFileRevision = fileRevision(Buffer.from(currentContent, "utf8"));
+						sourcePageManaged = !existed
+							|| existing?.sourcePageFileRevision === sourcePageFileRevision;
+						if (!existed) {
+							entry.sourcePageFileRevision = sourcePageFileRevision;
+							entry.wikiPages = [wikiPagePath];
+							upsertManifest(l2DataDir, entry);
+						}
+					});
 					linkMaintenance = await maintainLinkedWikiPages(
 						l2DataDir,
 						entry,
@@ -212,10 +475,88 @@ export function createL2Tools(
 						ctx.model,
 						ctx.modelRegistry,
 					);
-					if (linkMaintenance.sourcePageBody !== summaryBody) {
-						createSourcePage(l2DataDir, entry, linkMaintenance.sourcePageBody, extractedPath);
+					const sourcePageNeedsPublication = !sourcePageHasExpectedContent(
+						l2DataDir,
+						entry,
+						linkMaintenance.sourcePageBody,
+						extractedPath,
+					) || groundedCitations !== null;
+					if (sourcePageNeedsPublication && sourcePageManaged) {
+						await sourcePageQueue.run(wikiPagePath, () => {
+							const currentContent = readText(sourcePageAbsolutePath);
+							if (fileRevision(Buffer.from(currentContent, "utf8")) !== sourcePageFileRevision) {
+								logger.warn(
+									{ sourceId: entry.id, pagePath: wikiPagePath, code: "source-page-changed-during-maintenance" },
+									"L2 source-page publication skipped",
+								);
+								return;
+							}
+							if (!sourcePageHasExpectedContent(
+								l2DataDir,
+								entry,
+								linkMaintenance.sourcePageBody,
+								extractedPath,
+							)) {
+								if (!replaceSourcePageIfRevision(
+									l2DataDir,
+									entry,
+									linkMaintenance.sourcePageBody,
+									sourcePageFileRevision,
+									extractedPath,
+								)) return;
+							}
+							if (groundedCitations !== null) {
+								const groundedResult = attachGroundedCitations({
+									l2DataDir,
+									entry,
+									pagePath: wikiPagePath,
+									citations: groundedCitations,
+								});
+								if (groundedResult.rejected === 0 && groundedResult.accepted === groundedCitations.length) {
+									groundedCanonicalReferences = readGroundedEvidenceReferences(
+										l2DataDir,
+										wikiPagePath,
+										entry.id,
+									);
+								}
+							}
+							entry.sourcePageFileRevision = fileRevision(
+								Buffer.from(readText(sourcePageAbsolutePath), "utf8"),
+							);
+						});
+					} else if (sourcePageNeedsPublication) {
+						logger.warn(
+							{ sourceId: entry.id, pagePath: wikiPagePath, code: "source-page-not-system-managed" },
+							"L2 source-page publication skipped",
+						);
 					}
 					entry.wikiPages = [wikiPagePath, ...linkMaintenance.pages];
+					if (evidenceIndexReady) {
+						let selector: EvidenceCandidateSelector | null = null;
+						try {
+							selector = selectorFactory({ model: ctx.model, modelRegistry: ctx.modelRegistry });
+						} catch {
+							logger.warn({ sourceId: entry.id, code: "selector-factory-failed" }, "L2 evidence selector unavailable");
+						}
+						if (groundedCitations !== null) {
+							if (linkMaintenance.pages.length > 0) {
+								await attachEvidenceToPages({
+									l2DataDir,
+									entry,
+									pagePaths: linkMaintenance.pages,
+									selector,
+									canonicalReferences: groundedCanonicalReferences ?? [],
+								});
+							}
+						} else {
+							await attachEvidenceToPages({
+								l2DataDir,
+								entry,
+								pagePaths: entry.wikiPages,
+								selector,
+							});
+						}
+					}
 					entry.status = "indexed";
 					entry.updatedAt = new Date().toISOString();
 					upsertManifest(l2DataDir, entry);

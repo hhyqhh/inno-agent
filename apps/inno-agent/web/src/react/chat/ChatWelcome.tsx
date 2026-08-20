@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { PresetMeta } from "../../types/presets.js";
 import { PresetPicker } from "./PresetPicker.js";
+import { ModeSegmentedControl } from "../ui/ModeSegmentedControl.js";
 
 interface ChatWelcomeProps {
 	welcomeLayoutRef: RefObject<HTMLDivElement | null>;
@@ -59,7 +60,7 @@ export function ChatWelcome({
 			<div className="inno-chat-grid flex flex-1 min-h-0 justify-center overflow-y-auto px-4">
 				<div ref={welcomeLayoutRef} className="inno-welcome-layout w-full max-w-2xl pt-[18vh] pb-12">
 					<div className="inno-welcome-upper">
-						<div className="mb-6 flex flex-col items-center text-center">
+						<div className="flex flex-col items-center text-center">
 							<button
 								type="button"
 								onClick={onToggleMode}
@@ -78,15 +79,12 @@ export function ChatWelcome({
 								</motion.div>
 							</button>
 							<h2 className="text-lg font-medium text-[var(--inno-text)]">Inno Agent</h2>
-							<button
-								type="button"
-								onClick={onToggleMode}
-								disabled={togglingMode}
-								className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1 text-[11px] text-[var(--inno-text-muted)] transition-colors hover:border-[var(--inno-accent)] hover:text-[var(--inno-accent)] disabled:cursor-wait disabled:opacity-60"
-							>
-								<span className={`h-1.5 w-1.5 rounded-full ${simpleMode ? "bg-[var(--inno-accent)]" : "bg-[var(--inno-border-strong)]"}`} />
-								{simpleMode ? t("mode.simpleShort") : t("mode.normalShort")}
-							</button>
+							<ModeSegmentedControl
+								simpleMode={simpleMode}
+								togglingMode={togglingMode}
+								onToggleMode={onToggleMode}
+								className="mt-2"
+							/>
 						</div>
 
 						{uploadChips}

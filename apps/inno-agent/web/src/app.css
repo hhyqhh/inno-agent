@@ -483,9 +483,53 @@ inno-workspace-panel textarea {
 }
 
 .inno-welcome-composer-shell {
-	margin-top: calc(-1 * var(--inno-welcome-composer-half-growth));
+	margin-top: calc(1.125rem - var(--inno-welcome-composer-half-growth));
 	/* Keep following welcome content in normal flow so it is pushed down by
 	   the expanded composer instead of being covered by it. */
+}
+
+.inno-mode-segmented-control {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 3px;
+	border: 1px solid var(--inno-border);
+	border-radius: 999px;
+	background: var(--inno-surface-muted);
+	box-shadow: 0 1px 2px rgba(31, 35, 40, 0.04);
+}
+
+.inno-mode-segmented-control__option {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	min-height: 28px;
+	padding: 0 11px;
+	border: 0;
+	border-radius: 999px;
+	color: var(--inno-text-muted);
+	font-size: 14px;
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-mode-segmented-control__option:hover:not(:disabled):not(.is-active) {
+	background: rgba(255, 255, 255, 0.7);
+	color: var(--inno-text);
+}
+
+.inno-mode-segmented-control__option.is-active {
+	background: var(--inno-accent);
+	color: #fff;
+	box-shadow: 0 1px 2px rgba(31, 35, 40, 0.18);
+}
+
+.inno-mode-segmented-control__option:disabled {
+	cursor: wait;
+	opacity: 0.65;
 }
 
 .inno-composer-toolbar {
@@ -753,6 +797,14 @@ inno-workspace-panel textarea {
 .inno-workspace-search-clear:hover {
 	background: var(--inno-surface);
 	color: var(--inno-text);
+}
+
+.inno-preset-search-input,
+.inno-preset-search-input:focus,
+.inno-preset-search-input:focus-visible {
+	border: 0;
+	outline: none;
+	box-shadow: none;
 }
 
 .inno-workspace-options {

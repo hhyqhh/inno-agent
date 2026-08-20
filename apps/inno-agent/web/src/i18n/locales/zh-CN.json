@@ -748,6 +748,9 @@
 		"deleteWsEmpty": "该工作区当前没有会话,工作区记录将被移除。"
 	},
 	"mode": {
+		"selectorLabel": "工作模式",
+		"simpleLabel": "简单模式",
+		"normalLabel": "普通模式",
 		"currentSimpleClickNormal": "当前:简单模式 · 点击切换到普通模式",
 		"currentNormalClickSimple": "当前:普通模式 · 点击切换到简单模式",
 		"switchToNormal": "切换到普通模式",

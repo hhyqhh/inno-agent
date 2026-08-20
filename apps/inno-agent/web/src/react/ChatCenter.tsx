@@ -52,7 +52,7 @@ const LAST_WS_MODE_KEY = "inno.lastWorkspaceMode";
 const LAST_WS_ID_KEY = "inno.lastWorkspaceId";
 
 interface ChatCenterProps {
-	onOpenPresetPanels?: () => void | Promise<void>;
+	onOpenPresetPanels: () => void | Promise<void>;
 }
 
 function readLastWsMode(): WsMode {
@@ -462,14 +462,10 @@ export function ChatCenter({ onOpenPresetPanels }: ChatCenterProps) {
 		setOpeningPresetId(presetId);
 		void (async () => {
 			try {
-				const panelsPromise = Promise.resolve(onOpenPresetPanels?.());
 				await Promise.all([
 					sessionsStore.createSessionWith({ presetId }),
-					panelsPromise,
+					onOpenPresetPanels(),
 				]);
-				appStore.setRightPanelTab("preview");
-				appStore.setWorkspaceWidth(560);
-				appStore.setWorkspaceMode("half");
 			} catch (err) {
 				const unavailable = err instanceof ApiError
 					&& err.status === 404

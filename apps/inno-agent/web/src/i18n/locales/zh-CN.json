@@ -754,8 +754,6 @@
 		"currentNormalClickSimple": "当前:普通模式 · 点击切换到简单模式",
 		"switchToNormal": "切换到普通模式",
 		"switchToSimple": "切换到简单模式",
-		"simpleShort": "简单模式 · 切换到普通模式",
-		"normalShort": "普通模式 · 切换到简单模式",
 		"simpleTag": "(简单模式)"
 	},
 	"terminal": {

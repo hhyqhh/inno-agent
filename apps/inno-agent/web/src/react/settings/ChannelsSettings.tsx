@@ -134,7 +134,6 @@ function FeishuChannel({ settings, state, onStateChange }: {
 
 	// QR registration state
 	const [qrUrl, setQrUrl] = useState<string | null>(null);
-	const [qrDeviceCode, setQrDeviceCode] = useState<string | null>(null);
 	const [qrState, setQrState] = useState<string | null>(null); // scanning | waitingScan | confirmed | expired | denied
 	const [qrError, setQrError] = useState<string | null>(null);
 	const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -150,7 +149,6 @@ function FeishuChannel({ settings, state, onStateChange }: {
 		if (qrPollRef.current) clearInterval(qrPollRef.current);
 		try {
 			const { deviceCode, qrUrl: url, interval } = await feishuQrRegister();
-			setQrDeviceCode(deviceCode);
 			setQrUrl(url);
 			setQrState("waitingScan");
 			// Poll status
@@ -250,8 +248,7 @@ function FeishuChannel({ settings, state, onStateChange }: {
 
 /* ---------- WeChat channel (iLink native) ---------- */
 
-function WechatChannel({ settings, state, onStateChange }: {
-	settings: InnoSettings;
+function WechatChannel({ state, onStateChange }: {
 	state: {
 		enabled: boolean;
 		allowedUsers: string;
@@ -262,7 +259,6 @@ function WechatChannel({ settings, state, onStateChange }: {
 
 	// QR login state
 	const [qrUrl, setQrUrl] = useState<string | null>(null);
-	const [qrId, setQrId] = useState<string | null>(null);
 	const [qrStatus, setQrStatus] = useState<string | null>(null); // scanning | waitingScan | scanned | confirmed | expired
 	const [qrError, setQrError] = useState<string | null>(null);
 	const [wxConnected, setWxConnected] = useState(false);
@@ -287,7 +283,6 @@ function WechatChannel({ settings, state, onStateChange }: {
 		if (qrPollRef.current) clearInterval(qrPollRef.current);
 		try {
 			const { qrId: id, qrUrl: url } = await wechatQrLogin();
-			setQrId(id);
 			setQrUrl(url);
 			setQrStatus("waitingScan");
 			// Poll status every 2s
@@ -498,7 +493,7 @@ export function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 				</div>
 			)}
 
-			<WechatChannel settings={settings} state={wechat} onStateChange={patchWechat} />
+			<WechatChannel state={wechat} onStateChange={patchWechat} />
 
 			{/* Bridge Token (used by QQ sidecar) */}
 			{QQ_CHANNEL_READY && qqEnabled && (

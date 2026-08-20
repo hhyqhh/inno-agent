@@ -68,8 +68,6 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	 *  would resurrect a resolved question. */
 	private optimisticQuestionToolIds = new Set<string>();
 	canReconnect = false;
-	private abortController: AbortController | null = null;
-	private detachMode = false;
 	private wikiInvalidated = false;
 	private streamChangeTimer: ReturnType<typeof setTimeout> | null = null;
 	private workspacePreviewId: string | null = null;
@@ -91,7 +89,6 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			: sessionIdOverride;
 		if (!targetSessionId || this.isSending) return;
 
-		this.detachMode = false;
 		this.currentSessionContext = targetSessionId;
 		this.retryInputBySession.set(targetSessionId, { prompt, images });
 		this.lastUserPrompt = prompt;
@@ -112,7 +109,6 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.setStreamingActivity("正在分析请求");
 		this.wikiInvalidated = false;
 		const controller = new AbortController();
-		this.abortController = controller;
 		const owner: ActiveStreamOwner = {
 			sessionId: targetSessionId,
 			clientRequestId: crypto.randomUUID(),
@@ -167,11 +163,9 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	 * Used when the user navigates to a different session.
 	 */
 	detach(): void {
-		this.detachMode = true;
 		this.activeOwner?.controller.abort();
 		this.activeOwner = null;
 		this.ownerGeneration++;
-		this.abortController = null;
 		this.isSending = false;
 		this.canReconnect = false;
 		this.currentSessionContext = null;
@@ -216,9 +210,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.resetTransientStreamState();
 		this.isSending = true;
 		this.streamingActivity = "正在恢复生成";
-		this.detachMode = false;
 		const controller = new AbortController();
-		this.abortController = controller;
 		const owner: ActiveStreamOwner = {
 			sessionId,
 			clientRequestId: stream.clientRequestId,
@@ -320,7 +312,6 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				}
 				const reconnectController = new AbortController();
 				owner.controller = reconnectController;
-				this.abortController = reconnectController;
 				for await (const envelope of streamSessionEvents(owner.sessionId, owner.turnId, owner.lastAppliedEventId, reconnectController.signal)) {
 					await this._handleStreamEnvelope(owner, envelope);
 				}
@@ -408,10 +399,8 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		if (!this.owns(owner)) return;
 		this.flushStreamChange();
 		this.activeOwner = null;
-		this.abortController = null;
 		this.isSending = false;
 		this.canReconnect = false;
-		this.detachMode = false;
 		this.resetTransientStreamState();
 		const shouldRefreshWiki = this.wikiInvalidated;
 		this.wikiInvalidated = false;

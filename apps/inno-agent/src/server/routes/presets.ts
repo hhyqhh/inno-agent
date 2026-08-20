@@ -1,6 +1,6 @@
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { logger } from "../../logger.js";
-import { listBundledPresets, listPresets } from "../../presets/preset-store.js";
+import { listPresets } from "../../presets/preset-store.js";
 import type { PresetMeta } from "../../presets/preset-store.js";
 import type { RuntimePaths } from "../../runtime.js";
 import { json } from "../http-helpers.js";
@@ -16,7 +16,7 @@ export interface PresetsRouteContext {
  * from server.ts during the P2 route split — behavior unchanged.
  */
 export async function handlePresetsRoutes(
-	req: HttpReq,
+	_req: HttpReq,
 	res: ServerResponse,
 	method: string,
 	url: string,
@@ -38,16 +38,10 @@ export async function handlePresetsRoutes(
 	if (method === "GET" && url.split("?")[0] === "/api/preset-library") {
 		const forceRefresh = new URL(url, "http://localhost").searchParams.get("refresh") === "1";
 		try {
-			const remote = await listPresetLibrary(forceRefresh);
-			// A successful remote snapshot is authoritative. Do not merge the
-			// downloaded cache here: a preset removed from GitHub must not come back
-			// as a stale card after refresh. The cache remains available through
-			// /api/presets for offline fallback.
-			const available = Array.from(new Map([
-				...listBundledPresets(paths).map((preset) => [preset.id, preset] as const),
-				...remote.map((preset) => [preset.id, preset] as const),
-			]).values()).sort((a, b) => a.name.localeCompare(b.name));
-			json(res, 200, available);
+			// listPresetLibrary already merges bundled presets with the
+			// authoritative remote snapshot. The local cache remains available
+			// through /api/presets for offline fallback.
+			json(res, 200, await listPresetLibrary(forceRefresh));
 		} catch (err) {
 			logger.warn({ err }, "failed to list preset library; falling back to bundled presets");
 			if (forceRefresh) {

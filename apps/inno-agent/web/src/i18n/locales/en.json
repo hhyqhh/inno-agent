@@ -754,8 +754,6 @@
 		"currentNormalClickSimple": "Current: Normal Mode · click to switch to Simple Mode",
 		"switchToNormal": "Switch to Normal Mode",
 		"switchToSimple": "Switch to Simple Mode",
-		"simpleShort": "Simple Mode · switch to Normal",
-		"normalShort": "Normal Mode · switch to Simple",
 		"simpleTag": "(Simple Mode)"
 	},
 	"terminal": {

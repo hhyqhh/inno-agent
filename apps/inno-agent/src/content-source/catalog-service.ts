@@ -20,6 +20,8 @@ export interface ContentHubCatalogOptions {
 	getConfig: () => InnoConfig;
 }
 
+type RemoteSkillLibraryItem = Omit<SkillLibraryItem, "installed">;
+
 /**
  * Owns remote catalog lifecycle: source reuse, persistent snapshots, and
  * background warming. The HTTP server only wires these methods to routes, so
@@ -61,7 +63,7 @@ export class ContentHubCatalog {
 	}
 
 	async listSkillLibrary(forceRefresh = false): Promise<SkillLibraryItem[]> {
-		const remote = await this.loadCatalog(
+		const remote = await this.loadCatalog<RemoteSkillLibraryItem>(
 			"skills",
 			forceRefresh,
 			() => this.fetchSkillLibrary(forceRefresh),
@@ -141,11 +143,10 @@ export class ContentHubCatalog {
 		}
 	}
 
-	private async fetchSkillLibrary(forceRefresh: boolean): Promise<SkillLibraryItem[]> {
+	private async fetchSkillLibrary(forceRefresh: boolean): Promise<RemoteSkillLibraryItem[]> {
 		const source = this.getSource();
 		const items = await source.listItems("skills", { forceRefresh });
-		const localNames = this.currentInstalledSkillNames();
-		const result = await mapWithConcurrency(items, 5, async (item): Promise<SkillLibraryItem> => {
+		const result = await mapWithConcurrency(items, 5, async (item): Promise<RemoteSkillLibraryItem> => {
 			let description = typeof item.meta?.description === "string" ? item.meta.description : "";
 			let category = typeof item.meta?.category === "string" ? item.meta.category.trim() : "";
 			if (!description || !category) {
@@ -160,7 +161,6 @@ export class ContentHubCatalog {
 				name: item.name,
 				description,
 				category: category || undefined,
-				installed: localNames.has(slugifySkillName(item.name)),
 			};
 		});
 		return result.sort((a, b) => a.name.localeCompare(b.name));
@@ -174,7 +174,7 @@ export class ContentHubCatalog {
 		);
 	}
 
-	private withCurrentInstallState(items: SkillLibraryItem[]): SkillLibraryItem[] {
+	private withCurrentInstallState(items: RemoteSkillLibraryItem[]): SkillLibraryItem[] {
 		const localNames = this.currentInstalledSkillNames();
 		return items.map((item) => ({
 			...item,

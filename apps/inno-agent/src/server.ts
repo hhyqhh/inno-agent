@@ -1271,7 +1271,7 @@ function releaseQueueFromQuestionBlockedTurn(targetSessionId: string): void {
  * it never executes out from under a user who already gave up.
  */
 async function runQueueOpWithTimeout<T>(
-	req: HttpReq,
+	_req: HttpReq,
 	res: ServerResponse,
 	op: (signal: AbortSignal) => Promise<T>,
 	timeoutMs = 8_000,

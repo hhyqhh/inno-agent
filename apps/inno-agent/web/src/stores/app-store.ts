@@ -1,4 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
+import { fitPanelLayout } from "./app-layout.js";
 
 export type RightPanelTab = "notebook" | "preview" | "profile" | "skills" | "jobs";
 export type SidebarSection = "chat" | "wiki" | "jobs" | "settings";
@@ -55,25 +56,82 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 	}
 
 	toggleSidebar() {
-		this.sidebarCollapsed = !this.sidebarCollapsed;
-		this.emit("change", undefined);
+		this.setSidebarCollapsed(!this.sidebarCollapsed);
 	}
 
 	setSidebarCollapsed(collapsed: boolean) {
+		let nextWorkspaceMode = this.workspaceMode;
+		let nextWorkspaceWidth = this.workspaceWidth;
+		if (!collapsed) {
+			// Full mode intentionally overlays the chat, so opening the sidebar
+			// first returns to a normal two-column layout.
+			if (nextWorkspaceMode === "full") {
+				nextWorkspaceMode = "collapsed";
+			} else if (typeof window !== "undefined") {
+				const fitted = fitPanelLayout(window.innerWidth, false, nextWorkspaceMode, this.workspaceWidth);
+				if (fitted?.sidebarCollapsed === false) {
+					nextWorkspaceMode = fitted.workspaceMode;
+					nextWorkspaceWidth = fitted.workspaceWidth;
+				} else if (nextWorkspaceMode !== "collapsed") {
+					nextWorkspaceMode = "collapsed";
+				}
+			}
+		}
+		if (
+			this.sidebarCollapsed === collapsed
+			&& this.workspaceMode === nextWorkspaceMode
+			&& this.workspaceWidth === nextWorkspaceWidth
+		) return;
 		this.sidebarCollapsed = collapsed;
+		this.workspaceMode = nextWorkspaceMode;
+		this.workspaceWidth = nextWorkspaceWidth;
 		this.emit("change", undefined);
 	}
 
 	setWorkspaceMode(mode: WorkspaceMode) {
-		if (this.workspaceMode === mode) return;
-		this.workspaceMode = mode;
+		let nextSidebarCollapsed = this.sidebarCollapsed;
+		let nextWorkspaceMode = mode;
+		let nextWorkspaceWidth = this.workspaceWidth;
+		if (typeof window !== "undefined") {
+			const fitted = fitPanelLayout(window.innerWidth, nextSidebarCollapsed, nextWorkspaceMode, nextWorkspaceWidth);
+			if (!fitted) return;
+			nextSidebarCollapsed = fitted.sidebarCollapsed;
+			nextWorkspaceMode = fitted.workspaceMode;
+			nextWorkspaceWidth = fitted.workspaceWidth;
+		}
+		if (
+			this.sidebarCollapsed === nextSidebarCollapsed
+			&& this.workspaceMode === nextWorkspaceMode
+			&& this.workspaceWidth === nextWorkspaceWidth
+		) return;
+		this.sidebarCollapsed = nextSidebarCollapsed;
+		this.workspaceMode = nextWorkspaceMode;
+		this.workspaceWidth = nextWorkspaceWidth;
 		this.emit("change", undefined);
 	}
 
 	setWorkspaceWidth(width: number) {
-		const next = Math.max(240, Math.min(920, Math.round(width)));
-		if (this.workspaceWidth === next) return;
-		this.workspaceWidth = next;
+		let nextWorkspaceWidth = Math.max(240, Math.min(920, Math.round(width)));
+		let nextSidebarCollapsed = this.sidebarCollapsed;
+		let nextWorkspaceMode = this.workspaceMode;
+		if (typeof window !== "undefined") {
+			const fitted = fitPanelLayout(window.innerWidth, nextSidebarCollapsed, nextWorkspaceMode, nextWorkspaceWidth);
+			if (fitted) {
+				nextSidebarCollapsed = fitted.sidebarCollapsed;
+				nextWorkspaceMode = fitted.workspaceMode;
+				nextWorkspaceWidth = fitted.workspaceWidth;
+			} else if (nextWorkspaceMode !== "collapsed" && nextWorkspaceMode !== "full") {
+				nextWorkspaceMode = "collapsed";
+			}
+		}
+		if (
+			this.workspaceWidth === nextWorkspaceWidth
+			&& this.sidebarCollapsed === nextSidebarCollapsed
+			&& this.workspaceMode === nextWorkspaceMode
+		) return;
+		this.sidebarCollapsed = nextSidebarCollapsed;
+		this.workspaceMode = nextWorkspaceMode;
+		this.workspaceWidth = nextWorkspaceWidth;
 		if (typeof window !== "undefined") {
 			window.localStorage.setItem("inno.workspaceWidth", String(this.workspaceWidth));
 		}
@@ -81,8 +139,7 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 	}
 
 	toggleWorkspace() {
-		this.workspaceMode = this.workspaceMode === "collapsed" ? "half" : "collapsed";
-		this.emit("change", undefined);
+		this.setWorkspaceMode(this.workspaceMode === "collapsed" ? "half" : "collapsed");
 	}
 }
 

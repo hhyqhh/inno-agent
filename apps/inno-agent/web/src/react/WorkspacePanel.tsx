@@ -21,6 +21,7 @@ interface WorkspacePanelProps {
 	onTabChange(tab: RightPanelTab): void;
 	onModeChange(mode: WorkspaceMode): void;
 	onWidthChange(width: number): void;
+	onPreviewFile(width: number): void | Promise<void>;
 }
 
 const TAB_ORDER: RightPanelTab[] = ["preview", "notebook", "profile", "jobs", "skills"];
@@ -84,12 +85,12 @@ function WorkspaceContentFallback() {
 	);
 }
 
-function WorkspaceContent({ activeTab }: { activeTab: RightPanelTab }) {
+function WorkspaceContent({ activeTab, onPreviewFile }: { activeTab: RightPanelTab; onPreviewFile: WorkspacePanelProps["onPreviewFile"] }) {
 	switch (activeTab) {
 		case "notebook":
 			return <Notebook />;
 		case "preview":
-			return <WorkspaceBrowser />;
+			return <WorkspaceBrowser onPreviewFile={onPreviewFile} />;
 		case "profile":
 			return <LearnerProfilePanel />;
 		case "skills":
@@ -99,7 +100,7 @@ function WorkspaceContent({ activeTab }: { activeTab: RightPanelTab }) {
 	}
 }
 
-export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChange, onWidthChange }: WorkspacePanelProps) {
+export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChange, onWidthChange, onPreviewFile }: WorkspacePanelProps) {
 	const { t } = useTranslation();
 	const [isResizing, setIsResizing] = useState(false);
 
@@ -231,7 +232,7 @@ export function WorkspacePanel({ activeTab, mode, width, onTabChange, onModeChan
 					>
 						<WorkspaceContentErrorBoundary resetKey={activeTab}>
 							<Suspense fallback={<WorkspaceContentFallback />}>
-								<WorkspaceContent activeTab={activeTab} />
+								<WorkspaceContent activeTab={activeTab} onPreviewFile={onPreviewFile} />
 							</Suspense>
 						</WorkspaceContentErrorBoundary>
 					</motion.div>

@@ -9,16 +9,17 @@ import { ChatCenter } from "./ChatCenter.js";
 import { SessionSidebar } from "./SessionSidebar.js";
 import { WorkspacePanel } from "./WorkspacePanel.js";
 import { SettingsOverlay } from "./settings/SettingsOverlay.js";
+import {
+	CHAT_BASELINE_WIDTH,
+	SIDEBAR_WIDTH,
+	getEffectiveWorkspaceWidth,
+	fitPanelLayout,
+} from "../stores/app-layout.js";
 
 /** Below this width the chat takes the whole window. */
 const CHAT_ONLY_BP = 960;
-/** The Electron window's minimum usable width: the chat-only baseline. */
-const CHAT_BASELINE_WIDTH = 800;
-const SIDEBAR_WIDTH = 264;
-const WORKSPACE_MIN_WIDTH = 320;
-const WORKSPACE_MAX_WIDTH = 920;
-
 type WindowExpansionSide = "left" | "right";
+type PanelSpaceResult = "ready" | "busy" | "unavailable";
 
 let initializationPromise: Promise<void> | null = null;
 
@@ -30,10 +31,6 @@ function initializeApp(): Promise<void> {
 		if (requestedSession) await sessionsStore.openSession(requestedSession, { historyMode: "none" });
 	})();
 	return initializationPromise;
-}
-
-function getEffectiveWorkspaceWidth(width: number): number {
-	return Math.max(WORKSPACE_MIN_WIDTH, Math.min(WORKSPACE_MAX_WIDTH, Math.round(width)));
 }
 
 function waitForViewportWidth(minWidth: number): Promise<boolean> {
@@ -108,32 +105,120 @@ export function App() {
 		return () => mql.removeEventListener("change", enforceChatOnly);
 	}, [app.sidebarCollapsed, app.workspaceMode]);
 
+	// A window can be resized after a panel was opened. Keep that action from
+	// leaving the chat squeezed beside a stale, oversized workspace preview.
+	useEffect(() => {
+		const fitCurrentLayout = () => {
+			const currentMode = appStore.workspaceMode;
+			if (currentMode === "collapsed" || currentMode === "full") return;
+			const fitted = fitPanelLayout(
+				window.innerWidth,
+				appStore.sidebarCollapsed,
+				currentMode,
+				appStore.workspaceWidth,
+			);
+			if (!fitted) {
+				appStore.setWorkspaceMode("collapsed");
+				return;
+			}
+			if (fitted.sidebarCollapsed !== appStore.sidebarCollapsed) {
+				appStore.setSidebarCollapsed(fitted.sidebarCollapsed);
+			}
+			if (fitted.workspaceMode !== appStore.workspaceMode) {
+				appStore.setWorkspaceMode(fitted.workspaceMode);
+			}
+			if (fitted.workspaceWidth !== appStore.workspaceWidth) {
+				appStore.setWorkspaceWidth(fitted.workspaceWidth);
+			}
+		};
+
+		fitCurrentLayout();
+		window.addEventListener("resize", fitCurrentLayout);
+		return () => window.removeEventListener("resize", fitCurrentLayout);
+	}, []);
+
 	const setTab = useCallback((tab: RightPanelTab) => appStore.setRightPanelTab(tab), []);
-	const ensureWindowForPanel = useCallback(async (side: WindowExpansionSide): Promise<boolean> => {
-		const leftWidth = app.sidebarCollapsed && side !== "left" ? 0 : SIDEBAR_WIDTH;
-		const rightWidth = app.workspaceMode === "collapsed" && side !== "right"
+	const ensureWindowForPanel = useCallback(async (
+		side: WindowExpansionSide,
+		requestedWorkspaceWidth?: number,
+		requestedWorkspaceMode?: WorkspaceMode,
+	): Promise<PanelSpaceResult> => {
+		// Read the store at call time. Opening both panels is sequential, so the
+		// second expansion must see the sidebar state changed by the first one.
+		const currentSidebarCollapsed = appStore.sidebarCollapsed;
+		const currentWorkspaceMode = appStore.workspaceMode;
+		const workspaceWidth = requestedWorkspaceWidth ?? appStore.workspaceWidth;
+		const workspaceMode = requestedWorkspaceMode ?? currentWorkspaceMode;
+		const leftWidth = currentSidebarCollapsed && side !== "left" ? 0 : SIDEBAR_WIDTH;
+		const rightWidth = currentWorkspaceMode === "collapsed" && side !== "right"
 			? 0
-			: getEffectiveWorkspaceWidth(app.workspaceWidth);
+			: getEffectiveWorkspaceWidth(workspaceWidth, workspaceMode === "collapsed" ? "half" : workspaceMode);
 		const requiredWidth = CHAT_BASELINE_WIDTH + leftWidth + rightWidth;
 		const additionalWidth = Math.max(0, requiredWidth - window.innerWidth);
-		if (additionalWidth === 0) return true;
+		if (additionalWidth === 0) return "ready";
 
 		const expandWindowWidth = window.innoDesktop?.expandWindowWidth;
-		if (!expandWindowWidth) return true;
-		if (pendingExpansion.current) return false;
+		if (!expandWindowWidth) return "unavailable";
+		if (pendingExpansion.current) return "busy";
 		pendingExpansion.current = side;
 		try {
 			const expanded = await expandWindowWidth(side, additionalWidth);
-			if (!expanded) return false;
-			return waitForViewportWidth(requiredWidth);
+			if (!expanded) return "unavailable";
+			return (await waitForViewportWidth(requiredWidth)) ? "ready" : "unavailable";
 		} finally {
 			pendingExpansion.current = null;
 		}
-	}, [app.sidebarCollapsed, app.workspaceMode, app.workspaceWidth]);
+	}, []);
+
+	const openPresetPanels = useCallback(async () => {
+		const previewWidth = 560;
+		if (appStore.workspaceMode === "full") {
+			// Full mode overlays the chat; start from the normal split state before
+			// making room for both optional columns.
+			appStore.setWorkspaceMode("collapsed");
+		}
+
+		if (appStore.sidebarCollapsed) {
+			const leftResult = await ensureWindowForPanel("left");
+			if (leftResult === "busy") return;
+			appStore.setSidebarCollapsed(false);
+		}
+
+		const rightResult = await ensureWindowForPanel("right", previewWidth, "half");
+		if (rightResult === "busy") return;
+		if (rightResult === "unavailable" && !appStore.sidebarCollapsed) {
+			// Preserve the chat when the display cannot fit both panels.
+			appStore.setSidebarCollapsed(true);
+		}
+		appStore.setRightPanelTab("preview");
+		appStore.setWorkspaceWidth(previewWidth);
+		appStore.setWorkspaceMode("half");
+	}, [ensureWindowForPanel]);
+
+	const openFilePreview = useCallback(async (minimumWidth: number) => {
+		// Full mode is already the reading surface; selecting another file should
+		// not unexpectedly return the user to a split layout.
+		if (appStore.workspaceMode === "full") return;
+		const previewWidth = appStore.workspaceMode === "collapsed"
+			? minimumWidth
+			: Math.max(minimumWidth, appStore.workspaceWidth);
+		const result = await ensureWindowForPanel("right", previewWidth, "half");
+		if (result === "busy") return;
+		if (result === "unavailable" && !appStore.sidebarCollapsed) {
+			appStore.setSidebarCollapsed(true);
+		}
+		// Expand the native window before changing panel width so the chat is not
+		// temporarily squeezed by the preview pane.
+		appStore.setWorkspaceWidth(previewWidth);
+		appStore.setWorkspaceMode("half");
+	}, [ensureWindowForPanel]);
 
 	const openSidebar = useCallback(() => {
 		void (async () => {
-			if (!(await ensureWindowForPanel("left"))) return;
+			const result = await ensureWindowForPanel("left");
+			if (result === "busy") return;
+			// If the display cannot fit both optional columns, the store fits the
+			// workspace or closes it so the clicked panel still responds.
 			appStore.setSidebarCollapsed(false);
 		})();
 	}, [ensureWindowForPanel]);
@@ -144,7 +229,11 @@ export function App() {
 			return;
 		}
 		void (async () => {
-			if (!(await ensureWindowForPanel("right"))) return;
+			const result = await ensureWindowForPanel("right");
+			if (result === "busy") return;
+			if (result === "unavailable" && !appStore.sidebarCollapsed) {
+				appStore.setSidebarCollapsed(true);
+			}
 			appStore.setWorkspaceMode(mode);
 		})();
 	}, [app.workspaceMode, ensureWindowForPanel]);
@@ -157,7 +246,7 @@ export function App() {
 				style={{ "--inno-workspace-width": `${app.workspaceWidth}px` } as React.CSSProperties}
 			>
 				<SessionSidebar collapsed={app.sidebarCollapsed} onOpen={openSidebar} />
-				<ChatCenter />
+				<ChatCenter onOpenPresetPanels={openPresetPanels} />
 				<WorkspacePanel
 					activeTab={app.rightPanelTab}
 					mode={app.workspaceMode}
@@ -165,6 +254,7 @@ export function App() {
 					onTabChange={setTab}
 					onModeChange={setWorkspaceMode}
 					onWidthChange={setWorkspaceWidth}
+					onPreviewFile={openFilePreview}
 				/>
 			</div>
 			<SettingsOverlay />

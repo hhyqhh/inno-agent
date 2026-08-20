@@ -26,6 +26,7 @@ const DocxPreview = lazy(() => import("./office/DocxPreview.js"));
 const XlsxPreview = lazy(() => import("./office/XlsxPreview.js"));
 
 const MAX_STREAMING_MARKDOWN_FORMAT_CHARS = 160_000;
+type PreviewFileHandler = (minimumWidth: number) => void | Promise<void>;
 const TREE_PANE_WIDTH = 260;
 const CONTENT_REVEAL_WIDTH = TREE_PANE_WIDTH + 150;
 const DEFAULT_PREVIEW_PANEL_WIDTH = 560;
@@ -616,7 +617,7 @@ const WorkspaceMultiSelectContext = createContext<WorkspaceMultiSelectState>({
 	addFile: () => undefined,
 });
 
-function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
+function Node({ node, style, dragHandle, onPreviewFile }: NodeRendererProps<ArboristNode> & { onPreviewFile?: PreviewFileHandler }) {
 	const isDir = !node.isLeaf;
 	const multiSelect = useContext(WorkspaceMultiSelectContext);
 	const selected = multiSelect.enabled ? multiSelect.selectedIds.has(node.data.path) : node.isSelected;
@@ -639,16 +640,23 @@ function Node({ node, style, dragHandle }: NodeRendererProps<ArboristNode>) {
 						return;
 					}
 					if (node.isSelected) {
+						if (onPreviewFile) {
+							void onPreviewFile(DEFAULT_PREVIEW_PANEL_WIDTH);
+							return;
+						}
 						node.deselect();
 						return;
 					}
 					node.select();
 					workspaceStore.clearStreamingPreview();
-					if (appStore.workspaceWidth < CONTENT_REVEAL_WIDTH) {
-						appStore.setWorkspaceWidth(DEFAULT_PREVIEW_PANEL_WIDTH);
-					}
-					if (appStore.workspaceMode === "quarter") {
-						appStore.setWorkspaceMode("half");
+					if (onPreviewFile) void onPreviewFile(DEFAULT_PREVIEW_PANEL_WIDTH);
+					else {
+						if (appStore.workspaceWidth < CONTENT_REVEAL_WIDTH) {
+							appStore.setWorkspaceWidth(DEFAULT_PREVIEW_PANEL_WIDTH);
+						}
+						if (appStore.workspaceMode === "quarter") {
+							appStore.setWorkspaceMode("half");
+						}
 					}
 					void workspaceStore.selectFile(node.data.path);
 				}
@@ -785,7 +793,7 @@ function DeleteConfirm({ paths, onConfirm, onCancel }: { paths: string[]; onConf
 
 /* ---------- Main Component ---------- */
 
-export function WorkspaceBrowser() {
+export function WorkspaceBrowser({ onPreviewFile }: { onPreviewFile?: PreviewFileHandler }) {
 	const { t } = useTranslation();
 	const treeRef = useRef<TreeApi<ArboristNode>>(null);
 	const skillUploadRef = useRef<HTMLInputElement>(null);
@@ -1102,7 +1110,7 @@ export function WorkspaceBrowser() {
 									onDelete={onDelete}
 									onMove={onMove}
 								>
-									{Node}
+									{(nodeProps) => <Node {...nodeProps} onPreviewFile={onPreviewFile} />}
 								</Tree>
 							</WorkspaceMultiSelectContext.Provider>
 							{!arboristData.length && (

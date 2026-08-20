@@ -96,7 +96,7 @@ export function ChatWelcome({
 
 					<div className="inno-welcome-composer-shell">
 						{composer}
-						{simpleMode ? null : <div className="mt-2">{workspaceContext}</div>}
+						{simpleMode || !workspaceContext ? null : <div className="mt-2">{workspaceContext}</div>}
 					</div>
 
 					{simpleMode && (presets.length > 0 || presetsLoaded || isLoadingPresets || presetsRefreshError) ? (

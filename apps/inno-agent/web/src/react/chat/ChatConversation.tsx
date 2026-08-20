@@ -144,7 +144,7 @@ export function ChatConversation({
 					{busyBlocker}
 					{wsError ? <p className="mb-2 text-xs text-[var(--inno-danger)]">{wsError}</p> : null}
 					{composer}
-					<div className="mt-2">{workspaceContext}</div>
+					{workspaceContext ? <div className="mt-2">{workspaceContext}</div> : null}
 				</div>
 			</div>
 		</section>

@@ -49,6 +49,7 @@ import { handleWorkspacesRoutes } from "./server/routes/workspaces.js";
 import { handleSessionsRoutes } from "./server/routes/sessions.js";
 import { handleLearnerRoutes } from "./server/routes/learner.js";
 import { handleWikiRoutes } from "./server/routes/wiki.js";
+import { handleNotebookRoutes } from "./server/routes/notebook.js";
 import { handlePresetsRoutes } from "./server/routes/presets.js";
 import { handlePracticeRoutes } from "./server/routes/practice.js";
 import { handleChatRoutes } from "./server/routes/chat.js";
@@ -1359,6 +1360,12 @@ const server = createServer(async (req, res) => {
 
 		// --- Wiki + L2 raw upload API (extracted to server/routes/wiki.ts) ---
 		if (await handleWikiRoutes(req, res, method, url, { l2DataDir })) return;
+
+		// --- L2 Notebook API (extracted to server/routes/notebook.ts) ---
+		if (await handleNotebookRoutes(req, res, method, url, {
+			l2DataDir,
+			codeDir: paths.codeDir,
+		})) return;
 
 		// --- Learner profile API (extracted to server/routes/learner.ts) ---
 		if (await handleLearnerRoutes(req, res, method, url, { paths })) return;

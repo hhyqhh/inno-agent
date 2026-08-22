@@ -1210,6 +1210,38 @@ inno-workspace-panel textarea {
 	line-height: 1.25;
 }
 
+.inno-sidebar-title-fade {
+	-webkit-mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 16px), transparent 100%);
+	mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 16px), transparent 100%);
+}
+
+.inno-sidebar-title-marquee-tail {
+	display: inline-block;
+	width: 16px;
+}
+
+.inno-sidebar-title-marquee {
+	display: block;
+	width: max-content;
+	white-space: nowrap;
+	animation: inno-sidebar-title-marquee var(--inno-title-duration, 8s) linear 1 forwards;
+}
+
+@keyframes inno-sidebar-title-marquee {
+	0% {
+		transform: translateX(0);
+	}
+	100% {
+		transform: translateX(var(--inno-title-shift, 0px));
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.inno-sidebar-title-marquee {
+		animation: none;
+	}
+}
+
 .inno-sidebar-text {
 	font-size: 11px;
 	line-height: 1.35;

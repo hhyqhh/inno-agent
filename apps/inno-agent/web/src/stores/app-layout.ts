@@ -69,3 +69,9 @@ export function fitPanelLayout(
 		),
 	};
 }
+
+/** Whether a quarter-width workspace can open while keeping the sidebar visible. */
+export function canOpenWorkspaceBesideSidebar(viewportWidth: number, workspaceWidth: number): boolean {
+	const fitted = fitPanelLayout(viewportWidth, false, "quarter", workspaceWidth);
+	return fitted?.sidebarCollapsed === false;
+}

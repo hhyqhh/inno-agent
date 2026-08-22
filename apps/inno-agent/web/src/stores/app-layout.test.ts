@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { fitPanelLayout } from "./app-layout.js";
+import {
+	canOpenWorkspaceBesideSidebar,
+	CHAT_BASELINE_WIDTH,
+	fitPanelLayout,
+	SIDEBAR_WIDTH,
+	WORKSPACE_QUARTER_MIN_WIDTH,
+} from "./app-layout.js";
 
 describe("fitPanelLayout", () => {
 	it("keeps the chat baseline when the workspace is resized too wide", () => {
@@ -42,5 +48,10 @@ describe("fitPanelLayout", () => {
 			workspaceMode: "quarter",
 			workspaceWidth: 280,
 		});
+	});
+
+	it("only opens a session preview when it can keep the sidebar visible", () => {
+		expect(canOpenWorkspaceBesideSidebar(CHAT_BASELINE_WIDTH + SIDEBAR_WIDTH, 300)).toBe(false);
+		expect(canOpenWorkspaceBesideSidebar(CHAT_BASELINE_WIDTH + SIDEBAR_WIDTH + WORKSPACE_QUARTER_MIN_WIDTH, 300)).toBe(true);
 	});
 });

@@ -49,6 +49,7 @@ import { handleWorkspacesRoutes } from "./server/routes/workspaces.js";
 import { handleSessionsRoutes } from "./server/routes/sessions.js";
 import { handleLearnerRoutes } from "./server/routes/learner.js";
 import { handleWikiRoutes } from "./server/routes/wiki.js";
+import { handleNotesRoutes } from "./server/routes/notes.js";
 import { handlePresetsRoutes } from "./server/routes/presets.js";
 import { handlePracticeRoutes } from "./server/routes/practice.js";
 import { handleChatRoutes } from "./server/routes/chat.js";
@@ -1358,6 +1359,9 @@ const server = createServer(async (req, res) => {
 			recordCurrentSessionChannel, generateSessionTopic,
 			sessionFileFromId, releaseQueueFromQuestionBlockedTurn, runQueueOpWithTimeout,
 		})) return;
+
+		// --- Editable note drafts API ---
+		if (await handleNotesRoutes(req, res, method, url, { l2DataDir })) return;
 
 		// --- Wiki + L2 raw upload API (extracted to server/routes/wiki.ts) ---
 		if (await handleWikiRoutes(req, res, method, url, { l2DataDir })) return;

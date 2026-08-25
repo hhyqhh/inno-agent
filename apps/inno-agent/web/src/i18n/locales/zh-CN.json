@@ -78,6 +78,38 @@
 		"exportShowcaseDone": "已导出回放案例「{{title}}」\n\n案例目录：{{dir}}\n运行 npm run showcase:view 打开回放界面。",
 		"exportShowcaseFailed": "导出回放案例失败：{{message}}"
 	},
+	"knowledge": {
+		"views": {
+			"drafts": "草稿",
+			"wiki": "知识库"
+		}
+	},
+	"notes": {
+		"search": "搜索草稿…",
+		"createDraft": "新建草稿",
+		"deleteDialogTitle": "删除笔记",
+		"deleteConfirm": "删除「{{title}}」？此操作不可撤回。",
+		"untitled": "未命名笔记",
+		"empty": "暂无草稿",
+		"selectHint": "选择一个草稿开始编辑，或新建草稿。",
+		"titlePlaceholder": "草稿标题",
+		"contentPlaceholder": "使用 Markdown 编写草稿…",
+		"editorLabel": "Markdown 编辑器",
+		"sourceEditorLabel": "Markdown 源码编辑器",
+		"editorFallback": "已切换到 Markdown 源码模式",
+		"unsaved": "未保存",
+		"unsavedConfirm": "当前草稿尚未保存，确定放弃修改吗？",
+		"flash": {
+			"created": "草稿已创建",
+			"saved": "草稿已保存",
+			"deleted": "草稿已删除",
+			"loadFailed": "草稿列表加载失败",
+			"loadContentFailed": "草稿内容加载失败",
+			"createFailed": "草稿创建失败",
+			"saveFailed": "草稿保存失败",
+			"deleteFailed": "草稿删除失败"
+		}
+	},
 	"notebook": {
 		"title": "笔记本",
 		"subtitle": "{{nodes}} 个节点 · {{edges}} 条连接",

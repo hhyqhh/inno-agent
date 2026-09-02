@@ -79,6 +79,38 @@
 		"exportShowcaseDone": "Replay case \"{{title}}\" exported.\n\nCases dir: {{dir}}\nRun npm run showcase:view to open the replay.",
 		"exportShowcaseFailed": "Failed to export replay case: {{message}}"
 	},
+	"knowledge": {
+		"views": {
+			"drafts": "Drafts",
+			"wiki": "Knowledge base"
+		}
+	},
+	"notes": {
+		"search": "Search drafts…",
+		"createDraft": "New draft",
+		"deleteDialogTitle": "Delete note",
+		"deleteConfirm": "Delete \"{{title}}\"? This cannot be undone.",
+		"untitled": "Untitled Note",
+		"empty": "No drafts yet",
+		"selectHint": "Select a draft to edit, or create a new one.",
+		"titlePlaceholder": "Draft title",
+		"contentPlaceholder": "Write your draft in Markdown…",
+		"editorLabel": "Markdown editor",
+		"sourceEditorLabel": "Markdown source editor",
+		"editorFallback": "Switched to Markdown source mode",
+		"unsaved": "Unsaved",
+		"unsavedConfirm": "This draft has unsaved changes. Discard them?",
+		"flash": {
+			"created": "Draft created",
+			"saved": "Draft saved",
+			"deleted": "Draft deleted",
+			"loadFailed": "Failed to load drafts",
+			"loadContentFailed": "Failed to load the draft",
+			"createFailed": "Failed to create the draft",
+			"saveFailed": "Failed to save the draft",
+			"deleteFailed": "Failed to delete the draft"
+		}
+	},
 	"notebook": {
 		"title": "Notebook",
 		"subtitle": "{{nodes}} nodes · {{edges}} edges",

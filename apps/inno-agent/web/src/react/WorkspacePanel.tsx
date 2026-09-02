@@ -14,7 +14,7 @@ import { ensureWindowForPanel } from "../stores/window-expansion.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { isDynamicImportError, recoverFromDynamicImportError } from "../utils/dynamic-import-recovery.js";
 
-const Notebook = lazy(() => import("./Notebook.js").then((mod) => ({ default: mod.Notebook })));
+const KnowledgePanel = lazy(() => import("./KnowledgePanel.js").then((mod) => ({ default: mod.KnowledgePanel })));
 const JobsPanel = lazy(() => import("./JobsPanel.js").then((mod) => ({ default: mod.JobsPanel })));
 const LearnerProfilePanel = lazy(() => import("./LearnerProfilePanel.js").then((mod) => ({ default: mod.LearnerProfilePanel })));
 const SkillsPanel = lazy(() => import("./SkillsPanel.js").then((mod) => ({ default: mod.SkillsPanel })));
@@ -148,7 +148,7 @@ function WorkspaceContentFallback() {
 function WorkspaceContent({ activeTab, retryKey, onPreviewFile, dndManager }: { activeTab: RightPanelTab; retryKey: number; onPreviewFile: WorkspacePanelProps["onPreviewFile"]; dndManager: DragDropManager }) {
 	switch (activeTab) {
 		case "notebook":
-			return <Notebook />;
+			return <KnowledgePanel />;
 		case "preview":
 			return <WorkspaceBrowserContent retryKey={retryKey} onPreviewFile={onPreviewFile} dndManager={dndManager} />;
 		case "profile":

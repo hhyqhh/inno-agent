@@ -3321,3 +3321,83 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 		flex-basis: 100%;
 	}
 }
+
+/* Milkdown (Crepe) notebook editor */
+.inno-milkdown-editor-shell {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--inno-surface);
+}
+
+.inno-milkdown-editor {
+	flex: 1;
+	min-height: 0;
+	height: 100%;
+	overflow: hidden;
+}
+
+.inno-milkdown-editor-root {
+	position: relative;
+	z-index: 2;
+	flex: 1;
+	min-height: 0;
+	height: 100%;
+	overflow-x: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
+.inno-milkdown-editor-root .milkdown,
+.inno-milkdown-editor-root .ProseMirror {
+	position: relative;
+}
+
+.inno-milkdown-editor-root .milkdown {
+	min-height: 100%;
+}
+
+.inno-milkdown-editor-root .milkdown .ProseMirror {
+	max-width: 760px;
+	margin: 0 auto;
+	min-height: 100%;
+	padding: 20px clamp(16px, 3vw, 32px) 40px;
+	color: var(--inno-text);
+	font-size: 15px;
+	line-height: 1.72;
+}
+
+.inno-milkdown-editor-shell .inno-milkdown-editor-root .milkdown .ProseMirror h1 {
+	font-size: clamp(1.5rem, 2vw, 1.85rem);
+}
+
+.inno-milkdown-editor-shell .inno-milkdown-editor-root .milkdown .ProseMirror h2 {
+	font-size: clamp(1.2rem, 1.6vw, 1.4rem);
+}
+
+.inno-milkdown-editor-shell .inno-milkdown-editor-root .milkdown .ProseMirror h3 {
+	font-size: clamp(1.1rem, 1.4vw, 1.25rem);
+}
+
+.inno-milkdown-editor-shell .inno-milkdown-editor-root .top-bar-heading-dropdown {
+	max-width: min(280px, 70vw);
+}
+
+.inno-milkdown-editor-shell .inno-milkdown-editor-root .top-bar-heading-option {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+body .milkdown-slash-menu,
+body .milkdown-link-preview,
+body .milkdown-link-edit,
+body .milkdown-toolbar,
+body .milkdown-block-handle {
+	z-index: 2000;
+}

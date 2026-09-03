@@ -149,7 +149,7 @@ export function RunsPanel({ sessionId, onClose }: RunsPanelProps) {
 								</button>
 								{archiveMsg ? <span className="text-[10px] text-[var(--inno-text-muted)]">{archiveMsg}</span> : null}
 							</div>
-							<pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-[#0f172a] p-3 font-mono text-[11px] leading-snug text-[var(--inno-text-muted)]">
+							<pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-[var(--inno-surface-muted)] p-3 font-mono text-[11px] leading-snug text-[var(--inno-text)]">
 								{detail.outputTail || t("terminal.runs.noOutput")}
 							</pre>
 						</>

@@ -73,6 +73,7 @@ import { DEFAULT_WORKSPACE_ID, WorkspaceRegistry, type WorkspaceMeta } from "./w
 import type { RemoteContentSource } from "./content-source/index.js";
 import { ContentHubCatalog } from "./content-source/catalog-service.js";
 import { RunRecordStore } from "./terminal/run-record-store.js";
+import { writeRunFile } from "./terminal/run-file.js";
 import { TerminalSessionManager } from "./terminal/terminal-session-manager.js";
 import type { ClientTerminalEvent, ServerTerminalEvent } from "./terminal/terminal-types.js";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -1654,6 +1655,17 @@ function bindTerminalWs(ws: WebSocket, terminalId: string): void {
 				if (event.command.length > 4096) {
 					sendTerminal(ws, { type: "error", message: "Command too long" });
 					break;
+				}
+				// Long sources (e.g. a model-generated code block) travel as file
+				// content instead of an inlined command, which would hit the 4096
+				// limit above. The file lands in the terminal's cwd before the run.
+				if (typeof event.content === "string" && event.content && event.sourceFile) {
+					try {
+						writeRunFile(ts.cwd, event.sourceFile, event.content);
+					} catch (err) {
+						sendTerminal(ws, { type: "error", message: err instanceof Error ? err.message : "Failed to write run file" });
+						break;
+					}
 				}
 				const record = terminalManager.startRun(ts, event.command, event.sourceFile);
 				sendTerminal(ws, { type: "run_started", runId: record.id, command: event.command });

@@ -61,4 +61,54 @@ describe("terminalStore code-block runs", () => {
 			sourceFile: "model_reply.py",
 		}]);
 	});
+
+	it("sends immediately while a previous run is still executing", async () => {
+		await terminalStore.connect("session-1", "workspace-1");
+		currentSocket.onmessage?.({ data: JSON.stringify({ type: "ready", cwd: "/workspace" }) });
+		currentSocket.onmessage?.({ data: JSON.stringify({ type: "run_started", runId: "r1", command: "first" }) });
+		expect(terminalStore.status).toBe("running");
+		sent.length = 0;
+
+		terminalStore.runCommand("python -c \"print(2)\"");
+		expect(sent.map((value) => JSON.parse(value))).toEqual([{
+			type: "run",
+			command: "python -c \"print(2)\"",
+			sourceFile: undefined,
+		}]);
+	});
+
+	it("flushes every queued command in order once the socket is ready", async () => {
+		terminalStore.runCommand("python -c \"print(1)\"");
+		terminalStore.runCommand("python -c \"print(2)\"");
+
+		await terminalStore.connect("session-1", "workspace-1");
+		currentSocket.onmessage?.({ data: JSON.stringify({ type: "ready", cwd: "/workspace" }) });
+		expect(sent.map((value) => JSON.parse(value).command)).toEqual([
+			"python -c \"print(1)\"",
+			"python -c \"print(2)\"",
+		]);
+	});
+
+	it("drops the queue when the terminal session cannot be created", async () => {
+		terminalStore.runCommand("python -c \"print(1)\"");
+		apiMocks.create.mockRejectedValueOnce(new Error("boom"));
+		await terminalStore.connect("session-1", "workspace-1");
+		expect(terminalStore.status).toBe("error");
+
+		// A later, unrelated connect must not resurrect the stale command.
+		await terminalStore.connect("session-2", "workspace-2");
+		currentSocket.onmessage?.({ data: JSON.stringify({ type: "ready", cwd: "/workspace" }) });
+		expect(sent).toEqual([]);
+	});
+
+	it("drops the queue when the socket errors before ready", async () => {
+		terminalStore.runCommand("python -c \"print(1)\"");
+		await terminalStore.connect("session-1", "workspace-1");
+		currentSocket.onerror?.();
+		expect(terminalStore.status).toBe("error");
+
+		await terminalStore.connect("session-2", "workspace-2");
+		currentSocket.onmessage?.({ data: JSON.stringify({ type: "ready", cwd: "/workspace" }) });
+		expect(sent).toEqual([]);
+	});
 });

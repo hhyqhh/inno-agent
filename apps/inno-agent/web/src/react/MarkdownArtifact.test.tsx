@@ -6,7 +6,13 @@ import { isEnhancedCodeLanguage } from "./MarkdownRuntime.js";
 import { settingsStore } from "../stores/settings-store.js";
 
 vi.mock("react-i18next", () => ({
-	useTranslation: () => ({ t: (_key: string, fallback?: string) => fallback ?? _key }),
+	useTranslation: () => ({
+		t: (_key: string, fallback?: string, vars?: Record<string, unknown>) => {
+			const template = fallback ?? _key;
+			if (!vars) return template;
+			return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) => String(vars[name] ?? match));
+		},
+	}),
 }));
 
 afterEach(cleanup);

@@ -23,7 +23,9 @@ import {
 	useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import type { CustomRendererProps } from "streamdown";
+import { downloadBlob, ToolbarIconButton, useFullscreenDialog } from "./shared.js";
 
 type ArtifactViewMode = "preview" | "source" | "split";
 
@@ -69,12 +71,12 @@ const SVG_ALLOWED_ATTRIBUTES = new Set([
 	"id", "class", "style", "href", "xlink:href", "role", "aria-label", "aria-hidden",
 ]);
 
-function sanitizeSvgMarkup(source: string): string {
+function sanitizeSvgMarkup(source: string, invalidMessage: string): string {
 	if (typeof DOMParser === "undefined" || typeof XMLSerializer === "undefined") return "";
 	const documentNode = new DOMParser().parseFromString(source, "image/svg+xml");
 	const root = documentNode.documentElement;
 	if (root.localName.toLowerCase() !== "svg" || documentNode.querySelector("parsererror")) {
-		return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80"><text x="12" y="42">SVG 内容无效</text></svg>';
+		return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80"><text x="12" y="42">${invalidMessage}</text></svg>`;
 	}
 
 	for (const element of Array.from(root.querySelectorAll("*"))) {
@@ -133,45 +135,7 @@ function extractHtmlTitle(html: string): string {
 	const title = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]
 		?.replace(/<[^>]+>/g, "")
 		.trim();
-	return title || "HTML 预览";
-}
-
-function downloadText(filename: string, content: string, type = "text/plain;charset=utf-8"): void {
-	const url = URL.createObjectURL(new Blob([content], { type }));
-	const anchor = document.createElement("a");
-	anchor.href = url;
-	anchor.download = filename;
-	document.body.appendChild(anchor);
-	anchor.click();
-	anchor.remove();
-	setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function ToolbarButton({
-	label,
-	active = false,
-	disabled = false,
-	onClick,
-	children,
-}: {
-	label: string;
-	active?: boolean;
-	disabled?: boolean;
-	onClick: () => void;
-	children: ReactNode;
-}) {
-	return (
-		<button
-			type="button"
-			aria-label={label}
-			title={label}
-			disabled={disabled}
-			onClick={onClick}
-			className={`inline-flex size-7 items-center justify-center rounded-md border-0 transition-colors ${active ? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"} disabled:cursor-not-allowed disabled:opacity-40`}
-		>
-			{children}
-		</button>
-	);
+	return title || "";
 }
 
 function ArtifactSource({
@@ -211,7 +175,15 @@ interface ArtifactShellProps extends CustomRendererProps {
 }
 
 function ArtifactShell({ code, language, isIncomplete, title, extension, mimeType, renderPreview }: ArtifactShellProps) {
-	const [mode, setMode] = useState<ArtifactViewMode>(isIncomplete ? "source" : "preview");
+	const { t } = useTranslation();
+	const [mode, setModeState] = useState<ArtifactViewMode>(isIncomplete ? "source" : "preview");
+	// Streaming forces the source view; a manual toolbar choice pins the mode so
+	// the post-completion switch back to preview does not override the user.
+	const modePinnedRef = useRef(false);
+	const setMode = (next: ArtifactViewMode) => {
+		modePinnedRef.current = true;
+		setModeState(next);
+	};
 	const [appliedSource, setAppliedSource] = useState(code);
 	const [draft, setDraft] = useState(code);
 	const [editing, setEditing] = useState(false);
@@ -226,22 +198,16 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 	}, [code, editing]);
 
 	useEffect(() => {
-		if (isIncomplete) setMode("source");
+		if (isIncomplete) {
+			setModeState("source");
+		} else if (!modePinnedRef.current) {
+			// The fence just completed: leave the forced source view for the
+			// rendered preview unless the user picked a mode themselves.
+			setModeState("preview");
+		}
 	}, [isIncomplete]);
 
-	useEffect(() => {
-		if (!fullscreen) return;
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") setFullscreen(false);
-		};
-		document.addEventListener("keydown", onKeyDown);
-		const previousOverflow = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
-		return () => {
-			document.removeEventListener("keydown", onKeyDown);
-			document.body.style.overflow = previousOverflow;
-		};
-	}, [fullscreen]);
+	useFullscreenDialog(fullscreen, useCallback(() => setFullscreen(false), []));
 
 	const currentSource = editing ? draft : appliedSource;
 	const canPreview = !isIncomplete && currentSource.trim().length > 0;
@@ -291,29 +257,29 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 			<div data-inno-artifact={language} className="my-3 min-w-0 overflow-hidden rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] shadow-sm">
 				<div className="flex min-w-0 items-center gap-2 border-b border-[var(--inno-border)] px-2.5 py-1.5">
 					<span className="min-w-0 flex-1 truncate text-xs font-semibold text-[var(--inno-text)]">{title}</span>
-					{isIncomplete ? <span className="mr-1 inline-flex items-center gap-1 text-[11px] text-[var(--inno-text-muted)]"><span className="size-1.5 animate-pulse rounded-full bg-[var(--inno-accent)]" />生成中</span> : null}
-					<ToolbarButton label="预览" active={displayMode === "preview"} disabled={!canPreview} onClick={() => setMode("preview")}><Eye size={14} /></ToolbarButton>
-					<ToolbarButton label="查看源码" active={displayMode === "source"} onClick={() => setMode("source")}><Code2 size={14} /></ToolbarButton>
-					<ToolbarButton label="分屏查看" active={displayMode === "split"} disabled={!canPreview} onClick={() => setMode("split")}><Columns2 size={14} /></ToolbarButton>
-					<ToolbarButton label="自动换行" active={wrapped} onClick={() => setWrapped((value) => !value)}><WrapText size={14} /></ToolbarButton>
+					{isIncomplete ? <span className="mr-1 inline-flex items-center gap-1 text-[11px] text-[var(--inno-text-muted)]"><span className="size-1.5 animate-pulse rounded-full bg-[var(--inno-accent)]" />{t("markdown.generating", "生成中")}</span> : null}
+					<ToolbarIconButton label={t("markdown.preview", "预览")} active={displayMode === "preview"} disabled={!canPreview} onClick={() => setMode("preview")}><Eye size={14} /></ToolbarIconButton>
+					<ToolbarIconButton label={t("markdown.viewSource", "查看源码")} active={displayMode === "source"} onClick={() => setMode("source")}><Code2 size={14} /></ToolbarIconButton>
+					<ToolbarIconButton label={t("markdown.splitView", "分屏查看")} active={displayMode === "split"} disabled={!canPreview} onClick={() => setMode("split")}><Columns2 size={14} /></ToolbarIconButton>
+					<ToolbarIconButton label={t("markdown.wrapText", "自动换行")} active={wrapped} onClick={() => setWrapped((value) => !value)}><WrapText size={14} /></ToolbarIconButton>
 					{editing ? (
-						<ToolbarButton label="应用更改" onClick={handleSave}><Save size={14} /></ToolbarButton>
+						<ToolbarIconButton label={t("markdown.applyChanges", "应用更改")} onClick={handleSave}><Save size={14} /></ToolbarIconButton>
 					) : (
-						<ToolbarButton label="编辑副本" disabled={isIncomplete} onClick={handleEdit}><Pencil size={14} /></ToolbarButton>
+						<ToolbarIconButton label={t("markdown.editCopy", "编辑副本")} disabled={isIncomplete} onClick={handleEdit}><Pencil size={14} /></ToolbarIconButton>
 					)}
-					{appliedSource !== code ? <ToolbarButton label="恢复模型原文" onClick={handleReset}><RotateCcw size={14} /></ToolbarButton> : null}
-					<ToolbarButton label={copied ? "已复制" : "复制源码"} onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}</ToolbarButton>
-					<ToolbarButton label="下载源码" onClick={() => downloadText(`${safeFilename(title)}.${extension}`, currentSource, mimeType)}><Download size={14} /></ToolbarButton>
-					<ToolbarButton label="全屏查看" disabled={!canPreview} onClick={() => setFullscreen(true)}><Maximize2 size={14} /></ToolbarButton>
+					{appliedSource !== code ? <ToolbarIconButton label={t("markdown.restoreOriginal", "恢复模型原文")} onClick={handleReset}><RotateCcw size={14} /></ToolbarIconButton> : null}
+					<ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copySource", "复制源码")} onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}</ToolbarIconButton>
+					<ToolbarIconButton label={t("markdown.downloadSource", "下载源码")} onClick={() => downloadBlob(`${safeFilename(title)}.${extension}`, new Blob([currentSource], { type: mimeType ?? "text/plain;charset=utf-8" }))}><Download size={14} /></ToolbarIconButton>
+					<ToolbarIconButton label={t("markdown.fullscreen", "全屏查看")} disabled={!canPreview} onClick={() => setFullscreen(true)}><Maximize2 size={14} /></ToolbarIconButton>
 				</div>
 				{content(false)}
 			</div>
 
 			{fullscreen && typeof document !== "undefined" ? createPortal(
-				<div role="dialog" aria-modal="true" aria-label={`${title} 全屏预览`} className="fixed inset-0 z-[1000] flex flex-col bg-[var(--inno-background)]">
+				<div role="dialog" aria-modal="true" aria-label={`${title} ${t("markdown.fullscreen", "全屏预览")}`} className="fixed inset-0 z-[1000] flex flex-col bg-[var(--inno-background)]">
 					<div className="flex items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-4 py-2">
 						<span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--inno-text)]">{title}</span>
-						<ToolbarButton label="退出全屏" onClick={() => setFullscreen(false)}><Minimize2 size={16} /></ToolbarButton>
+						<ToolbarIconButton label={t("markdown.exitFullscreen", "退出全屏")} onClick={() => setFullscreen(false)}><Minimize2 size={16} /></ToolbarIconButton>
 					</div>
 					<div className="min-h-0 flex-1 p-3">{content(true)}</div>
 				</div>,
@@ -336,6 +302,7 @@ function RestrictedHtmlFrame({ html, title, className = "", allowScripts = false
 }
 
 function HtmlPreview({ html, title }: { html: string; title: string }) {
+	const { t } = useTranslation();
 	const requiresInteraction = useMemo(() => htmlRequiresInteraction(html), [html]);
 	const [authorized, setAuthorized] = useState(false);
 
@@ -346,8 +313,8 @@ function HtmlPreview({ html, title }: { html: string; title: string }) {
 			<RestrictedHtmlFrame html={html} title={title} allowScripts={requiresInteraction && authorized} />
 			{requiresInteraction && !authorized ? (
 				<div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 border-t border-[var(--inno-border)] bg-[var(--inno-surface)]/95 px-3 py-2 text-[11px] text-[var(--inno-text-muted)] backdrop-blur">
-					<span>此预览包含脚本或交互事件，当前未执行。</span>
-					<button type="button" className="shrink-0 rounded-md bg-[var(--inno-accent)] px-2.5 py-1 font-medium text-white" onClick={() => setAuthorized(true)}>启用交互预览</button>
+					<span>{t("markdown.scriptNotice", "此预览包含脚本或交互事件，当前未执行。")}</span>
+					<button type="button" className="shrink-0 rounded-md bg-[var(--inno-accent)] px-2.5 py-1 font-medium text-white" onClick={() => setAuthorized(true)}>{t("markdown.enableInteractive", "启用交互预览")}</button>
 				</div>
 			) : null}
 		</div>
@@ -355,7 +322,8 @@ function HtmlPreview({ html, title }: { html: string; title: string }) {
 }
 
 export function HtmlArtifactRenderer(props: CustomRendererProps) {
-	const title = extractHtmlTitle(props.code);
+	const { t } = useTranslation();
+	const title = extractHtmlTitle(props.code) || t("markdown.htmlPreview", "HTML 预览");
 	return (
 		<ArtifactShell
 			{...props}
@@ -368,11 +336,13 @@ export function HtmlArtifactRenderer(props: CustomRendererProps) {
 }
 
 export function SvgArtifactRenderer(props: CustomRendererProps) {
-	const title = "SVG 图像";
+	const { t } = useTranslation();
+	const title = t("markdown.svgImage", "SVG 图像");
+	const invalidMessage = t("markdown.invalidSvg", "SVG 内容无效");
 	const renderSvg = (source: string) => (
 		<RestrictedHtmlFrame
 			title={title}
-			html={`<style>html,body{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}svg{max-width:100%;max-height:100%;height:auto}</style>${sanitizeSvgMarkup(source)}`}
+			html={`<style>html,body{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}svg{max-width:100%;max-height:100%;height:auto}</style>${sanitizeSvgMarkup(source, invalidMessage)}`}
 		/>
 	);
 	return <ArtifactShell {...props} title={title} extension="svg" mimeType="image/svg+xml;charset=utf-8" renderPreview={renderSvg} />;
@@ -382,13 +352,16 @@ function AsyncSvgPreview({
 	source,
 	title,
 	isIncomplete,
+	invalidMessage,
 	render,
 }: {
 	source: string;
 	title: string;
 	isIncomplete: boolean;
+	invalidMessage: string;
 	render: (source: string, signal: AbortSignal) => Promise<string>;
 }) {
+	const { t } = useTranslation();
 	const [svg, setSvg] = useState("");
 	const [error, setError] = useState("");
 	const [loading, setLoading] = useState(false);
@@ -400,7 +373,7 @@ function AsyncSvgPreview({
 		setError("");
 		render(source, controller.signal)
 			.then((value) => {
-				if (!controller.signal.aborted) setSvg(sanitizeSvgMarkup(value));
+				if (!controller.signal.aborted) setSvg(sanitizeSvgMarkup(value, invalidMessage));
 			})
 			.catch((reason: unknown) => {
 				if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
@@ -409,9 +382,9 @@ function AsyncSvgPreview({
 				if (!controller.signal.aborted) setLoading(false);
 			});
 		return () => controller.abort();
-	}, [isIncomplete, render, source]);
+	}, [isIncomplete, invalidMessage, render, source]);
 
-	if (isIncomplete || loading) return <div className="flex min-h-64 items-center justify-center text-sm text-[var(--inno-text-muted)]">正在生成图表…</div>;
+	if (isIncomplete || loading) return <div className="flex min-h-64 items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("markdown.generatingChart", "正在生成图表…")}</div>;
 	if (error) return <div role="alert" className="m-3 rounded-lg border border-[var(--inno-danger-border)] bg-[var(--inno-danger-bg)] p-3 text-xs text-[var(--inno-danger)]">{error}</div>;
 	return <RestrictedHtmlFrame title={title} html={`<style>html,body{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}svg{max-width:100%;max-height:100%;height:auto}</style>${svg}`} />;
 }
@@ -426,13 +399,16 @@ async function renderGraphviz(source: string): Promise<string> {
 }
 
 export function GraphvizArtifactRenderer(props: CustomRendererProps) {
+	const { t } = useTranslation();
+	const title = t("markdown.graphvizChart", "Graphviz 图表");
+	const invalidMessage = t("markdown.invalidSvg", "SVG 内容无效");
 	const renderer = useCallback((source: string) => renderGraphviz(source), []);
 	return (
 		<ArtifactShell
 			{...props}
-			title="Graphviz 图表"
+			title={title}
 			extension="dot"
-			renderPreview={(source) => <AsyncSvgPreview source={source} title="Graphviz 图表" isIncomplete={props.isIncomplete} render={renderer} />}
+			renderPreview={(source) => <AsyncSvgPreview source={source} title={title} isIncomplete={props.isIncomplete} invalidMessage={invalidMessage} render={renderer} />}
 		/>
 	);
 }
@@ -440,17 +416,24 @@ export function GraphvizArtifactRenderer(props: CustomRendererProps) {
 const PLANTUML_SERVER = "https://www.plantuml.com/plantuml/svg";
 
 export function PlantUmlArtifactRenderer(props: CustomRendererProps) {
+	const { t } = useTranslation();
+	const title = t("markdown.plantumlChart", "PlantUML 图表（公共服务渲染）");
+	const invalidMessage = t("markdown.invalidSvg", "SVG 内容无效");
 	const renderer = useCallback(async (source: string, signal: AbortSignal) => {
 		const response = await fetch(`${PLANTUML_SERVER}/${plantumlEncoder.encode(source)}`, { signal });
-		if (!response.ok) throw new Error(response.status === 400 ? "PlantUML 语法有误，无法生成图表。" : `PlantUML 服务返回 ${response.status}`);
+		if (!response.ok) {
+			throw new Error(response.status === 400
+				? t("markdown.plantumlSyntaxError", "PlantUML 语法有误，无法生成图表。")
+				: t("markdown.plantumlServerError", "PlantUML 服务返回 {{status}}", { status: response.status }));
+		}
 		return response.text();
-	}, []);
+	}, [t]);
 	return (
 		<ArtifactShell
 			{...props}
-			title="PlantUML 图表（公共服务渲染）"
+			title={title}
 			extension="puml"
-			renderPreview={(source) => <AsyncSvgPreview source={source} title="PlantUML 图表" isIncomplete={props.isIncomplete} render={renderer} />}
+			renderPreview={(source) => <AsyncSvgPreview source={source} title={title} isIncomplete={props.isIncomplete} invalidMessage={invalidMessage} render={renderer} />}
 		/>
 	);
 }
@@ -461,7 +444,25 @@ interface EChartsInstance {
 	dispose(): void;
 }
 
+const UNSAFE_ECHARTS_URL_RE = /\b(?:https?:|javascript:|data:text\/html)|^\/\//i;
+
+/**
+ * Walks a parsed ECharts option and rejects any string that smuggles in an
+ * external or script URL. Runs on the decoded values (not the raw JSON text)
+ * so `\/` and ` ` escapes cannot bypass the check.
+ */
+function containsUnsafeUrl(value: unknown, depth = 0): boolean {
+	if (depth > 32) return false;
+	if (typeof value === "string") return UNSAFE_ECHARTS_URL_RE.test(value);
+	if (Array.isArray(value)) return value.some((item) => containsUnsafeUrl(item, depth + 1));
+	if (value && typeof value === "object") {
+		return Object.values(value as Record<string, unknown>).some((item) => containsUnsafeUrl(item, depth + 1));
+	}
+	return false;
+}
+
 function EChartsPreview({ source, isIncomplete }: { source: string; isIncomplete: boolean }) {
+	const { t } = useTranslation();
 	const hostRef = useRef<HTMLDivElement>(null);
 	const chartRef = useRef<EChartsInstance | null>(null);
 	const [error, setError] = useState("");
@@ -472,11 +473,11 @@ function EChartsPreview({ source, isIncomplete }: { source: string; isIncomplete
 		let option: unknown;
 		try {
 			option = JSON.parse(source);
-			if (/\b(?:https?:|javascript:|data:text\/html)/i.test(source)) {
-				throw new Error("图表配置包含不安全的外部资源地址。");
+			if (containsUnsafeUrl(option)) {
+				throw new Error(t("markdown.unsafeEchartsConfig", "图表配置包含不安全的外部资源地址。"));
 			}
 		} catch (reason) {
-			setError(reason instanceof Error ? reason.message : "ECharts 配置不是有效 JSON");
+			setError(reason instanceof Error ? reason.message : t("markdown.invalidEchartsJson", "ECharts 配置不是有效 JSON"));
 			return;
 		}
 
@@ -496,9 +497,9 @@ function EChartsPreview({ source, isIncomplete }: { source: string; isIncomplete
 			chartRef.current?.dispose();
 			chartRef.current = null;
 		};
-	}, [isIncomplete, source]);
+	}, [isIncomplete, source, t]);
 
-	if (isIncomplete) return <div className="flex min-h-64 items-center justify-center text-sm text-[var(--inno-text-muted)]">正在生成图表…</div>;
+	if (isIncomplete) return <div className="flex min-h-64 items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("markdown.generatingChart", "正在生成图表…")}</div>;
 	return (
 		<div className="relative min-h-64 bg-white">
 			<div ref={hostRef} className="h-80 w-full" />
@@ -508,10 +509,11 @@ function EChartsPreview({ source, isIncomplete }: { source: string; isIncomplete
 }
 
 export function EChartsArtifactRenderer(props: CustomRendererProps) {
+	const { t } = useTranslation();
 	return (
 		<ArtifactShell
 			{...props}
-			title="ECharts 图表"
+			title={t("markdown.echartsChart", "ECharts 图表")}
 			extension="json"
 			mimeType="application/json;charset=utf-8"
 			renderPreview={(source) => <EChartsPreview source={source} isIncomplete={props.isIncomplete} />}

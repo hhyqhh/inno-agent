@@ -34,7 +34,26 @@ function findClosingDollar(source: string, start: number): number {
 	return -1;
 }
 
-function normalizeDelimitedMath(source: string): string {
+interface DelimitedMathOptions {
+	/**
+	 * "preserve" keeps the model-friendly `\(...\)` / `\[...\]` delimiters for
+	 * renderers that understand them (mini-lit MarkdownBlock / pi-web-ui).
+	 * "streamdown" translates them to remark-math's canonical dollar form:
+	 * inline `\(...\)` becomes single-line `$$...$$` (parsed as inline math even
+	 * when ambiguous single-dollar math is disabled), display `\[...\]` becomes
+	 * a `$$`-fenced block so it keeps display semantics and multi-line content.
+	 */
+	delimiters: "preserve" | "streamdown";
+	/**
+	 * Whether the target renderer parses `$...$` as math. When false (Streamdown
+	 * with the single-dollar toggle off), `$...$` spans are plain text — e.g.
+	 * prices and `$a < $b` comparisons — and must pass through untouched so a
+	 * raw `<` is not rewritten to `\lt`.
+	 */
+	singleDollar: boolean;
+}
+
+function normalizeDelimitedMath(source: string, options: DelimitedMathOptions): string {
 	let output = "";
 	let index = 0;
 
@@ -61,7 +80,7 @@ function normalizeDelimitedMath(source: string): string {
 			}
 		}
 
-		if (source[index] === "$" && !source.startsWith("$$", index) && !isEscaped(source, index)) {
+		if (options.singleDollar && source[index] === "$" && !source.startsWith("$$", index) && !isEscaped(source, index)) {
 			const end = findClosingDollar(source, index + 1);
 			if (end !== -1) {
 				output += `$${normalizeMathExpression(source.slice(index + 1, end))}$`;
@@ -71,16 +90,22 @@ function normalizeDelimitedMath(source: string): string {
 		}
 
 		if ((source.startsWith("\\(", index) || source.startsWith("\\[", index)) && !isEscaped(source, index)) {
-			const close = source[index + 1] === "(" ? "\\)" : "\\]";
+			const inline = source[index + 1] === "(";
+			const close = inline ? "\\)" : "\\]";
 			const end = source.indexOf(close, index + 2);
 			if (end !== -1) {
-				// Streamdown's math pipeline consumes remark-math's canonical dollar
-				// delimiters. Preserve the model-friendly LaTeX forms at the API
-				// boundary, then translate them here outside fenced/inline code.
-				// `$$...$$` on one line is parsed as inline math even when the
-				// user disables ambiguous single-dollar math (useful for prices).
-				const delimiter = "$$";
-				output += `${delimiter}${normalizeMathExpression(source.slice(index + 2, end))}${delimiter}`;
+				const expression = normalizeMathExpression(source.slice(index + 2, end));
+				if (options.delimiters === "preserve") {
+					output += `${source.slice(index, index + 2)}${expression}${close}`;
+				} else if (inline) {
+					// Inline math must stay on one line for remark-math.
+					output += `$$${expression.replace(/\s*\n\s*/g, " ")}$$`;
+				} else {
+					// remark-math only treats `$$` on its own lines as display math,
+					// and a blank line would split the paragraph and leak raw `$$`.
+					const body = expression.replace(/\n[ \t]*\n+/g, "\n").trim();
+					output += `$$\n${body}\n$$`;
+				}
 				index = end + 2;
 				continue;
 			}
@@ -93,7 +118,7 @@ function normalizeDelimitedMath(source: string): string {
 	return output;
 }
 
-function normalizeOutsideFencedCode(content: string): string {
+function normalizeOutsideFencedCode(content: string, options: DelimitedMathOptions): string {
 	const lines = content.split(/(\n)/);
 	let inFence = false;
 	let fenceMarker = "";
@@ -102,7 +127,7 @@ function normalizeOutsideFencedCode(content: string): string {
 
 	const flushPending = () => {
 		if (pending) {
-			output += normalizeDelimitedMath(pending);
+			output += normalizeDelimitedMath(pending, options);
 			pending = "";
 		}
 	};
@@ -138,7 +163,27 @@ function normalizeOutsideFencedCode(content: string): string {
 	return output;
 }
 
+/**
+ * Normalizes math for the mini-lit / pi-web-ui renderers, which parse
+ * `$...$`, `\(...\)` (inline) and `$$...$$`, `\[...\]` (display) natively.
+ * Delimiters are preserved; only the expressions inside are normalized.
+ */
 export function normalizeMarkdownMath(content: string): string {
 	if (!content || !/[<&$\\]/.test(content)) return content;
-	return normalizeOutsideFencedCode(content);
+	return normalizeOutsideFencedCode(content, { delimiters: "preserve", singleDollar: true });
+}
+
+/**
+ * Normalizes math for the Streamdown runtime. remark-math only understands
+ * dollar delimiters, so LaTeX delimiters are translated: `\(...\)` to
+ * single-line `$$...$$` (inline) and `\[...\]` to a `$$` block (display).
+ * Pass `singleDollar: false` when the user's inline-`$` toggle is off so
+ * prices and plain-text comparisons are left untouched.
+ */
+export function normalizeMarkdownMathForStreamdown(content: string, options?: { singleDollar?: boolean }): string {
+	if (!content || !/[<&$\\]/.test(content)) return content;
+	return normalizeOutsideFencedCode(content, {
+		delimiters: "streamdown",
+		singleDollar: options?.singleDollar ?? true,
+	});
 }

@@ -52,6 +52,8 @@ jobs:
 
       # ── 6. 编译前端（Vite）──────────────────────────────────────────────────
       - name: Build frontend (vite)
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm --workspace inno-agent-web run build
 
       # ── 7. 打包 Electron（AppImage x64 + arm64）──────────────────────────────

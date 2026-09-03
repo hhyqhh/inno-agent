@@ -184,18 +184,15 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 		modePinnedRef.current = true;
 		setModeState(next);
 	};
-	const [appliedSource, setAppliedSource] = useState(code);
+	// null = pristine: follow the streaming `code` prop directly. Syncing
+	// streamed source into state via an effect leaves one committed render
+	// per chunk where state !== code, flashing the "restore original" button.
+	const [editedSource, setEditedSource] = useState<string | null>(null);
 	const [draft, setDraft] = useState(code);
 	const [editing, setEditing] = useState(false);
 	const [wrapped, setWrapped] = useState(false);
 	const [copied, setCopied] = useState(false);
 	const [fullscreen, setFullscreen] = useState(false);
-
-	useEffect(() => {
-		if (editing) return;
-		setAppliedSource(code);
-		setDraft(code);
-	}, [code, editing]);
 
 	useEffect(() => {
 		if (isIncomplete) {
@@ -209,6 +206,7 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 
 	useFullscreenDialog(fullscreen, useCallback(() => setFullscreen(false), []));
 
+	const appliedSource = editedSource ?? code;
 	const currentSource = editing ? draft : appliedSource;
 	const canPreview = !isIncomplete && currentSource.trim().length > 0;
 	const displayMode = canPreview ? mode : "source";
@@ -226,14 +224,14 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 	};
 
 	const handleSave = () => {
-		setAppliedSource(draft);
+		setEditedSource(draft);
 		setEditing(false);
 		setMode("preview");
 	};
 
 	const handleReset = () => {
+		setEditedSource(null);
 		setDraft(code);
-		setAppliedSource(code);
 		setEditing(false);
 	};
 
@@ -267,7 +265,7 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 					) : (
 						<ToolbarIconButton label={t("markdown.editCopy", "编辑副本")} disabled={isIncomplete} onClick={handleEdit}><Pencil size={14} /></ToolbarIconButton>
 					)}
-					{appliedSource !== code ? <ToolbarIconButton label={t("markdown.restoreOriginal", "恢复模型原文")} onClick={handleReset}><RotateCcw size={14} /></ToolbarIconButton> : null}
+					{editedSource !== null && editedSource !== code ? <ToolbarIconButton label={t("markdown.restoreOriginal", "恢复模型原文")} onClick={handleReset}><RotateCcw size={14} /></ToolbarIconButton> : null}
 					<ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copySource", "复制源码")} onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}</ToolbarIconButton>
 					<ToolbarIconButton label={t("markdown.downloadSource", "下载源码")} onClick={() => downloadBlob(`${safeFilename(title)}.${extension}`, new Blob([currentSource], { type: mimeType ?? "text/plain;charset=utf-8" }))}><Download size={14} /></ToolbarIconButton>
 					<ToolbarIconButton label={t("markdown.fullscreen", "全屏查看")} disabled={!canPreview} onClick={() => setFullscreen(true)}><Maximize2 size={14} /></ToolbarIconButton>

@@ -111,7 +111,7 @@ export function TerminalDrawer() {
 						</div>
 					) : (
 						<div className="flex-1 min-h-0 p-2">
-							<div className="h-full overflow-hidden rounded-md border border-[var(--inno-border)] bg-[#0f172a] p-1.5 shadow-inner">
+							<div className="h-full overflow-hidden rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-1.5 shadow-inner">
 								<TerminalView
 									key={`${sess.currentSessionId}:${ws.activeWorkspaceId ?? "default"}`}
 									innoSessionId={sess.currentSessionId}

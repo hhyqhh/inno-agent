@@ -235,6 +235,20 @@ summary:focus-visible {
 	color: var(--inno-text-muted);
 }
 
+/* Slim the code-block chrome: the stock 32px strip is heavy inside a chat
+   bubble. The toolbar buttons are 24px, so a 26px header still fits them. */
+.inno-markdown [data-streamdown="code-block-header"] {
+	height: 1.625rem;
+}
+
+/* The stock line-number gutter is a fixed 24px — a 100+ line block wraps
+   its third digit onto the next row. 3.4ch fits a 999-line file; numbers
+   stay right-aligned so short blocks look unchanged. */
+.inno-markdown [data-streamdown="code-block-body"] code > span::before {
+	width: 3.4ch;
+	margin-right: 0.75rem;
+}
+
 .inno-code-wrap [data-streamdown="code-block-body"],
 .inno-code-wrap [data-streamdown="code-block-body"] * {
 	white-space: pre-wrap !important;

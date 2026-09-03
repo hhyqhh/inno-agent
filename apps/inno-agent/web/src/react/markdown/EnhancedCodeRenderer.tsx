@@ -12,7 +12,7 @@ import {
 	Save,
 	WrapText,
 } from "lucide-react";
-import { Fragment, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useContext, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { CodeBlock, StreamdownContext, type CustomRendererProps } from "streamdown";
@@ -51,7 +51,11 @@ function countLines(source: string): number {
 export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRendererProps) {
 	const { t } = useTranslation();
 	const streamdownContext = useContext(StreamdownContext);
-	const [source, setSource] = useState(code);
+	// null = pristine: follow the streaming `code` prop directly. Storing the
+	// streamed source in state and re-syncing it in an effect leaves one
+	// committed render per chunk where state !== code, which flashes the
+	// "restore original" button in the header on every stream flush.
+	const [editedSource, setEditedSource] = useState<string | null>(null);
 	const [draft, setDraft] = useState(code);
 	const [editing, setEditing] = useState(false);
 	const [wrapped, setWrapped] = useState(false);
@@ -59,15 +63,10 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 	const [fullscreen, setFullscreen] = useState(false);
 	const [copied, setCopied] = useState(false);
 	const canRun = /^(?:python|py)$/i.test(language) && !isIncomplete;
+	const source = editedSource ?? code;
 	// The length check short-circuits before the line scan for short snippets;
 	// both avoid allocating a per-line array on every streaming re-render.
 	const expandable = source.length > 1800 || countLines(source) > 16;
-
-	useEffect(() => {
-		if (editing) return;
-		setSource(code);
-		setDraft(code);
-	}, [code, editing]);
 
 	useFullscreenDialog(fullscreen, useCallback(() => setFullscreen(false), []));
 
@@ -81,11 +80,11 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 		<Fragment>
 			{canRun ? <ToolbarIconButton label={t("markdown.runPython", "在练习终端运行 Python")} onClick={() => runPython(source)}><Play size={14} /></ToolbarIconButton> : null}
 			{editing ? (
-				<ToolbarIconButton label={t("markdown.applyChanges", "应用更改")} onClick={() => { setSource(draft); setEditing(false); }}><Save size={14} /></ToolbarIconButton>
+				<ToolbarIconButton label={t("markdown.applyChanges", "应用更改")} onClick={() => { setEditedSource(draft); setEditing(false); }}><Save size={14} /></ToolbarIconButton>
 			) : (
 				<ToolbarIconButton label={t("markdown.editCopy", "编辑副本")} disabled={isIncomplete} onClick={() => { setDraft(source); setEditing(true); }}><Pencil size={14} /></ToolbarIconButton>
 			)}
-			{source !== code ? <ToolbarIconButton label={t("markdown.restoreOriginal", "恢复模型原文")} onClick={() => { setSource(code); setDraft(code); setEditing(false); }}><RotateCcw size={14} /></ToolbarIconButton> : null}
+			{editedSource !== null && editedSource !== code ? <ToolbarIconButton label={t("markdown.restoreOriginal", "恢复模型原文")} onClick={() => { setEditedSource(null); setDraft(code); setEditing(false); }}><RotateCcw size={14} /></ToolbarIconButton> : null}
 			<ToolbarIconButton label={t("markdown.wrapText", "自动换行")} active={wrapped} onClick={() => setWrapped((value) => !value)}><WrapText size={14} /></ToolbarIconButton>
 			{expandable ? <ToolbarIconButton label={expanded ? t("markdown.collapseCode", "折叠代码") : t("markdown.expandCode", "展开代码")} active={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</ToolbarIconButton> : null}
 			<ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copyCode", "复制代码")} onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}</ToolbarIconButton>

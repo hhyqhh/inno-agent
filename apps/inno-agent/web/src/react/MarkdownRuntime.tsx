@@ -77,8 +77,13 @@ function createRehypePlugins(headingPrefix: string) {
 	const defaults = defaultRehypePlugins as Partial<Record<string, unknown>>;
 	const sanitize = defaults.sanitize;
 	const harden = defaults.harden;
+	const headingIds = createHeadingIds(headingPrefix);
 	if (!defaults.raw || !Array.isArray(sanitize) || sanitize.length < 2 || !harden) {
-		throw new Error("Unexpected Streamdown rehype plugin configuration");
+		// A streamdown upgrade restructured the default pipeline. Degrade to the
+		// stock plugins (losing only the alert/svg schema extensions) instead of
+		// throwing during render and blanking every markdown surface.
+		console.warn("[inno] Unexpected Streamdown rehype plugin configuration; falling back to defaults");
+		return [...Object.values(defaults), headingIds] as NonNullable<React.ComponentProps<typeof Streamdown>["rehypePlugins"]>;
 	}
 
 	const [sanitizePlugin, baseSchema] = sanitize as [unknown, SanitizeSchema];
@@ -169,23 +174,23 @@ export function MarkdownRuntime({ content, streaming = false, compact = false, c
 	const translations = useMemo<Partial<StreamdownTranslations>>(() => ({
 		close: t("common.close", "关闭"),
 		copied: t("common.copied", "已复制"),
-		copyCode: t("common.copy", "复制代码"),
+		copyCode: t("markdown.copyCode", "复制代码"),
 		copyLink: t("common.copy", "复制链接"),
 		copyTable: t("common.copy", "复制表格"),
-		copyTableAsCsv: "复制为 CSV",
-		copyTableAsMarkdown: "复制为 Markdown",
-		copyTableAsTsv: "复制为 TSV",
-		downloadDiagram: "下载图表",
-		downloadFile: "下载代码",
-		downloadImage: "下载图片",
-		downloadTable: "下载表格",
-		openExternalLink: "打开外部链接",
-		openLink: "打开链接",
-		viewFullscreen: "全屏查看",
-		exitFullscreen: "退出全屏",
-		zoomIn: "放大",
-		zoomOut: "缩小",
-		resetView: "重置视图",
+		copyTableAsCsv: t("markdown.copyTableAsCsv", "复制为 CSV"),
+		copyTableAsMarkdown: t("markdown.copyTableAsMarkdown", "复制为 Markdown"),
+		copyTableAsTsv: t("markdown.copyTableAsTsv", "复制为 TSV"),
+		downloadDiagram: t("markdown.downloadDiagram", "下载图表"),
+		downloadFile: t("markdown.downloadCode", "下载代码"),
+		downloadImage: t("markdown.downloadImage", "下载图片"),
+		downloadTable: t("markdown.downloadTable", "下载表格"),
+		openExternalLink: t("markdown.openExternalLink", "打开外部链接"),
+		openLink: t("markdown.openLink", "打开链接"),
+		viewFullscreen: t("markdown.fullscreen", "全屏查看"),
+		exitFullscreen: t("markdown.exitFullscreen", "退出全屏"),
+		zoomIn: t("markdown.zoomIn", "放大"),
+		zoomOut: t("markdown.zoomOut", "缩小"),
+		resetView: t("markdown.resetView", "重置视图"),
 	}), [t]);
 	const shouldAnimate = streaming && content.length <= MAX_ANIMATED_CONTENT_LENGTH;
 	return (

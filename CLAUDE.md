@@ -19,7 +19,7 @@ PI SDK packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@e
 
 Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (scheduler), `@larksuiteoapi/node-sdk` (Feishu), `typebox` (validation), `undici` (HTTP client), `@juicesharp/rpiv-ask-user-question` (bridges agent `ask_user_question` tool calls to the web UI), `@juicesharp/rpiv-todo` (`todo` task-list tool), `pi-web-access` (`fetch_content`/`get_search_content` URL/GitHub/PDF/YouTube extraction), `pi-subagents` (optional subagent support), `pi-sandbox` (optional OS-level sandboxing), `graphology` + `graphology-communities-louvain` (wiki knowledge graph), `yaml` (YAML parsing), `@llamaindex/liteparse` (document parsing).
 
-Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is 59 files (470 tests), including backend chat-stream/trace persistence coverage and web chat trace/timeline coverage, while remaining skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
+Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is 63 files (504 tests), including backend chat-stream/trace persistence coverage and web chat trace/timeline coverage, while remaining skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
 
 When a PR changes the test count, the size of `server.ts`, or other structural facts stated in this file, update this file in the same PR — AI agents read it as ground truth.
 
@@ -349,7 +349,7 @@ The Vite config has three custom plugins and code-splitting:
 - **`inno-dev-upload-api`** — Vite dev server middleware on `POST /api/l2/raw/upload` for L2 raw file uploads during development (proxies to the backend in production).
 - **`manualChunks`** — code-splits `codemirror`, `markdown-editor`, `cytoscape`, and `katex` into separate bundles.
 
-Vite dev server runs on port 5173 and proxies `/api` and `/health` to `http://localhost:3000`.
+Vite dev server runs on port 5173 and proxies `/api` and `/health` to `http://127.0.0.1:3000` (IPv4 literal — `localhost` can resolve to `::1` on Windows while the backend listens on IPv4, turning every proxied call into a 502).
 
 ### Logger (`src/logger.ts`)
 
@@ -418,7 +418,7 @@ Full config.json structure (see `config.example.json`):
 }
 ```
 
-Note: `simpleMode` and `ui.theme` are not in `config.example.json` but are added at runtime by `normalizeConfig` defaults (`simpleMode.enabled: false`, `ui.theme: "light"`). QQ channel is supported in code via bridge but is not in the template config.
+Note: `simpleMode` and parts of `ui` are not in `config.example.json` but are added at runtime by `normalizeConfig` defaults (`simpleMode.enabled: false`, `ui.theme: "light"`, `ui.mathSingleDollar: false`). QQ channel is supported in code via bridge but is not in the template config.
 
 - `contentHub` configures the remote source for skills and presets. `type` is `"github"` or `"bundle"`. For `"bundle"`, set `baseUrl` to the self-hosted server URL. `token` is the GitHub PAT (for `"github"` type) or bundle auth token.
 - `memory.l1Enabled` / `l2Enabled` / `l3Enabled` individually gate each memory layer. Simple Mode force-disables all three without overwriting these preferences.

@@ -28,7 +28,10 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 	lastCommand: string | null = null;
 
 	private ws: WebSocket | null = null;
-	private pendingRun: { command: string; sourceFile?: string } | null = null;
+	/** Commands queued while no live socket exists. Drained on the next
+	 * connection's `ready` event and cleared on every failure path so a stale
+	 * command can never fire into a later, unrelated session/workspace. */
+	private pendingRuns: Array<{ command: string; sourceFile?: string; content?: string }> = [];
 
 	setOpen(open: boolean): void {
 		if (this.isOpen === open) return;
@@ -40,11 +43,11 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 		// If already connected to same session, no-op.
 		if (this.innoSessionId === innoSessionId && this.status === "connected" && this.ws) return;
 		// A code-block Run action opens the drawer first; the drawer then creates
-		// its terminal connection. Keep that queued command across the connection's
-		// internal cleanup so it is delivered with the server's `ready` event.
-		const pendingRun = this.pendingRun;
+		// its terminal connection. Keep queued commands across the connection's
+		// internal cleanup so they are delivered with the server's `ready` event.
+		const pendingRuns = this.pendingRuns;
 		await this.disconnect();
-		this.pendingRun = pendingRun;
+		this.pendingRuns = pendingRuns;
 
 		this.innoSessionId = innoSessionId;
 		this.status = "connecting";
@@ -57,6 +60,7 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 			this.workspaceId = info.workspaceId;
 			this.cwd = info.cwd;
 		} catch (err) {
+			this.pendingRuns = [];
 			this.status = "error";
 			this.error = err instanceof Error ? err.message : "Failed to create terminal";
 			this.emit("change", undefined);
@@ -70,6 +74,7 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 		// most common cause is a dev-mode proxy that isn't forwarding WS.
 		const watchdog = setTimeout(() => {
 			if (this.status === "connecting") {
+				this.pendingRuns = [];
 				this.status = "error";
 				this.error = "WebSocket connect timed out (check vite proxy `ws: true`?)";
 				this.emit("change", undefined);
@@ -88,10 +93,12 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 					clearTimeout(watchdog);
 					this.status = "connected";
 					this.emit("change", undefined);
-					if (this.pendingRun) {
-						const pending = this.pendingRun;
-						this.pendingRun = null;
-						this.send({ type: "run", command: pending.command, sourceFile: pending.sourceFile });
+					if (this.pendingRuns.length > 0) {
+						const queued = this.pendingRuns;
+						this.pendingRuns = [];
+						for (const pending of queued) {
+							this.send({ type: "run", command: pending.command, sourceFile: pending.sourceFile, content: pending.content });
+						}
 					}
 					break;
 				case "output":
@@ -119,12 +126,18 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 		};
 		ws.onclose = () => {
 			clearTimeout(watchdog);
-			if (this.status !== "error") this.status = "disconnected";
+			// Ignore sockets from connections that were already replaced —
+			// otherwise a late close would wipe the queue connect() restored.
+			if (this.ws !== ws) return;
 			this.ws = null;
+			if (this.status !== "error") this.status = "disconnected";
+			// A socket that closes before `ready` can never drain the queue.
+			this.pendingRuns = [];
 			this.emit("change", undefined);
 		};
 		ws.onerror = () => {
 			clearTimeout(watchdog);
+			this.pendingRuns = [];
 			this.status = "error";
 			this.error = "WebSocket error";
 			this.emit("change", undefined);
@@ -144,14 +157,17 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 		this.send({ type: "resize", cols, rows });
 	}
 
-	runCommand(command: string, sourceFile?: string): void {
+	runCommand(command: string, sourceFile?: string, content?: string): void {
 		if (!command.trim()) return;
 		this.lastCommand = command;
 		this.setOpen(true);
-		if (this.ws?.readyState === WebSocket.OPEN && this.status === "connected") {
-			this.send({ type: "run", command, sourceFile });
+		// Any established session can take the command immediately — including
+		// while a previous run is still executing (status "running"); the server
+		// serializes runs. A missing or still-handshaking socket needs the queue.
+		if (this.ws?.readyState === WebSocket.OPEN && (this.status === "connected" || this.status === "running")) {
+			this.send({ type: "run", command, sourceFile, content });
 		} else {
-			this.pendingRun = { command, sourceFile };
+			this.pendingRuns.push({ command, sourceFile, content });
 		}
 	}
 
@@ -164,7 +180,7 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 		this.workspaceId = null;
 		this.cwd = null;
 		this.activeRunId = null;
-		this.pendingRun = null;
+		this.pendingRuns = [];
 		this.status = "idle";
 		this.emit("change", undefined);
 		if (ws) {

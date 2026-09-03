@@ -12,10 +12,12 @@ import {
 	Save,
 	WrapText,
 } from "lucide-react";
-import { Fragment, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { CodeBlock, StreamdownContext, type CustomRendererProps } from "streamdown";
 import { terminalStore } from "../../stores/terminal-store.js";
+import { downloadBlob, ToolbarIconButton, useFullscreenDialog } from "./shared.js";
 
 const LANGUAGE_EXTENSIONS: Record<string, string> = {
 	bash: "sh", shell: "sh", sh: "sh", zsh: "sh",
@@ -30,62 +32,36 @@ function codeFilename(language: string): string {
 	return `inno-code.${LANGUAGE_EXTENSIONS[language.toLowerCase()] ?? "txt"}`;
 }
 
-function downloadCode(language: string, source: string): void {
-	const url = URL.createObjectURL(new Blob([source], { type: "text/plain;charset=utf-8" }));
-	const anchor = document.createElement("a");
-	anchor.href = url;
-	anchor.download = codeFilename(language);
-	document.body.appendChild(anchor);
-	anchor.click();
-	anchor.remove();
-	setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function encodeUtf8Base64(value: string): string {
-	const bytes = new TextEncoder().encode(value);
-	let binary = "";
-	for (const byte of bytes) binary += String.fromCharCode(byte);
-	return btoa(binary);
-}
-
 function runPython(source: string): void {
-	const encoded = encodeUtf8Base64(source);
-	const command = `python -c "import base64;exec(compile(base64.b64decode('${encoded}'),'model_reply.py','exec'))"`;
-	terminalStore.runCommand(command, "model_reply.py");
+	// Ship the source as file content instead of an inlined `python -c`
+	// one-liner: the server rejects commands over 4096 chars, which any
+	// realistic snippet exceeds after base64 inflation. The server writes the
+	// file into the terminal's cwd before starting the run.
+	terminalStore.runCommand("python model_reply.py", "model_reply.py", source);
 }
 
-function CodeAction({ label, active = false, disabled = false, onClick, children }: {
-	label: string;
-	active?: boolean;
-	disabled?: boolean;
-	onClick: () => void;
-	children: ReactNode;
-}) {
-	return (
-		<button
-			type="button"
-			aria-label={label}
-			title={label}
-			disabled={disabled}
-			onClick={onClick}
-			className={`cursor-pointer rounded p-1 transition-colors ${active ? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"} disabled:cursor-not-allowed disabled:opacity-40`}
-		>
-			{children}
-		</button>
-	);
+function countLines(source: string): number {
+	let lines = 1;
+	for (let i = 0; i < source.length; i += 1) {
+		if (source[i] === "\n") lines += 1;
+	}
+	return lines;
 }
 
 export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRendererProps) {
+	const { t } = useTranslation();
 	const streamdownContext = useContext(StreamdownContext);
 	const [source, setSource] = useState(code);
 	const [draft, setDraft] = useState(code);
 	const [editing, setEditing] = useState(false);
 	const [wrapped, setWrapped] = useState(false);
-	const [expanded, setExpanded] = useState(code.split("\n").length <= 16);
+	const [expanded, setExpanded] = useState(() => countLines(code) <= 16);
 	const [fullscreen, setFullscreen] = useState(false);
 	const [copied, setCopied] = useState(false);
 	const canRun = /^(?:python|py)$/i.test(language) && !isIncomplete;
-	const expandable = source.split("\n").length > 16 || source.length > 1800;
+	// The length check short-circuits before the line scan for short snippets;
+	// both avoid allocating a per-line array on every streaming re-render.
+	const expandable = source.length > 1800 || countLines(source) > 16;
 
 	useEffect(() => {
 		if (editing) return;
@@ -93,19 +69,7 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 		setDraft(code);
 	}, [code, editing]);
 
-	useEffect(() => {
-		if (!fullscreen) return;
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") setFullscreen(false);
-		};
-		document.addEventListener("keydown", onKeyDown);
-		const previousOverflow = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
-		return () => {
-			document.removeEventListener("keydown", onKeyDown);
-			document.body.style.overflow = previousOverflow;
-		};
-	}, [fullscreen]);
+	useFullscreenDialog(fullscreen, useCallback(() => setFullscreen(false), []));
 
 	const handleCopy = async () => {
 		await navigator.clipboard.writeText(editing ? draft : source);
@@ -115,18 +79,18 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 
 	const actions = (
 		<Fragment>
-			{canRun ? <CodeAction label="在练习终端运行 Python" onClick={() => runPython(source)}><Play size={14} /></CodeAction> : null}
+			{canRun ? <ToolbarIconButton label={t("markdown.runPython", "在练习终端运行 Python")} onClick={() => runPython(source)}><Play size={14} /></ToolbarIconButton> : null}
 			{editing ? (
-				<CodeAction label="应用更改" onClick={() => { setSource(draft); setEditing(false); }}><Save size={14} /></CodeAction>
+				<ToolbarIconButton label={t("markdown.applyChanges", "应用更改")} onClick={() => { setSource(draft); setEditing(false); }}><Save size={14} /></ToolbarIconButton>
 			) : (
-				<CodeAction label="编辑副本" disabled={isIncomplete} onClick={() => { setDraft(source); setEditing(true); }}><Pencil size={14} /></CodeAction>
+				<ToolbarIconButton label={t("markdown.editCopy", "编辑副本")} disabled={isIncomplete} onClick={() => { setDraft(source); setEditing(true); }}><Pencil size={14} /></ToolbarIconButton>
 			)}
-			{source !== code ? <CodeAction label="恢复模型原文" onClick={() => { setSource(code); setDraft(code); setEditing(false); }}><RotateCcw size={14} /></CodeAction> : null}
-			<CodeAction label="自动换行" active={wrapped} onClick={() => setWrapped((value) => !value)}><WrapText size={14} /></CodeAction>
-			{expandable ? <CodeAction label={expanded ? "折叠代码" : "展开代码"} active={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</CodeAction> : null}
-			<CodeAction label={copied ? "已复制" : "复制代码"} onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}</CodeAction>
-			<CodeAction label="下载代码" onClick={() => downloadCode(language, editing ? draft : source)}><Download size={14} /></CodeAction>
-			<CodeAction label="全屏查看" onClick={() => setFullscreen(true)}><Maximize2 size={14} /></CodeAction>
+			{source !== code ? <ToolbarIconButton label={t("markdown.restoreOriginal", "恢复模型原文")} onClick={() => { setSource(code); setDraft(code); setEditing(false); }}><RotateCcw size={14} /></ToolbarIconButton> : null}
+			<ToolbarIconButton label={t("markdown.wrapText", "自动换行")} active={wrapped} onClick={() => setWrapped((value) => !value)}><WrapText size={14} /></ToolbarIconButton>
+			{expandable ? <ToolbarIconButton label={expanded ? t("markdown.collapseCode", "折叠代码") : t("markdown.expandCode", "展开代码")} active={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</ToolbarIconButton> : null}
+			<ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copyCode", "复制代码")} onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}</ToolbarIconButton>
+			<ToolbarIconButton label={t("markdown.downloadCode", "下载代码")} onClick={() => downloadBlob(codeFilename(language), new Blob([editing ? draft : source], { type: "text/plain;charset=utf-8" }))}><Download size={14} /></ToolbarIconButton>
+			<ToolbarIconButton label={t("markdown.fullscreen", "全屏查看")} onClick={() => setFullscreen(true)}><Maximize2 size={14} /></ToolbarIconButton>
 		</Fragment>
 	);
 
@@ -148,7 +112,7 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 			{editing ? (
 				<div data-inno-code-block="" className="my-4 overflow-hidden rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-2">
 					<div className="flex h-8 items-center gap-2 px-1 text-xs text-[var(--inno-text-muted)]">
-						<span className="min-w-0 flex-1 truncate font-mono lowercase">{language || "text"} · 编辑副本</span>
+						<span className="min-w-0 flex-1 truncate font-mono lowercase">{language || "text"} · {t("markdown.editCopy", "编辑副本")}</span>
 						{actions}
 					</div>
 					<textarea value={draft} onChange={(event) => setDraft(event.target.value)} spellCheck={false} className="min-h-64 w-full resize-y rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] p-3 font-mono text-xs leading-relaxed text-[var(--inno-text)] outline-none" />
@@ -156,10 +120,10 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 			) : renderedCode()}
 
 			{fullscreen && typeof document !== "undefined" ? createPortal(
-				<div role="dialog" aria-modal="true" aria-label="代码全屏查看" className="fixed inset-0 z-[1000] flex flex-col bg-[var(--inno-background)]">
+				<div role="dialog" aria-modal="true" aria-label={t("markdown.codeFullscreen", "代码全屏查看")} className="fixed inset-0 z-[1000] flex flex-col bg-[var(--inno-background)]">
 					<div className="flex items-center border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-4 py-2">
 						<span className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--inno-text-muted)]">{language || "text"}</span>
-						<CodeAction label="退出全屏" onClick={() => setFullscreen(false)}><Minimize2 size={16} /></CodeAction>
+						<ToolbarIconButton label={t("markdown.exitFullscreen", "退出全屏")} onClick={() => setFullscreen(false)}><Minimize2 size={16} /></ToolbarIconButton>
 					</div>
 					<div className="min-h-0 flex-1 overflow-auto p-3">{renderedCode(true)}</div>
 				</div>,

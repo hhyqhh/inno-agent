@@ -5,7 +5,7 @@
 export type ClientTerminalEvent =
 	| { type: "input"; data: string }
 	| { type: "resize"; cols: number; rows: number }
-	| { type: "run"; command: string; sourceFile?: string }
+	| { type: "run"; command: string; sourceFile?: string; content?: string }
 	| { type: "close" };
 
 export type ServerTerminalEvent =

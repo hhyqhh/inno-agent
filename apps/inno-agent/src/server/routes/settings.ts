@@ -12,6 +12,7 @@ import {
 	deleteProvider,
 	normalizeContentHubConfig,
 	normalizeSmartInputConfig,
+	normalizeUiConfig,
 	saveConfig,
 	setDefaultModel,
 	upsertProvider,
@@ -638,7 +639,7 @@ export async function handleSettingsRoutes(
 			json(res, 400, { error: `Invalid theme. Allowed: ${ALLOWED_THEMES.join(", ")}` });
 			return true;
 		}
-		config.ui = { ...(config.ui ?? { theme: "light", closeBehavior: "ask", mathSingleDollar: false }), theme };
+		config.ui = { ...normalizeUiConfig(config.ui), theme };
 		save(saveConfig(paths.configPath, config));
 		json(res, 200, buildSafeSettings(config));
 		return true;
@@ -653,7 +654,7 @@ export async function handleSettingsRoutes(
 			return true;
 		}
 		config.ui = {
-			...(config.ui ?? { theme: "light", closeBehavior: "ask", mathSingleDollar: false }),
+			...normalizeUiConfig(config.ui),
 			closeBehavior,
 		};
 		save(saveConfig(paths.configPath, config));
@@ -669,7 +670,7 @@ export async function handleSettingsRoutes(
 			return true;
 		}
 		config.ui = {
-			...(config.ui ?? { theme: "light", closeBehavior: "ask", mathSingleDollar: false }),
+			...normalizeUiConfig(config.ui),
 			mathSingleDollar: body.mathSingleDollar,
 		};
 		save(saveConfig(paths.configPath, config));

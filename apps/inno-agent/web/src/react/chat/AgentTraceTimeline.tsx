@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -412,13 +412,35 @@ function TraceBody({ content }: { content: string }) {
 	);
 }
 
-/** Streamdown repairs incomplete Markdown and animates incoming content while
- * the existing trace container keeps the reply in chronological position. */
+/** Streamdown repairs incomplete Markdown and memoizes settled blocks while
+ * streaming. What it does not guard is the row height: mid-stream swaps (the
+ * Mermaid lazy fallback, the 64KB animation flip, async renderer fallbacks)
+ * can momentarily render shorter and bounce the timeline. Pin the container
+ * to its tallest observed height so transient reparses cannot shrink it. */
 function LiveTraceBody({ content }: { content: string }) {
 	const trimmed = content.trim();
+
+	const heightWatermarkRef = useRef(0);
+	const bodyObserverRef = useRef<ResizeObserver | null>(null);
+	const bodyRef = useCallback((el: HTMLDivElement | null) => {
+		bodyObserverRef.current?.disconnect();
+		bodyObserverRef.current = null;
+		if (!el) return;
+		heightWatermarkRef.current = 0;
+		el.style.minHeight = "";
+		const observer = new ResizeObserver(() => {
+			const height = el.offsetHeight;
+			if (height > heightWatermarkRef.current) heightWatermarkRef.current = height;
+			const minHeight = `${heightWatermarkRef.current}px`;
+			if (el.style.minHeight !== minHeight) el.style.minHeight = minHeight;
+		});
+		observer.observe(el);
+		bodyObserverRef.current = observer;
+	}, []);
+
 	if (!trimmed) return null;
 	return (
-		<div className="inno-trace-body">
+		<div ref={bodyRef} className="inno-trace-body">
 			<MarkdownArtifact content={trimmed} streaming />
 		</div>
 	);

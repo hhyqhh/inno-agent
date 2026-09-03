@@ -28,6 +28,7 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 	lastCommand: string | null = null;
 
 	private ws: WebSocket | null = null;
+	private pendingRun: { command: string; sourceFile?: string } | null = null;
 
 	setOpen(open: boolean): void {
 		if (this.isOpen === open) return;
@@ -38,7 +39,12 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 	async connect(innoSessionId: string, workspaceId?: string, cols = 100, rows = 24): Promise<void> {
 		// If already connected to same session, no-op.
 		if (this.innoSessionId === innoSessionId && this.status === "connected" && this.ws) return;
+		// A code-block Run action opens the drawer first; the drawer then creates
+		// its terminal connection. Keep that queued command across the connection's
+		// internal cleanup so it is delivered with the server's `ready` event.
+		const pendingRun = this.pendingRun;
 		await this.disconnect();
+		this.pendingRun = pendingRun;
 
 		this.innoSessionId = innoSessionId;
 		this.status = "connecting";
@@ -82,6 +88,11 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 					clearTimeout(watchdog);
 					this.status = "connected";
 					this.emit("change", undefined);
+					if (this.pendingRun) {
+						const pending = this.pendingRun;
+						this.pendingRun = null;
+						this.send({ type: "run", command: pending.command, sourceFile: pending.sourceFile });
+					}
 					break;
 				case "output":
 					this.emit("output", event.data);
@@ -137,7 +148,11 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 		if (!command.trim()) return;
 		this.lastCommand = command;
 		this.setOpen(true);
-		this.send({ type: "run", command, sourceFile });
+		if (this.ws?.readyState === WebSocket.OPEN && this.status === "connected") {
+			this.send({ type: "run", command, sourceFile });
+		} else {
+			this.pendingRun = { command, sourceFile };
+		}
 	}
 
 	async disconnect(): Promise<void> {
@@ -149,6 +164,7 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 		this.workspaceId = null;
 		this.cwd = null;
 		this.activeRunId = null;
+		this.pendingRun = null;
 		this.status = "idle";
 		this.emit("change", undefined);
 		if (ws) {

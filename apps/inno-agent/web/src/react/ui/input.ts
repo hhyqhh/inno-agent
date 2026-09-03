@@ -5,8 +5,8 @@
  * so it doesn't fire on mouse click.
  */
 export const inputCls =
-	"h-8 w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] transition-colors focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]";
+	"h-8 w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 text-sm font-normal text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] transition-colors focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]";
 
 /** Textarea variant — same base, grows vertically. */
 export const textareaCls =
-	"w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1.5 text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] transition-colors focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]";
+	"w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1.5 text-sm font-normal text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] transition-colors focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]";

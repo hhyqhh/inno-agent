@@ -13,7 +13,7 @@ import { findPreset } from "./provider-presets.js";
 const apiOptions = ["openai-completions", "openai-responses", "anthropic-messages"];
 
 const inputCls = "w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1.5 text-xs text-[var(--inno-text)] focus:border-[var(--inno-accent)] focus:outline-none";
-const labelCls = "mb-0.5 block text-[10px] text-[var(--inno-text-muted)]";
+const labelCls = "mb-0.5 block text-xs text-[var(--inno-text-muted)]";
 
 interface ModelEditFormState {
 	baseUrl: string;
@@ -136,7 +136,7 @@ function ModelEditForm({ model, settings, onClose }: {
 				</div>
 			</div>
 
-			<button className="mt-2 flex items-center gap-1 text-[10px] text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]" onClick={() => setShowAdvanced((v) => !v)}>
+			<button className="mt-2 flex items-center gap-1 text-xs text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]" onClick={() => setShowAdvanced((v) => !v)}>
 				{showAdvanced ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
 				{t("settings.wizard.advanced", "高级选项")}
 			</button>
@@ -154,7 +154,7 @@ function ModelEditForm({ model, settings, onClose }: {
 						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
 						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
 					</div>
-					<p className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.form.supportsImagesHint")}</p>
+					<p className="text-xs text-[var(--inno-text-subtle)]">{t("settings.form.supportsImagesHint")}</p>
 				</div>
 			)}
 
@@ -206,7 +206,7 @@ export function ModelsSettings({ settings }: { settings: InnoSettings }) {
 									<ProviderIcon providerId={providerId} size={20} />
 									<span className="text-xs font-medium text-[var(--inno-text)]">{preset?.name ?? providerId}</span>
 									{preset?.docsUrl && (
-										<a className="text-[10px] text-[var(--inno-text-subtle)] hover:text-[var(--inno-accent)]" href={preset.docsUrl} target="_blank" rel="noreferrer">
+										<a className="text-xs text-[var(--inno-text-subtle)] hover:text-[var(--inno-accent)]" href={preset.docsUrl} target="_blank" rel="noreferrer">
 											{t("settings.wizard.docs", "文档")}
 										</a>
 									)}
@@ -233,8 +233,8 @@ export function ModelsSettings({ settings }: { settings: InnoSettings }) {
 												<div className="min-w-0 flex-1">
 													<div className="flex items-center gap-1.5 text-sm font-medium text-[var(--inno-text)]">
 														{model.name || model.id}
-														{model.reasoning && <span className="rounded bg-[var(--inno-surface-muted)] px-1 py-px text-[9px] font-normal text-[var(--inno-text-muted)]">{t("settings.form.reasoning")}</span>}
-														{model.input.includes("image") && <span className="rounded bg-[var(--inno-surface-muted)] px-1 py-px text-[9px] font-normal text-[var(--inno-text-muted)]">{t("settings.wizard.vision", "视觉")}</span>}
+														{model.reasoning && <span className="rounded bg-[var(--inno-surface-muted)] px-1 py-px text-xs font-normal text-[var(--inno-text-muted)]">{t("settings.form.reasoning")}</span>}
+														{model.input.includes("image") && <span className="rounded bg-[var(--inno-surface-muted)] px-1 py-px text-xs font-normal text-[var(--inno-text-muted)]">{t("settings.wizard.vision", "视觉")}</span>}
 													</div>
 													<div className="text-xs text-[var(--inno-text-muted)]">{formatTokens(model.contextWindow)} context · {formatTokens(model.maxTokens)} max</div>
 												</div>

@@ -4,7 +4,6 @@ import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import { X, AlertTriangle, FileCode2, History, BookmarkPlus, BookOpen, Check, Copy, Pencil, RotateCcw, TerminalSquare } from "lucide-react";
 import type { AttachmentBinding, AttachmentRef, ChatMessage, ChatToolRecord, ChatTraceStep } from "../../types/chat.js";
-import { normalizeMarkdownMath } from "../../utils/markdown-math.js";
 import { splitContentByBindings } from "../../utils/attachment-render.js";
 import { answeredQuestionnaireFromTool, buildAnsweredQuestionnaireTimeline } from "../../utils/questionnaire.js";
 import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
@@ -407,12 +406,9 @@ function AssistantContent({ content }: { content: string }) {
 	const { t } = useTranslation();
 	const [expanded, setExpanded] = useState(false);
 	const trimmed = content.trim();
-	// normalizeMarkdownMath is a multi-regex full-text scan — cache it so
-	// unrelated re-renders (e.g. streaming emits) don't re-scan old messages.
-	const normalized = useMemo(() => normalizeMarkdownMath(trimmed), [trimmed]);
 	if (!trimmed) return null;
 	if (!shouldCollapseAssistantContent(trimmed)) {
-		return <MarkdownArtifact content={normalized} />;
+		return <MarkdownArtifact content={trimmed} />;
 	}
 	const lineCount = trimmed.split(/\r\n|\r|\n/).length;
 	const preview = trimmed.slice(0, 900);
@@ -425,7 +421,7 @@ function AssistantContent({ content }: { content: string }) {
 			</div>
 			{expanded ? (
 				<div className="max-h-[60vh] overflow-auto rounded border border-[var(--inno-border)] bg-[var(--inno-surface)] p-2">
-					<MarkdownArtifact content={normalized} />
+					<MarkdownArtifact content={trimmed} />
 				</div>
 			) : (
 				<pre className="max-h-36 overflow-hidden whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[var(--inno-text-muted)] [overflow-wrap:anywhere]">

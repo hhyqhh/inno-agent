@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -16,8 +16,6 @@ import {
 } from "lucide-react";
 import type { ChatTraceStep, ChatTraceStepKind, ChatTraceStepStatus } from "../../types/chat.js";
 import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
-import { normalizeMarkdownMath } from "../../utils/markdown-math.js";
-import { splitStreamingMarkdown } from "../../utils/markdown-blocks.js";
 import { MarkdownArtifact } from "../MarkdownArtifact.js";
 import { AnsweredQuestionCard } from "./AnsweredQuestionCard.js";
 import {
@@ -406,54 +404,22 @@ function TraceRow({ step, now, isCurrentLiveStep, expanded, onToggle, t, onOpenS
 
 function TraceBody({ content }: { content: string }) {
 	const trimmed = content.trim();
-	const normalized = useMemo(() => normalizeMarkdownMath(trimmed), [trimmed]);
 	if (!trimmed) return null;
 	return (
 		<div className="inno-trace-body">
-			<MarkdownArtifact content={normalized} />
+			<MarkdownArtifact content={trimmed} />
 		</div>
 	);
 }
 
-/** Closed streaming blocks are parsed once and never re-rendered. */
-const StableTraceMarkdown = memo(function StableTraceMarkdown({ content }: { content: string }) {
-	return <MarkdownArtifact content={content} />;
-});
-
-/** Live variant of TraceBody for the active streaming turn. Without these
- * guards every stream flush reparses and re-highlights the whole document: an
- * unclosed code fence then alternates between paragraph and code rendering,
- * which bounces the row height and reads as visible jitter. Split off closed
- * blocks so only the tail reparses, and pin the container to its tallest
- * observed height so transient reparses cannot shrink it. */
+/** Streamdown repairs incomplete Markdown and animates incoming content while
+ * the existing trace container keeps the reply in chronological position. */
 function LiveTraceBody({ content }: { content: string }) {
 	const trimmed = content.trim();
-	const normalized = useMemo(() => normalizeMarkdownMath(trimmed), [trimmed]);
-	const { blocks, tail } = useMemo(() => splitStreamingMarkdown(normalized), [normalized]);
-
-	const heightWatermarkRef = useRef(0);
-	const bodyObserverRef = useRef<ResizeObserver | null>(null);
-	const bodyRef = useCallback((el: HTMLDivElement | null) => {
-		bodyObserverRef.current?.disconnect();
-		bodyObserverRef.current = null;
-		if (!el) return;
-		heightWatermarkRef.current = 0;
-		el.style.minHeight = "";
-		const observer = new ResizeObserver(() => {
-			const height = el.offsetHeight;
-			if (height > heightWatermarkRef.current) heightWatermarkRef.current = height;
-			const minHeight = `${heightWatermarkRef.current}px`;
-			if (el.style.minHeight !== minHeight) el.style.minHeight = minHeight;
-		});
-		observer.observe(el);
-		bodyObserverRef.current = observer;
-	}, []);
-
 	if (!trimmed) return null;
 	return (
-		<div ref={bodyRef} className="inno-trace-body">
-			{blocks.map((block, index) => <StableTraceMarkdown key={index} content={block} />)}
-			{tail ? <MarkdownArtifact content={tail} /> : null}
+		<div className="inno-trace-body">
+			<MarkdownArtifact content={trimmed} streaming />
 		</div>
 	);
 }

@@ -638,7 +638,7 @@ export async function handleSettingsRoutes(
 			json(res, 400, { error: `Invalid theme. Allowed: ${ALLOWED_THEMES.join(", ")}` });
 			return true;
 		}
-		config.ui = { ...(config.ui ?? { theme: "light", closeBehavior: "ask" }), theme };
+		config.ui = { ...(config.ui ?? { theme: "light", closeBehavior: "ask", mathSingleDollar: false }), theme };
 		save(saveConfig(paths.configPath, config));
 		json(res, 200, buildSafeSettings(config));
 		return true;
@@ -653,8 +653,24 @@ export async function handleSettingsRoutes(
 			return true;
 		}
 		config.ui = {
-			...(config.ui ?? { theme: "light", closeBehavior: "ask" }),
+			...(config.ui ?? { theme: "light", closeBehavior: "ask", mathSingleDollar: false }),
 			closeBehavior,
+		};
+		save(saveConfig(paths.configPath, config));
+		json(res, 200, buildSafeSettings(config));
+		return true;
+	}
+
+	// PUT /api/settings/markdown — persist user-facing Markdown parsing preferences
+	if (method === "PUT" && url === "/api/settings/markdown") {
+		const body = (await readBody(req)) as Record<string, unknown>;
+		if (typeof body.mathSingleDollar !== "boolean") {
+			json(res, 400, { error: "mathSingleDollar must be a boolean" });
+			return true;
+		}
+		config.ui = {
+			...(config.ui ?? { theme: "light", closeBehavior: "ask", mathSingleDollar: false }),
+			mathSingleDollar: body.mathSingleDollar,
 		};
 		save(saveConfig(paths.configPath, config));
 		json(res, 200, buildSafeSettings(config));

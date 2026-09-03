@@ -231,6 +231,24 @@ describe("server smoke", () => {
 		expect(bad.status).toBe(400);
 	});
 
+	it("PUT /api/settings/markdown persists the single-dollar math preference", async () => {
+		const ok = await fetch(`http://127.0.0.1:${port}/api/settings/markdown`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ mathSingleDollar: true }),
+		});
+		expect(ok.status).toBe(200);
+		const body = (await ok.json()) as { ui: { mathSingleDollar: boolean } };
+		expect(body.ui.mathSingleDollar).toBe(true);
+
+		const bad = await fetch(`http://127.0.0.1:${port}/api/settings/markdown`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ mathSingleDollar: "yes" }),
+		});
+		expect(bad.status).toBe(400);
+	});
+
 	it("PUT /api/settings/memory validates boolean fields", async () => {
 		const res = await fetch(`http://127.0.0.1:${port}/api/settings/memory`, {
 			method: "PUT",

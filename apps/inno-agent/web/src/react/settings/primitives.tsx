@@ -14,7 +14,7 @@ export function SettingsSection({ title, description, children }: {
 	return (
 		<section className="mb-8">
 			<h2 className="text-base font-semibold text-[var(--inno-text)]">{title}</h2>
-			{description ? <p className="mt-1 text-xs text-[var(--inno-text-muted)]">{description}</p> : null}
+			{description ? <p className="mt-1 text-sm text-[var(--inno-text-muted)]">{description}</p> : null}
 			<div className="mt-4 grid gap-3">{children}</div>
 		</section>
 	);
@@ -39,7 +39,7 @@ export function SettingsRow({ label, description, control, disabled }: {
 		<div className={`flex items-start justify-between gap-3 ${disabled ? "opacity-60" : ""}`}>
 			<div className="min-w-0">
 				<h4 className="text-sm font-medium text-[var(--inno-text)]">{label}</h4>
-				{description ? <p className="mt-1 text-xs leading-relaxed text-[var(--inno-text-muted)]">{description}</p> : null}
+				{description ? <p className="mt-1 text-sm text-[var(--inno-text-muted)]">{description}</p> : null}
 			</div>
 			{control}
 		</div>

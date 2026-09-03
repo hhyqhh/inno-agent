@@ -492,7 +492,7 @@ export function SmartInputSettings() {
 						</div>
 					) : null}
 				</div>
-				<p className="mt-3 text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">
+				<p className="mt-3 text-xs leading-relaxed text-[var(--inno-text-subtle)]">
 					{t("settings.smartInput.rulesHint", "关键词按字面匹配；可限制允许格式，也可选择全部格式并设置排除项。后缀直接输入 pdf 即可，无需输入句点。设置仅影响后续输入。")}
 				</p>
 			</SettingsCard>

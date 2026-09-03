@@ -284,10 +284,19 @@ function openMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       preload: join(__dirname, "preload.cjs"),
+      zoomFactor: 1,
     },
   });
 
   mainWindow.loadURL(`http://localhost:${PORT}`);
+
+  // Chromium remembers per-origin page zoom. Reset it for the local app so a
+  // previous Ctrl +/- does not compound Windows display scaling on restart.
+  mainWindow.webContents.on("did-finish-load", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.setZoomFactor(1);
+    }
+  });
 
   // 原生右键菜单：Electron 默认不弹出系统菜单，这里补上文本编辑的基础项。
   mainWindow.webContents.on("context-menu", (event, params) => {

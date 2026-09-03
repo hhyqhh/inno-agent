@@ -10,7 +10,7 @@ import { checkboxCls } from "../ui/checkbox.js";
 import { Switch } from "../ui/Switch.js";
 import { SettingsSection } from "./primitives.js";
 
-const labelCls = "mb-0.5 block text-[10px] text-[var(--inno-text-muted)]";
+const labelCls = "mb-0.5 block text-xs text-[var(--inno-text-muted)]";
 const checkCls = "flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]";
 
 /* ---------- Shared channel building blocks ---------- */
@@ -53,7 +53,7 @@ function ChannelStatusRow({ connected, label, detail }: {
 				<>
 					<Wifi size={14} className="shrink-0 text-[var(--inno-success)]" />
 					<span className="text-xs font-medium text-[var(--inno-success)]">{label}</span>
-					{detail ? <span className="ml-1 text-[10px] text-[var(--inno-text-subtle)]">{detail}</span> : null}
+					{detail ? <span className="ml-1 text-xs text-[var(--inno-text-subtle)]">{detail}</span> : null}
 				</>
 			) : (
 				<>
@@ -199,7 +199,7 @@ function FeishuChannel({ settings, state, onStateChange }: {
 					<>
 						<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.feishu.qrTitle")}</div>
 						<QRCodeSVG value={qrUrl} size={192} />
-						<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.feishu.qrSubtitle")}</div>
+						<div className="text-xs text-[var(--inno-text-subtle)]">{t("settings.feishu.qrSubtitle")}</div>
 						<div className="text-xs text-[var(--inno-accent)]">{t("settings.feishu.qrWaiting")}</div>
 					</>
 				) : qrState === "confirmed" ? (
@@ -467,7 +467,7 @@ export function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 					<div className="mb-2 flex items-center justify-between">
 						<div>
 							<div className="text-xs font-medium text-[var(--inno-text)]">{t("settings.channels.qq.title")}</div>
-							<div className="text-[10px] text-[var(--inno-text-subtle)]">{t("settings.channels.qq.desc")}</div>
+							<div className="text-xs text-[var(--inno-text-subtle)]">{t("settings.channels.qq.desc")}</div>
 						</div>
 						<label className={checkCls}>
 							<input type="checkbox" className={checkboxCls} checked={qqEnabled} onChange={(e) => setQqEnabled(e.target.checked)} />
@@ -499,7 +499,7 @@ export function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 			{QQ_CHANNEL_READY && qqEnabled && (
 				<div className="rounded-lg bg-[var(--inno-surface)] p-4">
 					<div className="text-xs font-medium text-[var(--inno-text)] mb-1">{t("settings.channels.bridgeToken")}</div>
-					<div className="text-[10px] text-[var(--inno-text-subtle)] mb-2">{t("settings.channels.bridgeTokenHint")}</div>
+					<div className="text-xs text-[var(--inno-text-subtle)] mb-2">{t("settings.channels.bridgeTokenHint")}</div>
 					<input
 						className={inputCls}
 						type="password"
@@ -507,7 +507,7 @@ export function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 						value={bridgeToken}
 						onChange={(e) => setBridgeToken(e.target.value)}
 					/>
-					{settings.bridge?.token && <div className="mt-1 text-[10px] text-[var(--inno-text-subtle)]">({settings.bridge.token})</div>}
+					{settings.bridge?.token && <div className="mt-1 text-xs text-[var(--inno-text-subtle)]">({settings.bridge.token})</div>}
 				</div>
 			)}
 

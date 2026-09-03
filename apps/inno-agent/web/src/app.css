@@ -1,8 +1,46 @@
 @import "@earendil-works/pi-web-ui/app.css";
+@import "streamdown/styles.css";
+@import "katex/dist/katex.min.css";
+@import "remark-github-blockquote-alert/alert.css";
 @import "tailwindcss";
 @import "./themes.css";
 
+@source "../../../../node_modules/streamdown/dist/*.js";
+@source "../../../../node_modules/@streamdown/code/dist/*.js";
+@source "../../../../node_modules/@streamdown/math/dist/*.js";
+@source "../../../../node_modules/@streamdown/mermaid/dist/*.js";
+@source "../../../../node_modules/@streamdown/cjk/dist/*.js";
+
 :root {
+	/* Typography follows one UI track, as in Cherry Studio: 12/14/16/18px
+	   with stable line-height and weight tokens. Keep a CJK-first stack for
+	   Chinese Windows so Latin and Han glyphs use compatible UI metrics. */
+	--inno-font-family-body: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+	--inno-font-family-heading: var(--inno-font-family-body);
+	--inno-font-size-body-xs: 0.75rem;
+	--inno-font-size-body-sm: 0.875rem;
+	--inno-font-size-body-md: 1rem;
+	--inno-font-size-body-lg: 1.125rem;
+	--inno-line-height-body-xs: 1.25rem;
+	--inno-line-height-body-sm: 1.5rem;
+	--inno-line-height-body-md: 1.5rem;
+	--inno-line-height-body-lg: 1.75rem;
+	--inno-font-weight-regular: 400;
+	--inno-font-weight-medium: 500;
+	--inno-font-weight-bold: 700;
+
+	/* Route Tailwind's common text utilities through the same scale. */
+	--font-sans: var(--inno-font-family-body);
+	--default-font-family: var(--inno-font-family-body);
+	--text-xs: var(--inno-font-size-body-xs);
+	--text-xs--line-height: var(--inno-line-height-body-xs);
+	--text-sm: var(--inno-font-size-body-sm);
+	--text-sm--line-height: var(--inno-line-height-body-sm);
+	--text-base: var(--inno-font-size-body-md);
+	--text-base--line-height: var(--inno-line-height-body-md);
+	--text-lg: var(--inno-font-size-body-lg);
+	--text-lg--line-height: var(--inno-line-height-body-lg);
+
 	--inno-background: #f6f8fa;
 	--inno-surface: #ffffff;
 	--inno-surface-muted: #eef2f6;
@@ -65,11 +103,33 @@ body {
 	background: var(--inno-background);
 }
 
-button,
-input,
-textarea,
-select {
-	font: inherit;
+body {
+	font-family: var(--inno-font-family-body);
+	font-size: var(--inno-font-size-body-sm);
+	font-weight: var(--inno-font-weight-regular);
+	line-height: var(--inno-line-height-body-sm);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	font-family: var(--inno-font-family-heading);
+}
+
+/* Native controls should inherit the UI face, but this reset must stay in the
+   base layer so component-level text-xs/text-sm utilities can override it. */
+@layer base {
+	button,
+	input,
+	textarea,
+	select {
+		font: inherit;
+	}
 }
 
 button {
@@ -87,6 +147,138 @@ summary:focus-visible {
 
 ::selection {
 	background: var(--inno-selection-bg, rgba(37, 99, 235, 0.16));
+}
+
+/* React-native model-response renderer. Streamdown uses shadcn-compatible
+   semantic tokens; keep them local so the rest of Inno's theme system stays
+   authoritative and every built-in toolbar follows the selected theme. */
+.inno-markdown {
+	--background: var(--inno-surface);
+	--foreground: var(--inno-text);
+	--card: var(--inno-surface-raised);
+	--card-foreground: var(--inno-text);
+	--popover: var(--inno-surface-raised);
+	--popover-foreground: var(--inno-text);
+	--muted: var(--inno-surface-muted);
+	--muted-foreground: var(--inno-text-muted);
+	--sidebar: var(--inno-surface-muted);
+	--sidebar-foreground: var(--inno-text);
+	--border: var(--inno-border);
+	--input: var(--inno-border);
+	--primary: var(--inno-accent);
+	--primary-foreground: var(--inno-surface);
+	--accent: var(--inno-accent-soft);
+	--accent-foreground: var(--inno-text);
+	--destructive: var(--inno-danger);
+	--radius: 0.55rem;
+	min-width: 0;
+	max-width: 100%;
+	color: var(--inno-text);
+	font-size: inherit;
+	line-height: 1.72;
+	overflow-wrap: anywhere;
+}
+
+.inno-markdown :where(h1, h2, h3, h4, h5, h6) {
+	color: var(--inno-text);
+	font-weight: 650;
+	line-height: 1.35;
+	text-wrap: balance;
+}
+
+.inno-markdown :where(h1, h2) {
+	padding-bottom: 0.28em;
+	border-bottom: 1px solid var(--inno-border);
+}
+
+.inno-markdown h1 { font-size: 1.55em; }
+.inno-markdown h2 { font-size: 1.32em; }
+.inno-markdown h3 { font-size: 1.15em; }
+
+.inno-markdown :where(p, li) {
+	text-wrap: pretty;
+}
+
+.inno-markdown a {
+	color: var(--inno-accent);
+	text-decoration-color: color-mix(in srgb, var(--inno-accent) 40%, transparent);
+	text-underline-offset: 2px;
+}
+
+.inno-markdown a:hover {
+	text-decoration-line: underline;
+}
+
+.inno-markdown :where(:not(pre) > code, [data-streamdown="inline-code"]) {
+	border: 1px solid var(--inno-border);
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+
+.inno-markdown [data-streamdown="code-block"],
+.inno-markdown [data-streamdown="mermaid-block"] {
+	margin-block: 0.9rem;
+	border-color: var(--inno-border);
+	background: var(--inno-surface-muted);
+	box-shadow: 0 1px 2px rgba(31, 35, 40, 0.035);
+}
+
+.inno-markdown [data-streamdown="code-block-body"] {
+	border-color: var(--inno-border);
+	background: var(--inno-surface);
+	font-size: 0.92em;
+	line-height: 1.62;
+}
+
+.inno-markdown [data-streamdown="code-block-actions"],
+.inno-markdown [data-streamdown="mermaid-block-actions"] {
+	color: var(--inno-text-muted);
+}
+
+.inno-code-wrap [data-streamdown="code-block-body"],
+.inno-code-wrap [data-streamdown="code-block-body"] * {
+	white-space: pre-wrap !important;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+.inno-markdown :where(table) {
+	font-size: 0.94em;
+}
+
+.inno-markdown :where(th) {
+	background: var(--inno-surface-muted);
+	font-weight: 650;
+}
+
+.inno-markdown :where(blockquote) {
+	border-left-color: var(--inno-accent);
+	background: color-mix(in srgb, var(--inno-surface-muted) 72%, transparent);
+	border-radius: 0 var(--radius) var(--radius) 0;
+	padding-block: 0.45rem;
+	padding-right: 0.75rem;
+	font-style: normal;
+}
+
+.inno-markdown .markdown-alert {
+	border-radius: var(--radius);
+	background: color-mix(in srgb, var(--inno-surface-muted) 65%, transparent);
+}
+
+.inno-markdown .katex-display {
+	max-width: 100%;
+	overflow-x: auto;
+	overflow-y: hidden;
+	padding-block: 0.35rem;
+}
+
+.inno-markdown--compact {
+	font-size: 0.96em;
+	line-height: 1.62;
+}
+
+.inno-markdown--compact [data-streamdown="code-block"] {
+	margin-block: 0.55rem;
 }
 
 /* Three-column layout */

@@ -62,7 +62,8 @@
 	},
 	"ui": {
 		"theme": "light",
-		"closeBehavior": "ask"
+		"closeBehavior": "ask",
+		"mathSingleDollar": false
 	},
 	"scheduler": {
 		"timezone": "Asia/Shanghai"

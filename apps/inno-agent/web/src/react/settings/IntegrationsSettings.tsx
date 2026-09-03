@@ -72,7 +72,7 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 					<p className="mt-1 max-w-full break-words text-xs leading-relaxed text-[var(--inno-text-muted)]">
 						{t("settings.contentHub.desc", "技能库和预设工作区从这里拉取。默认公共仓库,可改为私有 GitHub 仓库或自托管服务。")}
 					</p>
-					{!open && <p className="mt-1 break-all text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">{sourceLabel}</p>}
+					{!open && <p className="mt-1 break-all text-xs leading-relaxed text-[var(--inno-text-subtle)]">{sourceLabel}</p>}
 				</div>
 				<ChevronDown size={14} className={`mt-1 shrink-0 text-[var(--inno-text-subtle)] transition-transform ${open ? "rotate-180" : ""}`} />
 			</button>
@@ -206,7 +206,7 @@ function OcrSettings({ settings }: { settings: InnoSettings }) {
 						{t("settings.ocr.desc", "当接入的模型不支持图片识别时，调用百度 vl-ocr API 提取图片文字。需在百度 AI Studio 获取 token。")}
 					</p>
 					{!open && (
-						<p className="mt-1 break-all text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">
+						<p className="mt-1 break-all text-xs leading-relaxed text-[var(--inno-text-subtle)]">
 							{hasExistingToken ? `token: ${maskedToken}` : t("settings.ocr.tokenPlaceholder", "未配置")}
 						</p>
 					)}
@@ -327,7 +327,7 @@ function TavilySettings({ settings }: { settings: InnoSettings }) {
 						{t("settings.tavily.desc", "为 agent 提供联网检索能力。需在 tavily.com 获取 API Key。")}
 					</p>
 					{!open && (
-						<p className="mt-1 break-all text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">
+						<p className="mt-1 break-all text-xs leading-relaxed text-[var(--inno-text-subtle)]">
 							{hasExistingKey ? `apiKey: ${maskedKey}` : t("settings.tavily.placeholder", "tvly-…")}
 						</p>
 					)}
@@ -442,7 +442,7 @@ function WebResearchSettings() {
 						{t("settings.webResearch.desc", "多角度、多源头联网调研与事实核查（source_check），支持 Tavily / Brave / Exa / Perplexity 等 20+ 搜索源；DuckDuckGo 免配置兜底。与上方 Tavily 快速搜索并存。")}
 					</p>
 					{!open && (
-						<p className="mt-1 break-all text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">
+						<p className="mt-1 break-all text-xs leading-relaxed text-[var(--inno-text-subtle)]">
 							{t("settings.webResearch.summary", "默认源: {{provider}} · 已配置 {{count}} 个源", {
 								provider: data?.defaultProvider ?? "auto",
 								count: configuredCount,
@@ -512,7 +512,7 @@ function WebResearchSettings() {
 							{saving ? t("common.loading") : saved ? t("settings.webResearch.saved", "已保存") : t("common.save")}
 						</button>
 					</div>
-					<p className="text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">
+					<p className="text-xs leading-relaxed text-[var(--inno-text-subtle)]">
 						{t("settings.webResearch.hint", "更多搜索源与高级选项可直接编辑配置目录下的 web-search.json。")}
 					</p>
 				</div>

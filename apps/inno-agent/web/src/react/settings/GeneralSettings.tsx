@@ -5,6 +5,7 @@ import { setLocale } from "../../i18n/index.js";
 import { useStoreSnapshot } from "../hooks.js";
 import type { WindowCloseBehavior } from "../../types/settings.js";
 import { SettingsSection, SettingsCard, SettingsRow } from "./primitives.js";
+import { Switch } from "../ui/Switch.js";
 
 function ThemePicker() {
 	const { t } = useTranslation();
@@ -74,6 +75,23 @@ function CloseBehaviorSelect() {
 	);
 }
 
+function MarkdownMathToggle() {
+	const { t } = useTranslation();
+	const state = useStoreSnapshot(settingsStore, () => ({
+		enabled: settingsStore.settings?.ui?.mathSingleDollar === true,
+		isSaving: settingsStore.isSavingMarkdown,
+		isReady: settingsStore.settings !== null,
+	}));
+	return (
+		<Switch
+			checked={state.enabled}
+			disabled={!state.isReady || state.isSaving}
+			aria-label={t("settings.markdownMath.title")}
+			onChange={(enabled) => void settingsStore.saveMathSingleDollar(enabled).catch(() => undefined)}
+		/>
+	);
+}
+
 export function GeneralSettings() {
 	const { t } = useTranslation();
 	return (
@@ -98,6 +116,13 @@ export function GeneralSettings() {
 					label={t("settings.closeBehavior.title")}
 					description={t("settings.sections.general.closeBehaviorDesc", "设置点击窗口关闭按钮时的处理方式；选择后会在所有平台记住。")}
 					control={<CloseBehaviorSelect />}
+				/>
+			</SettingsCard>
+			<SettingsCard>
+				<SettingsRow
+					label={t("settings.markdownMath.title")}
+					description={t("settings.markdownMath.description")}
+					control={<MarkdownMathToggle />}
 				/>
 			</SettingsCard>
 			</SettingsSection>

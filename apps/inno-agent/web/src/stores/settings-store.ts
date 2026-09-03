@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveSmartInputSettings, saveMcpSettings, saveCloseBehavior, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveSmartInputSettings, saveMcpSettings, saveCloseBehavior, saveMarkdownSettings, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
 import type { WindowCloseBehavior } from "../types/settings.js";
 import type { InnoSettings, SmartInputSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
@@ -22,6 +22,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingSmartInput = false;
 	isSavingMcp = false;
 	isSavingCloseBehavior = false;
+	isSavingMarkdown = false;
 	error: string | null = null;
 
 	async load(): Promise<void> {
@@ -204,6 +205,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			throw err;
 		} finally {
 			this.isSavingCloseBehavior = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveMathSingleDollar(enabled: boolean): Promise<void> {
+		this.isSavingMarkdown = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveMarkdownSettings(enabled);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save Markdown settings";
+			this.emit("change", undefined);
+			throw err;
+		} finally {
+			this.isSavingMarkdown = false;
 			this.emit("change", undefined);
 		}
 	}

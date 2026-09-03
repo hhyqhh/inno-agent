@@ -74,7 +74,13 @@ function normalizeDelimitedMath(source: string): string {
 			const close = source[index + 1] === "(" ? "\\)" : "\\]";
 			const end = source.indexOf(close, index + 2);
 			if (end !== -1) {
-				output += `${source.slice(index, index + 2)}${normalizeMathExpression(source.slice(index + 2, end))}${close}`;
+				// Streamdown's math pipeline consumes remark-math's canonical dollar
+				// delimiters. Preserve the model-friendly LaTeX forms at the API
+				// boundary, then translate them here outside fenced/inline code.
+				// `$$...$$` on one line is parsed as inline math even when the
+				// user disables ambiguous single-dollar math (useful for prices).
+				const delimiter = "$$";
+				output += `${delimiter}${normalizeMathExpression(source.slice(index + 2, end))}${delimiter}`;
 				index = end + 2;
 				continue;
 			}

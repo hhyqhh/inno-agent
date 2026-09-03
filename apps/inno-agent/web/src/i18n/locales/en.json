@@ -577,6 +577,10 @@
 			"qrRegenerate": "Regenerate"
 		},
 		"back": "Back",
+		"markdownMath": {
+			"title": "Single-dollar inline math",
+			"description": "Allow $...$ math. Off by default so prices remain plain text; \\(...\\) and $$...$$ still work."
+		},
 		"tabs": {
 			"general": "General",
 			"lab": "Lab",

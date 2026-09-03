@@ -157,6 +157,8 @@ export type InnoCloseBehavior = "ask" | "hide" | "quit";
 export interface InnoUiConfig {
 	theme: string;
 	closeBehavior: InnoCloseBehavior;
+	/** Allow $...$ inline math. Disabled by default so currency stays plain text. */
+	mathSingleDollar: boolean;
 }
 
 /**
@@ -479,7 +481,7 @@ export function normalizeUiConfig(ui: Partial<InnoUiConfig> | undefined): InnoUi
 	const closeBehavior: InnoCloseBehavior = ui?.closeBehavior === "hide" || ui?.closeBehavior === "quit"
 		? ui.closeBehavior
 		: "ask";
-	return { theme, closeBehavior };
+	return { theme, closeBehavior, mathSingleDollar: ui?.mathSingleDollar === true };
 }
 
 /**

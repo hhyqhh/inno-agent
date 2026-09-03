@@ -231,11 +231,13 @@ export default defineConfig({
 		port: 5173,
 		proxy: {
 			"/api": {
-				target: "http://localhost:3000",
+				// Avoid Windows resolving localhost to ::1 while the Node server is
+				// listening on IPv4, which otherwise turns every dev API call into 502.
+				target: "http://127.0.0.1:3000",
 				changeOrigin: true,
 				ws: true,
 			},
-			"/health": "http://localhost:3000",
+			"/health": "http://127.0.0.1:3000",
 		},
 	},
 	build: {

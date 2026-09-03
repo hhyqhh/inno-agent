@@ -61,7 +61,7 @@ function formFromPreset(preset: ProviderPreset, existingProviders: Record<string
 }
 
 const inputCls = "w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1.5 text-xs text-[var(--inno-text)] focus:border-[var(--inno-accent)] focus:outline-none";
-const labelCls = "mb-0.5 block text-[10px] text-[var(--inno-text-muted)]";
+const labelCls = "mb-0.5 block text-xs text-[var(--inno-text-muted)]";
 
 /**
  * Guided add-provider wizard (cc-switch style): pick a preset, paste an API
@@ -271,7 +271,7 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 									<ProviderIcon providerId={p.id} size={30} />
 									<span className="min-w-0">
 										<span className="block truncate text-xs font-medium text-[var(--inno-text)]">{p.name}</span>
-										<span className="block truncate text-[10px] text-[var(--inno-text-subtle)]">{p.description}</span>
+										<span className="block truncate text-xs text-[var(--inno-text-subtle)]">{p.description}</span>
 									</span>
 								</button>
 							))}
@@ -286,23 +286,49 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 									<ProviderIcon providerId={preset.id} size={26} />
 									<span className="text-sm font-medium text-[var(--inno-text)]">{preset.name}</span>
 									{preset.docsUrl && (
-										<a className="flex items-center gap-0.5 text-[10px] text-[var(--inno-text-subtle)] hover:text-[var(--inno-accent)]" href={preset.docsUrl} target="_blank" rel="noreferrer">
+										<a className="flex items-center gap-0.5 text-xs text-[var(--inno-text-subtle)] hover:text-[var(--inno-accent)]" href={preset.docsUrl} target="_blank" rel="noreferrer">
 											{t("settings.wizard.docs", "文档")} <ExternalLink size={10} />
 										</a>
 									)}
 								</div>
-								<button className="text-[10px] text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]" onClick={reset}>
+								<button className="text-xs text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]" onClick={reset}>
 									{t("settings.wizard.changePreset", "更换提供方")}
 								</button>
 							</div>
 
 							<div className="grid gap-2">
+								{/* Custom providers need an identity and endpoint before they can be saved. */}
+								{preset.id === "custom" && (
+									<>
+										<div>
+											<label className={labelCls}>{t("settings.form.providerId")}</label>
+											<input
+												className={inputCls}
+												value={form.providerId}
+												onChange={(e) => setForm({ ...form, providerId: e.target.value })}
+												required
+											/>
+										</div>
+										<div>
+											<label className={labelCls}>{t("settings.form.baseUrl")}</label>
+											<input
+												className={inputCls}
+												type="url"
+												placeholder="https://api.example.com/v1"
+												value={form.baseUrl}
+												onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+												required
+											/>
+										</div>
+									</>
+								)}
+
 								{/* API key + console link */}
 								<div>
 									<div className="mb-0.5 flex items-center justify-between">
-										<label className="text-[10px] text-[var(--inno-text-muted)]">{t("settings.form.apiKey")}</label>
+										<label className="text-xs text-[var(--inno-text-muted)]">{t("settings.form.apiKey")}</label>
 										{preset.consoleUrl && (
-											<a className="flex items-center gap-0.5 text-[10px] text-[var(--inno-accent)] hover:underline" href={preset.consoleUrl} target="_blank" rel="noreferrer">
+											<a className="flex items-center gap-0.5 text-xs text-[var(--inno-accent)] hover:underline" href={preset.consoleUrl} target="_blank" rel="noreferrer">
 												{t("settings.wizard.getApiKey", "获取 API Key")} <ExternalLink size={10} />
 											</a>
 										)}
@@ -319,9 +345,9 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 								{/* Model fetch + pick */}
 								<div>
 									<div className="mb-0.5 flex items-center justify-between">
-										<label className="text-[10px] text-[var(--inno-text-muted)]">{t("settings.form.modelId")}</label>
+										<label className="text-xs text-[var(--inno-text-muted)]">{t("settings.form.modelId")}</label>
 										<button
-											className="flex items-center gap-1 text-[10px] text-[var(--inno-accent)] hover:underline disabled:opacity-50"
+											className="flex items-center gap-1 text-xs text-[var(--inno-accent)] hover:underline disabled:opacity-50"
 											disabled={probing || !form.baseUrl.trim()}
 											onClick={() => void handleProbe()}
 										>
@@ -375,22 +401,22 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 											</div>
 										) : null}
 									</div>
-									{preset.modelHint && <p className="mt-1 text-[10px] text-[var(--inno-text-subtle)]">{preset.modelHint}</p>}
-									{probeError && <p className="mt-1 text-[10px] text-[var(--inno-danger)]">{probeError}</p>}
+									{preset.modelHint && <p className="mt-1 text-xs text-[var(--inno-text-subtle)]">{preset.modelHint}</p>}
+									{probeError && <p className="mt-1 text-xs text-[var(--inno-danger)]">{probeError}</p>}
 									{form.modelId && (
 										<div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-											<span className="rounded bg-[var(--inno-surface-muted)] px-1.5 py-0.5 text-[10px] text-[var(--inno-text-muted)]">{formatTokens(Number(form.contextWindow) || 0)} context</span>
-											<span className="rounded bg-[var(--inno-surface-muted)] px-1.5 py-0.5 text-[10px] text-[var(--inno-text-muted)]">{formatTokens(Number(form.maxTokens) || 0)} max</span>
-											{form.reasoning && <span className="rounded bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-[10px] text-[var(--inno-accent)]">{t("settings.form.reasoning")}</span>}
-											{form.supportsImages && <span className="rounded bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-[10px] text-[var(--inno-accent)]">{t("settings.wizard.vision", "视觉")}</span>}
-											<span className="flex items-center gap-0.5 text-[10px] text-[var(--inno-success)]"><Check size={10} />{t("settings.wizard.autoFilled", "参数已自动填充")}</span>
+											<span className="rounded bg-[var(--inno-surface-muted)] px-1.5 py-0.5 text-xs text-[var(--inno-text-muted)]">{formatTokens(Number(form.contextWindow) || 0)} context</span>
+											<span className="rounded bg-[var(--inno-surface-muted)] px-1.5 py-0.5 text-xs text-[var(--inno-text-muted)]">{formatTokens(Number(form.maxTokens) || 0)} max</span>
+											{form.reasoning && <span className="rounded bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-xs text-[var(--inno-accent)]">{t("settings.form.reasoning")}</span>}
+											{form.supportsImages && <span className="rounded bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-xs text-[var(--inno-accent)]">{t("settings.wizard.vision", "视觉")}</span>}
+											<span className="flex items-center gap-0.5 text-xs text-[var(--inno-success)]"><Check size={10} />{t("settings.wizard.autoFilled", "参数已自动填充")}</span>
 										</div>
 									)}
 								</div>
 
 								{/* Advanced */}
 								<button
-									className="mt-1 flex items-center gap-1 text-[10px] text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]"
+									className="mt-1 flex items-center gap-1 text-xs text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]"
 									onClick={() => setShowAdvanced((v) => !v)}
 								>
 									{showAdvanced ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -398,20 +424,24 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 								</button>
 								{showAdvanced && (
 									<div className="grid grid-cols-2 gap-2 rounded-md bg-[var(--inno-surface-muted)] p-2.5">
-										<div>
-											<label className={labelCls}>{t("settings.form.providerId")}</label>
-											<input className={inputCls} value={form.providerId} onChange={(e) => setForm({ ...form, providerId: e.target.value })} />
-										</div>
+										{preset.id !== "custom" && (
+											<div>
+												<label className={labelCls}>{t("settings.form.providerId")}</label>
+												<input className={inputCls} value={form.providerId} onChange={(e) => setForm({ ...form, providerId: e.target.value })} />
+											</div>
+										)}
 										<div>
 											<label className={labelCls}>{t("settings.form.apiType", "API Type")}</label>
 											<select className={inputCls} value={form.api} onChange={(e) => setForm({ ...form, api: e.target.value })}>
 												{apiOptions.map((api) => <option key={api} value={api}>{api}</option>)}
 											</select>
 										</div>
-										<div className="col-span-2">
-											<label className={labelCls}>{t("settings.form.baseUrl")}</label>
-											<input className={inputCls} value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} />
-										</div>
+										{preset.id !== "custom" && (
+											<div className="col-span-2">
+												<label className={labelCls}>{t("settings.form.baseUrl")}</label>
+												<input className={inputCls} value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} />
+											</div>
+										)}
 										<div>
 											<label className={labelCls}>{t("settings.form.contextWindow")}</label>
 											<input className={inputCls} value={form.contextWindow} onChange={(e) => setForm({ ...form, contextWindow: e.target.value })} />

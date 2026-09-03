@@ -190,12 +190,12 @@ function ServerForm({
 	return (
 		<div className="grid gap-2.5 rounded-md border border-[var(--inno-border)] p-3">
 			<div className="flex items-center justify-between gap-2">
-				<h5 className="text-xs font-medium text-[var(--inno-text)]">
+				<h5 className="text-sm font-medium text-[var(--inno-text)]">
 					{editing ? t("settings.mcp.editServer") : t("settings.mcp.addServer")}
 				</h5>
 				<button
 					onClick={toggleJsonMode}
-					className="text-[11px] text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]"
+					className="text-xs text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]"
 				>
 					{form.jsonMode ? t("settings.mcp.formMode") : t("settings.mcp.jsonMode")}
 				</button>
@@ -225,7 +225,7 @@ function ServerForm({
 							<button
 								key={tr}
 								onClick={() => patch({ transport: tr })}
-								className={`flex h-7 items-center rounded-md border px-2.5 text-xs ${form.transport === tr ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"}`}
+								className={`flex h-8 items-center rounded-md border px-2.5 text-sm ${form.transport === tr ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"}`}
 							>
 								{tr === "stdio" ? t("settings.mcp.transportStdio") : t("settings.mcp.transportHttp")}
 							</button>
@@ -304,14 +304,14 @@ function ServerForm({
 				<button
 					disabled={saving || !canSave}
 					onClick={() => void handleSave()}
-					className="flex h-8 shrink-0 items-center rounded-md inno-primary-button px-3 text-xs text-white disabled:opacity-50"
+					className="flex h-8 shrink-0 items-center rounded-md inno-primary-button px-3 text-sm text-white disabled:opacity-50"
 				>
 					{saving ? t("common.loading") : t("common.save")}
 				</button>
 				<button
 					disabled={saving}
 					onClick={onDone}
-					className="flex h-8 shrink-0 items-center rounded-md border border-[var(--inno-border)] px-3 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+					className="flex h-8 shrink-0 items-center rounded-md border border-[var(--inno-border)] px-3 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 				>
 					{t("common.cancel")}
 				</button>
@@ -380,19 +380,19 @@ function ServerRow({ view, onEdit }: { view: McpServerView; onEdit: () => void }
 						/>
 					) : null}
 					<span className="text-sm font-medium text-[var(--inno-text)]">{view.name}</span>
-					<span className="rounded border border-[var(--inno-border)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--inno-text-subtle)]">
+					<span className="rounded border border-[var(--inno-border)] px-1.5 py-0.5 text-xs uppercase text-[var(--inno-text-subtle)]">
 						{view.transport}
 					</span>
 					{runtimeStatus ? (
-						<span className="text-[11px] text-[var(--inno-text-muted)]">
+						<span className="text-xs text-[var(--inno-text-muted)]">
 							{t(`settings.mcp.status.${runtimeStatus}`)}
 							{view.status && view.status.toolCount > 0 ? ` · ${t("settings.mcp.toolCount", { count: view.status.toolCount })}` : ""}
 						</span>
 					) : null}
 				</div>
-				<p className="mt-1 break-all text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">{serverSummary(view)}</p>
+				<p className="mt-1 break-all text-xs leading-relaxed text-[var(--inno-text-subtle)]">{serverSummary(view)}</p>
 				{!view.source.editable ? (
-					<p className="mt-0.5 break-all text-[10px] text-[var(--inno-text-subtle)]">
+					<p className="mt-0.5 break-all text-xs text-[var(--inno-text-subtle)]">
 						{t("settings.mcp.externalSource")}: {view.source.path}
 					</p>
 				) : null}
@@ -402,14 +402,14 @@ function ServerRow({ view, onEdit }: { view: McpServerView; onEdit: () => void }
 						<button
 							disabled={busy}
 							onClick={() => void handleDelete()}
-							className="flex h-6 items-center rounded border border-[var(--inno-danger)] px-2 text-[11px] text-[var(--inno-danger)] hover:bg-[var(--inno-surface-muted)]"
+							className="flex h-6 items-center rounded border border-[var(--inno-danger)] px-2 text-xs text-[var(--inno-danger)] hover:bg-[var(--inno-surface-muted)]"
 						>
 							{t("common.delete")}
 						</button>
 						<button
 							disabled={busy}
 							onClick={() => setConfirmDelete(false)}
-							className="flex h-6 items-center rounded border border-[var(--inno-border)] px-2 text-[11px] text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"
+							className="flex h-6 items-center rounded border border-[var(--inno-border)] px-2 text-xs text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"
 						>
 							{t("common.cancel")}
 						</button>
@@ -461,16 +461,16 @@ function McpServersCard() {
 			<div className="mb-3 flex items-start justify-between gap-3">
 				<div className="min-w-0">
 					<h4 className="text-sm font-medium text-[var(--inno-text)]">{t("settings.mcp.serversTitle")}</h4>
-					<p className="mt-1 break-all text-xs leading-relaxed text-[var(--inno-text-muted)]">
+					<p className="mt-1 break-all text-sm text-[var(--inno-text-muted)]">
 						{t("settings.mcp.serversDesc")}
 					</p>
 					{overview ? (
-						<p className="mt-1 break-all text-[10px] text-[var(--inno-text-subtle)]">{overview.configPath}</p>
+						<p className="mt-1 break-all text-xs text-[var(--inno-text-subtle)]">{overview.configPath}</p>
 					) : null}
 				</div>
 				<button
 					onClick={() => setFormOpen({ ...EMPTY_FORM })}
-					className="flex h-8 shrink-0 items-center gap-1 rounded-md inno-primary-button px-3 text-xs text-white"
+					className="flex h-8 shrink-0 items-center gap-1 rounded-md inno-primary-button px-3 text-sm text-white"
 				>
 					<Plus size={13} />
 					{t("settings.mcp.addServer")}
@@ -498,7 +498,7 @@ function McpServersCard() {
 				) : null}
 			</div>
 
-			<p className="mt-3 text-[11px] leading-relaxed text-[var(--inno-text-subtle)]">{t("settings.mcp.footerHint")}</p>
+			<p className="mt-3 text-xs leading-relaxed text-[var(--inno-text-subtle)]">{t("settings.mcp.footerHint")}</p>
 		</SettingsCard>
 	);
 }

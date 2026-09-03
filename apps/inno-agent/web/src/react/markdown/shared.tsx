@@ -22,7 +22,7 @@ export function ToolbarIconButton({
 			title={label}
 			disabled={disabled}
 			onClick={onClick}
-			className={`inline-flex size-7 items-center justify-center rounded-md border-0 transition-colors ${active ? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"} disabled:cursor-not-allowed disabled:opacity-40`}
+			className={`inline-flex size-6 items-center justify-center rounded-md border-0 transition-colors ${active ? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"} disabled:cursor-not-allowed disabled:opacity-40`}
 		>
 			{children}
 		</button>

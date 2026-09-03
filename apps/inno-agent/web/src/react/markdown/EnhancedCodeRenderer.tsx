@@ -110,7 +110,7 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 		<Fragment>
 			{editing ? (
 				<div data-inno-code-block="" className="my-4 overflow-hidden rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-2">
-					<div className="flex h-8 items-center gap-2 px-1 text-xs text-[var(--inno-text-muted)]">
+					<div className="flex h-7 items-center gap-2 px-1 text-xs text-[var(--inno-text-muted)]">
 						<span className="min-w-0 flex-1 truncate font-mono lowercase">{language || "text"} · {t("markdown.editCopy", "编辑副本")}</span>
 						{actions}
 					</div>

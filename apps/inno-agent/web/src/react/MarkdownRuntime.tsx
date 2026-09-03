@@ -27,6 +27,12 @@ export interface MarkdownRuntimeProps {
 
 const BLOCKED_RAW_ELEMENTS = ["script", "iframe", "object", "embed", "form", "input", "button"];
 const REMARK_PLUGINS = [...Object.values(defaultRemarkPlugins), remarkAlert];
+// Streamdown switches token colors with Tailwind `dark:` classes, which follow
+// the OS prefers-color-scheme — but every inno theme is a light palette, so an
+// OS in dark mode ends up painting dark-theme (light) token colors on the
+// light code-block background and the code is unreadable. Pin both slots to
+// the light theme so highlight colors always match the app's light surfaces.
+const SHIKI_THEMES: NonNullable<React.ComponentProps<typeof Streamdown>["shikiTheme"]> = ["github-light", "github-light"];
 
 type SanitizeAttribute = string | [string, ...unknown[]];
 interface SanitizeSchema {
@@ -205,6 +211,7 @@ export function MarkdownRuntime({ content, streaming = false, compact = false, c
 			plugins={plugins}
 			remarkPlugins={REMARK_PLUGINS}
 			rehypePlugins={rehypePlugins}
+			shikiTheme={SHIKI_THEMES}
 			disallowedElements={BLOCKED_RAW_ELEMENTS}
 			unwrapDisallowed
 			controls={compact ? false : FULL_CONTROLS}

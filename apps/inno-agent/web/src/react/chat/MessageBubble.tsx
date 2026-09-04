@@ -643,7 +643,12 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 	}
 
 	return (
-		<div className="flex justify-start">
+		<motion.div
+			className="flex justify-start"
+			initial={{ opacity: 0 }}
+			animate={{ opacity: 1 }}
+			transition={{ duration: 0.25, ease: "easeOut" }}
+		>
 			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : hasAnsweredQuestionnaire ? "w-full max-w-[76%]" : "max-w-[78%]"} ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-3.5 py-2.5 text-[13px] leading-relaxed text-[var(--inno-text)]`}>
 				{showChannel && message.channel ? (
 					<div className="mb-1"><ChannelBadge channel={message.channel} /></div>
@@ -696,6 +701,6 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 					) : null}
 				</div> : null}
 			</div>
-		</div>
+		</motion.div>
 	);
 });

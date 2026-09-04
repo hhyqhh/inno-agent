@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { ArrowDown, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { AttachmentRef, ChatMessage, ChatToolRecord, PendingQuestion } from "../../types/chat.js";
@@ -72,6 +72,16 @@ export function ChatConversation({
 	wsError,
 }: ChatConversationProps) {
 	const { t } = useTranslation();
+	const [showHistoryLoading, setShowHistoryLoading] = useState(false);
+	useEffect(() => {
+		const shouldShow = chat.isLoadingHistory && chat.messages.length === 0;
+		if (!shouldShow) {
+			setShowHistoryLoading(false);
+			return;
+		}
+		const timer = window.setTimeout(() => setShowHistoryLoading(true), 500);
+		return () => window.clearTimeout(timer);
+	}, [chat.isLoadingHistory, chat.messages.length]);
 	const conversationTurns = useMemo(() => buildConversationTurns(chat.messages), [chat.messages]);
 	const turnIndexByStartMessage = useMemo(
 		() => new Map(conversationTurns.map((turn) => [turn.startMessageIndex, turn.index])),
@@ -141,7 +151,7 @@ export function ChatConversation({
 					className="chat-scroll inno-chat-grid h-full min-h-0 overflow-y-scroll px-4 py-4"
 				>
 					<div data-conversation-content className="mx-auto flex min-w-0 max-w-3xl flex-col gap-3">
-						{chat.isLoadingHistory && chat.messages.length === 0 ? (
+						{showHistoryLoading ? (
 							<div className="flex h-full flex-col items-center justify-center pt-20 text-[var(--inno-text-muted)]">
 								<Spinner size={20} className="mb-3 text-[var(--inno-border-strong)]" />
 								<p className="text-sm">{t("chat.loadingSession")}</p>

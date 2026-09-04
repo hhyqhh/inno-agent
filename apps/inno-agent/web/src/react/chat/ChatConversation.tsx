@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { ArrowDown, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { AttachmentRef, ChatMessage, ChatToolRecord, PendingQuestion } from "../../types/chat.js";
@@ -99,7 +99,34 @@ export function ChatConversation({
 		}
 		return indexes;
 	}, [chat.messages, conversationTurns]);
-	const activeTurnStartMessage = chat.isSending ? conversationTurns.at(-1)?.startMessageIndex : undefined;
+	// Finalizing a turn mounts the canonical assistant record (a full static
+	// markdown re-parse) in place of the live stream tree. Defer that swap to
+	// a transition-scheduled render so React can slice the expensive mount
+	// across frames while StreamingBubbles keeps showing the finished stream.
+	const settledSending = useDeferredValue(chat.isSending);
+	const activeTurnStartMessage = settledSending ? conversationTurns.at(-1)?.startMessageIndex : undefined;
+	// The assistant record for a finished stream mounts at the same render the
+	// live trace unmounts; skip its entrance fade so the swap is seamless.
+	// Messages mounted any other way (e.g. switching conversations) still fade in.
+	const skipFadeKeysRef = useRef<Set<string>>(new Set());
+	const wasSendingRef = useRef(chat.isSending);
+	const knownKeysRef = useRef<Set<string>>(new Set());
+	const currentKeys = chat.messages.map((message, index) => `${message.timestamp}-${index}`);
+	// Fresh conversation load: none of the previously seen keys survive, so
+	// per-turn flags (skip fade, live body shape) must not leak across chats.
+	if (knownKeysRef.current.size > 0 && !currentKeys.some((key) => knownKeysRef.current.has(key))) {
+		skipFadeKeysRef.current.clear();
+	}
+	knownKeysRef.current = new Set(currentKeys);
+	if (wasSendingRef.current && !chat.isSending) {
+		for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
+			if (chat.messages[index]?.role === "assistant") {
+				skipFadeKeysRef.current.add(`${chat.messages[index].timestamp}-${index}`);
+				break;
+			}
+		}
+	}
+	wasSendingRef.current = chat.isSending;
 	const traceTurnPresentation = useMemo(() => {
 		const coveredAssistantIndexes = new Set<number>();
 		const actionOwnerIndexes = new Set<number>();
@@ -171,19 +198,22 @@ export function ChatConversation({
 							const multiChannel = channels.size > 1;
 							return chat.messages.map((message, index) => {
 								const turnIndex = turnIndexByStartMessage.get(index);
+								const messageKey = `${message.timestamp}-${index}`;
 								if (message.role === "assistant" && traceTurnPresentation.coveredAssistantIndexes.has(index)) return null;
 								// The canonical assistant record can arrive just before the
 								// terminal stream event. Keep the live trace as the only
 								// visible representation until the turn is finalized, so the
 								// trace does not briefly duplicate or change its geometry.
-								if (chat.isSending && index === chat.messages.length - 1 && message.role === "assistant") return null;
+								if (settledSending && index === chat.messages.length - 1 && message.role === "assistant") return null;
 								const isActiveTurnAssistant = activeTurnStartMessage !== undefined && index >= activeTurnStartMessage && message.role === "assistant";
 								const isTurnActionOwner = lastAssistantMessageIndexes.has(index) || traceTurnPresentation.actionOwnerIndexes.has(index);
 								const showActions = message.role === "user" || (isTurnActionOwner && !isActiveTurnAssistant);
 								return (
-									<div key={`${message.timestamp}-${index}`} data-conversation-turn={turnIndex}>
+									<div key={messageKey} data-conversation-turn={turnIndex}>
 										<MessageBubble
 											message={message}
+											animateEntry={!skipFadeKeysRef.current.has(messageKey)}
+											liveBodies={skipFadeKeysRef.current.has(messageKey)}
 											showChannel={multiChannel}
 											resolveAttachmentUrl={resolveAttachmentUrl}
 											onOpenAttachment={onOpenAttachment}
@@ -199,7 +229,7 @@ export function ChatConversation({
 							});
 						})()}
 
-						<StreamingBubbles onOpenSkill={onOpenSkill} />
+						<StreamingBubbles onOpenSkill={onOpenSkill} holdCompleted={settledSending} />
 					</div>
 				</div>
 				<ConversationMinimap messages={chat.messages} scrollContainerRef={scrollRef} onNavigateStart={onPauseAutoScroll} />

@@ -13,6 +13,8 @@ export interface MarkdownArtifactProps {
 	content: string;
 	/** Enables Streamdown's incomplete-markdown repair and streaming caret. */
 	streaming?: boolean;
+	/** Overrides the character animation while keeping the streaming DOM shape. */
+	animate?: boolean;
 	/** Compact surfaces (thinking/question cards) hide heavy block controls. */
 	compact?: boolean;
 	className?: string;
@@ -52,7 +54,7 @@ class MarkdownErrorBoundary extends Component<{ content: string; className?: str
 	}
 }
 
-export function MarkdownArtifact({ content, streaming = false, compact = false, className }: MarkdownArtifactProps) {
+export function MarkdownArtifact({ content, streaming = false, animate, compact = false, className }: MarkdownArtifactProps) {
 	const mathSingleDollar = useStoreSnapshot(settingsStore, () => settingsStore.settings?.ui?.mathSingleDollar === true);
 	// Match Cherry Studio's long-stream guard: once a live answer is very large,
 	// skip whole-document transforms and leave incremental parsing to Streamdown.
@@ -83,6 +85,7 @@ export function MarkdownArtifact({ content, streaming = false, compact = false, 
 	const runtimeProps: MarkdownRuntimeProps = {
 		content: normalizedContent,
 		streaming,
+		...(animate === undefined ? {} : { animate }),
 		compact,
 		className,
 	};

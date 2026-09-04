@@ -185,6 +185,15 @@ summary:focus-visible {
 	overflow-wrap: anywhere;
 }
 
+/* Streamdown's streaming mode interleaves empty segment wrappers between
+ * settled blocks. Each empty wrapper splits one collapsed margin boundary
+ * into two, so paragraph gaps while streaming do not match the flat static
+ * render that replaces the live tree at completion. Pull the empty wrappers
+ * out of layout so both renders collapse margins identically. */
+.inno-markdown > div:empty {
+	display: none;
+}
+
 .inno-markdown :where(h1, h2, h3, h4, h5, h6) {
 	color: var(--inno-text);
 	font-weight: 650;
@@ -602,6 +611,20 @@ summary:focus-visible {
 	padding: 0;
 	border-radius: var(--inno-content-radius);
 	background: var(--inno-content-muted-surface);
+}
+
+/* Streamdown only dispatches fences WITH a language tag to the custom
+   renderer — a bare ``` fence (or an unknown language) still renders the
+   stock header plus the stock floating download/copy pill. Both add chrome
+   without information, so drop them and let these blocks render as plain
+   code surfaces. The custom renderer's header carries its own
+   .inno-markdown-content-header class and is not affected. */
+.inno-markdown [data-streamdown="code-block-header"]:not(.inno-markdown-content-header) {
+	display: none;
+}
+
+.inno-markdown [data-streamdown="code-block"] > div:has(> [data-streamdown="code-block-actions"]) {
+	display: none;
 }
 
 .inno-markdown [data-streamdown="code-block-body"] {

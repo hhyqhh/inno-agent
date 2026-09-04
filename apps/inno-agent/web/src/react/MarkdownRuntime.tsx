@@ -21,6 +21,10 @@ import { useStoreSnapshot } from "./hooks.js";
 export interface MarkdownRuntimeProps {
 	content: string;
 	streaming?: boolean;
+	/** Keep the streaming DOM shape (per-block wrappers) while skipping the
+	 *  character animation; used for a turn that just finished rendering so
+	 *  swapping to the settled bubble does not relayout the content. */
+	animate?: boolean;
 	compact?: boolean;
 	className?: string;
 	mermaidPlugin?: PluginConfig["mermaid"];
@@ -156,7 +160,7 @@ const MERMAID_OPTIONS = {
 } as const;
 const MAX_ANIMATED_CONTENT_LENGTH = 64 * 1024;
 
-export function MarkdownRuntime({ content, streaming = false, compact = false, className, mermaidPlugin }: MarkdownRuntimeProps) {
+export function MarkdownRuntime({ content, streaming = false, animate, compact = false, className, mermaidPlugin }: MarkdownRuntimeProps) {
 	const { t } = useTranslation();
 	const renderId = useId().replace(/[^a-zA-Z0-9_-]/g, "") || "md";
 	const mathSingleDollar = useStoreSnapshot(settingsStore, () => settingsStore.settings?.ui?.mathSingleDollar === true);
@@ -193,7 +197,7 @@ export function MarkdownRuntime({ content, streaming = false, compact = false, c
 		zoomOut: t("markdown.zoomOut", "缩小"),
 		resetView: t("markdown.resetView", "重置视图"),
 	}), [t]);
-	const shouldAnimate = streaming && content.length <= MAX_ANIMATED_CONTENT_LENGTH;
+	const shouldAnimate = (animate ?? streaming) && content.length <= MAX_ANIMATED_CONTENT_LENGTH;
 	return (
 		<Streamdown
 			mode={streaming ? "streaming" : "static"}

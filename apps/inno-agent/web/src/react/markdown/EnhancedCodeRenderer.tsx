@@ -15,7 +15,7 @@ import {
 import { code as codeHighlighter, type HighlightResult } from "@streamdown/code";
 import { Fragment, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { CodeBlockContainer, CodeBlockHeader, StreamdownContext, type CustomRendererProps } from "streamdown";
+import { CodeBlockContainer, StreamdownContext, type CustomRendererProps } from "streamdown";
 import { terminalStore } from "../../stores/terminal-store.js";
 import {
 	MarkdownFullscreenDialog,
@@ -391,17 +391,10 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 		<StreamdownContext.Provider value={forceExpanded ? { ...resolvedContext, codeBlockMaxHeight: Infinity } : resolvedContext}>
 			<div data-inno-code-block="" data-inno-content-block="code" data-wrap={wrapped ? "true" : "false"} className={wrapped ? "inno-code-wrap" : ""}>
 				<CodeBlockContainer dir="ltr" language={language || "text"} isIncomplete={isIncomplete}>
-					<CodeBlockHeader language={language || "text"} />
-					{withToolbar ? (
-						<div className="pointer-events-none sticky top-2 z-10 -mt-10 flex h-8 items-center justify-end">
-							<div
-								className="pointer-events-auto flex shrink-0 items-center gap-2 rounded-md border border-sidebar bg-sidebar/80 px-1.5 py-1 supports-[backdrop-filter]:bg-sidebar/70 supports-[backdrop-filter]:backdrop-blur"
-								data-streamdown="code-block-actions"
-							>
-								{renderToolbar(forceExpanded ? fullscreenMoreId : moreId, forceExpanded)}
-							</div>
-						</div>
-					) : null}
+					<div data-streamdown="code-block-header" data-language={language || "text"} className="inno-markdown-content-header">
+						<span className="inno-markdown-content-title">{language || "text"}</span>
+						{withToolbar ? renderToolbar(forceExpanded ? fullscreenMoreId : moreId, forceExpanded) : null}
+					</div>
 					<StableCodeBlockBody code={source} language={language || "text"} />
 				</CodeBlockContainer>
 			</div>

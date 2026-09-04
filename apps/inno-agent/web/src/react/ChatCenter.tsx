@@ -1,6 +1,7 @@
 import {
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -431,22 +432,32 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		}
 	}, [isWelcome, wsMode, wsExistingId, sessions.preselectedWorkspaceId]);
 
+	const stickToBottomNow = useCallback(() => {
+		if (chat.isLoadingHistory || !shouldStickToBottomRef.current) return;
+		const scroll = scrollRef.current;
+		if (scroll) scroll.scrollTop = scroll.scrollHeight;
+	}, [chat.isLoadingHistory]);
+
 	useEffect(() => {
 		const el = scrollRef.current;
 		const content = el?.querySelector<HTMLElement>("[data-conversation-content]");
 		if (!el || !content) return;
-		const observer = new ResizeObserver(() => {
-			if (shouldStickToBottomRef.current) el.scrollTop = el.scrollHeight;
-		});
+		const observer = new ResizeObserver(stickToBottomNow);
 		observer.observe(content);
 		return () => observer.disconnect();
-	}, [sessions.currentSessionId]);
+	}, [stickToBottomNow, sessions.currentSessionId]);
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		shouldStickToBottomRef.current = true;
 		setShowLatestButton(false);
 		editTargetRef.current = null;
 	}, [sessions.currentSessionId]);
+
+	useLayoutEffect(() => {
+		if (chat.isLoadingHistory || !shouldStickToBottomRef.current) return;
+		const el = scrollRef.current;
+		if (el) el.scrollTop = el.scrollHeight;
+	}, [chat.isLoadingHistory, chat.messages.length, sessions.currentSessionId]);
 
 	const markUserScrollGesture = useCallback(() => {
 		userScrollGestureRef.current = true;
@@ -511,7 +522,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 			const nextBottomSpace = `${composerHeight / 2 + attachmentHeight / 2 + 12 + CONVERSATION_ACTION_ROW_RESERVE + overlayBeforeComposerHeight}px`;
 			if (scroll.style.getPropertyValue("--inno-conversation-scroll-bottom-space") !== nextBottomSpace) {
 				scroll.style.setProperty("--inno-conversation-scroll-bottom-space", nextBottomSpace);
-				if (shouldStickToBottomRef.current) scroll.scrollTop = scroll.scrollHeight;
+				stickToBottomNow();
 			}
 		}
 		const welcomeLayout = welcomeLayoutRef.current;
@@ -522,7 +533,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		const baseComposerHeight = composerHeight - textareaHeight - attachmentHeight + minHeight;
 		const composerGrowth = Math.max(0, composerHeight - baseComposerHeight);
 		welcomeLayout.style.setProperty("--inno-welcome-composer-half-growth", `${composerGrowth / 2}px`);
-	}, []);
+	}, [stickToBottomNow]);
 
 	// Coalesce layout reads/writes while the user types or deletes rapidly.
 	// The textarea value and caret stay native and immediate; only the visual

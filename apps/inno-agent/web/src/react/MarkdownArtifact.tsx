@@ -72,9 +72,11 @@ export function MarkdownArtifact({ content, streaming = false, compact = false, 
 	return (
 		<MarkdownErrorBoundary content={normalizedContent} className={className}>
 			{MERMAID_FENCE_RE.test(normalizedContent) ? (
-				<Suspense fallback={<div className={`inno-markdown whitespace-pre-wrap ${className ?? ""}`}>{normalizedContent}</div>}>
-					<MermaidMarkdownRuntime {...runtimeProps} />
-				</Suspense>
+				<div className="min-h-[288px] w-full">
+					<Suspense fallback={<div className="inno-mermaid-suspense-placeholder" aria-hidden="true" />}>
+						<MermaidMarkdownRuntime {...runtimeProps} />
+					</Suspense>
+				</div>
 			) : (
 				<MarkdownRuntime {...runtimeProps} />
 			)}

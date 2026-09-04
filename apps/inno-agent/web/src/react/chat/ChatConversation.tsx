@@ -137,7 +137,7 @@ export function ChatConversation({
 					onWheel={onWheel}
 					onTouchStart={onTouchStart}
 					onPointerDown={onPointerDown}
-					className="chat-scroll inno-chat-grid h-full min-h-0 overflow-y-auto px-4 py-4"
+					className="chat-scroll inno-chat-grid h-full min-h-0 overflow-y-scroll px-4 py-4"
 				>
 					<div data-conversation-content className="mx-auto flex min-w-0 max-w-3xl flex-col gap-3">
 						{chat.isLoadingHistory && chat.messages.length === 0 ? (

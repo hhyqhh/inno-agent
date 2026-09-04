@@ -100,7 +100,13 @@ body {
 	margin: 0;
 	min-width: 320px;
 	height: 100%;
+	overflow: hidden;
 	background: var(--inno-background);
+}
+
+#root {
+	height: 100%;
+	overflow: hidden;
 }
 
 body {
@@ -221,6 +227,21 @@ summary:focus-visible {
 	border-color: var(--inno-border);
 	background: var(--inno-surface-muted);
 	box-shadow: 0 1px 2px rgba(31, 35, 40, 0.035);
+}
+
+/* Streamdown's Mermaid placeholder is 200px tall plus its vertical margins,
+   while the completed SVG can be much shorter. Keep each diagram's body at
+   the placeholder height so switching sessions does not reflow the message
+   as lazy Mermaid rendering finishes. */
+.inno-markdown [data-streamdown="mermaid-block"] > div:last-child {
+	min-height: calc(200px + 2rem);
+}
+
+/* The Mermaid renderer briefly shows a loading row before replacing it with
+   the SVG. Keep that intermediate paint invisible while preserving the fixed
+   diagram height, so rendering does not look like a one-frame flash. */
+.inno-markdown [data-streamdown="mermaid-block"] > div:last-child > div[class*="justify-center"] {
+	visibility: hidden;
 }
 
 .inno-markdown [data-streamdown="code-block-body"] {
@@ -682,6 +703,13 @@ inno-workspace-panel textarea {
 	min-width: 0;
 }
 
+/* The live trace is replaced by the persisted assistant bubble when a turn
+   finishes. Reserve the persisted bubble's action-row spacing up front so
+   that transition does not change scrollHeight or move the scrollbar thumb. */
+.inno-trace-shell-live {
+	margin-bottom: 30px;
+}
+
 .inno-trace-assistant-message {
 	width: 100%;
 	max-width: none !important;
@@ -1091,6 +1119,10 @@ inno-workspace-panel textarea {
 	}
 
 	.inno-assistant-message {
+		margin-bottom: 36px;
+	}
+
+	.inno-trace-shell-live {
 		margin-bottom: 36px;
 	}
 

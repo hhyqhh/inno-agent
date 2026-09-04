@@ -1,9 +1,19 @@
-import { Check, Copy, FileSpreadsheet, Maximize2, X } from "lucide-react";
-import { type ComponentProps, useCallback, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { Check, Copy, FileSpreadsheet, Maximize2, MoreHorizontal } from "lucide-react";
+import { type ComponentProps, useContext, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { extractTableDataFromElement, tableDataToMarkdown, type ExtraProps } from "streamdown";
-import { downloadBlob, ToolbarIconButton, useFullscreenDialog } from "./shared.js";
+import { extractTableDataFromElement, StreamdownContext, tableDataToMarkdown, type ExtraProps } from "streamdown";
+import {
+	MarkdownFullscreenDialog,
+	MarkdownToolbar,
+	MarkdownToolbarGroup,
+	ToolbarIconButton,
+	ToolbarMenu,
+	ToolbarMenuItem,
+	markdownControlEnabled,
+	downloadBlob,
+	markdownMaxHeight,
+	markdownToolbarEnabled,
+} from "./shared.js";
 
 type EnhancedTableProps = ComponentProps<"table"> & ExtraProps;
 
@@ -34,13 +44,18 @@ async function exportExcel(table: HTMLTableElement): Promise<void> {
 
 export function EnhancedTable({ children, className, node: _node, ...props }: EnhancedTableProps) {
 	const { t } = useTranslation();
+	const streamdownContext = useContext(StreamdownContext);
+	const toolbarEnabled = markdownToolbarEnabled(streamdownContext.controls, "table");
+	const copyEnabled = markdownControlEnabled(streamdownContext.controls, "table", "copy");
+	const downloadEnabled = markdownControlEnabled(streamdownContext.controls, "table", "download");
+	const fullscreenEnabled = markdownControlEnabled(streamdownContext.controls, "table", "fullscreen");
 	const tableRef = useRef<HTMLTableElement>(null);
 	const fullscreenTableRef = useRef<HTMLTableElement>(null);
+	const moreId = `inno-table-more-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
 	const [copied, setCopied] = useState(false);
 	const [fullscreen, setFullscreen] = useState(false);
+	const [moreOpen, setMoreOpen] = useState(false);
 	const [exporting, setExporting] = useState(false);
-
-	useFullscreenDialog(fullscreen, useCallback(() => setFullscreen(false), []));
 
 	const handleCopy = async (table = tableRef.current) => {
 		if (!table) return;
@@ -59,36 +74,61 @@ export function EnhancedTable({ children, className, node: _node, ...props }: En
 		}
 	};
 
-	const table = (ref: typeof tableRef) => (
-		<table ref={ref} data-streamdown="table" className={`w-full min-w-full divide-y divide-[var(--inno-border)] border-collapse ${className ?? ""}`} {...props}>
+	const renderTable = (ref: typeof tableRef) => (
+		<table ref={ref} data-streamdown="table" className={`inno-markdown-table${className ? ` ${className}` : ""}`} {...props}>
 			{children}
 		</table>
 	);
 
+	const maxHeight = markdownMaxHeight(streamdownContext.tableMaxHeight);
 	return (
 		<>
-			<div data-streamdown="table-wrapper" className="group/table relative my-4 min-w-0">
-				<div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-md border border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-surface)_92%,transparent)] p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover/table:opacity-100 focus-within:opacity-100">
-					<ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copyRichText", "复制为富文本")} onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}</ToolbarIconButton>
-					<ToolbarIconButton label={exporting ? t("markdown.exportingExcel", "正在导出 Excel") : t("markdown.exportExcel", "导出 Excel")} onClick={() => void handleExport()}><FileSpreadsheet size={14} /></ToolbarIconButton>
-					<ToolbarIconButton label={t("markdown.tableFullscreen", "全屏查看表格")} onClick={() => setFullscreen(true)}><Maximize2 size={14} /></ToolbarIconButton>
+			<div data-streamdown="table-wrapper" data-inno-content-block="table" className="inno-markdown-content-block inno-markdown-content-block--table">
+				<div className="inno-markdown-content-header">
+					<span className="inno-markdown-content-title">{t("markdown.tableLabel", "表格")}</span>
+					{toolbarEnabled ? (
+						<MarkdownToolbar label={t("markdown.tableTools", "表格工具")}>
+							<MarkdownToolbarGroup>
+								{copyEnabled ? <ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copyRichText", "复制为富文本")} showLabel onClick={() => void handleCopy()}>
+									{copied ? <Check size={14} /> : <Copy size={14} />}
+								</ToolbarIconButton> : null}
+								{downloadEnabled || fullscreenEnabled ? (
+									<div className="inno-markdown-toolbar-menu-anchor">
+										<ToolbarIconButton label={t("markdown.moreTools", "更多")} showLabel menu expanded={moreOpen} aria-controls={moreId} onClick={() => setMoreOpen((value) => !value)}>
+											<MoreHorizontal size={14} />
+										</ToolbarIconButton>
+										<ToolbarMenu id={moreId} open={moreOpen} onClose={() => setMoreOpen(false)} label={t("markdown.moreTools", "更多")}>
+											{downloadEnabled ? <ToolbarMenuItem label={exporting ? t("markdown.exportingExcel", "正在导出 Excel") : t("markdown.exportExcel", "导出 Excel")} disabled={exporting} onClick={() => void handleExport()}>
+												<FileSpreadsheet size={14} />
+											</ToolbarMenuItem> : null}
+											{fullscreenEnabled ? <ToolbarMenuItem label={t("markdown.tableFullscreen", "全屏查看表格")} onClick={() => setFullscreen(true)}><Maximize2 size={14} /></ToolbarMenuItem> : null}
+										</ToolbarMenu>
+									</div>
+								) : null}
+							</MarkdownToolbarGroup>
+						</MarkdownToolbar>
+					) : null}
 				</div>
-				<div className="max-h-[26rem] overflow-auto rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
-					{table(tableRef)}
-				</div>
+				<div className="inno-markdown-table-scroll" style={maxHeight ? { maxHeight } : undefined}>{renderTable(tableRef)}</div>
 			</div>
 
-			{fullscreen && typeof document !== "undefined" ? createPortal(
-				<div role="dialog" aria-modal="true" aria-label={t("markdown.tableFullscreenTitle", "表格全屏查看")} className="fixed inset-0 z-[1000] flex flex-col bg-[var(--inno-background)]">
-					<div className="flex items-center justify-end gap-1 border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-4 py-2">
-						<ToolbarIconButton label={t("markdown.copyRichText", "复制为富文本")} onClick={() => void handleCopy(fullscreenTableRef.current)}><Copy size={15} /></ToolbarIconButton>
-						<ToolbarIconButton label={t("markdown.exportExcel", "导出 Excel")} onClick={() => void handleExport(fullscreenTableRef.current)}><FileSpreadsheet size={15} /></ToolbarIconButton>
-						<ToolbarIconButton label={t("markdown.exitFullscreen", "退出全屏")} onClick={() => setFullscreen(false)}><X size={17} /></ToolbarIconButton>
-					</div>
-					<div className="min-h-0 flex-1 overflow-auto p-4">{table(fullscreenTableRef)}</div>
-				</div>,
-				document.body,
-			) : null}
+			<MarkdownFullscreenDialog
+			open={fullscreen}
+			title={t("markdown.tableLabel", "表格")}
+			ariaLabel={t("markdown.tableFullscreenTitle", "表格全屏查看")}
+				closeLabel={t("markdown.exitFullscreen", "退出全屏")}
+				onClose={() => setFullscreen(false)}
+				actions={toolbarEnabled && (copyEnabled || downloadEnabled) ? (
+					<MarkdownToolbar label={t("markdown.tableTools", "表格工具")}>
+							{copyEnabled ? <ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copyRichText", "复制为富文本")} showLabel onClick={() => void handleCopy(fullscreenTableRef.current)}>
+							{copied ? <Check size={14} /> : <Copy size={14} />}
+						</ToolbarIconButton> : null}
+							{downloadEnabled ? <ToolbarIconButton label={exporting ? t("markdown.exportingExcel", "正在导出 Excel") : t("markdown.exportExcel", "导出 Excel")} showLabel disabled={exporting} onClick={() => void handleExport(fullscreenTableRef.current)}><FileSpreadsheet size={14} /></ToolbarIconButton> : null}
+					</MarkdownToolbar>
+				) : null}
+			>
+				<div data-inno-content-block="table" className="inno-markdown-table-scroll inno-markdown-table-scroll--fullscreen">{renderTable(fullscreenTableRef)}</div>
+			</MarkdownFullscreenDialog>
 		</>
 	);
 }

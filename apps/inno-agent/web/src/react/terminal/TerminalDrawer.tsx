@@ -1,12 +1,14 @@
-import { useCallback, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { lazy, Suspense, useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronUp, Terminal as TerminalIcon, RotateCcw, History } from "lucide-react";
-import { TerminalView } from "./TerminalView.js";
+import { ChevronDown, Terminal as TerminalIcon, RotateCcw, History } from "lucide-react";
 import { RunsPanel } from "./RunsPanel.js";
 import { terminalStore, type TerminalStatus } from "../../stores/terminal-store.js";
 import { sessionsStore } from "../../stores/sessions-store.js";
 import { workspaceStore } from "../../stores/workspace-store.js";
 import { useStoreSnapshot } from "../hooks.js";
+
+const TerminalView = lazy(() => import("./TerminalView.js").then((module) => ({ default: module.TerminalView })));
 
 const STATUS_DOT: Record<TerminalStatus, string> = {
 	idle: "bg-[var(--inno-border-strong)]",
@@ -18,8 +20,8 @@ const STATUS_DOT: Record<TerminalStatus, string> = {
 };
 
 /**
- * Bottom drawer hosting the xterm. Toggles open/closed; hands the actual
- * xterm DOM to TerminalView when open.
+ * Bottom drawer hosting the xterm. The closed state is not rendered; the
+ * actual xterm DOM is kept through the exit animation and then unmounted.
  */
 export function TerminalDrawer() {
 	const { t } = useTranslation();
@@ -64,69 +66,78 @@ export function TerminalDrawer() {
 	}, [sess.currentSessionId, ws.activeWorkspaceId]);
 
 	return (
-		<div className={`flex flex-col border-t border-[var(--inno-border)] bg-[var(--inno-workspace-bg)] ${term.isOpen ? "min-h-[220px]" : ""}`}>
-			<div className="flex h-8 items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-workspace-chrome)] px-2 text-xs text-[var(--inno-text-muted)]">
-				<button
-					onClick={toggle}
-					className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
-					title={term.isOpen ? t("terminal.collapse") : t("terminal.expand")}
-				>
-					<TerminalIcon size={12} />
-					<span className="font-medium">{t("terminal.title")}</span>
-					{term.isOpen ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
-				</button>
-				<span
-					className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[term.status]}`}
-					title={STATUS_LABEL[term.status]}
-					aria-label={STATUS_LABEL[term.status]}
-				/>
-				{term.cwd ? <span className="truncate text-[11px] text-[var(--inno-text-subtle)]" title={term.cwd}>{term.cwd}</span> : null}
-				{term.error ? <span className="text-[11px] text-[var(--inno-danger)]">{term.error}</span> : null}
-				<div className="ml-auto flex items-center gap-1">
-					{term.isOpen && sess.currentSessionId ? (
-						<>
-							<button
-								onClick={toggleHistory}
-								className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${showHistory ? "bg-[var(--inno-surface)] text-[var(--inno-text)]" : "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
-								title={t("terminal.history")}
-							>
-								<History size={12} />
-							</button>
-							<button
-								onClick={() => void restart()}
-								className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
-								title={t("terminal.restart")}
-							>
-								<RotateCcw size={12} />
-							</button>
-						</>
-					) : null}
-				</div>
-			</div>
+		<AnimatePresence>
 			{term.isOpen ? (
-				sess.currentSessionId ? (
-					showHistory ? (
-						<div className="min-h-[220px] flex-1">
-							<RunsPanel sessionId={sess.currentSessionId} onClose={() => setShowHistory(false)} />
+				<motion.div
+					key="practice-terminal"
+					initial={{ height: 0, opacity: 0 }}
+					animate={{ height: "auto", opacity: 1 }}
+					exit={{ height: 0, opacity: 0 }}
+					transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+					className="flex shrink-0 flex-col overflow-hidden border-t border-[var(--inno-border)] bg-[var(--inno-workspace-bg)]"
+				>
+					<div className="flex h-8 items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-workspace-chrome)] px-2 text-xs text-[var(--inno-text-muted)]">
+						<button
+							onClick={toggle}
+							className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
+							title={term.isOpen ? t("terminal.collapse") : t("terminal.expand")}
+						>
+							<TerminalIcon size={12} />
+							<span className="font-medium">{t("terminal.title")}</span>
+							<ChevronDown size={12} />
+						</button>
+						<span
+							className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[term.status]}`}
+							title={STATUS_LABEL[term.status]}
+							aria-label={STATUS_LABEL[term.status]}
+						/>
+						{term.cwd ? <span className="truncate text-[11px] text-[var(--inno-text-subtle)]" title={term.cwd}>{term.cwd}</span> : null}
+						{term.error ? <span className="text-[11px] text-[var(--inno-danger)]">{term.error}</span> : null}
+						<div className="ml-auto flex items-center gap-1">
+							{term.isOpen && sess.currentSessionId ? (
+								<>
+									<button
+										onClick={toggleHistory}
+										className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${showHistory ? "bg-[var(--inno-surface)] text-[var(--inno-text)]" : "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
+										title={t("terminal.history")}
+									>
+										<History size={12} />
+									</button>
+									<button
+										onClick={() => void restart()}
+										className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
+										title={t("terminal.restart")}
+									>
+										<RotateCcw size={12} />
+									</button>
+								</>
+							) : null}
 						</div>
-					) : (
-						<div className="flex-1 min-h-0 p-2">
-							<div className="h-full overflow-hidden rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-1.5 shadow-inner">
-								<TerminalView
-									key={`${sess.currentSessionId}:${ws.activeWorkspaceId ?? "default"}`}
-									innoSessionId={sess.currentSessionId}
-									workspaceId={ws.activeWorkspaceId ?? undefined}
-									className="h-[200px] w-full"
-								/>
-							</div>
-						</div>
-					)
-				) : (
-					<div className="flex h-[120px] items-center justify-center text-xs text-[var(--inno-text-muted)]">
-						{t("terminal.noSession")}
 					</div>
-				)
+					{sess.currentSessionId ? (
+						showHistory ? (
+							<div className="min-h-[220px] flex-1">
+								<RunsPanel sessionId={sess.currentSessionId} onClose={() => setShowHistory(false)} />
+							</div>
+						) : (
+							<div className="flex-1 min-h-0 p-2">
+								<Suspense fallback={<div className="h-[200px] w-full" aria-busy="true" />}>
+									<TerminalView
+										key={`${sess.currentSessionId}:${ws.activeWorkspaceId ?? "default"}`}
+										innoSessionId={sess.currentSessionId}
+										workspaceId={ws.activeWorkspaceId ?? undefined}
+										className="h-[200px] w-full"
+									/>
+								</Suspense>
+							</div>
+						)
+					) : (
+						<div className="flex h-[120px] items-center justify-center text-xs text-[var(--inno-text-muted)]">
+							{t("terminal.noSession")}
+						</div>
+					)}
+				</motion.div>
 			) : null}
-		</div>
+		</AnimatePresence>
 	);
 }

@@ -6,8 +6,9 @@ import {
 	Download,
 	Eye,
 	Maximize2,
-	Minimize2,
+	MoreHorizontal,
 	Pencil,
+	Play,
 	RotateCcw,
 	Save,
 	WrapText,
@@ -17,15 +18,27 @@ import {
 	Fragment,
 	type ReactNode,
 	useCallback,
+	useContext,
 	useEffect,
+	useId,
 	useMemo,
 	useRef,
 	useState,
 } from "react";
-import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import type { CustomRendererProps } from "streamdown";
-import { downloadBlob, ToolbarIconButton, useFullscreenDialog } from "./shared.js";
+import { StreamdownContext, type CustomRendererProps } from "streamdown";
+import {
+	downloadBlob,
+	MarkdownFullscreenDialog,
+	MarkdownToolbar,
+	ToolbarIconButton,
+	ToolbarMenu,
+	ToolbarMenuItem,
+	ToolbarSegmentedButton,
+	markdownControlEnabled,
+	markdownMaxHeight,
+	markdownToolbarEnabled,
+} from "./shared.js";
 
 type ArtifactViewMode = "preview" | "source" | "split";
 
@@ -155,13 +168,13 @@ function ArtifactSource({
 				value={source}
 				onChange={(event) => onChange(event.target.value)}
 				spellCheck={false}
-				className="h-full min-h-64 w-full resize-none border-0 bg-[var(--inno-surface)] p-3 font-mono text-xs leading-relaxed text-[var(--inno-text)] outline-none"
+				className="inno-markdown-artifact-editor"
 			/>
 		);
 	}
 
 	return (
-		<pre className={`m-0 max-h-[32rem] min-h-40 overflow-auto bg-[var(--inno-code-bg,var(--inno-surface))] p-3 font-mono text-xs leading-relaxed text-[var(--inno-text)] ${wrapped ? "whitespace-pre-wrap break-words" : "whitespace-pre"}`}>
+		<pre className={`inno-markdown-artifact-source ${wrapped ? "is-wrapped" : ""}`}>
 			<code>{source}</code>
 		</pre>
 	);
@@ -171,11 +184,108 @@ interface ArtifactShellProps extends CustomRendererProps {
 	title: string;
 	extension: string;
 	mimeType?: string;
-	renderPreview: (source: string, fullscreen: boolean) => ReactNode;
+	renderPreview: (source: string) => ReactNode;
+	renderToolbarAction?: (source: string) => ReactNode;
 }
 
-function ArtifactShell({ code, language, isIncomplete, title, extension, mimeType, renderPreview }: ArtifactShellProps) {
+interface ArtifactToolbarProps {
+	displayMode: ArtifactViewMode;
+	canPreview: boolean;
+	isIncomplete: boolean;
+	editing: boolean;
+	wrapped: boolean;
+	copied: boolean;
+	copyEnabled: boolean;
+	downloadEnabled: boolean;
+	fullscreenEnabled: boolean;
+	moreOpen: boolean;
+	moreId: string;
+	hasEditedSource: boolean;
+	onPreview: () => void;
+	onSource: () => void;
+	onSplit: () => void;
+	onToggleMore: () => void;
+	onCloseMore: () => void;
+	onWrap: () => void;
+	onApply: () => void;
+	onEdit: () => void;
+	onRestore: () => void;
+	onCopy: () => void | Promise<void>;
+	onDownload: () => void;
+	onFullscreen: () => void;
+	toolbarAction?: ReactNode;
+}
+
+function ArtifactToolbar({
+	displayMode,
+	canPreview,
+	isIncomplete,
+	editing,
+	wrapped,
+	copied,
+	copyEnabled,
+	downloadEnabled,
+	fullscreenEnabled,
+	moreOpen,
+	moreId,
+	hasEditedSource,
+	onPreview,
+	onSource,
+	onSplit,
+	onToggleMore,
+	onCloseMore,
+	onWrap,
+	onApply,
+	onEdit,
+	onRestore,
+	onCopy,
+	onDownload,
+	onFullscreen,
+	toolbarAction,
+}: ArtifactToolbarProps) {
 	const { t } = useTranslation();
+	return (
+		<MarkdownToolbar label={t("markdown.artifactTools", "Artifact 工具")}>
+			<div className="inno-markdown-toolbar-group inno-markdown-toolbar-group--modes" role="tablist" aria-label={t("markdown.artifactView", "Artifact 视图")}>
+				<ToolbarSegmentedButton label={t("markdown.preview", "预览")} showLabel selected={displayMode === "preview"} disabled={!canPreview} onClick={onPreview}><Eye size={14} /></ToolbarSegmentedButton>
+				<ToolbarSegmentedButton label={t("markdown.viewSource", "查看源码")} showLabel selected={displayMode === "source"} onClick={onSource}><Code2 size={14} /></ToolbarSegmentedButton>
+				<ToolbarSegmentedButton label={t("markdown.splitView", "分屏查看")} showLabel selected={displayMode === "split"} disabled={!canPreview} onClick={onSplit}><Columns2 size={14} /></ToolbarSegmentedButton>
+			</div>
+			{copyEnabled ? (
+				<ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copySource", "复制源码")} showLabel onClick={onCopy}>
+					{copied ? <Check size={14} /> : <Copy size={14} />}
+				</ToolbarIconButton>
+			) : null}
+			{toolbarAction}
+			<div className="inno-markdown-toolbar-menu-anchor">
+				<ToolbarIconButton label={t("markdown.moreTools", "更多")} showLabel menu expanded={moreOpen} aria-controls={moreId} onClick={onToggleMore}>
+					<MoreHorizontal size={14} />
+				</ToolbarIconButton>
+				<ToolbarMenu id={moreId} open={moreOpen} onClose={onCloseMore} label={t("markdown.moreTools", "更多")}>
+					<ToolbarMenuItem label={wrapped ? t("markdown.disableWrapText", "取消自动换行") : t("markdown.wrapText", "自动换行")} onClick={onWrap}><WrapText size={14} /></ToolbarMenuItem>
+					{editing ? (
+						<ToolbarMenuItem label={t("markdown.applyChanges", "应用更改")} onClick={onApply}><Save size={14} /></ToolbarMenuItem>
+					) : (
+						<ToolbarMenuItem label={t("markdown.editCopy", "编辑副本")} disabled={isIncomplete} onClick={onEdit}><Pencil size={14} /></ToolbarMenuItem>
+					)}
+					{hasEditedSource ? <ToolbarMenuItem label={t("markdown.restoreOriginal", "恢复模型原文")} onClick={onRestore}><RotateCcw size={14} /></ToolbarMenuItem> : null}
+					{downloadEnabled ? <ToolbarMenuItem label={t("markdown.downloadSource", "下载源码")} onClick={onDownload}><Download size={14} /></ToolbarMenuItem> : null}
+					{fullscreenEnabled ? <ToolbarMenuItem label={t("markdown.fullscreen", "全屏查看")} disabled={!canPreview} onClick={onFullscreen}><Maximize2 size={14} /></ToolbarMenuItem> : null}
+				</ToolbarMenu>
+			</div>
+		</MarkdownToolbar>
+	);
+}
+
+function ArtifactShell({ code, language, isIncomplete, title, extension, mimeType, renderPreview, renderToolbarAction }: ArtifactShellProps) {
+	const { t } = useTranslation();
+	const streamdownContext = useContext(StreamdownContext);
+	const toolbarEnabled = markdownToolbarEnabled(streamdownContext.controls, "code");
+	const copyEnabled = markdownControlEnabled(streamdownContext.controls, "code", "copy");
+	const downloadEnabled = markdownControlEnabled(streamdownContext.controls, "code", "download");
+	const fullscreenEnabled = markdownControlEnabled(streamdownContext.controls, "code", "fullscreen");
+	const maxHeight = markdownMaxHeight(streamdownContext.codeBlockMaxHeight);
+	const moreId = `inno-artifact-more-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
 	const [mode, setModeState] = useState<ArtifactViewMode>(isIncomplete ? "source" : "preview");
 	// Streaming forces the source view; a manual toolbar choice pins the mode so
 	// the post-completion switch back to preview does not override the user.
@@ -193,9 +303,10 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 	const [wrapped, setWrapped] = useState(false);
 	const [copied, setCopied] = useState(false);
 	const [fullscreen, setFullscreen] = useState(false);
+	const [moreOpen, setMoreOpen] = useState(false);
 
 	useEffect(() => {
-		if (isIncomplete) {
+		if (isIncomplete && !modePinnedRef.current) {
 			setModeState("source");
 		} else if (!modePinnedRef.current) {
 			// The fence just completed: leave the forced source view for the
@@ -204,18 +315,32 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 		}
 	}, [isIncomplete]);
 
-	useFullscreenDialog(fullscreen, useCallback(() => setFullscreen(false), []));
+	useEffect(() => setMoreOpen(false), [code]);
 
 	const appliedSource = editedSource ?? code;
 	const currentSource = editing ? draft : appliedSource;
 	const canPreview = !isIncomplete && currentSource.trim().length > 0;
-	const displayMode = canPreview ? mode : "source";
+	// Effects run after paint. Derive the automatic mode during render so the
+	// fence-completion commit goes straight from streaming source to preview
+	// instead of flashing the source for one frame.
+	const displayMode = canPreview
+		? (isIncomplete ? "source" : modePinnedRef.current ? mode : "preview")
+		: "source";
+	const toolbarAction = renderToolbarAction?.(currentSource);
 
 	const handleCopy = useCallback(async () => {
 		await navigator.clipboard.writeText(currentSource);
 		setCopied(true);
 		setTimeout(() => setCopied(false), 1600);
 	}, [currentSource]);
+
+	const handleDownload = () => {
+		downloadBlob(`${safeFilename(title)}.${extension}`, new Blob([currentSource], { type: mimeType ?? "text/plain;charset=utf-8" }));
+	};
+
+	const handlePreview = () => {
+		setMode("preview");
+	};
 
 	const handleEdit = () => {
 		setDraft(appliedSource);
@@ -236,56 +361,80 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 	};
 
 	const content = (isFullscreen: boolean) => (
-		<div className={`${isFullscreen ? "h-full" : "min-h-48 max-h-[34rem]"} min-w-0 overflow-hidden`}>
-			{displayMode === "preview" ? renderPreview(currentSource, isFullscreen) : null}
-			{displayMode === "source" ? (
-				<ArtifactSource source={currentSource} editing={editing} wrapped={wrapped} onChange={setDraft} />
-			) : null}
+		<div data-inno-content-block="artifact" className={`inno-markdown-artifact-content ${isFullscreen ? "is-fullscreen" : ""}`} style={!isFullscreen && maxHeight ? { maxHeight } : undefined}>
+			{displayMode === "preview" ? renderPreview(currentSource) : null}
+			{displayMode === "source" ? <ArtifactSource source={currentSource} editing={editing} wrapped={wrapped} onChange={setDraft} /> : null}
 			{displayMode === "split" ? (
-				<div className={`${isFullscreen ? "h-full" : "min-h-64"} grid min-w-0 grid-cols-2 divide-x divide-[var(--inno-border)]`}>
-					<div className="min-w-0 overflow-auto">{renderPreview(currentSource, isFullscreen)}</div>
-					<div className="min-w-0 overflow-auto"><ArtifactSource source={currentSource} editing={editing} wrapped={wrapped} onChange={setDraft} /></div>
+				<div className="inno-markdown-artifact-split">
+					<div className="inno-markdown-artifact-pane">{renderPreview(currentSource)}</div>
+					<div className="inno-markdown-artifact-pane"><ArtifactSource source={currentSource} editing={editing} wrapped={wrapped} onChange={setDraft} /></div>
 				</div>
 			) : null}
 		</div>
 	);
 
+	const toolbar = toolbarEnabled ? (
+		<ArtifactToolbar
+			displayMode={displayMode}
+			canPreview={canPreview}
+			isIncomplete={isIncomplete}
+			editing={editing}
+			wrapped={wrapped}
+			copied={copied}
+			copyEnabled={copyEnabled}
+			downloadEnabled={downloadEnabled}
+			fullscreenEnabled={fullscreenEnabled}
+			moreOpen={moreOpen}
+			moreId={moreId}
+			hasEditedSource={editedSource !== null && editedSource !== code}
+			onPreview={handlePreview}
+			onSource={() => setMode("source")}
+			onSplit={() => setMode("split")}
+			onToggleMore={() => setMoreOpen((value) => !value)}
+			onCloseMore={() => setMoreOpen(false)}
+			onWrap={() => setWrapped((value) => !value)}
+			onApply={handleSave}
+			onEdit={handleEdit}
+			onRestore={handleReset}
+			onCopy={() => void handleCopy()}
+			onDownload={handleDownload}
+			onFullscreen={() => { setMoreOpen(false); setFullscreen(true); }}
+			toolbarAction={toolbarAction}
+		/>
+	) : null;
+
 	return (
 		<Fragment>
-			<div data-inno-artifact={language} className="my-3 min-w-0 overflow-hidden rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] shadow-sm">
-				<div className="flex min-w-0 items-center gap-2 border-b border-[var(--inno-border)] px-2.5 py-1.5">
-					<span className="min-w-0 flex-1 truncate text-xs font-semibold text-[var(--inno-text)]">{title}</span>
-					{isIncomplete ? <span className="mr-1 inline-flex items-center gap-1 text-[11px] text-[var(--inno-text-muted)]"><span className="size-1.5 animate-pulse rounded-full bg-[var(--inno-accent)]" />{t("markdown.generating", "生成中")}</span> : null}
-					<ToolbarIconButton label={t("markdown.preview", "预览")} active={displayMode === "preview"} disabled={!canPreview} onClick={() => setMode("preview")}><Eye size={14} /></ToolbarIconButton>
-					<ToolbarIconButton label={t("markdown.viewSource", "查看源码")} active={displayMode === "source"} onClick={() => setMode("source")}><Code2 size={14} /></ToolbarIconButton>
-					<ToolbarIconButton label={t("markdown.splitView", "分屏查看")} active={displayMode === "split"} disabled={!canPreview} onClick={() => setMode("split")}><Columns2 size={14} /></ToolbarIconButton>
-					<ToolbarIconButton label={t("markdown.wrapText", "自动换行")} active={wrapped} onClick={() => setWrapped((value) => !value)}><WrapText size={14} /></ToolbarIconButton>
-					{editing ? (
-						<ToolbarIconButton label={t("markdown.applyChanges", "应用更改")} onClick={handleSave}><Save size={14} /></ToolbarIconButton>
-					) : (
-						<ToolbarIconButton label={t("markdown.editCopy", "编辑副本")} disabled={isIncomplete} onClick={handleEdit}><Pencil size={14} /></ToolbarIconButton>
-					)}
-					{editedSource !== null && editedSource !== code ? <ToolbarIconButton label={t("markdown.restoreOriginal", "恢复模型原文")} onClick={handleReset}><RotateCcw size={14} /></ToolbarIconButton> : null}
-					<ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copySource", "复制源码")} onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}</ToolbarIconButton>
-					<ToolbarIconButton label={t("markdown.downloadSource", "下载源码")} onClick={() => downloadBlob(`${safeFilename(title)}.${extension}`, new Blob([currentSource], { type: mimeType ?? "text/plain;charset=utf-8" }))}><Download size={14} /></ToolbarIconButton>
-					<ToolbarIconButton label={t("markdown.fullscreen", "全屏查看")} disabled={!canPreview} onClick={() => setFullscreen(true)}><Maximize2 size={14} /></ToolbarIconButton>
+			<div data-inno-artifact={language} data-inno-content-block="artifact" className="inno-markdown-content-block inno-markdown-content-block--artifact">
+				<div className="inno-markdown-content-header">
+					<span className="inno-markdown-content-title">{title}</span>
+					{isIncomplete ? <span className="inno-markdown-content-status"><span className="inno-markdown-content-status-dot" />{t("markdown.generating", "生成中")}</span> : null}
+					{toolbar}
 				</div>
 				{content(false)}
 			</div>
 
-			{fullscreen && typeof document !== "undefined" ? createPortal(
-				<div role="dialog" aria-modal="true" aria-label={`${title} ${t("markdown.fullscreen", "全屏预览")}`} className="fixed inset-0 z-[1000] flex flex-col bg-[var(--inno-background)]">
-					<div className="flex items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-4 py-2">
-						<span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--inno-text)]">{title}</span>
-						<ToolbarIconButton label={t("markdown.exitFullscreen", "退出全屏")} onClick={() => setFullscreen(false)}><Minimize2 size={16} /></ToolbarIconButton>
-					</div>
-					<div className="min-h-0 flex-1 p-3">{content(true)}</div>
-				</div>,
-				document.body,
-			) : null}
+			<MarkdownFullscreenDialog
+			open={fullscreen}
+			title={title}
+			ariaLabel={`${title} ${t("markdown.fullscreen", "全屏预览")}`}
+				closeLabel={t("markdown.exitFullscreen", "退出全屏")}
+				onClose={() => setFullscreen(false)}
+				actions={toolbarEnabled && (copyEnabled || downloadEnabled || toolbarAction) ? (
+					<MarkdownToolbar label={t("markdown.artifactTools", "Artifact 工具")}>
+						{toolbarAction}
+						{copyEnabled ? <ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copySource", "复制源码")} showLabel onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}</ToolbarIconButton> : null}
+						{downloadEnabled ? <ToolbarIconButton label={t("markdown.downloadSource", "下载源码")} showLabel onClick={handleDownload}><Download size={14} /></ToolbarIconButton> : null}
+					</MarkdownToolbar>
+				) : null}
+			>
+				{content(true)}
+			</MarkdownFullscreenDialog>
 		</Fragment>
 	);
 }
+
+const SVG_PREVIEW_STYLE = "<style>html,body{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}svg{max-width:100%;max-height:100%;height:auto}</style>";
 
 function RestrictedHtmlFrame({ html, title, className = "", allowScripts = false }: { html: string; title: string; className?: string; allowScripts?: boolean }) {
 	const srcDoc = useMemo(() => injectRestrictedHead(html, allowScripts ? INTERACTIVE_PREVIEW_CSP : RESTRICTED_PREVIEW_CSP), [allowScripts, html]);
@@ -294,27 +443,17 @@ function RestrictedHtmlFrame({ html, title, className = "", allowScripts = false
 			title={title}
 			sandbox={allowScripts ? "allow-scripts" : ""}
 			srcDoc={srcDoc}
-			className={`h-full min-h-64 w-full border-0 bg-white ${className}`}
+			className={`inno-markdown-preview-frame ${className}`}
 		/>
 	);
 }
 
-function HtmlPreview({ html, title }: { html: string; title: string }) {
-	const { t } = useTranslation();
+function HtmlPreview({ html, title, interactiveEnabled }: { html: string; title: string; interactiveEnabled: boolean }) {
 	const requiresInteraction = useMemo(() => htmlRequiresInteraction(html), [html]);
-	const [authorized, setAuthorized] = useState(false);
-
-	useEffect(() => setAuthorized(false), [html]);
 
 	return (
-		<div className="relative h-full min-h-64">
-			<RestrictedHtmlFrame html={html} title={title} allowScripts={requiresInteraction && authorized} />
-			{requiresInteraction && !authorized ? (
-				<div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 border-t border-[var(--inno-border)] bg-[var(--inno-surface)]/95 px-3 py-2 text-[11px] text-[var(--inno-text-muted)] backdrop-blur">
-					<span>{t("markdown.scriptNotice", "此预览包含脚本或交互事件，当前未执行。")}</span>
-					<button type="button" className="shrink-0 rounded-md bg-[var(--inno-accent)] px-2.5 py-1 font-medium text-white" onClick={() => setAuthorized(true)}>{t("markdown.enableInteractive", "启用交互预览")}</button>
-				</div>
-			) : null}
+		<div className="inno-markdown-html-preview">
+			<RestrictedHtmlFrame html={html} title={title} allowScripts={requiresInteraction && interactiveEnabled} />
 		</div>
 	);
 }
@@ -322,13 +461,31 @@ function HtmlPreview({ html, title }: { html: string; title: string }) {
 export function HtmlArtifactRenderer(props: CustomRendererProps) {
 	const { t } = useTranslation();
 	const title = extractHtmlTitle(props.code) || t("markdown.htmlPreview", "HTML 预览");
+	const [interactiveSource, setInteractiveSource] = useState<string | null>(null);
 	return (
 		<ArtifactShell
 			{...props}
 			title={title}
 			extension="html"
 			mimeType="text/html;charset=utf-8"
-			renderPreview={(source) => <HtmlPreview html={source} title={title} />}
+			renderToolbarAction={(source) => {
+			if (!htmlRequiresInteraction(source)) return null;
+			const interactiveEnabled = interactiveSource === source;
+			return (
+				<ToolbarIconButton
+					label={interactiveEnabled ? t("markdown.resetInteractivePreview", "重置交互预览") : t("markdown.enableInteractive", "启用交互预览")}
+					title={interactiveEnabled
+						? t("markdown.resetInteractivePreviewHint", "点击后停止脚本执行，恢复受限预览")
+						: t("markdown.interactivePreviewHint", "点击后将在受限沙盒中启用脚本和交互事件")}
+					showLabel
+					active={interactiveEnabled}
+					onClick={() => setInteractiveSource((current) => current === source ? null : source)}
+				>
+					{interactiveEnabled ? <RotateCcw size={14} /> : <Play size={14} />}
+				</ToolbarIconButton>
+			);
+		}}
+			renderPreview={(source) => <HtmlPreview html={source} title={title} interactiveEnabled={interactiveSource === source} />}
 		/>
 	);
 }
@@ -340,7 +497,7 @@ export function SvgArtifactRenderer(props: CustomRendererProps) {
 	const renderSvg = (source: string) => (
 		<RestrictedHtmlFrame
 			title={title}
-			html={`<style>html,body{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}svg{max-width:100%;max-height:100%;height:auto}</style>${sanitizeSvgMarkup(source, invalidMessage)}`}
+			html={`${SVG_PREVIEW_STYLE}${sanitizeSvgMarkup(source, invalidMessage)}`}
 		/>
 	);
 	return <ArtifactShell {...props} title={title} extension="svg" mimeType="image/svg+xml;charset=utf-8" renderPreview={renderSvg} />;
@@ -382,9 +539,9 @@ function AsyncSvgPreview({
 		return () => controller.abort();
 	}, [isIncomplete, invalidMessage, render, source]);
 
-	if (isIncomplete || loading) return <div className="flex min-h-64 items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("markdown.generatingChart", "正在生成图表…")}</div>;
-	if (error) return <div role="alert" className="m-3 rounded-lg border border-[var(--inno-danger-border)] bg-[var(--inno-danger-bg)] p-3 text-xs text-[var(--inno-danger)]">{error}</div>;
-	return <RestrictedHtmlFrame title={title} html={`<style>html,body{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}svg{max-width:100%;max-height:100%;height:auto}</style>${svg}`} />;
+	if (isIncomplete || loading) return <div className="inno-markdown-preview-status" role="status">{t("markdown.generatingChart", "正在生成图表…")}</div>;
+	if (error) return <div role="alert" className="inno-markdown-preview-error">{error}</div>;
+	return <RestrictedHtmlFrame title={title} html={`${SVG_PREVIEW_STYLE}${svg}`} />;
 }
 
 type VizModule = typeof import("@viz-js/viz");
@@ -497,11 +654,11 @@ function EChartsPreview({ source, isIncomplete }: { source: string; isIncomplete
 		};
 	}, [isIncomplete, source, t]);
 
-	if (isIncomplete) return <div className="flex min-h-64 items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("markdown.generatingChart", "正在生成图表…")}</div>;
+	if (isIncomplete) return <div className="inno-markdown-preview-status" role="status">{t("markdown.generatingChart", "正在生成图表…")}</div>;
 	return (
-		<div className="relative min-h-64 bg-white">
-			<div ref={hostRef} className="h-80 w-full" />
-			{error ? <div role="alert" className="absolute inset-x-3 top-3 rounded-lg border border-[var(--inno-danger-border)] bg-[var(--inno-danger-bg)] p-3 text-xs text-[var(--inno-danger)]">{error}</div> : null}
+		<div className="inno-markdown-echarts-preview">
+			<div ref={hostRef} className="inno-markdown-echarts-host" />
+			{error ? <div role="alert" className="inno-markdown-preview-error">{error}</div> : null}
 		</div>
 	);
 }

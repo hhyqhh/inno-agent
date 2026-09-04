@@ -1,6 +1,5 @@
 import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 import type { DragDropManager } from "dnd-core";
 import { Tree, type NodeRendererProps, type TreeApi, type CreateHandler, type RenameHandler, type DeleteHandler, type MoveHandler } from "react-arborist";
 import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, FileCode2, Presentation, FileSpreadsheet, Copy, Check, ListChecks, Trash2 } from "lucide-react";
@@ -11,7 +10,6 @@ import { sessionsStore } from "../stores/sessions-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { appStore } from "../stores/app-store.js";
 import { getSessionWorkspace } from "../api/workspaces.js";
-import { TerminalDrawer } from "./terminal/TerminalDrawer.js";
 import { RunButton } from "./terminal/RunButton.js";
 import { LazyCodeEditor } from "./LazyCodeEditor.js";
 import { LazyMarkdownEditor } from "./LazyMarkdownEditor.js";
@@ -900,7 +898,6 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 	const sessState = useStoreSnapshot(sessionsStore, () => ({
 		currentSessionId: sessionsStore.currentSessionId,
 	}));
-	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	// The file tree pane keeps a fixed width; the content preview pane appears
 	// only once the panel is dragged wide enough to fit it beside the tree.
 	const showContent = sidebarOpen ? panelWidth >= CONTENT_REVEAL_WIDTH : true;
@@ -1324,7 +1321,6 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 					<div className="flex min-h-0 flex-1 flex-col">
 						<FileContentPane onToggleSidebar={() => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} />
 					</div>
-					{!simpleMode && <TerminalDrawer />}
 				</section>
 			) : null}
 

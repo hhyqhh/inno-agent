@@ -5,19 +5,30 @@ import {
 	Copy,
 	Download,
 	Maximize2,
-	Minimize2,
+	MoreHorizontal,
 	Pencil,
 	Play,
 	RotateCcw,
 	Save,
 	WrapText,
 } from "lucide-react";
-import { Fragment, useCallback, useContext, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { code as codeHighlighter, type HighlightResult } from "@streamdown/code";
+import { Fragment, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { CodeBlock, StreamdownContext, type CustomRendererProps } from "streamdown";
+import { CodeBlockContainer, CodeBlockHeader, StreamdownContext, type CustomRendererProps } from "streamdown";
 import { terminalStore } from "../../stores/terminal-store.js";
-import { downloadBlob, ToolbarIconButton, useFullscreenDialog } from "./shared.js";
+import {
+	MarkdownFullscreenDialog,
+	MarkdownToolbar,
+	MarkdownToolbarGroup,
+	ToolbarIconButton,
+	ToolbarMenu,
+	ToolbarMenuItem,
+	markdownControlEnabled,
+	markdownMaxHeight,
+	markdownToolbarEnabled,
+	downloadBlob,
+} from "./shared.js";
 
 const LANGUAGE_EXTENSIONS: Record<string, string> = {
 	bash: "sh", shell: "sh", sh: "sh", zsh: "sh",
@@ -48,9 +59,247 @@ function countLines(source: string): number {
 	return lines;
 }
 
+function trimTrailingNewlines(source: string): string {
+	let end = source.length;
+	while (end > 0 && source[end - 1] === "\n") end -= 1;
+	return source.slice(0, end);
+}
+
+function rawHighlightResult(source: string): HighlightResult {
+	return {
+		bg: "transparent",
+		fg: "inherit",
+		tokens: source.split("\n").map((line) => [{ content: line, color: "inherit", bgColor: "transparent", htmlStyle: {}, offset: 0 }]),
+	};
+}
+
+function tokenStyle(token: HighlightResult["tokens"][number][number]): CSSProperties {
+	const style = {} as CSSProperties;
+	const customProperties = style as CSSProperties & Record<string, string>;
+	if (token.color) customProperties["--sdm-c"] = token.color;
+	if (token.bgColor) customProperties["--sdm-tbg"] = token.bgColor;
+	for (const [property, value] of Object.entries(token.htmlStyle ?? {}) as [string, string][]) {
+		if (property === "color") customProperties["--sdm-c"] = value;
+		else if (property === "background-color") customProperties["--sdm-tbg"] = value;
+		else customProperties[property] = value;
+	}
+	return style;
+}
+
+function rootStyle(result: HighlightResult): CSSProperties {
+	const style = {} as CSSProperties;
+	const customProperties = style as CSSProperties & Record<string, string>;
+	if (result.bg) customProperties["--sdm-bg"] = result.bg;
+	if (result.fg) customProperties["--sdm-fg"] = result.fg;
+	if (typeof result.rootStyle === "string") {
+		for (const declaration of result.rootStyle.split(";")) {
+			const separator = declaration.indexOf(":");
+			if (separator <= 0) continue;
+			const property = declaration.slice(0, separator).trim();
+			const value = declaration.slice(separator + 1).trim();
+			if (property && value) customProperties[property] = value;
+		}
+	}
+	return style;
+}
+
+/**
+ * Streamdown's CodeBlock lazy-loads its highlighted body. On a cold start that
+ * means React first mounts one body through Suspense, then replaces it with a
+ * second body after the highlighter chunk arrives. Keep the body mounted and
+ * update only its token children so that the first highlight cannot cause a
+ * one-frame code-block resize.
+ */
+function StableCodeBlockBody({ code, language }: { code: string; language: string }) {
+	const streamdownContext = useContext(StreamdownContext);
+	const bodyRef = useRef<HTMLDivElement>(null);
+	const stickToBottomRef = useRef(true);
+	const normalizedCode = useMemo(() => trimTrailingNewlines(code), [code]);
+	const rawResult = useMemo(() => rawHighlightResult(normalizedCode), [normalizedCode]);
+	const maxHeight = markdownMaxHeight(streamdownContext.codeBlockMaxHeight);
+	const themeKey = streamdownContext.shikiTheme.map((theme) => typeof theme === "string" ? theme : theme.name ?? "").join("\u0000");
+	const requestKey = `${language}\u0000${themeKey}\u0000${normalizedCode}`;
+	const [highlighted, setHighlighted] = useState<{ key: string; result: HighlightResult } | null>(null);
+
+	useLayoutEffect(() => {
+		let active = true;
+		const options = {
+			code: normalizedCode,
+			language: language as Parameters<typeof codeHighlighter.highlight>[0]["language"],
+			themes: streamdownContext.shikiTheme as Parameters<typeof codeHighlighter.highlight>[0]["themes"],
+		};
+		const applyResult = (result: HighlightResult) => {
+			if (active) setHighlighted({ key: requestKey, result });
+		};
+		const immediate = codeHighlighter.highlight(options, (result) => applyResult(result as HighlightResult));
+		if (immediate) applyResult(immediate as HighlightResult);
+		return () => {
+			active = false;
+		};
+	}, [language, normalizedCode, requestKey, streamdownContext.shikiTheme]);
+
+	const result = highlighted?.key === requestKey ? highlighted.result : rawResult;
+	const codeClassName = streamdownContext.lineNumbers ? "[counter-increment:line_0] [counter-reset:line]" : undefined;
+	const lineClassName = streamdownContext.lineNumbers
+		? "block before:content-[counter(line)] before:inline-block before:[counter-increment:line] before:w-6 before:mr-4 before:text-[13px] before:text-right before:text-muted-foreground/50 before:font-mono before:select-none"
+		: "block";
+
+	useEffect(() => {
+		const body = bodyRef.current;
+		if (!body || !maxHeight) return;
+		const updateStickiness = () => {
+			stickToBottomRef.current = body.scrollHeight - body.scrollTop - body.clientHeight < 8;
+		};
+		body.addEventListener("scroll", updateStickiness, { passive: true });
+		return () => body.removeEventListener("scroll", updateStickiness);
+	}, [maxHeight]);
+
+	useEffect(() => {
+		const body = bodyRef.current;
+		if (!body || !maxHeight || !streamdownContext.isAnimating || !stickToBottomRef.current) return;
+		body.scrollTo({ top: body.scrollHeight, behavior: "instant" });
+	}, [maxHeight, normalizedCode, result, streamdownContext.isAnimating]);
+
+	return (
+		<div
+			ref={bodyRef}
+			className={`overflow-x-auto rounded-md border border-border bg-background p-4 text-sm${maxHeight ? " overflow-y-auto" : ""}`}
+			data-streamdown="code-block-body"
+			data-language={language}
+			data-inno-code-body=""
+			style={maxHeight ? { maxHeight } : undefined}
+		>
+			<pre className="bg-[var(--sdm-bg,inherit)] dark:bg-[var(--shiki-dark-bg,var(--sdm-bg,inherit))]" style={rootStyle(result)}>
+				<code className={codeClassName}>
+					{result.tokens.map((line, lineIndex) => (
+						<span key={lineIndex} className={lineClassName}>
+							{line.length === 0 || line.length === 1 && line[0].content === ""
+								? "\n"
+								: line.map((token, tokenIndex) => (
+									<span
+										key={tokenIndex}
+										className={`text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))]${token.bgColor ? " bg-[var(--sdm-tbg)] dark:bg-[var(--shiki-dark-bg,var(--sdm-tbg))]" : ""}`}
+										style={tokenStyle(token)}
+										{...token.htmlAttrs}
+									>
+										{token.content}
+									</span>
+								))}
+						</span>
+					))}
+				</code>
+			</pre>
+		</div>
+	);
+}
+
+interface CodeToolbarProps {
+	moreOpen: boolean;
+	moreId: string;
+	editing: boolean;
+	canRun: boolean;
+	isIncomplete: boolean;
+	copyEnabled: boolean;
+	downloadEnabled: boolean;
+	fullscreenEnabled: boolean;
+	expandable: boolean;
+	expanded: boolean;
+	wrapped: boolean;
+	copied: boolean;
+	isFullscreen: boolean;
+	onToggleMore: () => void;
+	onCloseMore: () => void;
+	onRun: () => void;
+	onApply: () => void;
+	onEdit: () => void;
+	onRestore: () => void;
+	onWrap: () => void;
+	onExpand: () => void;
+	onCopy: () => void | Promise<void>;
+	onDownload: () => void;
+	onFullscreen: () => void;
+	hasEditedSource: boolean;
+}
+
+function CodeToolbar({
+	moreOpen,
+	moreId,
+	editing,
+	canRun,
+	isIncomplete,
+	copyEnabled,
+	downloadEnabled,
+	fullscreenEnabled,
+	expandable,
+	expanded,
+	wrapped,
+	copied,
+	isFullscreen,
+	onToggleMore,
+	onCloseMore,
+	onRun,
+	onApply,
+	onEdit,
+	onRestore,
+	onWrap,
+	onExpand,
+	onCopy,
+	onDownload,
+	onFullscreen,
+	hasEditedSource,
+}: CodeToolbarProps) {
+	const { t } = useTranslation();
+	return (
+		<MarkdownToolbar label={t("markdown.codeTools", "代码工具")}>
+			<MarkdownToolbarGroup>
+					<ToolbarIconButton label={t("markdown.wrapText", "自动换行")} showLabel active={wrapped} onClick={onWrap}><WrapText size={14} /></ToolbarIconButton>
+					{expandable ? (
+						<ToolbarIconButton label={expanded ? t("markdown.collapseCode", "折叠代码") : t("markdown.expandCode", "展开代码")} showLabel active={expanded} onClick={onExpand}>
+							{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+						</ToolbarIconButton>
+					) : null}
+					{copyEnabled ? <ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copyCode", "复制代码")} showLabel onClick={onCopy}>
+					{copied ? <Check size={14} /> : <Copy size={14} />}
+				</ToolbarIconButton> : null}
+			</MarkdownToolbarGroup>
+			<MarkdownToolbarGroup>
+				{canRun ? <ToolbarIconButton label={t("markdown.runCode", "运行代码")} showLabel onClick={onRun}><Play size={14} /></ToolbarIconButton> : null}
+					<div className="inno-markdown-toolbar-menu-anchor">
+						<ToolbarIconButton
+							label={t("markdown.moreTools", "更多")}
+							showLabel
+						menu
+						expanded={moreOpen}
+						aria-controls={moreId}
+						onClick={onToggleMore}
+					>
+						<MoreHorizontal size={14} />
+					</ToolbarIconButton>
+					<ToolbarMenu id={moreId} open={moreOpen} onClose={onCloseMore} label={t("markdown.moreTools", "更多")}>
+						{editing ? (
+							<ToolbarMenuItem label={t("markdown.applyChanges", "应用更改")} onClick={onApply}><Save size={14} /></ToolbarMenuItem>
+						) : (
+							<ToolbarMenuItem label={t("markdown.editCopy", "编辑副本")} disabled={isIncomplete} onClick={onEdit}><Pencil size={14} /></ToolbarMenuItem>
+						)}
+						{hasEditedSource ? <ToolbarMenuItem label={t("markdown.restoreOriginal", "恢复模型原文")} onClick={onRestore}><RotateCcw size={14} /></ToolbarMenuItem> : null}
+						{downloadEnabled ? <ToolbarMenuItem label={t("markdown.downloadCode", "下载代码")} onClick={onDownload}><Download size={14} /></ToolbarMenuItem> : null}
+					{fullscreenEnabled && !isFullscreen ? <ToolbarMenuItem label={t("markdown.fullscreen", "全屏查看")} disabled={isIncomplete} onClick={onFullscreen}><Maximize2 size={14} /></ToolbarMenuItem> : null}
+					</ToolbarMenu>
+				</div>
+			</MarkdownToolbarGroup>
+		</MarkdownToolbar>
+	);
+}
+
 export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRendererProps) {
 	const { t } = useTranslation();
 	const streamdownContext = useContext(StreamdownContext);
+	const toolbarEnabled = markdownToolbarEnabled(streamdownContext.controls, "code");
+	const copyEnabled = markdownControlEnabled(streamdownContext.controls, "code", "copy");
+	const downloadEnabled = markdownControlEnabled(streamdownContext.controls, "code", "download");
+	const fullscreenEnabled = markdownControlEnabled(streamdownContext.controls, "code", "fullscreen");
+	const moreId = `inno-code-more-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+	const fullscreenMoreId = `${moreId}-fullscreen`;
 	// null = pristine: follow the streaming `code` prop directly. Storing the
 	// streamed source in state and re-syncing it in an effect leaves one
 	// committed render per chunk where state !== code, which flashes the
@@ -61,6 +310,7 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 	const [wrapped, setWrapped] = useState(false);
 	const [expanded, setExpanded] = useState(() => countLines(code) <= 16);
 	const [fullscreen, setFullscreen] = useState(false);
+	const [moreOpen, setMoreOpen] = useState(false);
 	const [copied, setCopied] = useState(false);
 	const canRun = /^(?:python|py)$/i.test(language) && !isIncomplete;
 	const source = editedSource ?? code;
@@ -68,7 +318,7 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 	// both avoid allocating a per-line array on every streaming re-render.
 	const expandable = source.length > 1800 || countLines(source) > 16;
 
-	useFullscreenDialog(fullscreen, useCallback(() => setFullscreen(false), []));
+	useEffect(() => setMoreOpen(false), [code]);
 
 	const handleCopy = async () => {
 		await navigator.clipboard.writeText(editing ? draft : source);
@@ -76,32 +326,84 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 		setTimeout(() => setCopied(false), 1600);
 	};
 
-	const actions = (
-		<Fragment>
-			{canRun ? <ToolbarIconButton label={t("markdown.runPython", "在练习终端运行 Python")} onClick={() => runPython(source)}><Play size={14} /></ToolbarIconButton> : null}
-			{editing ? (
-				<ToolbarIconButton label={t("markdown.applyChanges", "应用更改")} onClick={() => { setEditedSource(draft); setEditing(false); }}><Save size={14} /></ToolbarIconButton>
-			) : (
-				<ToolbarIconButton label={t("markdown.editCopy", "编辑副本")} disabled={isIncomplete} onClick={() => { setDraft(source); setEditing(true); }}><Pencil size={14} /></ToolbarIconButton>
-			)}
-			{editedSource !== null && editedSource !== code ? <ToolbarIconButton label={t("markdown.restoreOriginal", "恢复模型原文")} onClick={() => { setEditedSource(null); setDraft(code); setEditing(false); }}><RotateCcw size={14} /></ToolbarIconButton> : null}
-			<ToolbarIconButton label={t("markdown.wrapText", "自动换行")} active={wrapped} onClick={() => setWrapped((value) => !value)}><WrapText size={14} /></ToolbarIconButton>
-			{expandable ? <ToolbarIconButton label={expanded ? t("markdown.collapseCode", "折叠代码") : t("markdown.expandCode", "展开代码")} active={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</ToolbarIconButton> : null}
-			<ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copyCode", "复制代码")} onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}</ToolbarIconButton>
-			<ToolbarIconButton label={t("markdown.downloadCode", "下载代码")} onClick={() => downloadBlob(codeFilename(language), new Blob([editing ? draft : source], { type: "text/plain;charset=utf-8" }))}><Download size={14} /></ToolbarIconButton>
-			<ToolbarIconButton label={t("markdown.fullscreen", "全屏查看")} onClick={() => setFullscreen(true)}><Maximize2 size={14} /></ToolbarIconButton>
-		</Fragment>
-	);
+	const handleDownload = () => {
+		downloadBlob(codeFilename(language), new Blob([editing ? draft : source], { type: "text/plain;charset=utf-8" }));
+	};
+
+	const handleEdit = () => {
+		setDraft(source);
+		setEditing(true);
+	};
+
+	const handleApply = () => {
+		setEditedSource(draft);
+		setEditing(false);
+	};
+
+	const handleRestore = () => {
+		setEditedSource(null);
+		setDraft(code);
+		setEditing(false);
+	};
+
+	const handleFullscreen = () => {
+		setMoreOpen(false);
+		setFullscreen(true);
+	};
+
+	const renderToolbar = (toolbarMoreId: string, isFullscreen = false) => toolbarEnabled ? (
+		<CodeToolbar
+			moreOpen={moreOpen}
+			moreId={toolbarMoreId}
+			editing={editing}
+			canRun={canRun}
+			isIncomplete={isIncomplete}
+			copyEnabled={copyEnabled}
+			downloadEnabled={downloadEnabled}
+			fullscreenEnabled={fullscreenEnabled}
+			expandable={expandable}
+			expanded={expanded}
+			wrapped={wrapped}
+			copied={copied}
+			isFullscreen={isFullscreen}
+			onToggleMore={() => setMoreOpen((value) => !value)}
+			onCloseMore={() => setMoreOpen(false)}
+			onRun={() => runPython(source)}
+			onApply={handleApply}
+			onEdit={handleEdit}
+			onRestore={handleRestore}
+			onWrap={() => setWrapped((value) => !value)}
+			onExpand={() => setExpanded((value) => !value)}
+			onCopy={() => void handleCopy()}
+			onDownload={handleDownload}
+			onFullscreen={handleFullscreen}
+			hasEditedSource={editedSource !== null && editedSource !== code}
+		/>
+	) : null;
+	const toolbar = renderToolbar(moreId);
 
 	const resolvedContext = useMemo(() => ({
 		...streamdownContext,
-		codeBlockMaxHeight: expanded ? Infinity : 350,
+		codeBlockMaxHeight: expanded ? Infinity : streamdownContext.codeBlockMaxHeight,
 	}), [expanded, streamdownContext]);
 
-	const renderedCode = (forceExpanded = false) => (
+	const renderedCode = (forceExpanded = false, withToolbar = true) => (
 		<StreamdownContext.Provider value={forceExpanded ? { ...resolvedContext, codeBlockMaxHeight: Infinity } : resolvedContext}>
-			<div data-inno-code-block="" data-wrap={wrapped ? "true" : "false"} className={wrapped ? "inno-code-wrap" : ""}>
-				<CodeBlock code={source} language={language || "text"} isIncomplete={isIncomplete} lineNumbers>{actions}</CodeBlock>
+			<div data-inno-code-block="" data-inno-content-block="code" data-wrap={wrapped ? "true" : "false"} className={wrapped ? "inno-code-wrap" : ""}>
+				<CodeBlockContainer dir="ltr" language={language || "text"} isIncomplete={isIncomplete}>
+					<CodeBlockHeader language={language || "text"} />
+					{withToolbar ? (
+						<div className="pointer-events-none sticky top-2 z-10 -mt-10 flex h-8 items-center justify-end">
+							<div
+								className="pointer-events-auto flex shrink-0 items-center gap-2 rounded-md border border-sidebar bg-sidebar/80 px-1.5 py-1 supports-[backdrop-filter]:bg-sidebar/70 supports-[backdrop-filter]:backdrop-blur"
+								data-streamdown="code-block-actions"
+							>
+								{renderToolbar(forceExpanded ? fullscreenMoreId : moreId, forceExpanded)}
+							</div>
+						</div>
+					) : null}
+					<StableCodeBlockBody code={source} language={language || "text"} />
+				</CodeBlockContainer>
 			</div>
 		</StreamdownContext.Provider>
 	);
@@ -109,25 +411,25 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 	return (
 		<Fragment>
 			{editing ? (
-				<div data-inno-code-block="" className="my-4 overflow-hidden rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-2">
-					<div className="flex h-7 items-center gap-2 px-1 text-xs text-[var(--inno-text-muted)]">
-						<span className="min-w-0 flex-1 truncate font-mono lowercase">{language || "text"} · {t("markdown.editCopy", "编辑副本")}</span>
-						{actions}
+				<div data-inno-code-block="" data-inno-content-block="code" data-inno-content-editing="" className="inno-markdown-content-block inno-markdown-content-block--code">
+					<div className="inno-markdown-content-header">
+						<span className="inno-markdown-content-title">{language || "text"} · {t("markdown.editCopy", "编辑副本")}</span>
+						{toolbar}
 					</div>
-					<textarea value={draft} onChange={(event) => setDraft(event.target.value)} spellCheck={false} className="min-h-64 w-full resize-y rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] p-3 font-mono text-xs leading-relaxed text-[var(--inno-text)] outline-none" />
+					<textarea value={draft} onChange={(event) => setDraft(event.target.value)} spellCheck={false} className="inno-markdown-code-editor" />
 				</div>
 			) : renderedCode()}
 
-			{fullscreen && typeof document !== "undefined" ? createPortal(
-				<div role="dialog" aria-modal="true" aria-label={t("markdown.codeFullscreen", "代码全屏查看")} className="fixed inset-0 z-[1000] flex flex-col bg-[var(--inno-background)]">
-					<div className="flex items-center border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-4 py-2">
-						<span className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--inno-text-muted)]">{language || "text"}</span>
-						<ToolbarIconButton label={t("markdown.exitFullscreen", "退出全屏")} onClick={() => setFullscreen(false)}><Minimize2 size={16} /></ToolbarIconButton>
-					</div>
-					<div className="min-h-0 flex-1 overflow-auto p-3">{renderedCode(true)}</div>
-				</div>,
-				document.body,
-			) : null}
+			<MarkdownFullscreenDialog
+			open={fullscreen}
+			title={language || "text"}
+			ariaLabel={t("markdown.codeFullscreen", "代码全屏查看")}
+				closeLabel={t("markdown.exitFullscreen", "退出全屏")}
+				onClose={() => setFullscreen(false)}
+				actions={toolbarEnabled ? renderToolbar(fullscreenMoreId, true) : null}
+			>
+				{renderedCode(true, false)}
+			</MarkdownFullscreenDialog>
 		</Fragment>
 	);
 }

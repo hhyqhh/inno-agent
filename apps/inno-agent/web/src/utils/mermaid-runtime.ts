@@ -21,7 +21,12 @@ export function getMermaidMarkdownRuntime(): MermaidMarkdownRuntimeModule | null
  * chunk without pulling the renderer into the initial bundle.
  */
 export function preloadMermaidMarkdownRuntime(): Promise<MermaidMarkdownRuntimeModule> {
-	mermaidRuntimePromise ??= import("../react/MermaidMarkdownRuntime.js").then((module) => {
+	mermaidRuntimePromise ??= Promise.all([
+		import("../react/MermaidMarkdownRuntime.js"),
+		// Resolve the custom toolbar together with the Mermaid runtime so the
+		// session never swaps from the stable loading shell to a second fallback.
+		import("../react/markdown/MermaidArtifactRenderer.js"),
+	]).then(([module]) => {
 		mermaidRuntimeModule = module;
 		return module;
 	});

@@ -12,6 +12,7 @@ import { StreamingBubbles } from "./StreamingBubbles.js";
 import { TodoWidget, extractTodoTasks } from "./TodoWidget.js";
 import { answeredQuestionnaireFromTool } from "../../utils/questionnaire.js";
 import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
+import { TerminalDrawer } from "../terminal/TerminalDrawer.js";
 
 function traceContainsAssistantText(message: ChatMessage): boolean {
 	if (message.trace?.some((step) => (step.kind === "progress" || step.kind === "answer") && Boolean(step.text?.trim()))) return true;
@@ -225,6 +226,7 @@ export function ChatConversation({
 					</div>
 				</div>
 			</div>
+			<TerminalDrawer />
 		</section>
 	);
 }

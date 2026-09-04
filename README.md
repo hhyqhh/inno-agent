@@ -235,7 +235,7 @@ Issues and PRs are welcome. Before opening a PR, run `npm run build` locally —
 Join the WeChat user group to ask questions, share use cases, and follow updates:
 
 <p align="center">
-  <img src="./docs/assets/wechat-community-qr-2026-08-26.png" alt="Inno Agent WeChat community group QR code" width="240" />
+  <img src="./docs/assets/wechat-community-qr-2026-09-04.png" alt="Inno Agent WeChat community group QR code" width="240" />
 </p>
 
 ## License

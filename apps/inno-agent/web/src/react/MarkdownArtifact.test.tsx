@@ -138,6 +138,27 @@ describe("MarkdownArtifact", () => {
 		expect(isEnhancedCodeLanguage("typescript")).toBe(true);
 	});
 
+	it("loads Mermaid without leaving the response behind a render-time suspension", async () => {
+		const source = [
+			"图示如下：",
+			"",
+			"```mermaid",
+			"flowchart LR",
+			"A[开始] --> B[完成]",
+			"```",
+			"",
+			"图示结束。",
+		].join("\n");
+		const { container } = render(<MarkdownArtifact content={source} />);
+
+		await waitFor(() => {
+			expect(container.querySelector(".inno-mermaid-suspense-placeholder")).toBeNull();
+		});
+		expect(container.textContent).toContain("图示如下");
+		expect(container.textContent).toContain("图示结束");
+		expect(container.querySelector(".inno-mermaid-suspense-placeholder")).toBeNull();
+	});
+
 	it("sanitizes SVG preview elements, event handlers, and external paint URLs", async () => {
 		const source = [
 			"```svg",

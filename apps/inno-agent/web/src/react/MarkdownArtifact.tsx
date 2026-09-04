@@ -1,5 +1,10 @@
-import { Component, lazy, Suspense, useMemo, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
 import { normalizeMarkdownMathForStreamdown } from "../utils/markdown-math.js";
+import {
+	getMermaidMarkdownRuntime,
+	hasMermaidFence,
+	preloadMermaidMarkdownRuntime,
+} from "../utils/mermaid-runtime.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { MarkdownRuntime, type MarkdownRuntimeProps } from "./MarkdownRuntime.js";
@@ -13,12 +18,7 @@ export interface MarkdownArtifactProps {
 	className?: string;
 }
 
-const MERMAID_FENCE_RE = /(?:^|\n)[ \t>]*(?:[*+-][ \t]+|\d{1,9}[.)][ \t]+)?(?:`{3,}|~{3,})[ \t]*mermaid\b/i;
 const MAX_STREAMING_TRANSFORM_LENGTH = 256 * 1024;
-
-// Mermaid adds a sizeable parser. Only fetch it for replies that actually
-// contain a Mermaid fence; ordinary chat stays on the small runtime.
-const MermaidMarkdownRuntime = lazy(() => import("./MermaidMarkdownRuntime.js"));
 
 /** The chat view has no error boundary above it, so a renderer crash (e.g. a
  * streamdown upgrade that changes plugin internals) must degrade to plain
@@ -62,6 +62,24 @@ export function MarkdownArtifact({ content, streaming = false, compact = false, 
 			: normalizeMarkdownMathForStreamdown(content, { singleDollar: mathSingleDollar }),
 		[content, streaming, mathSingleDollar],
 	);
+	const hasMermaid = hasMermaidFence(normalizedContent);
+	const [mermaidRuntime, setMermaidRuntime] = useState(getMermaidMarkdownRuntime);
+	const [mermaidRuntimeFailed, setMermaidRuntimeFailed] = useState(false);
+	useEffect(() => {
+		if (!hasMermaid || mermaidRuntime || mermaidRuntimeFailed) return;
+		let active = true;
+		void preloadMermaidMarkdownRuntime()
+			.then((module) => {
+				if (active) setMermaidRuntime(module);
+			})
+			.catch(() => {
+				if (active) setMermaidRuntimeFailed(true);
+			});
+		return () => {
+			active = false;
+		};
+	}, [hasMermaid, mermaidRuntime, mermaidRuntimeFailed]);
+	const MermaidMarkdownRuntime = mermaidRuntime?.default;
 	const runtimeProps: MarkdownRuntimeProps = {
 		content: normalizedContent,
 		streaming,
@@ -71,11 +89,15 @@ export function MarkdownArtifact({ content, streaming = false, compact = false, 
 
 	return (
 		<MarkdownErrorBoundary content={normalizedContent} className={className}>
-			{MERMAID_FENCE_RE.test(normalizedContent) ? (
+			{hasMermaid ? (
 				<div className="min-h-[288px] w-full">
-					<Suspense fallback={<div className="inno-mermaid-suspense-placeholder" aria-hidden="true" />}>
+					{MermaidMarkdownRuntime ? (
 						<MermaidMarkdownRuntime {...runtimeProps} />
-					</Suspense>
+					) : mermaidRuntimeFailed ? (
+						<MarkdownRuntime {...runtimeProps} />
+					) : (
+						<div className="inno-mermaid-suspense-placeholder" aria-hidden="true" />
+					)}
 				</div>
 			) : (
 				<MarkdownRuntime {...runtimeProps} />

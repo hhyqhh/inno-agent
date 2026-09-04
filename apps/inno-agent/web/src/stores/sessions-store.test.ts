@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 	createSession: vi.fn(),
 	activateSession: vi.fn(),
 	getChatStatus: vi.fn(),
+	preloadMermaidMarkdownRuntime: vi.fn(),
 	abortChat: vi.fn(),
 	chatDetach: vi.fn(),
 	chatClear: vi.fn(),
@@ -43,6 +44,10 @@ vi.mock("./chat-store.js", () => ({
 vi.mock("./workspace-store.js", () => ({ workspaceStore: { setActiveWorkspace: vi.fn() } }));
 vi.mock("./workspaces-store.js", () => ({ workspacesStore: { load: vi.fn() } }));
 vi.mock("./terminal-store.js", () => ({ terminalStore: { disconnect: vi.fn() } }));
+vi.mock("../utils/mermaid-runtime.js", () => ({
+	hasMermaidFence: (content: string) => /```mermaid\b/i.test(content),
+	preloadMermaidMarkdownRuntime: mocks.preloadMermaidMarkdownRuntime,
+}));
 
 import { SessionsStoreImpl } from "./sessions-store.js";
 import { ApiError } from "../api/client.js";
@@ -78,6 +83,7 @@ describe("SessionsStore navigation", () => {
 		mocks.listSessions.mockResolvedValue([]);
 		mocks.activateSession.mockResolvedValue({ active: true });
 		mocks.getChatStatus.mockResolvedValue({ found: false });
+		mocks.preloadMermaidMarkdownRuntime.mockResolvedValue(undefined);
 	});
 
 	it("writes the created session to the URL before the first send can continue", async () => {
@@ -111,6 +117,26 @@ describe("SessionsStore navigation", () => {
 		await openingA;
 		expect(store.currentSessionId).toBe("b.jsonl");
 		expect(mocks.chatLoadHistory).toHaveBeenLastCalledWith([], "b.jsonl");
+	});
+
+	it("waits for the Mermaid runtime before publishing Mermaid history", async () => {
+		const messages = [{
+			role: "assistant" as const,
+			content: "```mermaid\nflowchart LR\nA-->B\n```",
+			timestamp: Date.now(),
+		}];
+		mocks.getSession.mockResolvedValue({ ...session("mermaid.jsonl"), messages });
+
+		let resolveRuntime!: () => void;
+		mocks.preloadMermaidMarkdownRuntime.mockReturnValue(new Promise<void>((resolve) => { resolveRuntime = resolve; }));
+		const store = new SessionsStoreImpl();
+		const opening = store.openSession("mermaid.jsonl", { historyMode: "none" });
+		await vi.waitFor(() => expect(mocks.preloadMermaidMarkdownRuntime).toHaveBeenCalled());
+		expect(mocks.chatLoadHistory).toHaveBeenLastCalledWith([], "mermaid.jsonl");
+
+		resolveRuntime();
+		await opening;
+		expect(mocks.chatLoadHistory).toHaveBeenLastCalledWith(messages, "mermaid.jsonl");
 	});
 
 	it("beginNewSession invalidates an in-flight openSession", async () => {

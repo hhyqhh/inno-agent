@@ -565,8 +565,8 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 		return (
 			<motion.div
 				className="flex justify-end"
-				initial={{ opacity: 0, y: 12 }}
-				animate={{ opacity: 1, y: 0 }}
+				initial={{ opacity: 0 }}
+				animate={{ opacity: 1 }}
 				transition={{ duration: 0.25, ease: "easeOut" }}
 			>
 				<div className="inno-message-wrap group relative w-fit max-w-full" style={{ maxWidth: "min(70%, 38rem)" }}>

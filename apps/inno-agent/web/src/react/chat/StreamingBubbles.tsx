@@ -40,7 +40,7 @@ export function StreamingBubbles({ onOpenSkill }: { onOpenSkill?: (skillName: st
 			className="inno-trace-shell inno-trace-shell-live"
 			initial={{ opacity: 0, y: 8 }}
 			animate={{ opacity: 1, y: 0 }}
-			transition={{ duration: 0.2, ease: "easeOut" }}
+			transition={{ delay: 0.5, duration: 0.2, ease: "easeOut" }}
 		>
 			<AgentTraceTimeline
 				steps={stream.trace}

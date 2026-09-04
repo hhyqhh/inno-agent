@@ -90,7 +90,7 @@ export function MarkdownArtifact({ content, streaming = false, compact = false, 
 	return (
 		<MarkdownErrorBoundary content={normalizedContent} className={className}>
 			{hasMermaid ? (
-				<div className="min-h-[288px] w-full">
+				<div className="inno-mermaid-frame min-h-[288px] w-full">
 					{MermaidMarkdownRuntime ? (
 						<MermaidMarkdownRuntime {...runtimeProps} />
 					) : mermaidRuntimeFailed ? (

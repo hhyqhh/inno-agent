@@ -237,6 +237,111 @@ summary:focus-visible {
 	min-height: calc(200px + 2rem);
 }
 
+/* Give Mermaid a quiet, intentional surface while its SVG is being built.
+   The fallback supplied by Streamdown is deliberately generic and has no
+   Mermaid data attribute, so scope these styles to MarkdownArtifact's frame
+   and its distinctive divide-y loading shell. */
+.inno-markdown [data-streamdown="mermaid-block"] {
+	border-color: color-mix(in srgb, var(--inno-accent) 16%, var(--inno-border));
+	border-radius: 0.8rem;
+	background: linear-gradient(145deg, color-mix(in srgb, var(--inno-accent-soft) 42%, var(--inno-surface-muted)), var(--inno-surface));
+	box-shadow: 0 8px 24px color-mix(in srgb, var(--inno-accent) 7%, transparent);
+}
+
+.inno-mermaid-suspense-placeholder,
+.inno-mermaid-frame > .inno-markdown > div.w-full[class~="divide-y"][class~="rounded-xl"][class~="border"] {
+	position: relative;
+	min-height: calc(200px + 2rem);
+	margin-block: 0.9rem;
+	overflow: hidden;
+	border: 1px solid color-mix(in srgb, var(--inno-accent) 16%, var(--inno-border));
+	border-radius: 0.8rem;
+	background:
+		radial-gradient(circle at 50% 44%, color-mix(in srgb, var(--inno-accent-soft) 82%, transparent), transparent 36%),
+		linear-gradient(145deg, color-mix(in srgb, var(--inno-accent-soft) 42%, var(--inno-surface-muted)), var(--inno-surface));
+	box-shadow: 0 8px 24px color-mix(in srgb, var(--inno-accent) 7%, transparent);
+}
+
+.inno-mermaid-suspense-placeholder::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(110deg, transparent 20%, color-mix(in srgb, var(--inno-surface) 58%, transparent) 48%, transparent 76%);
+	background-size: 220% 100%;
+	animation: inno-mermaid-loading-shimmer 1.8s ease-in-out infinite;
+	opacity: 0.65;
+}
+
+.inno-mermaid-suspense-placeholder::after,
+.inno-mermaid-frame > .inno-markdown > div.w-full[class~="divide-y"][class~="rounded-xl"][class~="border"] > div:last-child::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 24px;
+	height: 24px;
+	border: 2px solid color-mix(in srgb, var(--inno-accent) 18%, transparent);
+	border-top-color: var(--inno-accent);
+	border-radius: 999px;
+	transform: translate(-50%, -50%);
+	animation: inno-mermaid-loading-spin 0.9s linear infinite;
+}
+
+/* Streamdown's first Mermaid paint is a blank header plus a tiny spinner.
+   Turn that transient state into the same card language as the final chart. */
+.inno-mermaid-frame > .inno-markdown > div.w-full[class~="divide-y"][class~="rounded-xl"][class~="border"] {
+	min-height: 0;
+	padding: 0;
+	background: var(--inno-surface);
+}
+
+.inno-mermaid-frame > .inno-markdown > div.w-full[class~="divide-y"][class~="rounded-xl"][class~="border"] > div:first-child {
+	position: relative;
+	height: 2.75rem;
+	background: linear-gradient(90deg, color-mix(in srgb, var(--inno-accent-soft) 72%, var(--inno-surface)), var(--inno-surface));
+	border-bottom: 1px solid color-mix(in srgb, var(--inno-accent) 12%, var(--inno-border));
+}
+
+.inno-mermaid-frame > .inno-markdown > div.w-full[class~="divide-y"][class~="rounded-xl"][class~="border"] > div:first-child::before {
+	content: "mermaid";
+	position: absolute;
+	top: 50%;
+	left: 1rem;
+	color: var(--inno-text-muted);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+	font-size: 0.75rem;
+	letter-spacing: 0.04em;
+	transform: translateY(-50%);
+}
+
+.inno-mermaid-frame > .inno-markdown > div.w-full[class~="divide-y"][class~="rounded-xl"][class~="border"] > div:first-child::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	right: 1rem;
+	width: 2.75rem;
+	height: 0.35rem;
+	border-radius: 999px;
+	background: linear-gradient(90deg, color-mix(in srgb, var(--inno-accent) 16%, transparent), var(--inno-accent), color-mix(in srgb, var(--inno-accent) 16%, transparent));
+	background-size: 220% 100%;
+	transform: translateY(-50%);
+	animation: inno-mermaid-loading-shimmer 1.8s ease-in-out infinite;
+	opacity: 0.6;
+}
+
+.inno-mermaid-frame > .inno-markdown > div.w-full[class~="divide-y"][class~="rounded-xl"][class~="border"] > div:last-child {
+	position: relative;
+	min-height: calc(200px + 2rem);
+	padding: 0 !important;
+	background:
+		radial-gradient(circle at 50% 44%, color-mix(in srgb, var(--inno-accent-soft) 82%, transparent), transparent 36%),
+		linear-gradient(180deg, color-mix(in srgb, var(--inno-surface-muted) 22%, var(--inno-surface)), var(--inno-surface));
+}
+
+.inno-mermaid-frame > .inno-markdown > div.w-full[class~="divide-y"][class~="rounded-xl"][class~="border"] > div:last-child > svg {
+	display: none;
+}
+
 /* The Mermaid renderer briefly shows a loading row before replacing it with
    the SVG. Keep that intermediate paint invisible while preserving the fixed
    diagram height, so rendering does not look like a one-frame flash. */
@@ -1035,9 +1140,22 @@ inno-workspace-panel textarea {
 	88%, 100% { background-position: -140% 0; }
 }
 
+@keyframes inno-mermaid-loading-spin {
+	to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes inno-mermaid-loading-shimmer {
+	0%, 8% { background-position: 140% 0; }
+	88%, 100% { background-position: -140% 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.inno-trace-spinner,
-	.inno-trace-title-shimmer {
+	.inno-trace-title-shimmer,
+	.inno-mermaid-suspense-placeholder::before,
+	.inno-mermaid-suspense-placeholder::after,
+	.inno-mermaid-frame > .inno-markdown > div.w-full[class~="divide-y"][class~="rounded-xl"][class~="border"] > div:first-child::after,
+	.inno-mermaid-frame > .inno-markdown > div.w-full[class~="divide-y"][class~="rounded-xl"][class~="border"] > div:last-child::after {
 		animation: none;
 	}
 	.inno-trace-row-title.is-shimmering {

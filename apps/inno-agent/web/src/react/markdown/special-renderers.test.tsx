@@ -35,6 +35,10 @@ describe("special markdown renderer failures", () => {
 		try {
 			const { container } = render(<MarkdownArtifact content={source} />);
 
+			// Suspense should show only the preview loading surface. Source is a
+			// recovery path for a failed renderer, not a transient first paint.
+			expect(container.querySelector('[data-inno-source-fallback]')).toBeNull();
+
 			await waitFor(() => {
 				expect(container.querySelector('[data-inno-content-block="artifact"]')).not.toBeNull();
 			});

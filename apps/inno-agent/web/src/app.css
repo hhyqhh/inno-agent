@@ -2669,10 +2669,14 @@ inno-workspace-panel textarea {
 }
 
 .inno-workspace-options {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
 	min-height: 0;
 	flex: 1 1 auto;
 	max-height: 224px;
 	overflow-y: auto;
+	scrollbar-gutter: stable;
 }
 
 .inno-workspace-option,
@@ -2683,13 +2687,14 @@ inno-workspace-panel textarea {
 	min-width: 0;
 	align-items: center;
 	gap: 9px;
-	min-height: 40px;
-	padding: 6px 8px;
+	min-height: 48px;
+	padding: 5px 8px;
 	border: 0;
 	border-radius: 9px;
 	background: transparent;
 	color: var(--inno-text);
 	font-size: 12px;
+	line-height: 16px;
 	text-align: left;
 	cursor: pointer;
 	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
@@ -2718,6 +2723,7 @@ inno-workspace-panel textarea {
 	flex: 1;
 	flex-direction: column;
 	gap: 1px;
+	line-height: 1;
 }
 
 .inno-workspace-option-name,
@@ -2730,11 +2736,13 @@ inno-workspace-panel textarea {
 
 .inno-workspace-option-name {
 	font-weight: 500;
+	line-height: 17px;
 }
 
 .inno-workspace-option-path {
 	color: var(--inno-text-subtle);
 	font-size: 10px;
+	line-height: 13px;
 }
 
 .inno-workspace-option-check {
@@ -3669,6 +3677,8 @@ button.inno-smart-ref-chip:hover {
 .inno-smart-attach-menu {
 	max-height: 264px;
 	overflow-y: auto;
+	/* Keep the menu's content box stable when the scrollbar is first used. */
+	scrollbar-gutter: stable;
 }
 .inno-smart-attach-menu-caption {
 	padding: 6px 10px 4px;

@@ -133,9 +133,11 @@ export function WorkspaceSwitcher({
 		// Apply the available height before measuring so the first layout already
 		// reserves a scrollable list instead of painting past the viewport.
 		menu.style.maxHeight = `${maxHeight}px`;
-		const menuRect = menu.getBoundingClientRect();
-		const width = Math.min(menuRect.width || 300, Math.max(1, window.innerWidth - WORKSPACE_MENU_MARGIN * 2));
-		const height = Math.min(menuRect.height || maxHeight, maxHeight);
+		// getBoundingClientRect() includes the opening transform animation. Reading
+		// it here and again after the first scroll produces a small position jump;
+		// offset* reports the stable, untransformed layout box instead.
+		const width = Math.min(menu.offsetWidth || 300, Math.max(1, window.innerWidth - WORKSPACE_MENU_MARGIN * 2));
+		const height = Math.min(menu.offsetHeight || maxHeight, maxHeight);
 		const maxLeft = Math.max(WORKSPACE_MENU_MARGIN, window.innerWidth - width - WORKSPACE_MENU_MARGIN);
 		const left = Math.max(WORKSPACE_MENU_MARGIN, Math.min(triggerRect.left, maxLeft));
 		const preferredTop = placement === "above"
@@ -162,11 +164,17 @@ export function WorkspaceSwitcher({
 			if (target) resizeObserver?.observe(target);
 		}
 		window.addEventListener("resize", repositionMenu);
-		document.addEventListener("scroll", repositionMenu, true);
+		const handleScroll = (event: Event) => {
+			// Scrolling the portaled menu only changes its contents, not its fixed
+			// anchor. Avoid a synchronous layout read on every wheel/trackpad event.
+			if (event.target instanceof Node && menuRef.current?.contains(event.target)) return;
+			repositionMenu();
+		};
+		document.addEventListener("scroll", handleScroll, true);
 		return () => {
 			resizeObserver?.disconnect();
 			window.removeEventListener("resize", repositionMenu);
-			document.removeEventListener("scroll", repositionMenu, true);
+			document.removeEventListener("scroll", handleScroll, true);
 		};
 	}, [creating, open, repositionMenu, visibleWorkspaces.length]);
 

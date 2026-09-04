@@ -161,9 +161,11 @@ export function ChatComposer({
 		const menu = attachMenuRef.current;
 		if (!trigger || !menu) return;
 		const triggerRect = trigger.getBoundingClientRect();
-		const menuRect = menu.getBoundingClientRect();
-		const width = menuRect.width || Math.min(220, Math.max(0, window.innerWidth - 16));
-		const height = menuRect.height || 264;
+		// getBoundingClientRect() includes the opening transform animation. Using
+		// it here makes the first scroll remeasure a different size and nudges the
+		// fixed menu. offset* reports the stable layout box instead.
+		const width = menu.offsetWidth || Math.min(220, Math.max(0, window.innerWidth - 16));
+		const height = menu.offsetHeight || 264;
 		const maxLeft = Math.max(8, window.innerWidth - width - 8);
 		const maxTop = Math.max(8, window.innerHeight - height - 8);
 		const left = Math.max(8, Math.min(triggerRect.right - width, maxLeft));
@@ -173,12 +175,18 @@ export function ChatComposer({
 
 	useLayoutEffect(() => {
 		if (!attachMenuOpen) return;
+		const handleScroll = (event: Event) => {
+			// Scrolling the portaled menu does not move its fixed anchor. Avoid a
+			// synchronous layout read on every wheel/trackpad event in that menu.
+			if (event.target instanceof Node && attachMenuRef.current?.contains(event.target)) return;
+			repositionAttachMenu();
+		};
 		repositionAttachMenu();
 		window.addEventListener("resize", repositionAttachMenu);
-		document.addEventListener("scroll", repositionAttachMenu, true);
+		document.addEventListener("scroll", handleScroll, true);
 		return () => {
 			window.removeEventListener("resize", repositionAttachMenu);
-			document.removeEventListener("scroll", repositionAttachMenu, true);
+			document.removeEventListener("scroll", handleScroll, true);
 		};
 	}, [attachMenuOpen, repositionAttachMenu, workspaceFiles.length]);
 

@@ -1123,7 +1123,7 @@
 		"graphvizChart": "Graphviz diagram",
 		"plantumlChart": "PlantUML diagram (rendered by the public service)",
 		"echartsChart": "ECharts chart",
-		"invalidSvg": "Invalid SVG content",
+		"invalidSvg": "SVG format error",
 		"plantumlSyntaxError": "PlantUML syntax error; the diagram could not be generated.",
 		"plantumlServerError": "PlantUML service returned {{status}}",
 		"unsafeEchartsConfig": "The chart config contains an unsafe external resource URL.",

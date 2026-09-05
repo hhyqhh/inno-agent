@@ -441,7 +441,7 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 	);
 }
 
-const SVG_PREVIEW_STYLE = "<style>html,body{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}svg{display:block;width:auto !important;height:auto !important;max-width:100% !important;max-height:100% !important}</style>";
+const SVG_PREVIEW_STYLE = "<style>html,body{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}svg{display:block;width:100% !important;height:auto !important;max-width:100% !important;max-height:100% !important}</style>";
 
 const MIN_SVG_ZOOM = 0.25;
 const MAX_SVG_ZOOM = 4;
@@ -503,7 +503,6 @@ function useSvgArtifactControls(source: string, isIncomplete: boolean) {
 
 type SvgPreviewDimensions = {
 	aspectRatio: number;
-	intrinsicWidth: number;
 };
 
 function getSvgPreviewDimensions(svg: string): SvgPreviewDimensions | null {
@@ -512,7 +511,7 @@ function getSvgPreviewDimensions(svg: string): SvgPreviewDimensions | null {
 	const widthValue = width ? Number(width) : null;
 	const heightValue = height ? Number(height) : null;
 	if (widthValue && heightValue && Number.isFinite(widthValue) && Number.isFinite(heightValue) && widthValue > 0 && heightValue > 0) {
-		return { aspectRatio: widthValue / heightValue, intrinsicWidth: widthValue };
+		return { aspectRatio: widthValue / heightValue };
 	}
 
 	const viewBox = /\bviewBox\s*=\s*["']([^"']+)["']/i.exec(svg)?.[1]
@@ -520,7 +519,7 @@ function getSvgPreviewDimensions(svg: string): SvgPreviewDimensions | null {
 		.split(/[\s,]+/)
 		.map(Number);
 	if (viewBox && viewBox.length >= 4 && Number.isFinite(viewBox[2]) && Number.isFinite(viewBox[3]) && viewBox[2] > 0 && viewBox[3] > 0) {
-		return { aspectRatio: viewBox[2] / viewBox[3], intrinsicWidth: viewBox[2] };
+		return { aspectRatio: viewBox[2] / viewBox[3] };
 	}
 
 	return null;
@@ -604,7 +603,7 @@ function SvgPreviewFrame({ svg, title, invalidMessage, zoom, pan, onPanChange, i
 				className={`inno-markdown-svg-preview${dimensions ? "" : " is-fallback"}`}
 				style={dimensions && !isFullscreen ? {
 					aspectRatio: String(dimensions.aspectRatio),
-					width: `min(100%, ${dimensions.intrinsicWidth}px)`,
+					width: "100%",
 				} : undefined}
 			>
 				<RestrictedHtmlFrame

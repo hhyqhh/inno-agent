@@ -281,7 +281,7 @@ describe("MarkdownArtifact", () => {
 		expect(container.querySelector(".inno-markdown-preview-error")).toBeNull();
 	});
 
-	it("scales generated PlantUML SVGs without enlarging their intrinsic width", async () => {
+	it("fits generated PlantUML SVGs to the available preview width", async () => {
 		const generatedSvg = '<svg width="360" height="220" viewBox="0 0 360 220" xmlns="http://www.w3.org/2000/svg"><rect width="360" height="220" /></svg>';
 		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
 			ok: true,
@@ -295,10 +295,10 @@ describe("MarkdownArtifact", () => {
 			await waitFor(() => expect(container.querySelector('[data-inno-artifact="plantuml"] .inno-markdown-svg-preview')).not.toBeNull());
 			const preview = container.querySelector<HTMLElement>('[data-inno-artifact="plantuml"] .inno-markdown-svg-preview')!;
 			const frame = container.querySelector<HTMLIFrameElement>('[data-inno-artifact="plantuml"] iframe')!;
-			expect(preview.style.width).toBe("min(100%, 360px)");
+			expect(preview.style.width).toBe("100%");
 			expect(preview.style.aspectRatio).toBeTruthy();
 			expect(frame.className).toContain("inno-markdown-svg-preview-frame");
-			expect(frame.srcdoc).toContain("svg{display:block;width:auto !important;height:auto !important");
+			expect(frame.srcdoc).toContain("svg{display:block;width:100% !important;height:auto !important");
 			expect(getByRole("button", { name: "缩小" })).toHaveProperty("disabled", false);
 			expect(getByRole("button", { name: "放大" })).toHaveProperty("disabled", false);
 			fireEvent.click(getByRole("button", { name: "放大" }));

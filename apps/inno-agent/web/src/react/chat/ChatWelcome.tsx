@@ -116,7 +116,7 @@ export function ChatWelcome({
 					{wsError ? <p className="mt-2 text-xs text-[var(--inno-danger)]">{wsError}</p> : null}
 				</div>
 			</div>
-			<TerminalDrawer />
+			{simpleMode ? null : <TerminalDrawer />}
 		</section>
 	);
 }

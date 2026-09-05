@@ -53,4 +53,29 @@ describe("special markdown renderer failures", () => {
 			error.mockRestore();
 		}
 	});
+
+	it("survives a renderer failure while the fence flips from streaming to complete", async () => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		const incomplete = ["前置文本仍然可见。", "", "```html", "<h1>故障回退</h1>", ""].join("\n");
+		const complete = `${incomplete}\`\`\``;
+
+		try {
+			const { container, rerender } = render(<MarkdownArtifact content={incomplete} streaming />);
+			// The renderer fails while the fence is still open, so the boundary
+			// fallback renders its streaming (early-return) branch first.
+			await waitFor(() => expect(error).toHaveBeenCalled());
+
+			// Closing the fence flips isIncomplete on the same fallback instance.
+			// A hook-order violation here would escalate to the outer boundary
+			// and degrade the whole message to plain text.
+			rerender(<MarkdownArtifact content={complete} streaming />);
+			await waitFor(() => {
+				expect(container.querySelector('[data-inno-source-fallback]')?.textContent).toContain("故障回退");
+			});
+			expect(container.textContent).toContain("前置文本仍然可见。");
+			expect(container.querySelector(".inno-markdown > pre")).toBeNull();
+		} finally {
+			error.mockRestore();
+		}
+	});
 });

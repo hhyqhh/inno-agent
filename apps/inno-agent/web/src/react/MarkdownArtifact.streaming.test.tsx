@@ -55,7 +55,7 @@ describe("streaming code block stability", () => {
 			rerender(<MarkdownArtifact content={chunk} streaming />);
 			// Let the async highlight settle, as a real browser paint would.
 			await new Promise((resolve) => setTimeout(resolve, 60));
-			const chrome = container.querySelector("[data-streamdown='code-block-actions']");
+			const chrome = container.querySelector("[data-streamdown='code-block-header']");
 			if (chromeSeen) {
 				// Once the enhanced header exists it must not unmount mid-stream.
 				expect(chrome).not.toBeNull();
@@ -97,8 +97,8 @@ describe("streaming code block stability", () => {
 		const { container, getByRole, queryByRole } = render(<MarkdownArtifact content={PYTHON_REPLY} />);
 		const runButton = getByRole("button", { name: "运行代码" });
 
-		expect(runButton.closest('[data-streamdown="code-block-actions"]')).not.toBeNull();
+		expect(runButton.closest('[data-streamdown="code-block-header"]')).not.toBeNull();
 		expect(queryByRole("menuitem", { name: "运行代码" })).toBeNull();
-		expect(container.querySelector('[data-streamdown="code-block-actions"] button[aria-label="运行代码"]')).toBe(runButton);
+		expect(container.querySelector('[data-streamdown="code-block-header"] button[aria-label="运行代码"]')).toBe(runButton);
 	});
 });

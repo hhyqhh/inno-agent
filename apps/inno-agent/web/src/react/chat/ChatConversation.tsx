@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { AttachmentRef, ChatMessage, ChatToolRecord, PendingQuestion } from "../../types/chat.js";
 import { workspaceFileUrl } from "../../api/workspace.js";
 import { workspaceStore } from "../../stores/workspace-store.js";
+import { settingsStore } from "../../stores/settings-store.js";
 import { buildConversationTurns, ConversationMinimap } from "../ConversationMinimap.js";
 import { useStoreSnapshot } from "../hooks.js";
 import { Spinner } from "../ui/Spinner.js";
@@ -72,6 +73,9 @@ export function ChatConversation({
 	wsError,
 }: ChatConversationProps) {
 	const { t } = useTranslation();
+	// Simple Mode hides the practice terminal entirely; the drawer entry points
+	// (panel toggle, run-code action) are gated the same way.
+	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const [showHistoryLoading, setShowHistoryLoading] = useState(false);
 	useEffect(() => {
 		const shouldShow = chat.isLoadingHistory && chat.messages.length === 0;
@@ -266,7 +270,7 @@ export function ChatConversation({
 					</div>
 				</div>
 			</div>
-			<TerminalDrawer />
+			{simpleMode ? null : <TerminalDrawer />}
 		</section>
 	);
 }

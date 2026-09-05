@@ -75,9 +75,12 @@ function extractFallbackHtmlTitle(code: string): string {
 }
 
 function ArtifactRendererFallback({ code, language, isIncomplete, showSource = true }: CustomRendererProps & { showSource?: boolean }) {
-	if (isIncomplete) return <CodeRendererFallback code={code} language={language} />;
+	// Hooks must run unconditionally: when the error boundary shows this
+	// fallback, a streaming fence can still flip isIncomplete mid-render, and
+	// an early return would change the hook order between commits.
 	const { t } = useTranslation();
 	const streamdownContext = useContext(StreamdownContext);
+	if (isIncomplete) return <CodeRendererFallback code={code} language={language} />;
 	const toolbarEnabled = markdownToolbarEnabled(streamdownContext.controls, "code");
 	const normalizedLanguage = language?.toLowerCase() ?? "";
 	const title = normalizedLanguage === "html" || normalizedLanguage === "htm"
@@ -129,12 +132,18 @@ function MermaidRendererFallback() {
 	);
 }
 
+/** Error path for a failed Mermaid chunk: show the diagram source in the
+ * standard code fallback instead of a spinner that can never resolve. */
+function MermaidSourceFallback(props: CustomRendererProps) {
+	return <CodeRendererFallback code={props.code} language="mermaid" />;
+}
+
 const HtmlArtifactRenderer = lazyRenderer(() => import("./ArtifactRenderers.js").then((module) => ({ default: module.HtmlArtifactRenderer })), ArtifactRendererFallback, ArtifactRendererLoadingFallback);
 const SvgArtifactRenderer = lazyRenderer(() => import("./ArtifactRenderers.js").then((module) => ({ default: module.SvgArtifactRenderer })), ArtifactRendererFallback, ArtifactRendererLoadingFallback);
 const GraphvizArtifactRenderer = lazyRenderer(() => import("./ArtifactRenderers.js").then((module) => ({ default: module.GraphvizArtifactRenderer })), ArtifactRendererFallback, ArtifactRendererLoadingFallback);
 const PlantUmlArtifactRenderer = lazyRenderer(() => import("./ArtifactRenderers.js").then((module) => ({ default: module.PlantUmlArtifactRenderer })), ArtifactRendererFallback, ArtifactRendererLoadingFallback);
 const EChartsArtifactRenderer = lazyRenderer(() => import("./ArtifactRenderers.js").then((module) => ({ default: module.EChartsArtifactRenderer })), ArtifactRendererFallback, ArtifactRendererLoadingFallback);
-const MermaidArtifactRenderer = lazyRenderer(() => import("./MermaidArtifactRenderer.js").then((module) => ({ default: module.MermaidArtifactRenderer })), MermaidRendererFallback);
+const MermaidArtifactRenderer = lazyRenderer(() => import("./MermaidArtifactRenderer.js").then((module) => ({ default: module.MermaidArtifactRenderer })), MermaidSourceFallback, MermaidRendererFallback);
 
 export const SPECIAL_CODE_RENDERERS: CustomRenderer[] = [
 	{ language: "mermaid", component: MermaidArtifactRenderer },

@@ -1,6 +1,8 @@
 import { Play } from "lucide-react";
 import { useCallback } from "react";
 import { terminalStore } from "../../stores/terminal-store.js";
+import { settingsStore } from "../../stores/settings-store.js";
+import { useStoreSnapshot } from "../hooks.js";
 
 function defaultCommand(relPath: string): string | null {
 	const lower = relPath.toLowerCase();
@@ -18,6 +20,9 @@ interface RunButtonProps {
 }
 
 export function RunButton({ filePath, className }: RunButtonProps) {
+	// Simple Mode hides the practice terminal; running a file would open a
+	// drawer that is not mounted.
+	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const command = defaultCommand(filePath);
 	const handleClick = useCallback(() => {
 		if (!command) return;
@@ -25,7 +30,7 @@ export function RunButton({ filePath, className }: RunButtonProps) {
 		terminalStore.runCommand(command, filePath);
 	}, [command, filePath]);
 
-	if (!command) return null;
+	if (simpleMode || !command) return null;
 
 	return (
 		<button

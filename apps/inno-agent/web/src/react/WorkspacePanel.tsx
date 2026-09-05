@@ -411,14 +411,16 @@ function WorkspacePanelContent({ activeTab, mode, width, onTabChange, onModeChan
 					>
 						<Settings size={14} />
 					</button>
-					<button
-						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
-						title={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
-						aria-label={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
-						onClick={() => terminalStore.setOpen(!terminalOpen)}
-					>
-						<TerminalIcon size={14} />
-					</button>
+					{simpleMode ? null : (
+						<button
+							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
+							title={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
+							aria-label={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
+							onClick={() => terminalStore.setOpen(!terminalOpen)}
+						>
+							<TerminalIcon size={14} />
+						</button>
+					)}
 					<button
 						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
 						title={mode === "full" ? (t("workspace.half") ?? "") : (t("workspace.full") ?? "")}

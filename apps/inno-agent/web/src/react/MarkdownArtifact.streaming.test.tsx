@@ -62,6 +62,7 @@ describe("streaming code block stability", () => {
 			}
 			if (chrome) {
 				chromeSeen = true;
+				expect(chrome.querySelector("[data-inno-toolbar-button] svg")).not.toBeNull();
 				buttonHistory.push(chrome.querySelectorAll("button").length);
 			}
 		}
@@ -81,5 +82,23 @@ describe("streaming code block stability", () => {
 		await new Promise((resolve) => setTimeout(resolve, 500));
 		const labels = Array.from(container.querySelectorAll("button")).map((b) => b.getAttribute("aria-label"));
 		expect(labels).not.toContain("恢复模型原文");
+	});
+
+	it("keeps the code body mounted while the cold highlighter resolves", async () => {
+		const { container } = render(<MarkdownArtifact content={PYTHON_REPLY} />);
+		const body = container.querySelector("[data-inno-code-body]");
+
+		expect(body).not.toBeNull();
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		expect(container.querySelector("[data-inno-code-body]")).toBe(body);
+	});
+
+	it("keeps run code as a primary Python toolbar action", () => {
+		const { container, getByRole, queryByRole } = render(<MarkdownArtifact content={PYTHON_REPLY} />);
+		const runButton = getByRole("button", { name: "运行代码" });
+
+		expect(runButton.closest('[data-streamdown="code-block-actions"]')).not.toBeNull();
+		expect(queryByRole("menuitem", { name: "运行代码" })).toBeNull();
+		expect(container.querySelector('[data-streamdown="code-block-actions"] button[aria-label="运行代码"]')).toBe(runButton);
 	});
 });

@@ -37,6 +37,10 @@ export interface AgentTraceTimelineProps {
 	onOpenSkill?: (skillName: string) => void;
 	/** Render text records in their original position among process records. */
 	showText?: boolean;
+	/** Keep the streaming DOM shape (per-block wrappers, animation off) for
+	 *  text bodies. Used by the turn that just finished so replacing the live
+	 *  trace with the persisted bubble is geometry-neutral. */
+	liveBodies?: boolean;
 	/** Fallback for legacy messages whose trace has no text records. */
 	fallbackText?: string;
 	/** Completed question cards to anchor after their ask_user_question row. */
@@ -417,7 +421,7 @@ function TraceBody({ content }: { content: string }) {
  * Mermaid lazy fallback, the 64KB animation flip, async renderer fallbacks)
  * can momentarily render shorter and bounce the timeline. Pin the container
  * to its tallest observed height so transient reparses cannot shrink it. */
-function LiveTraceBody({ content }: { content: string }) {
+function LiveTraceBody({ content, animate = true }: { content: string; animate?: boolean }) {
 	const trimmed = content.trim();
 
 	const heightWatermarkRef = useRef(0);
@@ -441,7 +445,7 @@ function LiveTraceBody({ content }: { content: string }) {
 	if (!trimmed) return null;
 	return (
 		<div ref={bodyRef} className="inno-trace-body">
-			<MarkdownArtifact content={trimmed} streaming />
+			<MarkdownArtifact content={trimmed} streaming animate={animate} />
 		</div>
 	);
 }
@@ -468,6 +472,7 @@ export function AgentTraceTimeline({
 	terminalState,
 	onOpenSkill,
 	showText = false,
+	liveBodies = false,
 	fallbackText,
 	answeredQuestionnaires = [],
 	pendingQuestion,
@@ -556,8 +561,9 @@ export function AgentTraceTimeline({
 			<div className={showText ? "inno-trace-flow" : "inno-trace-list"} role="list">
 				{flowSteps.map((step, index) => {
 					if (isTextKind(step.kind)) {
-						const Body = isSending ? LiveTraceBody : TraceBody;
-						return <Body key={`trace-body:${index}:${step.id}`} content={step.text ?? ""} />;
+						if (isSending) return <LiveTraceBody key={`trace-body:${index}:${step.id}`} content={step.text ?? ""} />;
+						if (liveBodies) return <LiveTraceBody key={`trace-body:${index}:${step.id}`} content={step.text ?? ""} animate={false} />;
+						return <TraceBody key={`trace-body:${index}:${step.id}`} content={step.text ?? ""} />;
 					}
 					const rowId = `trace-row:${index}:${step.id}`;
 					const questionnaire = showText && step.kind === "tool" && step.toolCallId

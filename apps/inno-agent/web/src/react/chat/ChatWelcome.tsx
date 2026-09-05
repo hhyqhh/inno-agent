@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { PresetMeta } from "../../types/presets.js";
 import { PresetPicker } from "./PresetPicker.js";
 import { ModeSegmentedControl } from "../ui/ModeSegmentedControl.js";
+import { TerminalDrawer } from "../terminal/TerminalDrawer.js";
 
 interface ChatWelcomeProps {
 	welcomeLayoutRef: RefObject<HTMLDivElement | null>;
@@ -115,6 +116,7 @@ export function ChatWelcome({
 					{wsError ? <p className="mt-2 text-xs text-[var(--inno-danger)]">{wsError}</p> : null}
 				</div>
 			</div>
+			<TerminalDrawer />
 		</section>
 	);
 }

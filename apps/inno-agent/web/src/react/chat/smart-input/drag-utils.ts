@@ -55,7 +55,6 @@ export function offsetAtPointInAtoms(atoms: FlowAtom[], clientX: number, clientY
 export function autoScrollDelta(
 	clientY: number,
 	rect: { top: number; bottom: number; height: number },
-	scrollTop: number,
 	maxScroll: number,
 ): number {
 	if (maxScroll <= 0 || rect.height <= 0) return 0;

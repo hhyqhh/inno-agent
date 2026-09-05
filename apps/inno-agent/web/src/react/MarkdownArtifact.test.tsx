@@ -54,6 +54,54 @@ describe("MarkdownArtifact", () => {
 		});
 	});
 
+	it("renders a static Python fence with the final code block on first paint", () => {
+		const { container } = render(<MarkdownArtifact content={["```python", "print(1)", "```"].join("\n")} />);
+
+		expect(container.querySelector('[data-inno-code-block]')).not.toBeNull();
+		expect(container.querySelector(".inno-markdown-code-fallback")).toBeNull();
+	});
+
+	it("keeps an HTML artifact when it is followed by an SVG artifact", async () => {
+		const source = [
+			"这是两个独立的代码块，可以分别直接运行。",
+			"",
+			"**1. HTML：可点击计数按钮**",
+			"",
+			"```html",
+			"<!DOCTYPE html>",
+			"<html lang=\"zh\">",
+			"<head>",
+			"  <meta charset=\"UTF-8\" />",
+			"  <title>计数器</title>",
+			"  <style>body { display: flex; } button:hover { transform: translateY(-2px); }</style>",
+			"</head>",
+			"<body><div id=\"count\">0</div><button id=\"btn\">点我 +1</button>",
+			"<script>document.getElementById('btn').addEventListener('click', () => {});</script>",
+			"</body>",
+			"</html>",
+			"```",
+			"",
+			"**2. SVG：渐变圆与文字**",
+			"",
+			"```svg",
+			"<svg width=\"300\" height=\"300\" viewBox=\"0 0 300 300\" xmlns=\"http://www.w3.org/2000/svg\">",
+			"  <defs><linearGradient id=\"myGrad\"><stop offset=\"0%\" stop-color=\"#667eea\" /></linearGradient></defs>",
+			"  <!-- 渐变圆 -->",
+			"  <circle cx=\"150\" cy=\"150\" r=\"110\" fill=\"url(#myGrad)\" />",
+			"  <!-- 圆内文字 -->",
+			"  <text x=\"150\" y=\"150\">Hello</text>",
+			"</svg>",
+			"```",
+		].join("\n");
+		const { container } = render(<MarkdownArtifact content={source} />);
+
+		await waitFor(() => {
+			expect(container.querySelector('[data-inno-artifact="html"] iframe')).not.toBeNull();
+			expect(container.querySelector('[data-inno-artifact="svg"] iframe')).not.toBeNull();
+		});
+		expect(container.querySelector(".inno-markdown-code-fallback")).toBeNull();
+	});
+
 	it("repairs an unfinished tail while tokens are still streaming", async () => {
 		const { container } = render(<MarkdownArtifact content="正在生成 **重要内容" streaming />);
 
@@ -100,10 +148,28 @@ describe("MarkdownArtifact", () => {
 		expect(frame?.getAttribute("srcdoc")).toContain("Content-Security-Policy");
 		expect(frame?.getAttribute("srcdoc")).not.toContain("http-equiv=\"refresh\"");
 		expect(container.textContent).toContain("课程卡片");
-		expect(getByRole("button", { name: "启用交互预览" })).not.toBeNull();
-		fireEvent.click(getByRole("button", { name: "启用交互预览" }));
+		expect(getByRole("tab", { name: "预览" })).not.toBeNull();
+		expect(getByRole("tab", { name: "预览" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("预览");
+		expect(getByRole("tab", { name: "查看源码" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("查看源码");
+		expect(getByRole("tab", { name: "分屏查看" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("分屏查看");
+		expect(getByRole("button", { name: "复制源码" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("复制源码");
+		expect(getByRole("button", { name: "更多" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("更多");
+		const enableInteractiveButton = getByRole("button", { name: "启用交互预览" });
+		expect(enableInteractiveButton.closest("[data-inno-markdown-toolbar]")).not.toBeNull();
+		expect(enableInteractiveButton.getAttribute("title")).toContain("受限沙盒");
+		fireEvent.click(enableInteractiveButton);
+		expect(getByRole("button", { name: "重置交互预览" })).not.toBeNull();
+		fireEvent.click(getByRole("button", { name: "更多" }));
+		expect(getByRole("menuitem", { name: "全屏查看" })).not.toBeNull();
 		expect(container.querySelector("iframe")?.getAttribute("sandbox")).toBe("allow-scripts");
 		expect(container.querySelector("iframe")?.getAttribute("srcdoc")).toContain("script-src 'unsafe-inline'");
+		fireEvent.click(getByRole("menuitem", { name: "全屏查看" }));
+		const fullscreenDialog = getByRole("dialog");
+		expect(fullscreenDialog.querySelector('button[aria-label="重置交互预览"]')).not.toBeNull();
+		expect(fullscreenDialog.querySelector("iframe")?.getAttribute("sandbox")).toBe("allow-scripts");
+		fireEvent.click(fullscreenDialog.querySelector<HTMLButtonElement>('button[aria-label="退出全屏"]')!);
+		fireEvent.click(getByRole("button", { name: "重置交互预览" }));
+		expect(container.querySelector("iframe")?.getAttribute("sandbox")).toBe("");
 	});
 
 	it("keeps an unfinished HTML artifact in source mode while streaming", async () => {
@@ -113,6 +179,18 @@ describe("MarkdownArtifact", () => {
 		expect(container.querySelector("iframe")).toBeNull();
 		expect(container.textContent).toContain("生成中");
 		expect(container.textContent).toContain("仍在生成");
+	});
+
+	it("switches a completed HTML artifact directly to preview", async () => {
+		const openingFence = ["```html", "<!doctype html><html><body><h1>预览内容"].join("\n");
+		const completedFence = `${openingFence}</h1></body></html>\n\`\`\``;
+		const { container, rerender } = render(<MarkdownArtifact content={openingFence} streaming />);
+
+		await waitFor(() => expect(container.querySelector('[data-inno-artifact="html"]')).not.toBeNull());
+		rerender(<MarkdownArtifact content={completedFence} streaming />);
+
+		expect(container.querySelector('[data-inno-artifact="html"] iframe')).not.toBeNull();
+		expect(container.querySelector('[data-inno-artifact="html"] pre')).toBeNull();
 	});
 
 	it("routes the additional Cherry-style diagram languages to special views", async () => {
@@ -136,6 +214,39 @@ describe("MarkdownArtifact", () => {
 	it("does not let the generic code renderer intercept Mermaid diagrams", () => {
 		expect(isEnhancedCodeLanguage("mermaid")).toBe(false);
 		expect(isEnhancedCodeLanguage("typescript")).toBe(true);
+	});
+
+	it("loads Mermaid without leaving the response behind a render-time suspension", async () => {
+		const source = [
+			"图示如下：",
+			"",
+			"```mermaid",
+			"flowchart LR",
+			"A[开始] --> B[完成]",
+			"```",
+			"",
+			"图示结束。",
+		].join("\n");
+		const { container, getByRole } = render(<MarkdownArtifact content={source} />);
+
+		await waitFor(() => {
+			expect(container.querySelector(".inno-mermaid-suspense-placeholder")).toBeNull();
+			expect(container.querySelector("[data-inno-mermaid-preview]")).not.toBeNull();
+			expect(getByRole("tab", { name: "图表" })).not.toBeNull();
+			expect(getByRole("button", { name: "复制代码" })).not.toBeNull();
+			expect(getByRole("button", { name: "重置视图" })).not.toBeNull();
+		}, { timeout: 5000 });
+		fireEvent.click(getByRole("tab", { name: "代码" }));
+		expect(container.querySelector("[data-inno-mermaid-source]")).not.toBeNull();
+		expect(getByRole("button", { name: "缩小" })).toHaveProperty("disabled", true);
+		expect(getByRole("button", { name: "放大" })).toHaveProperty("disabled", true);
+		expect(getByRole("button", { name: "重置视图" })).toHaveProperty("disabled", true);
+		fireEvent.click(getByRole("tab", { name: "图表" }));
+		expect(getByRole("button", { name: "缩小" })).toHaveProperty("disabled", false);
+		expect(getByRole("button", { name: "放大" })).toHaveProperty("disabled", false);
+		expect(container.textContent).toContain("图示如下");
+		expect(container.textContent).toContain("图示结束");
+		expect(container.querySelector(".inno-mermaid-suspense-placeholder")).toBeNull();
 	});
 
 	it("sanitizes SVG preview elements, event handlers, and external paint URLs", async () => {
@@ -177,11 +288,41 @@ describe("MarkdownArtifact", () => {
 		open.mockRestore();
 	});
 
-	it("adds rich-copy, Excel, and fullscreen actions to tables", () => {
-		const { getByRole } = render(<MarkdownArtifact content={["| 项目 | 状态 |", "| --- | --- |", "| 表格 | 完成 |"].join("\n")} />);
-		expect(getByRole("button", { name: "复制为富文本" })).not.toBeNull();
-		expect(getByRole("button", { name: "导出 Excel" })).not.toBeNull();
-		expect(getByRole("button", { name: "全屏查看表格" })).not.toBeNull();
+	it("adds rich-copy, Excel, and fullscreen actions to tables", async () => {
+		const { getByRole, queryByRole } = render(<MarkdownArtifact content={["| 项目 | 状态 |", "| --- | --- |", "| 表格 | 完成 |"].join("\n")} />);
+		const copyButton = getByRole("button", { name: "复制为富文本" });
+		const moreButton = getByRole("button", { name: "更多" });
+		expect(copyButton).not.toBeNull();
+		expect(copyButton.getAttribute("aria-pressed")).toBe("false");
+		expect(copyButton.getAttribute("title")).toBe("复制为富文本");
+		expect(moreButton.getAttribute("aria-haspopup")).toBe("menu");
+		expect(moreButton.getAttribute("aria-expanded")).toBe("false");
+		expect(queryByRole("menuitem", { name: "导出 Excel" })).toBeNull();
+		fireEvent.click(moreButton);
+		await waitFor(() => expect(document.activeElement?.getAttribute("role")).toBe("menuitem"));
+		expect(getByRole("menuitem", { name: "导出 Excel" })).not.toBeNull();
+		expect(getByRole("menuitem", { name: "全屏查看表格" })).not.toBeNull();
+		fireEvent.keyDown(document, { key: "Escape" });
+		expect(queryByRole("menu")).toBeNull();
+		fireEvent.click(moreButton);
+		fireEvent.click(getByRole("menuitem", { name: "全屏查看表格" }));
+		expect(getByRole("dialog", { name: "表格全屏查看" })).not.toBeNull();
+		expect(getByRole("dialog", { name: "表格全屏查看" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("复制为富文本");
+		expect(getByRole("dialog", { name: "表格全屏查看" }).querySelector("[aria-label=\"退出全屏\"] .inno-markdown-toolbar-button-label")?.textContent).toBe("退出全屏");
+		expect(document.body.style.overflow).toBe("hidden");
+		fireEvent.keyDown(document, { key: "Escape" });
+		expect(queryByRole("dialog", { name: "表格全屏查看" })).toBeNull();
+		expect(document.body.style.overflow).toBe("");
+	});
+
+	it("keeps content rendering while compact mode hides custom controls", async () => {
+		const source = ["| 项目 | 状态 |", "| --- | --- |", "| 表格 | 完成 |", "", "```typescript", "const compact = true;", "```"].join("\n");
+		const { container } = render(<MarkdownArtifact content={source} compact />);
+		await waitFor(() => expect(container.querySelector('[data-inno-content-block="code"]')).not.toBeNull());
+		expect(container.querySelector('[data-inno-content-block="table"]')).not.toBeNull();
+		expect(container.querySelector('[data-inno-content-block="table"] [data-inno-markdown-toolbar]')).toBeNull();
+		expect(container.querySelector('[data-inno-content-block="code"] [data-inno-toolbar-button]')).toBeNull();
+		expect(container.textContent).toContain("compact = true");
 	});
 
 	it("can opt in to single-dollar math without changing LaTeX delimiters", () => {

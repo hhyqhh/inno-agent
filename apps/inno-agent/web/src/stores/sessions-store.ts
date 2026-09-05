@@ -17,10 +17,11 @@ import { getSessionWorkspace } from "../api/workspaces.js";
 import { abortChat, getChatStatus } from "../api/chat.js";
 import { ApiError, withTimeout } from "../api/client.js";
 import { chatStore } from "./chat-store.js";
-import type { PendingQuestion } from "../types/chat.js";
+import type { ChatMessage, PendingQuestion } from "../types/chat.js";
 import { workspaceStore } from "./workspace-store.js";
 import { workspacesStore } from "./workspaces-store.js";
 import { terminalStore } from "./terminal-store.js";
+import { hasMermaidFence, preloadMermaidMarkdownRuntime } from "../utils/mermaid-runtime.js";
 
 interface SessionsStoreEvents {
 	change: void;
@@ -30,6 +31,20 @@ export type HistoryMode = "push" | "replace" | "none";
 
 /** Backoff for refreshUntilTopic (~62s total, covering slow topic models). */
 const TOPIC_REFRESH_DELAYS_MS = [2_000, 4_000, 8_000, 16_000, 32_000] as const;
+
+function hasMermaidMessage(messages: ChatMessage[]): boolean {
+	return messages.some((message) => hasMermaidFence(message.content));
+}
+
+async function waitForMermaidRuntime(messages: ChatMessage[]): Promise<void> {
+	if (!hasMermaidMessage(messages)) return;
+	try {
+		await preloadMermaidMarkdownRuntime();
+	} catch {
+		// MarkdownErrorBoundary will fall back to plain text if the optional
+		// renderer chunk cannot be loaded.
+	}
+}
 
 export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	sessions: SessionMeta[] = [];
@@ -191,7 +206,7 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		void terminalStore.disconnect();
 
 		const cached = this._messageCache.get(id);
-		if (cached) {
+		if (cached && !hasMermaidMessage(cached)) {
 			chatStore.loadHistory(cached, id);
 		} else {
 			chatStore.loadHistory([], id);
@@ -213,10 +228,16 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 			// Hard bound on history load: without it a stuck request would pin
 			// isLoadingHistory forever ("正在加载会话…" with no way out, #124).
 			const session = await withTimeout(getSession(id), 15_000, "加载会话超时，请重试");
+			// History is committed atomically with the optional Mermaid runtime.
+			// Otherwise the trace rows render first and the markdown body appears
+			// on a later frame when the lazy chunk finishes loading.
+			const mermaidRuntimeReady = waitForMermaidRuntime(session.messages);
 			const chatStatus = await getChatStatus(id).catch((error) => {
 				console.warn(`[sessions] failed to load chat status for ${id}:`, error instanceof Error ? error.message : error);
 				return { found: false } as Awaited<ReturnType<typeof getChatStatus>>;
 			});
+			if (requestId !== this._openRequestId) return;
+			await mermaidRuntimeReady;
 			if (requestId !== this._openRequestId) return;
 
 			this._messageCache.set(id, session.messages);

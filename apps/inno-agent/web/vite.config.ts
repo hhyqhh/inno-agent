@@ -281,7 +281,12 @@ export default defineConfig({
 					) {
 						return "pi-web-ui";
 					}
-					if (id.includes("/node_modules/cytoscape")) {
+					// Match Cytoscape itself, not related packages such as
+					// cytoscape-cose-bilkent/cytoscape-fcose. Those extensions are
+					// loaded by Mermaid and have a dependency cycle with Cytoscape;
+					// forcing both sides into named manual chunks makes the browser
+					// evaluate the extension before Cytoscape's default export exists.
+					if (id.includes("/node_modules/cytoscape/")) {
 						return "cytoscape";
 					}
 					if (id.includes("/node_modules/katex/")) {

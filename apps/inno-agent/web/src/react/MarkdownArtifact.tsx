@@ -1,5 +1,10 @@
-import { Component, lazy, Suspense, useMemo, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
 import { normalizeMarkdownMathForStreamdown } from "../utils/markdown-math.js";
+import {
+	getMermaidMarkdownRuntime,
+	hasMermaidFence,
+	preloadMermaidMarkdownRuntime,
+} from "../utils/mermaid-runtime.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { MarkdownRuntime, type MarkdownRuntimeProps } from "./MarkdownRuntime.js";
@@ -8,17 +13,14 @@ export interface MarkdownArtifactProps {
 	content: string;
 	/** Enables Streamdown's incomplete-markdown repair and streaming caret. */
 	streaming?: boolean;
+	/** Overrides the character animation while keeping the streaming DOM shape. */
+	animate?: boolean;
 	/** Compact surfaces (thinking/question cards) hide heavy block controls. */
 	compact?: boolean;
 	className?: string;
 }
 
-const MERMAID_FENCE_RE = /(?:^|\n)[ \t>]*(?:[*+-][ \t]+|\d{1,9}[.)][ \t]+)?(?:`{3,}|~{3,})[ \t]*mermaid\b/i;
 const MAX_STREAMING_TRANSFORM_LENGTH = 256 * 1024;
-
-// Mermaid adds a sizeable parser. Only fetch it for replies that actually
-// contain a Mermaid fence; ordinary chat stays on the small runtime.
-const MermaidMarkdownRuntime = lazy(() => import("./MermaidMarkdownRuntime.js"));
 
 /** The chat view has no error boundary above it, so a renderer crash (e.g. a
  * streamdown upgrade that changes plugin internals) must degrade to plain
@@ -52,7 +54,7 @@ class MarkdownErrorBoundary extends Component<{ content: string; className?: str
 	}
 }
 
-export function MarkdownArtifact({ content, streaming = false, compact = false, className }: MarkdownArtifactProps) {
+export function MarkdownArtifact({ content, streaming = false, animate, compact = false, className }: MarkdownArtifactProps) {
 	const mathSingleDollar = useStoreSnapshot(settingsStore, () => settingsStore.settings?.ui?.mathSingleDollar === true);
 	// Match Cherry Studio's long-stream guard: once a live answer is very large,
 	// skip whole-document transforms and leave incremental parsing to Streamdown.
@@ -62,19 +64,44 @@ export function MarkdownArtifact({ content, streaming = false, compact = false, 
 			: normalizeMarkdownMathForStreamdown(content, { singleDollar: mathSingleDollar }),
 		[content, streaming, mathSingleDollar],
 	);
+	const hasMermaid = hasMermaidFence(normalizedContent);
+	const [mermaidRuntime, setMermaidRuntime] = useState(getMermaidMarkdownRuntime);
+	const [mermaidRuntimeFailed, setMermaidRuntimeFailed] = useState(false);
+	useEffect(() => {
+		if (!hasMermaid || mermaidRuntime || mermaidRuntimeFailed) return;
+		let active = true;
+		void preloadMermaidMarkdownRuntime()
+			.then((module) => {
+				if (active) setMermaidRuntime(module);
+			})
+			.catch(() => {
+				if (active) setMermaidRuntimeFailed(true);
+			});
+		return () => {
+			active = false;
+		};
+	}, [hasMermaid, mermaidRuntime, mermaidRuntimeFailed]);
+	const MermaidMarkdownRuntime = mermaidRuntime?.default;
 	const runtimeProps: MarkdownRuntimeProps = {
 		content: normalizedContent,
 		streaming,
+		...(animate === undefined ? {} : { animate }),
 		compact,
 		className,
 	};
 
 	return (
 		<MarkdownErrorBoundary content={normalizedContent} className={className}>
-			{MERMAID_FENCE_RE.test(normalizedContent) ? (
-				<Suspense fallback={<div className={`inno-markdown whitespace-pre-wrap ${className ?? ""}`}>{normalizedContent}</div>}>
-					<MermaidMarkdownRuntime {...runtimeProps} />
-				</Suspense>
+			{hasMermaid ? (
+				<div className="inno-mermaid-frame min-h-[288px] w-full">
+					{MermaidMarkdownRuntime ? (
+						<MermaidMarkdownRuntime {...runtimeProps} />
+					) : mermaidRuntimeFailed ? (
+						<MarkdownRuntime {...runtimeProps} />
+					) : (
+						<div className="inno-mermaid-suspense-placeholder" aria-hidden="true" />
+					)}
+				</div>
 			) : (
 				<MarkdownRuntime {...runtimeProps} />
 			)}

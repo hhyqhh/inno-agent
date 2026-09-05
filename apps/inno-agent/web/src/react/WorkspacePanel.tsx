@@ -5,11 +5,12 @@ import { motion, AnimatePresence } from "motion/react";
 import { DndProvider, useDragDropManager } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import type { DragDropManager } from "dnd-core";
-import { PanelRightOpen, PanelRightClose, Columns2, Maximize2, BookOpen, BriefcaseBusiness, FolderKanban, Settings, Sparkles, UserRound } from "lucide-react";
+import { PanelRightOpen, PanelRightClose, Columns2, Maximize2, BookOpen, BriefcaseBusiness, FolderKanban, Settings, Sparkles, Terminal as TerminalIcon, UserRound } from "lucide-react";
 import type { RightPanelTab, WorkspaceMode } from "../stores/app-store.js";
 import { getMaximumWorkspaceWidth, WORKSPACE_MAX_WIDTH, WORKSPACE_MIN_WIDTH, WORKSPACE_QUARTER_MIN_WIDTH } from "../stores/app-layout.js";
 import { appStore } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
+import { terminalStore } from "../stores/terminal-store.js";
 import { ensureWindowForPanel } from "../stores/window-expansion.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { isDynamicImportError, recoverFromDynamicImportError } from "../utils/dynamic-import-recovery.js";
@@ -177,6 +178,7 @@ function WorkspacePanelContent({ activeTab, mode, width, onTabChange, onModeChan
 	// In Simple Mode, hide the advanced tabs: notebook (L2 wiki), profile (L1),
 	// jobs (scheduled tasks) and skills — leaving just preview.
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
+	const terminalOpen = useStoreSnapshot(terminalStore, () => terminalStore.isOpen);
 	const HIDDEN_IN_SIMPLE: RightPanelTab[] = ["notebook", "profile", "jobs", "skills"];
 	const tabs = simpleMode ? TAB_ORDER.filter((tab) => !HIDDEN_IN_SIMPLE.includes(tab)) : TAB_ORDER;
 
@@ -408,6 +410,14 @@ function WorkspacePanelContent({ activeTab, mode, width, onTabChange, onModeChan
 						onClick={() => appStore.openSettings()}
 					>
 						<Settings size={14} />
+					</button>
+					<button
+						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
+						title={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
+						aria-label={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
+						onClick={() => terminalStore.setOpen(!terminalOpen)}
+					>
+						<TerminalIcon size={14} />
 					</button>
 					<button
 						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"

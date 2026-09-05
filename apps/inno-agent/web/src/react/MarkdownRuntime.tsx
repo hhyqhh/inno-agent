@@ -14,12 +14,17 @@ import {
 import { EnhancedCodeRenderer, SPECIAL_CODE_RENDERERS } from "./markdown/special-renderers.js";
 import { EnhancedTable } from "./markdown/EnhancedTable.js";
 import { EnhancedLink } from "./markdown/EnhancedLink.js";
+import { STREAMDOWN_ICON_OVERRIDES } from "./markdown/shared.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { useStoreSnapshot } from "./hooks.js";
 
 export interface MarkdownRuntimeProps {
 	content: string;
 	streaming?: boolean;
+	/** Keep the streaming DOM shape (per-block wrappers) while skipping the
+	 *  character animation; used for a turn that just finished rendering so
+	 *  swapping to the settled bubble does not relayout the content. */
+	animate?: boolean;
 	compact?: boolean;
 	className?: string;
 	mermaidPlugin?: PluginConfig["mermaid"];
@@ -113,13 +118,8 @@ function createRehypePlugins(headingPrefix: string) {
 }
 
 const SPECIAL_LANGUAGES = new Set(SPECIAL_CODE_RENDERERS.flatMap((renderer) => Array.isArray(renderer.language) ? renderer.language : [renderer.language]));
-// Shiki can highlight Mermaid source too, but diagram plugins and custom code
-// renderers share the same dispatch point in Streamdown. If Mermaid remains in
-// the generic renderer list, EnhancedCodeRenderer wins first and the diagram
-// plugin is never reached.
-const DIAGRAM_LANGUAGES = new Set(["mermaid"]);
 export function isEnhancedCodeLanguage(language: string): boolean {
-	return !SPECIAL_LANGUAGES.has(language) && !DIAGRAM_LANGUAGES.has(language);
+	return !SPECIAL_LANGUAGES.has(language);
 }
 const ENHANCED_CODE_LANGUAGES = Array.from(new Set<string>([
 	...code.getSupportedLanguages(),
@@ -138,8 +138,7 @@ const FULL_CONTROLS = {
 	mermaid: { copy: true, download: { filename: "inno-diagram" }, fullscreen: true, panZoom: true },
 	image: { download: true },
 } as const;
-const FULL_COMPONENTS = { a: EnhancedLink, table: EnhancedTable };
-const COMPACT_COMPONENTS = { a: EnhancedLink };
+const MARKDOWN_COMPONENTS = { a: EnhancedLink, table: EnhancedTable };
 const STREAMING_ANIMATION = {
 	animation: "fadeIn",
 	duration: 180,
@@ -161,7 +160,7 @@ const MERMAID_OPTIONS = {
 } as const;
 const MAX_ANIMATED_CONTENT_LENGTH = 64 * 1024;
 
-export function MarkdownRuntime({ content, streaming = false, compact = false, className, mermaidPlugin }: MarkdownRuntimeProps) {
+export function MarkdownRuntime({ content, streaming = false, animate, compact = false, className, mermaidPlugin }: MarkdownRuntimeProps) {
 	const { t } = useTranslation();
 	const renderId = useId().replace(/[^a-zA-Z0-9_-]/g, "") || "md";
 	const mathSingleDollar = useStoreSnapshot(settingsStore, () => settingsStore.settings?.ui?.mathSingleDollar === true);
@@ -198,7 +197,7 @@ export function MarkdownRuntime({ content, streaming = false, compact = false, c
 		zoomOut: t("markdown.zoomOut", "缩小"),
 		resetView: t("markdown.resetView", "重置视图"),
 	}), [t]);
-	const shouldAnimate = streaming && content.length <= MAX_ANIMATED_CONTENT_LENGTH;
+	const shouldAnimate = (animate ?? streaming) && content.length <= MAX_ANIMATED_CONTENT_LENGTH;
 	return (
 		<Streamdown
 			mode={streaming ? "streaming" : "static"}
@@ -206,7 +205,6 @@ export function MarkdownRuntime({ content, streaming = false, compact = false, c
 			normalizeHtmlIndentation
 			isAnimating={shouldAnimate}
 			animated={shouldAnimate ? STREAMING_ANIMATION : false}
-			caret={streaming ? "block" : undefined}
 			dir="auto"
 			plugins={plugins}
 			remarkPlugins={REMARK_PLUGINS}
@@ -215,10 +213,11 @@ export function MarkdownRuntime({ content, streaming = false, compact = false, c
 			disallowedElements={BLOCKED_RAW_ELEMENTS}
 			unwrapDisallowed
 			controls={compact ? false : FULL_CONTROLS}
-			components={compact ? COMPACT_COMPONENTS : FULL_COMPONENTS}
+			components={MARKDOWN_COMPONENTS}
 			codeBlockMaxHeight={compact ? 260 : 480}
 			tableMaxHeight={420}
 			lineNumbers={!compact}
+			icons={STREAMDOWN_ICON_OVERRIDES}
 			translations={translations}
 			mermaid={MERMAID_OPTIONS}
 			className={`inno-markdown${compact ? " inno-markdown--compact" : ""}${className ? ` ${className}` : ""}`}

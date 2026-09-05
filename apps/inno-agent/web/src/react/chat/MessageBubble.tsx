@@ -481,7 +481,7 @@ export function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; c
 	);
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, showChannel, resolveAttachmentUrl, onOpenAttachment, onOpenSkill, onEdit, showRetry, showActions = true, answeredQuestionnaires: suppliedQuestionnaires, onRetry }: {
+export const MessageBubble = memo(function MessageBubble({ message, showChannel, resolveAttachmentUrl, onOpenAttachment, onOpenSkill, onEdit, showRetry, showActions = true, answeredQuestionnaires: suppliedQuestionnaires, animateEntry = true, liveBodies = false, onRetry }: {
 	message: ChatMessage;
 	showChannel?: boolean;
 	/** Optional URL resolver for attachment chips (workspace raw link). Kept as
@@ -499,6 +499,12 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 	showActions?: boolean;
 	/** Optional whole-turn questionnaire views when a trace represents several assistant records. */
 	answeredQuestionnaires?: AnsweredQuestionnaireView[];
+	/** Play the bubble entrance fade. Disabled only for the assistant record
+	 *  that mounts the instant a live stream finishes. */
+	animateEntry?: boolean;
+	/** Keep the live stream's markdown DOM shape for text bodies so the
+	 *  finalize swap does not relayout the content. */
+	liveBodies?: boolean;
 	onRetry?: () => void;
 }) {
 	const { t } = useTranslation();
@@ -565,8 +571,8 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 		return (
 			<motion.div
 				className="flex justify-end"
-				initial={{ opacity: 0, y: 12 }}
-				animate={{ opacity: 1, y: 0 }}
+				initial={{ opacity: 0 }}
+				animate={{ opacity: 1 }}
 				transition={{ duration: 0.25, ease: "easeOut" }}
 			>
 				<div className="inno-message-wrap group relative w-fit max-w-full" style={{ maxWidth: "min(70%, 38rem)" }}>
@@ -645,8 +651,8 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 	return (
 		<motion.div
 			className="flex justify-start"
-			initial={{ opacity: 0, y: 12 }}
-			animate={{ opacity: 1, y: 0 }}
+			initial={animateEntry ? { opacity: 0 } : false}
+			animate={{ opacity: 1 }}
 			transition={{ duration: 0.25, ease: "easeOut" }}
 		>
 			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : hasAnsweredQuestionnaire ? "w-full max-w-[76%]" : "max-w-[78%]"} ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-3.5 py-2.5 text-[13px] leading-relaxed text-[var(--inno-text)]`}>
@@ -662,6 +668,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 							error={message.error}
 							terminalState={terminalState}
 							showText
+							liveBodies={liveBodies}
 							fallbackText={message.content}
 							answeredQuestionnaires={answeredQuestionnaires}
 							onOpenSkill={onOpenSkill}

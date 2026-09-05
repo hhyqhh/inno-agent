@@ -309,7 +309,7 @@ function GroupHeader({
 				/>
 			</button>
 			<button
-				className="inno-sidebar-meta flex min-w-0 flex-1 items-center gap-1.5 font-semibold uppercase text-[var(--inno-text-subtle)] transition-colors hover:text-[var(--inno-text-muted)]"
+				className="inno-sidebar-workspace-button inno-sidebar-meta flex min-w-0 flex-1 items-center gap-1.5 font-semibold uppercase text-[var(--inno-text-subtle)] transition-colors hover:text-[var(--inno-text-muted)]"
 				title={group.canCreate ? t("sidebar.loadWorkspace") : undefined}
 				onClick={() => { if (!reorderMode) onSelect(); }}
 			>

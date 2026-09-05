@@ -1207,7 +1207,7 @@ export class SmartInputEngine {
 		if (!drag || !drag.moved) return false;
 		const rect = this.ta.getBoundingClientRect();
 		const maxScroll = Math.max(0, this.ta.scrollHeight - this.ta.clientHeight);
-		const delta = autoScrollDelta(drag.clientY, rect, this.ta.scrollTop, maxScroll);
+		const delta = autoScrollDelta(drag.clientY, rect, maxScroll);
 		if (delta === 0) return false;
 		const nextScroll = Math.max(0, Math.min(maxScroll, this.ta.scrollTop + delta));
 		if (nextScroll === this.ta.scrollTop) return false;

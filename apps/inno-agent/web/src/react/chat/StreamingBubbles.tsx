@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { motion } from "motion/react";
 import { chatStore } from "../../stores/chat-store.js";
 import { useStoreSnapshot } from "../hooks.js";
@@ -10,7 +10,7 @@ import { AgentTraceTimeline } from "./AgentTraceTimeline.js";
 /** Render the live turn as one ordered flow. Text records stay in the same
  * sequence as thinking and tool records instead of being painted as a
  * separate answer block above the process timeline. */
-export function StreamingBubbles({ onOpenSkill }: { onOpenSkill?: (skillName: string) => void }) {
+export function StreamingBubbles({ onOpenSkill, holdCompleted = false }: { onOpenSkill?: (skillName: string) => void; holdCompleted?: boolean }) {
 	const stream = useStoreSnapshot(chatStore, () => ({
 		text: chatStore.streamingText,
 		trace: chatStore.streamingTrace,
@@ -22,19 +22,30 @@ export function StreamingBubbles({ onOpenSkill }: { onOpenSkill?: (skillName: st
 		pendingQuestion: chatStore.pendingQuestion,
 	}));
 
-	const questionnaires = useMemo(() => stream.completedTools.flatMap((tool): AnsweredQuestionnaireView[] => {
+	const hasText = Boolean(stream.text.trim());
+	const isLive = hasText || stream.trace.length > 0 || stream.completedTools.length > 0 || Boolean(stream.pendingQuestion) || Boolean(stream.streamingError) || stream.isSending;
+
+	// The store clears the stream the instant a turn finalizes, which would
+	// unmount this tree in the same commit the canonical message mounts. While
+	// the parent defers that swap, keep rendering the last live snapshot so
+	// the on-screen tree (and its parsed markdown) survives until the static
+	// replacement has rendered.
+	const heldRef = useRef<typeof stream | null>(null);
+	if (isLive) heldRef.current = stream;
+	const effective = isLive ? stream : (holdCompleted ? heldRef.current : null);
+
+	const questionnaires = useMemo(() => (effective?.completedTools ?? []).flatMap((tool): AnsweredQuestionnaireView[] => {
 		const questionnaire = answeredQuestionnaireFromTool(tool);
 		return questionnaire ? [{ tool, questionnaire }] : [];
-	}), [stream.completedTools]);
-	const pendingQuestion = stream.pendingQuestion
+	}), [effective?.completedTools]);
+	const pendingQuestion = effective?.pendingQuestion
 		? {
-			questionId: stream.pendingQuestion.questionId,
-			card: <QuestionDialog pending={stream.pendingQuestion} />,
+			questionId: effective.pendingQuestion.questionId,
+			card: <QuestionDialog pending={effective.pendingQuestion} />,
 		}
 		: undefined;
 
-	const hasText = Boolean(stream.text.trim());
-	if (!hasText && stream.trace.length === 0 && questionnaires.length === 0 && !pendingQuestion && !stream.streamingError && !stream.isSending) return null;
+	if (!effective) return null;
 	return (
 		<motion.div
 			className="inno-trace-shell inno-trace-shell-live"
@@ -43,13 +54,13 @@ export function StreamingBubbles({ onOpenSkill }: { onOpenSkill?: (skillName: st
 			transition={{ duration: 0.2, ease: "easeOut" }}
 		>
 			<AgentTraceTimeline
-				steps={stream.trace}
-				isSending={stream.isSending}
-				startedAt={stream.streamingStartedAt}
-				finishedAt={stream.streamingFinishedAt}
-				error={stream.streamingError}
+				steps={effective.trace}
+				isSending={effective.isSending}
+				startedAt={effective.streamingStartedAt}
+				finishedAt={effective.streamingFinishedAt}
+				error={effective.streamingError}
 				showText
-				fallbackText={stream.text}
+				fallbackText={effective.text}
 				answeredQuestionnaires={questionnaires}
 				pendingQuestion={pendingQuestion}
 				onOpenSkill={onOpenSkill}

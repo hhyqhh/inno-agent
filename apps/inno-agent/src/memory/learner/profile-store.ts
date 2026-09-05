@@ -20,7 +20,15 @@ const EVENTS_TAIL_BYTES = 256 * 1024;
  * Load the learner profile. Returns a default empty profile if not found.
  */
 export function loadProfile(dataDir: string): LearnerProfile {
-	return readJson<LearnerProfile>(join(dataDir, PROFILE_FILE), createDefaultProfile());
+	const defaults = createDefaultProfile();
+	const loaded = readJson<LearnerProfile>(join(dataDir, PROFILE_FILE), defaults);
+	// Profiles created before cognitive_patterns existed remain valid L1 data.
+	return {
+		...defaults,
+		...loaded,
+		preferences: { ...defaults.preferences, ...loaded.preferences },
+		cognitive_patterns: Array.isArray(loaded.cognitive_patterns) ? loaded.cognitive_patterns : [],
+	};
 }
 
 /**
@@ -70,6 +78,7 @@ export function isProfileEmpty(profile: LearnerProfile): boolean {
 	return profile.goals.length === 0
 		&& profile.knowledge_states.length === 0
 		&& profile.profile_summary === ""
+		&& profile.cognitive_patterns.length === 0
 		&& profile.preferences.explanation_style.length === 0
 		&& profile.preferences.practice_style.length === 0;
 }

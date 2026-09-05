@@ -1487,7 +1487,7 @@ const server = createServer(async (req, res) => {
 		if (await handleWikiRoutes(req, res, method, url, { l2DataDir })) return;
 
 		// --- Learner profile API (extracted to server/routes/learner.ts) ---
-		if (await handleLearnerRoutes(req, res, method, url, { paths })) return;
+		if (await handleLearnerRoutes(req, res, method, url, { paths, l2DataDir })) return;
 
 		// --- Workspace API + registry + session binding (extracted to server/routes/workspaces.ts) ---
 		if (await handleWorkspacesRoutes(req, res, method, url, {

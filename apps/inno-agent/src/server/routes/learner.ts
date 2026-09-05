@@ -1,5 +1,21 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
+import { buildWikiGraph } from "../../memory/l2/wiki-graph.js";
+import { appendAssistantLearningFeedback, completePromptOnce } from "../../agent/pi-runner.js";
+import { reviewPersonalLink } from "../../memory/learner/personal-link-review.js";
+import { updateCognitivePatternsFromLinks } from "../../memory/learner/cognitive-patterns.js";
+import {
+	comparePersonalLinkToWiki,
+	createPersonalLink,
+	deletePersonalLink,
+	loadPersonalLinks,
+	setPersonalLinkFeedback,
+	setPersonalLinkStatus,
+	type CreatePersonalLinkInput,
+	type PersonalLink,
+	type PersonalLinkComparison,
+	type PersonalLinkStatus,
+} from "../../memory/learner/personal-links.js";
 import { loadProfile, saveProfile } from "../../memory/learner/profile-store.js";
 import type {
 	KnowledgeState,
@@ -13,6 +29,68 @@ import { json, matchRoute, readBody } from "../http-helpers.js";
 
 export interface LearnerRouteContext {
 	paths: RuntimePaths;
+	l2DataDir: string;
+}
+
+interface PersonalLinkResponse extends PersonalLink {
+	comparison: PersonalLinkComparison;
+}
+
+function withWikiComparison(link: PersonalLink, l2DataDir: string): PersonalLinkResponse {
+	return { ...link, comparison: comparePersonalLinkToWiki(link, buildWikiGraph(l2DataDir)) };
+}
+
+function nodeTitle(graph: ReturnType<typeof buildWikiGraph>, id: string): string {
+	return graph.nodes.find((node) => node.id === id)?.title ?? id;
+}
+
+function whyNoDirectWikiLink(link: PersonalLinkResponse, graph: ReturnType<typeof buildWikiGraph>): string {
+	const source = nodeTitle(graph, link.source);
+	const target = nodeTitle(graph, link.target);
+	if (link.comparison.alignment === "aligned") {
+		return `Wiki 原本已有 ${source} 与 ${target} 的明确关联；这条虚线记录的是你的理解，不是在替换系统事实。`;
+	}
+	if (link.comparison.alignment === "system_indirect") {
+		return "系统保留了中间的推理过程，没有把“经由其他概念才能成立的关系”直接写成无条件事实。";
+	}
+	return "当前 Wiki 的页面与显式链接还没有足够证据，把这层关系确认成系统事实；这不等于你的联想错误。";
+}
+
+function formatPersonalLinkReviewForChat(links: PersonalLinkResponse[], graph: ReturnType<typeof buildWikiGraph>): string {
+	const actionLabel = {
+		keep: "保留这条虚线",
+		add_bridge: "拆成经过中间节点的连接",
+		replace: "替换为更合适的连接",
+		remove: "删除这条不恰当的连接",
+	} as const;
+	const sections = links.map((link) => {
+		const source = nodeTitle(graph, link.source);
+		const target = nodeTitle(graph, link.target);
+		const feedback = link.feedback;
+		const verdict = feedback?.verdict === "supported"
+			? "联系成立"
+			: feedback?.verdict === "needs_bridge"
+				? "方向合理，但需要补桥"
+				: "值得保留为探索";
+		const recommendedTitles = feedback?.recommended_node_ids.map((id) => nodeTitle(graph, id)).join("、");
+		return [
+			`### ${source} -- ${target}`,
+			`**你的理由**：${link.reason}`,
+			`**结论**：${verdict}`,
+			feedback ? `**先校正概念**：${feedback.concept_clarification}` : "**反馈**：本次未能生成完整评议。",
+			feedback ? `**你的理解哪里可能偏了**：${feedback.misconception_check}` : null,
+			feedback ? `**这条关系的判断**：${feedback.summary}` : null,
+			`**系统为什么一开始没有直接连上**：${whyNoDirectWikiLink(link, graph)}`,
+			feedback ? `**依据**：${feedback.evidence}` : null,
+			feedback ? `**建议操作**：${actionLabel[feedback.recommended_action]}。${feedback.recommendation}` : null,
+			recommendedTitles ? `**建议使用的图谱节点**：${recommendedTitles}` : null,
+		].filter((line): line is string => Boolean(line)).join("\n\n");
+	});
+	return [
+		"## 本轮知识连接评议",
+		"系统先校正概念定义，再判断你的连线；它会给出保留、拆线、替换或删除的具体建议。",
+		...sections,
+	].join("\n\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -51,7 +129,90 @@ export async function handleLearnerRoutes(
 	url: string,
 	ctx: LearnerRouteContext,
 ): Promise<boolean> {
-	const { paths } = ctx;
+	const { paths, l2DataDir } = ctx;
+
+	// --- Learner-created wiki connections ---
+	if (method === "GET" && url === "/api/learner/personal-links") {
+		const links = loadPersonalLinks(paths.learnerDataDir)
+			.map((link) => withWikiComparison(link, l2DataDir));
+		json(res, 200, { links });
+		return true;
+	}
+
+	if (method === "POST" && url === "/api/learner/personal-links") {
+		try {
+			const body = await readBody(req) as Partial<CreatePersonalLinkInput>;
+			const link = createPersonalLink(paths.learnerDataDir, {
+				source: typeof body.source === "string" ? body.source : "",
+				target: typeof body.target === "string" ? body.target : "",
+				reason: typeof body.reason === "string" ? body.reason : "",
+				batch_id: typeof body.batch_id === "string" ? body.batch_id : undefined,
+			});
+			json(res, 201, withWikiComparison(link, l2DataDir));
+		} catch (err) {
+			json(res, 400, { error: err instanceof Error ? err.message : "Failed to create personal link" });
+		}
+		return true;
+	}
+
+	if (method === "POST" && url === "/api/learner/personal-links/review-batch") {
+		const body = await readBody(req) as { ids?: unknown; session_id?: unknown };
+		const ids = Array.isArray(body.ids) ? body.ids.filter((id): id is string => typeof id === "string") : [];
+		if (ids.length === 0) {
+			json(res, 400, { error: "Select at least one new personal link to review" });
+			return true;
+		}
+		const graph = buildWikiGraph(l2DataDir);
+		const byId = new Map(loadPersonalLinks(paths.learnerDataDir).map((link) => [link.id, link]));
+		const reviewed = [] as PersonalLink[];
+		for (const id of ids) {
+			const link = byId.get(id);
+			if (!link || link.feedback) continue;
+			const comparison = comparePersonalLinkToWiki(link, graph);
+			const feedback = await reviewPersonalLink(link, graph, comparison, l2DataDir, completePromptOnce);
+			reviewed.push(setPersonalLinkFeedback(paths.learnerDataDir, id, feedback));
+		}
+		const patterns = updateCognitivePatternsFromLinks(paths.learnerDataDir, reviewed);
+		const reviewedResponses = reviewed.map((link) => ({ ...link, comparison: comparePersonalLinkToWiki(link, graph) }));
+		const chatFeedback = formatPersonalLinkReviewForChat(reviewedResponses, graph);
+		const sessionId = typeof body.session_id === "string" ? body.session_id : "";
+		const chatFeedbackPersisted = sessionId
+			? appendAssistantLearningFeedback(chatFeedback, sessionId)
+			: false;
+		json(res, 200, {
+			links: reviewedResponses,
+			patterns,
+			chat_feedback: chatFeedback,
+			chat_feedback_persisted: chatFeedbackPersisted,
+		});
+		return true;
+	}
+
+	const personalLinkPatchMatch = matchRoute("PATCH", method, url, "/api/learner/personal-links/:id");
+	if (personalLinkPatchMatch) {
+		const body = await readBody(req) as { status?: unknown };
+		if (body.status !== "proposed" && body.status !== "accepted" && body.status !== "rejected") {
+			json(res, 400, { error: "status must be proposed, accepted, or rejected" });
+			return true;
+		}
+		try {
+			const link = setPersonalLinkStatus(paths.learnerDataDir, personalLinkPatchMatch.id, body.status as PersonalLinkStatus);
+			json(res, 200, withWikiComparison(link, l2DataDir));
+		} catch (err) {
+			json(res, 404, { error: err instanceof Error ? err.message : "Personal link not found" });
+		}
+		return true;
+	}
+
+	const personalLinkDeleteMatch = matchRoute("DELETE", method, url, "/api/learner/personal-links/:id");
+	if (personalLinkDeleteMatch) {
+		if (!deletePersonalLink(paths.learnerDataDir, personalLinkDeleteMatch.id)) {
+			json(res, 404, { error: "Personal link not found" });
+			return true;
+		}
+		json(res, 200, { deleted: true });
+		return true;
+	}
 
 	// --- Learner profile API (L1) ---
 	if (method === "GET" && url === "/api/learner/profile") {

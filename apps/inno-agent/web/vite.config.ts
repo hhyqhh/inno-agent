@@ -8,6 +8,8 @@ import { defineConfig, type Plugin, type ResolvedConfig } from "vite";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const monoRoot = resolve(__dirname, "../../..");
+const backendPort = Number.parseInt(process.env.INNO_BACKEND_PORT ?? process.env.VITE_BACKEND_PORT ?? "3000", 10);
+const backendTarget = process.env.VITE_API_TARGET?.trim() || `http://localhost:${Number.isFinite(backendPort) ? backendPort : 3000}`;
 const COMPRESSIBLE_EXTENSIONS = new Set([".js", ".mjs", ".css", ".html", ".json", ".svg"]);
 const HEAVY_LAZY_CHUNK_PATTERNS = [
 	"pi-web-ui",
@@ -231,11 +233,11 @@ export default defineConfig({
 		port: 5173,
 		proxy: {
 			"/api": {
-				target: "http://localhost:3000",
+				target: backendTarget,
 				changeOrigin: true,
 				ws: true,
 			},
-			"/health": "http://localhost:3000",
+			"/health": backendTarget,
 		},
 	},
 	build: {

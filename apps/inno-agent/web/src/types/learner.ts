@@ -58,3 +58,58 @@ export interface LearnerPreferences {
 	feedback_tone: string[];
 	avoid: string[];
 }
+
+export type PersonalLinkStatus = "proposed" | "accepted" | "rejected";
+export type PersonalLinkAlignment = "aligned" | "system_indirect" | "learner_only";
+export type PersonalLinkVerdict = "supported" | "needs_bridge" | "explore";
+export type PersonalLinkRecommendedAction = "keep" | "add_bridge" | "replace" | "remove";
+
+export interface PersonalLinkFeedback {
+	verdict: PersonalLinkVerdict;
+	concept_clarification: string;
+	misconception_check: string;
+	summary: string;
+	evidence: string;
+	bridge_node_ids: string[];
+	recommended_action: PersonalLinkRecommendedAction;
+	recommended_node_ids: string[];
+	recommendation: string;
+	generated_by: "rules" | "model";
+	reviewed_at: string;
+}
+
+export interface PersonalLink {
+	id: string;
+	source: string;
+	target: string;
+	reason: string;
+	status: PersonalLinkStatus;
+	feedback?: PersonalLinkFeedback;
+	created_at: string;
+	updated_at: string;
+	comparison: {
+		alignment: PersonalLinkAlignment;
+		intermediates: string[];
+	};
+}
+
+export interface PersonalLinksResponse {
+	links: PersonalLink[];
+}
+
+export interface PersonalLinksBatchReviewResponse {
+	links: PersonalLink[];
+	patterns: CognitivePattern[];
+	chat_feedback: string;
+	chat_feedback_persisted: boolean;
+}
+
+export interface CognitivePattern {
+	pattern_id: string;
+	label: string;
+	description: string;
+	teaching_implication: string;
+	confidence: number;
+	evidence_count: number;
+	updated_at: string;
+}

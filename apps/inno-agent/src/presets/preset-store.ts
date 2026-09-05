@@ -239,17 +239,25 @@ export async function ensurePresetAvailable(
 		throw new Error(`Invalid preset id: ${presetId}`);
 	}
 	let remoteItems: Awaited<ReturnType<RemoteContentSource["listItems"]>> | null = null;
+	const bundledDir = join(bundledPresetsDir(paths), id);
 	try {
 		remoteItems = await source.listItems("presets", { forceRefresh: true });
 	} catch (err) {
-		if (cachedRemoteAvailability === false) {
+		const hasBundledPreset = existsSync(join(bundledDir, "preset.json"));
+		if (cachedRemoteAvailability === false && !hasBundledPreset) {
 			throw new PresetUnavailableError(id);
 		}
 		// Offline use is still allowed when the local cache contains the preset.
 		logger.warn({ err, presetId: id }, "failed to validate remote preset; falling back to cache");
 	}
 	if (remoteItems && !remoteItems.some((item) => item.name === id)) {
-		throw new PresetUnavailableError(id);
+		// Bundled presets are part of the application itself. They must remain
+		// usable even when the configured remote hub does not publish the same
+		// local preset (for example, a developer-added preset under
+		// apps/inno-agent/presets/).
+		if (!existsSync(join(bundledDir, "preset.json"))) {
+			throw new PresetUnavailableError(id);
+		}
 	}
 
 	try {

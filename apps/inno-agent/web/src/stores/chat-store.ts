@@ -830,6 +830,18 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.emit("change", undefined);
 	}
 
+	/** Add a server-persisted learning-system reply to the currently open chat. */
+	appendAssistantMessage(content: string): void {
+		this.messages = [...this.messages, {
+			role: "assistant",
+			content,
+			timestamp: Date.now(),
+			complete: true,
+			transient: false,
+		}];
+		this.emit("change", undefined);
+	}
+
 	setLoadingHistory(loading: boolean) {
 		this.isLoadingHistory = loading;
 		this.emit("change", undefined);

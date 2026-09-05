@@ -315,6 +315,37 @@ describe("server smoke", () => {
 		expect(gone.status).toBe(404);
 	});
 
+	it("learner personal links: create → compare → review → delete round-trip", async () => {
+		const created = await fetch(`http://127.0.0.1:${port}/api/learner/personal-links`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				source: "wiki/concepts/agent.md",
+				target: "wiki/concepts/retrieval.md",
+				reason: "Agent 可以用检索补充完成任务时需要的上下文。",
+			}),
+		});
+		expect(created.status).toBe(201);
+		const link = (await created.json()) as { id: string; status: string; comparison: { alignment: string } };
+		expect(link.status).toBe("proposed");
+		expect(link.comparison.alignment).toBe("learner_only");
+
+		const listed = await api("/api/learner/personal-links");
+		expect(listed.status).toBe(200);
+		expect(((await listed.json()) as { links: Array<{ id: string }> }).links.map((item) => item.id)).toContain(link.id);
+
+		const reviewed = await fetch(`http://127.0.0.1:${port}/api/learner/personal-links/${link.id}`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ status: "accepted" }),
+		});
+		expect(reviewed.status).toBe(200);
+		expect(((await reviewed.json()) as { status: string }).status).toBe("accepted");
+
+		const removed = await fetch(`http://127.0.0.1:${port}/api/learner/personal-links/${link.id}`, { method: "DELETE" });
+		expect(removed.status).toBe(200);
+	});
+
 	it("POST /api/skills/upload validates required fields", async () => {
 		const res = await fetch(`http://127.0.0.1:${port}/api/skills/upload`, {
 			method: "POST",

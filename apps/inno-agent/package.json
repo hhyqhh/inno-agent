@@ -8,7 +8,7 @@
 	},
 	"main": "./dist/index.js",
 	"scripts": {
-		"build": "tsc",
+		"build": "tsc && node scripts/copy-presets.mjs",
 		"dev": "tsc --watch",
 		"start": "node dist/cli.js",
 		"server": "node dist/server.js",

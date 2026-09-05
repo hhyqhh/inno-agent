@@ -447,6 +447,7 @@ const MIN_SVG_ZOOM = 0.25;
 const MAX_SVG_ZOOM = 4;
 const SVG_ZOOM_STEP = 0.25;
 const INITIAL_SVG_PAN = { x: 0, y: 0 };
+const MAX_INLINE_SVG_WIDTH = 480;
 
 type SvgPan = { x: number; y: number };
 
@@ -603,7 +604,7 @@ function SvgPreviewFrame({ svg, title, invalidMessage, zoom, pan, onPanChange, i
 				className={`inno-markdown-svg-preview${dimensions ? "" : " is-fallback"}`}
 				style={dimensions && !isFullscreen ? {
 					aspectRatio: String(dimensions.aspectRatio),
-					width: "100%",
+					width: `min(100%, ${MAX_INLINE_SVG_WIDTH}px)`,
 				} : undefined}
 			>
 				<RestrictedHtmlFrame

@@ -295,7 +295,7 @@ describe("MarkdownArtifact", () => {
 			await waitFor(() => expect(container.querySelector('[data-inno-artifact="plantuml"] .inno-markdown-svg-preview')).not.toBeNull());
 			const preview = container.querySelector<HTMLElement>('[data-inno-artifact="plantuml"] .inno-markdown-svg-preview')!;
 			const frame = container.querySelector<HTMLIFrameElement>('[data-inno-artifact="plantuml"] iframe')!;
-			expect(preview.style.width).toBe("100%");
+			expect(preview.style.width).toBe("min(100%, 480px)");
 			expect(preview.style.aspectRatio).toBeTruthy();
 			expect(frame.className).toContain("inno-markdown-svg-preview-frame");
 			expect(frame.srcdoc).toContain("svg{display:block;width:100% !important;height:auto !important");

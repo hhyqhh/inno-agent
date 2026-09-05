@@ -139,6 +139,35 @@ describe("SessionsStore navigation", () => {
 		expect(mocks.chatLoadHistory).toHaveBeenLastCalledWith(messages, "mermaid.jsonl");
 	});
 
+	it("publishes cached Mermaid history after the runtime preload instead of clearing the view", async () => {
+		const messages = [{
+			role: "assistant" as const,
+			content: "```mermaid\nflowchart LR\nA-->B\n```",
+			timestamp: Date.now(),
+		}];
+		mocks.getSession.mockResolvedValue({ ...session("mermaid.jsonl"), messages });
+		mocks.preloadMermaidMarkdownRuntime.mockResolvedValue(undefined);
+		const store = new SessionsStoreImpl();
+		await store.openSession("mermaid.jsonl", { historyMode: "none" });
+		expect(mocks.chatLoadHistory).toHaveBeenLastCalledWith(messages, "mermaid.jsonl");
+
+		// Re-opening the same session hits the message cache. The cached history
+		// must wait for the Mermaid runtime, but the view is never cleared into
+		// the empty loading state and no refetch is needed to get the ordering.
+		mocks.chatLoadHistory.mockClear();
+		mocks.chatSetLoadingHistory.mockClear();
+		let resolveRuntime!: () => void;
+		mocks.preloadMermaidMarkdownRuntime.mockReturnValue(new Promise<void>((resolve) => { resolveRuntime = resolve; }));
+		const reopening = store.openSession("mermaid.jsonl", { historyMode: "none" });
+		await vi.waitFor(() => expect(mocks.preloadMermaidMarkdownRuntime).toHaveBeenCalledTimes(2));
+		expect(mocks.chatLoadHistory).not.toHaveBeenCalled();
+		expect(mocks.chatSetLoadingHistory).not.toHaveBeenCalledWith(true);
+
+		resolveRuntime();
+		await vi.waitFor(() => expect(mocks.chatLoadHistory).toHaveBeenCalledWith(messages, "mermaid.jsonl"));
+		await reopening;
+	});
+
 	it("beginNewSession invalidates an in-flight openSession", async () => {
 		let resolveA!: (value: ReturnType<typeof session>) => void;
 		const a = new Promise<ReturnType<typeof session>>((resolve) => { resolveA = resolve; });

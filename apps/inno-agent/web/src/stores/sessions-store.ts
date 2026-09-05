@@ -39,7 +39,10 @@ function hasMermaidMessage(messages: ChatMessage[]): boolean {
 async function waitForMermaidRuntime(messages: ChatMessage[]): Promise<void> {
 	if (!hasMermaidMessage(messages)) return;
 	try {
-		await preloadMermaidMarkdownRuntime();
+		// Bound the wait: a hung chunk request must not pin history loading the
+		// way a stuck getSession would (#124); the catch below degrades to the
+		// plain-markdown path instead.
+		await withTimeout(preloadMermaidMarkdownRuntime(), 10_000, "Mermaid runtime load timed out");
 	} catch {
 		// MarkdownErrorBoundary will fall back to plain text if the optional
 		// renderer chunk cannot be loaded.
@@ -206,7 +209,13 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		void terminalStore.disconnect();
 
 		const cached = this._messageCache.get(id);
-		if (cached && !hasMermaidMessage(cached)) {
+		if (cached) {
+			// Mermaid history must not paint before its runtime chunk arrives, or
+			// the trace rows render first and the diagram pops in a frame later.
+			// Wait for the same preload the fresh-fetch path uses, then commit
+			// the cache — no need to refetch the whole session to get ordering.
+			await waitForMermaidRuntime(cached);
+			if (requestId !== this._openRequestId) return;
 			chatStore.loadHistory(cached, id);
 		} else {
 			chatStore.loadHistory([], id);

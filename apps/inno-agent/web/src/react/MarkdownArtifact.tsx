@@ -93,7 +93,9 @@ export function MarkdownArtifact({ content, streaming = false, animate, compact 
 	return (
 		<MarkdownErrorBoundary content={normalizedContent} className={className}>
 			{hasMermaid ? (
-				<div className="inno-mermaid-frame min-h-[288px] w-full">
+				// Reserve the diagram height only in full mode; compact surfaces
+				// (thinking cards) must stay as short as their content.
+				<div className={`inno-mermaid-frame w-full${compact ? "" : " min-h-[288px]"}`}>
 					{MermaidMarkdownRuntime ? (
 						<MermaidMarkdownRuntime {...runtimeProps} />
 					) : mermaidRuntimeFailed ? (

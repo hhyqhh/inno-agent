@@ -30,5 +30,11 @@ export function preloadMermaidMarkdownRuntime(): Promise<MermaidMarkdownRuntimeM
 		mermaidRuntimeModule = module;
 		return module;
 	});
-	return mermaidRuntimePromise;
+	// A rejected import stays rejected forever. Clear the cached promise so a
+	// transient network failure does not disable Mermaid until the next reload;
+	// the error itself still propagates to the current caller.
+	return mermaidRuntimePromise.catch((error: unknown) => {
+		mermaidRuntimePromise = null;
+		throw error;
+	});
 }

@@ -17,6 +17,8 @@ import { Fragment, useContext, useEffect, useId, useLayoutEffect, useMemo, useRe
 import { useTranslation } from "react-i18next";
 import { CodeBlockContainer, StreamdownContext, type CustomRendererProps } from "streamdown";
 import { terminalStore } from "../../stores/terminal-store.js";
+import { settingsStore } from "../../stores/settings-store.js";
+import { useStoreSnapshot } from "../hooks.js";
 import {
 	MarkdownFullscreenDialog,
 	MarkdownToolbar,
@@ -312,7 +314,10 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 	const [fullscreen, setFullscreen] = useState(false);
 	const [moreOpen, setMoreOpen] = useState(false);
 	const [copied, setCopied] = useState(false);
-	const canRun = /^(?:python|py)$/i.test(language) && !isIncomplete;
+	// "Run code" feeds the practice terminal, which Simple Mode hides; without
+	// this gate the click would queue a run into a drawer that never renders.
+	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
+	const canRun = !simpleMode && /^(?:python|py)$/i.test(language) && !isIncomplete;
 	const source = editedSource ?? code;
 	// The length check short-circuits before the line scan for short snippets;
 	// both avoid allocating a per-line array on every streaming re-render.

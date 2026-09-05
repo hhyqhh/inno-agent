@@ -11,12 +11,12 @@ function lazyRenderer(
 	Fallback: ComponentType<CustomRendererProps>,
 	LoadingFallback: ComponentType<CustomRendererProps> = Fallback,
 ): ComponentType<CustomRendererProps> {
-	const Component = lazy(loader);
+	const LazyComponent = lazy(loader);
 	return function DeferredArtifactRenderer(props: CustomRendererProps) {
 		return (
 			<RendererErrorBoundary fallback={<Fallback {...props} />} resetKey={`${props.language}\u0000${props.code}`}>
 				<Suspense fallback={<LoadingFallback {...props} />}>
-					<Component {...props} />
+					<LazyComponent {...props} />
 				</Suspense>
 			</RendererErrorBoundary>
 		);
@@ -68,6 +68,20 @@ function CodeRendererFallback({ code, language }: Pick<CustomRendererProps, "cod
 	);
 }
 
+/** Keep a generic code-renderer failure local to its fenced block. A cold
+ * highlighter or a renderer hook error must not make the outer Markdown tree
+ * fall back to printing the entire message source. */
+export function ResilientCodeRenderer(props: CustomRendererProps) {
+	return (
+		<RendererErrorBoundary
+			fallback={<CodeRendererFallback code={props.code} language={props.language} />}
+			resetKey={`${props.language}\u0000${props.code}\u0000${props.isIncomplete ? "incomplete" : "complete"}`}
+		>
+			<EnhancedCodeRenderer {...props} />
+		</RendererErrorBoundary>
+	);
+}
+
 function extractFallbackHtmlTitle(code: string): string {
 	return /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(code)?.[1]
 		?.replace(/<[^>]+>/g, "")
@@ -112,7 +126,6 @@ function ArtifactRendererFallback({ code, language, isIncomplete, showSource = t
  * actually fails, RendererErrorBoundary uses ArtifactRendererFallback so the
  * user still has a recoverable source view instead of a blank artifact. */
 function ArtifactRendererLoadingFallback(props: CustomRendererProps) {
-	if (props.isIncomplete) return <CodeRendererFallback code={props.code} language={props.language} />;
 	return <ArtifactRendererFallback {...props} showSource={false} />;
 }
 
@@ -121,14 +134,14 @@ function MermaidRendererFallback() {
 	const streamdownContext = useContext(StreamdownContext);
 	const toolbarEnabled = markdownToolbarEnabled(streamdownContext.controls, "mermaid");
 	const maxHeight = markdownMaxHeight(streamdownContext.codeBlockMaxHeight);
-		return (
-			<div data-inno-mermaid-preview="" data-inno-content-block="mermaid" className="inno-markdown-content-block inno-markdown-content-block--mermaid is-loading">
-				<div className="inno-markdown-content-header">
-					<span className="inno-markdown-content-title">{t("markdown.mermaidLabel", "Mermaid 图表")}</span>
-					{toolbarEnabled ? <div className="inno-markdown-toolbar" aria-hidden="true"><span className="inno-markdown-toolbar-skeleton" /></div> : null}
-				</div>
-				<div data-inno-mermaid-surface="" className="inno-mermaid-surface inno-markdown-mermaid-surface" style={maxHeight ? { maxHeight } : undefined}><div className="inno-mermaid-status" role="status"><span className="inno-mermaid-spinner" aria-hidden="true" />{t("markdown.mermaidLoading", "正在加载图表…")}</div></div>
+	return (
+		<div data-inno-mermaid-preview="" data-inno-content-block="mermaid" className="inno-markdown-content-block inno-markdown-content-block--mermaid is-loading">
+			<div className="inno-markdown-content-header">
+				<span className="inno-markdown-content-title">{t("markdown.mermaidLabel", "Mermaid 图表")}</span>
+				{toolbarEnabled ? <div className="inno-markdown-toolbar" aria-hidden="true"><span className="inno-markdown-toolbar-skeleton" /></div> : null}
 			</div>
+			<div data-inno-mermaid-surface="" className="inno-mermaid-surface inno-markdown-mermaid-surface" style={maxHeight ? { maxHeight } : undefined}><div className="inno-mermaid-status" role="status"><span className="inno-mermaid-spinner" aria-hidden="true" />{t("markdown.mermaidLoading", "正在加载图表…")}</div></div>
+		</div>
 	);
 }
 
@@ -145,6 +158,57 @@ const PlantUmlArtifactRenderer = lazyRenderer(() => import("./ArtifactRenderers.
 const EChartsArtifactRenderer = lazyRenderer(() => import("./ArtifactRenderers.js").then((module) => ({ default: module.EChartsArtifactRenderer })), ArtifactRendererFallback, ArtifactRendererLoadingFallback);
 const MermaidArtifactRenderer = lazyRenderer(() => import("./MermaidArtifactRenderer.js").then((module) => ({ default: module.MermaidArtifactRenderer })), MermaidSourceFallback, MermaidRendererFallback);
 
+const ECHARTS_SERIES_TYPES = new Set([
+	"bar",
+	"boxplot",
+	"candlestick",
+	"custom",
+	"effectscatter",
+	"funnel",
+	"gauge",
+	"graph",
+	"heatmap",
+	"line",
+	"lines",
+	"map",
+	"parallel",
+	"pictorialbar",
+	"pie",
+	"radar",
+	"sankey",
+	"scatter",
+	"sunburst",
+	"themeriver",
+	"treemap",
+	"tree",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Recognize the strict-JSON form commonly emitted for ECharts options. */
+function looksLikeEChartsOption(value: unknown): boolean {
+	if (!isRecord(value)) return false;
+	const series = value.series;
+	const items = Array.isArray(series) ? series : [series];
+	return items.some((item) => isRecord(item)
+		&& typeof item.type === "string"
+		&& ECHARTS_SERIES_TYPES.has(item.type.toLowerCase()));
+}
+
+function JsonCodeRenderer(props: CustomRendererProps) {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(props.code);
+	} catch {
+		return <ResilientCodeRenderer {...props} />;
+	}
+	return looksLikeEChartsOption(parsed)
+		? <EChartsArtifactRenderer {...props} />
+		: <ResilientCodeRenderer {...props} />;
+}
+
 export const SPECIAL_CODE_RENDERERS: CustomRenderer[] = [
 	{ language: "mermaid", component: MermaidArtifactRenderer },
 	{ language: ["html", "htm"], component: HtmlArtifactRenderer },
@@ -152,4 +216,5 @@ export const SPECIAL_CODE_RENDERERS: CustomRenderer[] = [
 	{ language: ["dot", "graphviz"], component: GraphvizArtifactRenderer },
 	{ language: ["plantuml", "puml"], component: PlantUmlArtifactRenderer },
 	{ language: ["echarts", "echart"], component: EChartsArtifactRenderer },
+	{ language: "json", component: JsonCodeRenderer },
 ];

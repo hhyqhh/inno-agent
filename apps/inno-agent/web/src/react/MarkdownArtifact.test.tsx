@@ -139,7 +139,7 @@ describe("MarkdownArtifact", () => {
 			"<body><h1>你好</h1><script>window.parent.__unsafe = true</script></body></html>",
 			"```",
 		].join("\n");
-		const { container, getByRole } = render(<MarkdownArtifact content={html} />);
+		const { container, getByRole, queryByRole } = render(<MarkdownArtifact content={html} />);
 
 		await waitFor(() => expect(container.querySelector('[data-inno-artifact="html"]')).not.toBeNull());
 		const frame = container.querySelector<HTMLIFrameElement>("iframe");
@@ -151,7 +151,7 @@ describe("MarkdownArtifact", () => {
 		expect(getByRole("tab", { name: "预览" })).not.toBeNull();
 		expect(getByRole("tab", { name: "预览" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("预览");
 		expect(getByRole("tab", { name: "查看源码" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("查看源码");
-		expect(getByRole("tab", { name: "分屏查看" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("分屏查看");
+		expect(queryByRole("tab", { name: "分屏查看" })).toBeNull();
 		expect(getByRole("button", { name: "复制源码" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("复制源码");
 		expect(getByRole("button", { name: "更多" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("更多");
 		const enableInteractiveButton = getByRole("button", { name: "启用交互预览" });
@@ -160,6 +160,7 @@ describe("MarkdownArtifact", () => {
 		fireEvent.click(enableInteractiveButton);
 		expect(getByRole("button", { name: "重置交互预览" })).not.toBeNull();
 		fireEvent.click(getByRole("button", { name: "更多" }));
+		expect(getByRole("menuitem", { name: "分屏查看" })).not.toBeNull();
 		expect(getByRole("menuitem", { name: "全屏查看" })).not.toBeNull();
 		expect(container.querySelector("iframe")?.getAttribute("sandbox")).toBe("allow-scripts");
 		expect(container.querySelector("iframe")?.getAttribute("srcdoc")).toContain("script-src 'unsafe-inline'");
@@ -263,6 +264,86 @@ describe("MarkdownArtifact", () => {
 		expect(srcdoc).not.toContain("onload");
 		expect(srcdoc).not.toContain("attacker.example");
 		expect(srcdoc).toContain("circle");
+	});
+
+	it("uses the shared error surface for invalid SVG instead of a bare SVG text fallback", async () => {
+		const source = [
+			"```svg",
+			'<svg viewBox="0 0 10 10"><stop stop-color="#48db" stop-color="#48dbfb" /></svg>',
+			"```",
+		].join("\n");
+		const { container } = render(<MarkdownArtifact content={source} />);
+
+		await waitFor(() => expect(container.querySelector('[data-inno-preview-error="svg"]')).not.toBeNull());
+		expect(container.querySelector(".inno-markdown-svg-preview-frame")).toBeNull();
+		expect(container.querySelector(".inno-markdown-preview-status-icon")).not.toBeNull();
+		expect(container.textContent).toContain("SVG 格式有误");
+		expect(container.querySelector(".inno-markdown-preview-error")).toBeNull();
+	});
+
+	it("scales generated PlantUML SVGs without enlarging their intrinsic width", async () => {
+		const generatedSvg = '<svg width="360" height="220" viewBox="0 0 360 220" xmlns="http://www.w3.org/2000/svg"><rect width="360" height="220" /></svg>';
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			ok: true,
+			status: 200,
+			text: async () => generatedSvg,
+		} as Response);
+		try {
+			const source = ["```plantuml", "@startuml", "Alice -> Bob: hello", "@enduml", "```"].join("\n");
+			const { container, getByRole } = render(<MarkdownArtifact content={source} />);
+
+			await waitFor(() => expect(container.querySelector('[data-inno-artifact="plantuml"] .inno-markdown-svg-preview')).not.toBeNull());
+			const preview = container.querySelector<HTMLElement>('[data-inno-artifact="plantuml"] .inno-markdown-svg-preview')!;
+			const frame = container.querySelector<HTMLIFrameElement>('[data-inno-artifact="plantuml"] iframe')!;
+			expect(preview.style.width).toBe("min(100%, 360px)");
+			expect(preview.style.aspectRatio).toBeTruthy();
+			expect(frame.className).toContain("inno-markdown-svg-preview-frame");
+			expect(frame.srcdoc).toContain("svg{display:block;width:auto !important;height:auto !important");
+			expect(getByRole("button", { name: "缩小" })).toHaveProperty("disabled", false);
+			expect(getByRole("button", { name: "放大" })).toHaveProperty("disabled", false);
+			fireEvent.click(getByRole("button", { name: "放大" }));
+			expect(frame.style.transform).toBe("scale(1.25)");
+			expect(getByRole("button", { name: "重置视图" })).toHaveProperty("disabled", false);
+			fireEvent.click(getByRole("button", { name: "重置视图" }));
+			await waitFor(() => {
+				const currentFrame = container.querySelector<HTMLIFrameElement>('[data-inno-artifact="plantuml"] iframe');
+				expect(currentFrame).not.toBeNull();
+				expect(currentFrame?.style.transform).toBe("");
+			});
+			const panSurface = container.querySelector<HTMLElement>('[data-inno-artifact="plantuml"] .inno-markdown-svg-pan-surface')!;
+			fireEvent.pointerDown(panSurface, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+			expect(panSurface.className).toContain("is-dragging");
+			fireEvent.pointerMove(panSurface, { clientX: 140, clientY: 130, movementX: 40, movementY: 30 });
+			await waitFor(() => expect(container.querySelector<HTMLIFrameElement>('[data-inno-artifact="plantuml"] iframe')?.style.transform).toBe("translate3d(40px, 30px, 0) scale(1)"));
+			fireEvent.pointerUp(panSurface, { pointerId: 1, clientX: 140, clientY: 130 });
+			fireEvent.click(getByRole("button", { name: "重置视图" }));
+			await waitFor(() => expect(container.querySelector<HTMLIFrameElement>('[data-inno-artifact="plantuml"] iframe')?.style.transform).toBe(""));
+			fireEvent.click(getByRole("button", { name: "更多" }));
+			fireEvent.click(getByRole("menuitem", { name: "全屏查看" }));
+			const fullscreenDialog = getByRole("dialog");
+			await waitFor(() => expect(fullscreenDialog.querySelector("iframe")).not.toBeNull());
+			expect(fullscreenDialog.querySelector<HTMLElement>(".inno-markdown-svg-preview")?.style.aspectRatio).toBe("");
+			expect(fullscreenDialog.querySelector<HTMLIFrameElement>("iframe")?.srcdoc).toContain("height:auto !important");
+			fireEvent.click(fullscreenDialog.querySelector<HTMLButtonElement>('button[aria-label="退出全屏"]')!);
+		} finally {
+			fetchMock.mockRestore();
+		}
+	});
+
+	it("adds zoom controls to inline SVG previews", async () => {
+		const source = [
+			"```svg",
+			'<svg width="200" height="120" viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg"><rect width="200" height="120" /></svg>',
+			"```",
+		].join("\n");
+		const { container, getByRole } = render(<MarkdownArtifact content={source} />);
+
+		await waitFor(() => expect(container.querySelector('[data-inno-artifact="svg"] .inno-markdown-svg-preview-frame')).not.toBeNull());
+		const frame = container.querySelector<HTMLIFrameElement>('[data-inno-artifact="svg"] iframe')!;
+		fireEvent.click(getByRole("button", { name: "放大" }));
+		expect(frame.style.transform).toBe("scale(1.25)");
+		fireEvent.click(getByRole("button", { name: "缩小" }));
+		expect(frame.style.transform).toBe("");
 	});
 
 	it("keeps prices as text by default and assigns collision-safe heading ids", () => {

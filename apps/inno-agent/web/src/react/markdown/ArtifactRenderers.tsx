@@ -1,4 +1,5 @@
 import {
+	AlertTriangle,
 	Check,
 	Code2,
 	Columns2,
@@ -12,10 +13,14 @@ import {
 	RotateCcw,
 	Save,
 	WrapText,
+	ZoomIn,
+	ZoomOut,
 } from "lucide-react";
 import plantumlEncoder from "plantuml-encoder";
 import {
 	Fragment,
+	type CSSProperties,
+	type PointerEvent as ReactPointerEvent,
 	type ReactNode,
 	useCallback,
 	useContext,
@@ -31,6 +36,8 @@ import {
 	downloadBlob,
 	MarkdownFullscreenDialog,
 	MarkdownToolbar,
+	MarkdownToolbarDivider,
+	MarkdownToolbarGroup,
 	ToolbarIconButton,
 	ToolbarMenu,
 	ToolbarMenuItem,
@@ -84,12 +91,12 @@ const SVG_ALLOWED_ATTRIBUTES = new Set([
 	"id", "class", "style", "href", "xlink:href", "role", "aria-label", "aria-hidden",
 ]);
 
-function sanitizeSvgMarkup(source: string, invalidMessage: string): string {
-	if (typeof DOMParser === "undefined" || typeof XMLSerializer === "undefined") return "";
+function sanitizeSvgMarkup(source: string): string | null {
+	if (typeof DOMParser === "undefined" || typeof XMLSerializer === "undefined") return null;
 	const documentNode = new DOMParser().parseFromString(source, "image/svg+xml");
 	const root = documentNode.documentElement;
 	if (root.localName.toLowerCase() !== "svg" || documentNode.querySelector("parsererror")) {
-		return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80"><text x="12" y="42">${invalidMessage}</text></svg>`;
+		return null;
 	}
 
 	for (const element of Array.from(root.querySelectorAll("*"))) {
@@ -184,7 +191,7 @@ interface ArtifactShellProps extends CustomRendererProps {
 	title: string;
 	extension: string;
 	mimeType?: string;
-	renderPreview: (source: string) => ReactNode;
+	renderPreview: (source: string, isFullscreen: boolean) => ReactNode;
 	renderToolbarAction?: (source: string) => ReactNode;
 }
 
@@ -249,7 +256,6 @@ function ArtifactToolbar({
 			<div className="inno-markdown-toolbar-group inno-markdown-toolbar-group--modes" role="tablist" aria-label={t("markdown.artifactView", "Artifact 视图")}>
 				<ToolbarSegmentedButton label={t("markdown.preview", "预览")} showLabel selected={displayMode === "preview"} disabled={!canPreview} onClick={onPreview}><Eye size={14} /></ToolbarSegmentedButton>
 				<ToolbarSegmentedButton label={t("markdown.viewSource", "查看源码")} showLabel selected={displayMode === "source"} onClick={onSource}><Code2 size={14} /></ToolbarSegmentedButton>
-				<ToolbarSegmentedButton label={t("markdown.splitView", "分屏查看")} showLabel selected={displayMode === "split"} disabled={!canPreview} onClick={onSplit}><Columns2 size={14} /></ToolbarSegmentedButton>
 			</div>
 			{copyEnabled ? (
 				<ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copySource", "复制源码")} showLabel onClick={onCopy}>
@@ -262,6 +268,7 @@ function ArtifactToolbar({
 					<MoreHorizontal size={14} />
 				</ToolbarIconButton>
 				<ToolbarMenu id={moreId} open={moreOpen} onClose={onCloseMore} label={t("markdown.moreTools", "更多")}>
+					<ToolbarMenuItem label={t("markdown.splitView", "分屏查看")} disabled={!canPreview} onClick={onSplit}><Columns2 size={14} /></ToolbarMenuItem>
 					<ToolbarMenuItem label={wrapped ? t("markdown.disableWrapText", "取消自动换行") : t("markdown.wrapText", "自动换行")} onClick={onWrap}><WrapText size={14} /></ToolbarMenuItem>
 					{editing ? (
 						<ToolbarMenuItem label={t("markdown.applyChanges", "应用更改")} onClick={onApply}><Save size={14} /></ToolbarMenuItem>
@@ -362,11 +369,11 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 
 	const content = (isFullscreen: boolean) => (
 		<div data-inno-content-block="artifact" className={`inno-markdown-artifact-content ${isFullscreen ? "is-fullscreen" : ""}`} style={!isFullscreen && maxHeight ? { maxHeight } : undefined}>
-			{displayMode === "preview" ? renderPreview(currentSource) : null}
+			{displayMode === "preview" ? renderPreview(currentSource, isFullscreen) : null}
 			{displayMode === "source" ? <ArtifactSource source={currentSource} editing={editing} wrapped={wrapped} onChange={setDraft} /> : null}
 			{displayMode === "split" ? (
 				<div className="inno-markdown-artifact-split">
-					<div className="inno-markdown-artifact-pane">{renderPreview(currentSource)}</div>
+					<div className="inno-markdown-artifact-pane">{renderPreview(currentSource, isFullscreen)}</div>
 					<div className="inno-markdown-artifact-pane"><ArtifactSource source={currentSource} editing={editing} wrapped={wrapped} onChange={setDraft} /></div>
 				</div>
 			) : null}
@@ -415,9 +422,9 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 			</div>
 
 			<MarkdownFullscreenDialog
-			open={fullscreen}
-			title={title}
-			ariaLabel={`${title} ${t("markdown.fullscreen", "全屏预览")}`}
+				open={fullscreen}
+				title={title}
+				ariaLabel={`${title} ${t("markdown.fullscreen", "全屏预览")}`}
 				closeLabel={t("markdown.exitFullscreen", "退出全屏")}
 				onClose={() => setFullscreen(false)}
 				actions={toolbarEnabled && (copyEnabled || downloadEnabled || toolbarAction) ? (
@@ -434,9 +441,92 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 	);
 }
 
-const SVG_PREVIEW_STYLE = "<style>html,body{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}svg{max-width:100%;max-height:100%;height:auto}</style>";
+const SVG_PREVIEW_STYLE = "<style>html,body{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}svg{display:block;width:auto !important;height:auto !important;max-width:100% !important;max-height:100% !important}</style>";
 
-function RestrictedHtmlFrame({ html, title, className = "", allowScripts = false }: { html: string; title: string; className?: string; allowScripts?: boolean }) {
+const MIN_SVG_ZOOM = 0.25;
+const MAX_SVG_ZOOM = 4;
+const SVG_ZOOM_STEP = 0.25;
+const INITIAL_SVG_PAN = { x: 0, y: 0 };
+
+type SvgPan = { x: number; y: number };
+
+function useSvgZoom(source: string) {
+	const [zoom, setZoom] = useState(1);
+	const [pan, setPan] = useState<SvgPan>(INITIAL_SVG_PAN);
+
+	useEffect(() => {
+		setZoom(1);
+		setPan(INITIAL_SVG_PAN);
+	}, [source]);
+
+	const onZoomChange = useCallback((delta: number) => {
+		setZoom((value) => Math.min(MAX_SVG_ZOOM, Math.max(MIN_SVG_ZOOM, Math.round((value + delta) * 100) / 100)));
+	}, []);
+	const onReset = useCallback(() => {
+		setZoom(1);
+		setPan(INITIAL_SVG_PAN);
+	}, []);
+
+	return { zoom, pan, onZoomChange, onPanChange: setPan, onReset };
+}
+
+function SvgZoomControls({ zoom, pan, onZoomChange, onReset, disabled }: { zoom: number; pan: SvgPan; onZoomChange: (delta: number) => void; onReset: () => void; disabled: boolean }) {
+	const { t } = useTranslation();
+	const viewIsReset = zoom === 1 && pan.x === 0 && pan.y === 0;
+	return (
+		<>
+			<MarkdownToolbarGroup>
+				<ToolbarIconButton label={t("markdown.zoomOut", "缩小")} showLabel disabled={disabled || zoom <= MIN_SVG_ZOOM} onClick={() => onZoomChange(-SVG_ZOOM_STEP)}><ZoomOut size={14} /></ToolbarIconButton>
+				<ToolbarIconButton label={t("markdown.zoomIn", "放大")} showLabel disabled={disabled || zoom >= MAX_SVG_ZOOM} onClick={() => onZoomChange(SVG_ZOOM_STEP)}><ZoomIn size={14} /></ToolbarIconButton>
+				<ToolbarIconButton label={t("markdown.resetView", "重置视图")} showLabel disabled={disabled || viewIsReset} onClick={onReset}><RotateCcw size={14} /></ToolbarIconButton>
+			</MarkdownToolbarGroup>
+			<MarkdownToolbarDivider />
+		</>
+	);
+}
+
+function useSvgArtifactControls(source: string, isIncomplete: boolean) {
+	const streamdownContext = useContext(StreamdownContext);
+	const { zoom, pan, onZoomChange, onPanChange, onReset } = useSvgZoom(source);
+	const panZoomEnabled = markdownControlEnabled(streamdownContext.controls, "code", "panZoom");
+	const renderToolbarAction = useCallback((currentSource: string) => panZoomEnabled ? (
+		<SvgZoomControls
+			zoom={zoom}
+			pan={pan}
+			onZoomChange={onZoomChange}
+			onReset={onReset}
+			disabled={isIncomplete || !currentSource.trim()}
+		/>
+	) : null, [isIncomplete, onReset, onZoomChange, pan, panZoomEnabled, zoom]);
+	return { zoom, pan, onPanChange, renderToolbarAction };
+}
+
+type SvgPreviewDimensions = {
+	aspectRatio: number;
+	intrinsicWidth: number;
+};
+
+function getSvgPreviewDimensions(svg: string): SvgPreviewDimensions | null {
+	const width = /\bwidth\s*=\s*["']([0-9]+(?:\.[0-9]+)?)(?:\s*px)?["']/i.exec(svg)?.[1];
+	const height = /\bheight\s*=\s*["']([0-9]+(?:\.[0-9]+)?)(?:\s*px)?["']/i.exec(svg)?.[1];
+	const widthValue = width ? Number(width) : null;
+	const heightValue = height ? Number(height) : null;
+	if (widthValue && heightValue && Number.isFinite(widthValue) && Number.isFinite(heightValue) && widthValue > 0 && heightValue > 0) {
+		return { aspectRatio: widthValue / heightValue, intrinsicWidth: widthValue };
+	}
+
+	const viewBox = /\bviewBox\s*=\s*["']([^"']+)["']/i.exec(svg)?.[1]
+		?.trim()
+		.split(/[\s,]+/)
+		.map(Number);
+	if (viewBox && viewBox.length >= 4 && Number.isFinite(viewBox[2]) && Number.isFinite(viewBox[3]) && viewBox[2] > 0 && viewBox[3] > 0) {
+		return { aspectRatio: viewBox[2] / viewBox[3], intrinsicWidth: viewBox[2] };
+	}
+
+	return null;
+}
+
+function RestrictedHtmlFrame({ html, title, className = "", allowScripts = false, style }: { html: string; title: string; className?: string; allowScripts?: boolean; style?: CSSProperties }) {
 	const srcDoc = useMemo(() => injectRestrictedHead(html, allowScripts ? INTERACTIVE_PREVIEW_CSP : RESTRICTED_PREVIEW_CSP), [allowScripts, html]);
 	return (
 		<iframe
@@ -444,16 +534,86 @@ function RestrictedHtmlFrame({ html, title, className = "", allowScripts = false
 			sandbox={allowScripts ? "allow-scripts" : ""}
 			srcDoc={srcDoc}
 			className={`inno-markdown-preview-frame ${className}`}
+			style={style}
 		/>
 	);
 }
 
 function HtmlPreview({ html, title, interactiveEnabled }: { html: string; title: string; interactiveEnabled: boolean }) {
-	const requiresInteraction = useMemo(() => htmlRequiresInteraction(html), [html]);
+	const requiresInteraction = htmlRequiresInteraction(html);
 
 	return (
 		<div className="inno-markdown-html-preview">
 			<RestrictedHtmlFrame html={html} title={title} allowScripts={requiresInteraction && interactiveEnabled} />
+		</div>
+	);
+}
+
+function SvgPreviewError({ message }: { message: string }) {
+	return (
+		<div className="inno-markdown-preview-status inno-markdown-preview-status--error" data-inno-preview-error="svg" role="alert">
+			<AlertTriangle className="inno-markdown-preview-status-icon" size={16} strokeWidth={1.8} aria-hidden="true" />
+			<span>{message}</span>
+		</div>
+	);
+}
+
+function SvgPreviewFrame({ svg, title, invalidMessage, zoom, pan, onPanChange, isFullscreen = false }: { svg: string | null; title: string; invalidMessage: string; zoom: number; pan: SvgPan; onPanChange: (nextPan: SvgPan) => void; isFullscreen?: boolean }) {
+	const [dragging, setDragging] = useState(false);
+	const dragRef = useRef<{ startX: number; startY: number; origin: SvgPan } | null>(null);
+
+	if (!svg) return <SvgPreviewError message={invalidMessage} />;
+	const dimensions = getSvgPreviewDimensions(svg);
+	const transform = zoom === 1 && pan.x === 0 && pan.y === 0
+		? undefined
+		: { transform: pan.x === 0 && pan.y === 0 ? `scale(${zoom})` : `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` };
+	const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+		if (event.button === 2) return;
+		dragRef.current = { startX: event.clientX, startY: event.clientY, origin: pan };
+		event.currentTarget.setPointerCapture?.(event.pointerId);
+		setDragging(true);
+		event.preventDefault();
+	};
+	const moveDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+		const drag = dragRef.current;
+		if (!drag) return;
+		onPanChange({
+			x: drag.origin.x + event.clientX - drag.startX,
+			y: drag.origin.y + event.clientY - drag.startY,
+		});
+	};
+	const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+		if (!dragRef.current) return;
+		dragRef.current = null;
+		setDragging(false);
+		if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId);
+	};
+	return (
+		<div
+			className={`inno-markdown-svg-pan-surface${dragging ? " is-dragging" : ""}`}
+			onPointerDown={startDrag}
+			onPointerMove={moveDrag}
+			onPointerUp={endDrag}
+			onPointerCancel={endDrag}
+			onLostPointerCapture={() => {
+				dragRef.current = null;
+				setDragging(false);
+			}}
+		>
+			<div
+				className={`inno-markdown-svg-preview${dimensions ? "" : " is-fallback"}`}
+				style={dimensions && !isFullscreen ? {
+					aspectRatio: String(dimensions.aspectRatio),
+					width: `min(100%, ${dimensions.intrinsicWidth}px)`,
+				} : undefined}
+			>
+				<RestrictedHtmlFrame
+					title={title}
+					html={`${SVG_PREVIEW_STYLE}${svg}`}
+					className="inno-markdown-svg-preview-frame"
+					style={transform}
+				/>
+			</div>
 		</div>
 	);
 }
@@ -492,15 +652,18 @@ export function HtmlArtifactRenderer(props: CustomRendererProps) {
 
 export function SvgArtifactRenderer(props: CustomRendererProps) {
 	const { t } = useTranslation();
+	const { zoom, pan, onPanChange, renderToolbarAction } = useSvgArtifactControls(props.code, props.isIncomplete);
 	const title = t("markdown.svgImage", "SVG 图像");
-	const invalidMessage = t("markdown.invalidSvg", "SVG 内容无效");
-	const renderSvg = (source: string) => (
-		<RestrictedHtmlFrame
-			title={title}
-			html={`${SVG_PREVIEW_STYLE}${sanitizeSvgMarkup(source, invalidMessage)}`}
-		/>
-	);
-	return <ArtifactShell {...props} title={title} extension="svg" mimeType="image/svg+xml;charset=utf-8" renderPreview={renderSvg} />;
+	const invalidMessage = t("markdown.invalidSvg", "SVG 格式有误");
+	const renderSvg = (source: string, isFullscreen: boolean) => <SvgPreviewFrame svg={sanitizeSvgMarkup(source)} title={title} invalidMessage={invalidMessage} zoom={zoom} pan={pan} onPanChange={onPanChange} isFullscreen={isFullscreen} />;
+	return <ArtifactShell
+		{...props}
+		title={title}
+		extension="svg"
+		mimeType="image/svg+xml;charset=utf-8"
+		renderPreview={renderSvg}
+		renderToolbarAction={renderToolbarAction}
+	/>;
 }
 
 function AsyncSvgPreview({
@@ -508,18 +671,26 @@ function AsyncSvgPreview({
 	title,
 	isIncomplete,
 	invalidMessage,
+	zoom,
+	pan,
+	onPanChange,
+	isFullscreen,
 	render,
 }: {
 	source: string;
 	title: string;
 	isIncomplete: boolean;
 	invalidMessage: string;
+	zoom: number;
+	pan: SvgPan;
+	onPanChange: (nextPan: SvgPan) => void;
+	isFullscreen?: boolean;
 	render: (source: string, signal: AbortSignal) => Promise<string>;
 }) {
 	const { t } = useTranslation();
-	const [svg, setSvg] = useState("");
+	const [svg, setSvg] = useState<string | null>(null);
 	const [error, setError] = useState("");
-	const [loading, setLoading] = useState(false);
+	const [loading, setLoading] = useState(() => !isIncomplete && source.trim().length > 0);
 
 	useEffect(() => {
 		if (isIncomplete || !source.trim()) return;
@@ -528,7 +699,11 @@ function AsyncSvgPreview({
 		setError("");
 		render(source, controller.signal)
 			.then((value) => {
-				if (!controller.signal.aborted) setSvg(sanitizeSvgMarkup(value, invalidMessage));
+				if (!controller.signal.aborted) {
+					const sanitized = sanitizeSvgMarkup(value);
+					setSvg(sanitized);
+					if (!sanitized) setError(invalidMessage);
+				}
 			})
 			.catch((reason: unknown) => {
 				if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
@@ -539,9 +714,9 @@ function AsyncSvgPreview({
 		return () => controller.abort();
 	}, [isIncomplete, invalidMessage, render, source]);
 
-	if (isIncomplete || loading) return <div className="inno-markdown-preview-status" role="status">{t("markdown.generatingChart", "正在生成图表…")}</div>;
-	if (error) return <div role="alert" className="inno-markdown-preview-error">{error}</div>;
-	return <RestrictedHtmlFrame title={title} html={`${SVG_PREVIEW_STYLE}${svg}`} />;
+	if (isIncomplete || loading || (!svg && !error && source.trim().length > 0)) return <div className="inno-markdown-preview-status" role="status">{t("markdown.generatingChart", "正在生成图表…")}</div>;
+	if (error) return <SvgPreviewError message={error} />;
+	return <SvgPreviewFrame svg={svg} title={title} invalidMessage={invalidMessage} zoom={zoom} pan={pan} onPanChange={onPanChange} isFullscreen={isFullscreen} />;
 }
 
 type VizModule = typeof import("@viz-js/viz");
@@ -555,15 +730,17 @@ async function renderGraphviz(source: string): Promise<string> {
 
 export function GraphvizArtifactRenderer(props: CustomRendererProps) {
 	const { t } = useTranslation();
+	const { zoom, pan, onPanChange, renderToolbarAction } = useSvgArtifactControls(props.code, props.isIncomplete);
 	const title = t("markdown.graphvizChart", "Graphviz 图表");
-	const invalidMessage = t("markdown.invalidSvg", "SVG 内容无效");
+	const invalidMessage = t("markdown.invalidSvg", "SVG 格式有误");
 	const renderer = useCallback((source: string) => renderGraphviz(source), []);
 	return (
 		<ArtifactShell
 			{...props}
 			title={title}
 			extension="dot"
-			renderPreview={(source) => <AsyncSvgPreview source={source} title={title} isIncomplete={props.isIncomplete} invalidMessage={invalidMessage} render={renderer} />}
+			renderPreview={(source, isFullscreen) => <AsyncSvgPreview source={source} title={title} isIncomplete={props.isIncomplete} invalidMessage={invalidMessage} zoom={zoom} pan={pan} onPanChange={onPanChange} isFullscreen={isFullscreen} render={renderer} />}
+			renderToolbarAction={renderToolbarAction}
 		/>
 	);
 }
@@ -572,8 +749,9 @@ const PLANTUML_SERVER = "https://www.plantuml.com/plantuml/svg";
 
 export function PlantUmlArtifactRenderer(props: CustomRendererProps) {
 	const { t } = useTranslation();
+	const { zoom, pan, onPanChange, renderToolbarAction } = useSvgArtifactControls(props.code, props.isIncomplete);
 	const title = t("markdown.plantumlChart", "PlantUML 图表（公共服务渲染）");
-	const invalidMessage = t("markdown.invalidSvg", "SVG 内容无效");
+	const invalidMessage = t("markdown.invalidSvg", "SVG 格式有误");
 	const renderer = useCallback(async (source: string, signal: AbortSignal) => {
 		const response = await fetch(`${PLANTUML_SERVER}/${plantumlEncoder.encode(source)}`, { signal });
 		if (!response.ok) {
@@ -588,7 +766,8 @@ export function PlantUmlArtifactRenderer(props: CustomRendererProps) {
 			{...props}
 			title={title}
 			extension="puml"
-			renderPreview={(source) => <AsyncSvgPreview source={source} title={title} isIncomplete={props.isIncomplete} invalidMessage={invalidMessage} render={renderer} />}
+			renderPreview={(source, isFullscreen) => <AsyncSvgPreview source={source} title={title} isIncomplete={props.isIncomplete} invalidMessage={invalidMessage} zoom={zoom} pan={pan} onPanChange={onPanChange} isFullscreen={isFullscreen} render={renderer} />}
+			renderToolbarAction={renderToolbarAction}
 		/>
 	);
 }
@@ -597,6 +776,11 @@ interface EChartsInstance {
 	setOption(option: unknown, notMerge?: boolean): void;
 	resize(): void;
 	dispose(): void;
+}
+
+interface ParsedEChartsOption {
+	option: unknown | null;
+	error: string;
 }
 
 const UNSAFE_ECHARTS_URL_RE = /\b(?:https?:|javascript:|data:text\/html)|^\/\//i;
@@ -616,49 +800,73 @@ function containsUnsafeUrl(value: unknown, depth = 0): boolean {
 	return false;
 }
 
+function parseEChartsOption(source: string, t: ReturnType<typeof useTranslation>["t"]): ParsedEChartsOption {
+	if (!source.trim()) return { option: null, error: "" };
+	try {
+		const option = JSON.parse(source);
+		if (!option || typeof option !== "object" || Array.isArray(option)) {
+			throw new Error(t("markdown.invalidEchartsJson", "ECharts 配置不是有效 JSON"));
+		}
+		if (containsUnsafeUrl(option)) {
+			throw new Error(t("markdown.unsafeEchartsConfig", "图表配置包含不安全的外部资源地址。"));
+		}
+		return { option, error: "" };
+	} catch (reason) {
+		return {
+			option: null,
+			error: reason instanceof Error ? reason.message : t("markdown.invalidEchartsJson", "ECharts 配置不是有效 JSON"),
+		};
+	}
+}
+
 function EChartsPreview({ source, isIncomplete }: { source: string; isIncomplete: boolean }) {
 	const { t } = useTranslation();
 	const hostRef = useRef<HTMLDivElement>(null);
 	const chartRef = useRef<EChartsInstance | null>(null);
-	const [error, setError] = useState("");
+	const parsed = useMemo(() => parseEChartsOption(source, t), [source, t]);
+	const [runtimeError, setRuntimeError] = useState("");
 
 	useEffect(() => {
-		if (isIncomplete || !source.trim() || !hostRef.current) return;
-		let disposed = false;
-		let option: unknown;
-		try {
-			option = JSON.parse(source);
-			if (containsUnsafeUrl(option)) {
-				throw new Error(t("markdown.unsafeEchartsConfig", "图表配置包含不安全的外部资源地址。"));
-			}
-		} catch (reason) {
-			setError(reason instanceof Error ? reason.message : t("markdown.invalidEchartsJson", "ECharts 配置不是有效 JSON"));
+		const host = hostRef.current;
+		if (!host) return;
+		const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => chartRef.current?.resize());
+		observer?.observe(host);
+		return () => observer?.disconnect();
+	}, []);
+
+	useEffect(() => {
+		const host = hostRef.current;
+		if (isIncomplete || parsed.error || parsed.option === null || !host) {
+			chartRef.current?.dispose();
+			chartRef.current = null;
 			return;
 		}
 
-		setError("");
+		let cancelled = false;
+		setRuntimeError("");
 		void import("echarts").then((echarts) => {
-			if (disposed || !hostRef.current) return;
-			const chart = echarts.init(hostRef.current, undefined, { renderer: "svg" }) as EChartsInstance;
+			if (cancelled || !hostRef.current) return;
+			const chart = chartRef.current ?? (echarts.init(host, undefined, { renderer: "svg" }) as EChartsInstance);
 			chartRef.current = chart;
-			chart.setOption(option, true);
+			chart.setOption(parsed.option, true);
+		}).catch((reason: unknown) => {
+			if (!cancelled) setRuntimeError(reason instanceof Error ? reason.message : String(reason));
 		});
-
-		const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => chartRef.current?.resize());
-		if (observer && hostRef.current) observer.observe(hostRef.current);
 		return () => {
-			disposed = true;
-			observer?.disconnect();
-			chartRef.current?.dispose();
-			chartRef.current = null;
+			cancelled = true;
 		};
-	}, [isIncomplete, source, t]);
+	}, [isIncomplete, parsed]);
+
+	useEffect(() => () => {
+		chartRef.current?.dispose();
+		chartRef.current = null;
+	}, []);
 
 	if (isIncomplete) return <div className="inno-markdown-preview-status" role="status">{t("markdown.generatingChart", "正在生成图表…")}</div>;
 	return (
 		<div className="inno-markdown-echarts-preview">
 			<div ref={hostRef} className="inno-markdown-echarts-host" />
-			{error ? <div role="alert" className="inno-markdown-preview-error">{error}</div> : null}
+			{parsed.error || runtimeError ? <div role="alert" className="inno-markdown-preview-error">{parsed.error || runtimeError}</div> : null}
 		</div>
 	);
 }

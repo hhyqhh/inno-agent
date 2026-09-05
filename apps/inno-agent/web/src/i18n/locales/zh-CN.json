@@ -1123,7 +1123,7 @@
 		"graphvizChart": "Graphviz 图表",
 		"plantumlChart": "PlantUML 图表（公共服务渲染）",
 		"echartsChart": "ECharts 图表",
-		"invalidSvg": "SVG 内容无效",
+		"invalidSvg": "SVG 格式有误",
 		"plantumlSyntaxError": "PlantUML 语法有误，无法生成图表。",
 		"plantumlServerError": "PlantUML 服务返回 {{status}}",
 		"unsafeEchartsConfig": "图表配置包含不安全的外部资源地址。",

@@ -606,6 +606,7 @@ summary:focus-visible {
 }
 
 .inno-markdown [data-streamdown="code-block"] {
+	position: relative;
 	margin-block: 0.75rem;
 	gap: 0;
 	padding: 0;
@@ -613,17 +614,37 @@ summary:focus-visible {
 	background: var(--inno-content-muted-surface);
 }
 
-/* Streamdown only dispatches fences WITH a language tag to the custom
-   renderer — a bare ``` fence (or an unknown language) still renders the
-   stock header plus the stock floating download/copy pill. Both add chrome
-   without information, so drop them and let these blocks render as plain
-   code surfaces. The custom renderer's header carries its own
-   .inno-markdown-content-header class and is not affected. */
-.inno-markdown [data-streamdown="code-block-header"]:not(.inno-markdown-content-header) {
-	display: none;
+/* Bare and unknown-language fences stay on Streamdown's stock renderer.
+   Keep their header so every ordinary code block has the same visual chrome
+   as a named fence, but keep only the useful copy action in that header. */
+.inno-markdown [data-streamdown="code-block-header"]:not(.inno-markdown-content-header) > span {
+	margin-left: 0;
+	color: var(--inno-text);
+	font-size: 0.75rem;
+	font-weight: 650;
+}
+
+.inno-markdown [data-streamdown="code-block-header"]:not(.inno-markdown-content-header) > span:empty::before {
+	content: "text";
 }
 
 .inno-markdown [data-streamdown="code-block"] > div:has(> [data-streamdown="code-block-actions"]) {
+	position: absolute;
+	top: 0;
+	right: 0;
+	margin-top: 0;
+}
+
+.inno-markdown [data-streamdown="code-block-actions"] {
+	height: var(--inno-content-header-height);
+	min-height: var(--inno-content-header-height);
+	padding-inline: 0.5rem;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.inno-markdown [data-streamdown="code-block-download-button"] {
 	display: none;
 }
 
@@ -799,6 +820,62 @@ summary:focus-visible {
 	background: var(--inno-content-surface);
 }
 
+.inno-markdown-svg-pan-surface {
+	position: relative;
+	box-sizing: border-box;
+	display: flex;
+	width: 100%;
+	min-height: 0;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+	touch-action: none;
+	user-select: none;
+	cursor: grab;
+}
+
+.inno-markdown-svg-pan-surface.is-dragging {
+	cursor: grabbing;
+}
+
+.inno-markdown-svg-preview {
+	position: relative;
+	box-sizing: border-box;
+	flex: 0 0 auto;
+	min-height: 0;
+	margin-inline: auto;
+	overflow: visible;
+	background: var(--inno-content-surface);
+}
+
+.inno-markdown-svg-preview.is-fallback {
+	min-height: 16rem;
+}
+
+.inno-markdown-svg-preview-frame {
+	min-height: 0;
+	pointer-events: none;
+	transform-origin: center;
+	transition: transform 120ms ease-out;
+}
+
+.inno-markdown-svg-pan-surface.is-dragging .inno-markdown-svg-preview-frame {
+	transition: none;
+}
+
+.inno-markdown-artifact-content.is-fullscreen .inno-markdown-svg-pan-surface {
+	height: 100%;
+	min-height: 0;
+}
+
+.inno-markdown-artifact-content.is-fullscreen .inno-markdown-svg-preview {
+	width: 100% !important;
+	height: 100%;
+	min-height: 0;
+	max-height: none;
+	aspect-ratio: auto !important;
+}
+
 .inno-markdown-html-preview {
 	position: relative;
 	height: 100%;
@@ -864,6 +941,15 @@ summary:focus-visible {
 	background: var(--inno-danger-bg);
 	color: var(--inno-danger);
 	text-align: left;
+}
+
+.inno-markdown-preview-status--error {
+	gap: 0.5rem;
+	color: var(--inno-danger);
+}
+
+.inno-markdown-preview-status-icon {
+	flex: 0 0 auto;
 }
 
 .inno-markdown-echarts-preview {

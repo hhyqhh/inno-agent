@@ -209,6 +209,7 @@ interface CodeToolbarProps {
 	wrapped: boolean;
 	copied: boolean;
 	isFullscreen: boolean;
+	hasEditedSource: boolean;
 	onToggleMore: () => void;
 	onCloseMore: () => void;
 	onRun: () => void;
@@ -220,7 +221,6 @@ interface CodeToolbarProps {
 	onCopy: () => void | Promise<void>;
 	onDownload: () => void;
 	onFullscreen: () => void;
-	hasEditedSource: boolean;
 }
 
 function CodeToolbar({
@@ -237,6 +237,7 @@ function CodeToolbar({
 	wrapped,
 	copied,
 	isFullscreen,
+	hasEditedSource,
 	onToggleMore,
 	onCloseMore,
 	onRun,
@@ -248,28 +249,38 @@ function CodeToolbar({
 	onCopy,
 	onDownload,
 	onFullscreen,
-	hasEditedSource,
 }: CodeToolbarProps) {
 	const { t } = useTranslation();
+	// Keep the header useful: copy, run, and editing are primary actions with
+	// labels. Wrapping, exporting, and fullscreen stay behind More.
+	const canEdit = !isIncomplete && !isFullscreen;
+	const canDownload = downloadEnabled && !isIncomplete;
+	const canFullscreen = fullscreenEnabled && !isFullscreen && !isIncomplete && !editing;
+	// Wrapping is always available in the More menu once the fence is complete.
+	const hasMoreActions = !isIncomplete;
+	const hasActions = copyEnabled || canRun || hasMoreActions;
+	if (!hasActions) return null;
+
 	return (
 		<MarkdownToolbar label={t("markdown.codeTools", "代码工具")}>
 			<MarkdownToolbarGroup>
-					<ToolbarIconButton label={t("markdown.wrapText", "自动换行")} showLabel active={wrapped} onClick={onWrap}><WrapText size={14} /></ToolbarIconButton>
-					{expandable ? (
-						<ToolbarIconButton label={expanded ? t("markdown.collapseCode", "折叠代码") : t("markdown.expandCode", "展开代码")} showLabel active={expanded} onClick={onExpand}>
-							{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-						</ToolbarIconButton>
-					) : null}
-					{copyEnabled ? <ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copyCode", "复制代码")} showLabel onClick={onCopy}>
+				{copyEnabled ? <ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copyCode", "复制代码")} showLabel onClick={onCopy}>
 					{copied ? <Check size={14} /> : <Copy size={14} />}
 				</ToolbarIconButton> : null}
-			</MarkdownToolbarGroup>
-			<MarkdownToolbarGroup>
 				{canRun ? <ToolbarIconButton label={t("markdown.runCode", "运行代码")} showLabel onClick={onRun}><Play size={14} /></ToolbarIconButton> : null}
-					<div className="inno-markdown-toolbar-menu-anchor">
-						<ToolbarIconButton
-							label={t("markdown.moreTools", "更多")}
-							showLabel
+				{canEdit ? (
+					<ToolbarIconButton
+						label={editing ? t("markdown.applyChanges", "应用更改") : t("markdown.editCopy", "编辑副本")}
+						showLabel
+						onClick={editing ? onApply : onEdit}
+					>
+						{editing ? <Save size={14} /> : <Pencil size={14} />}
+					</ToolbarIconButton>
+				) : null}
+				{hasMoreActions ? <div className="inno-markdown-toolbar-menu-anchor">
+					<ToolbarIconButton
+						label={t("markdown.moreTools", "更多")}
+						showLabel
 						menu
 						expanded={moreOpen}
 						aria-controls={moreId}
@@ -278,16 +289,19 @@ function CodeToolbar({
 						<MoreHorizontal size={14} />
 					</ToolbarIconButton>
 					<ToolbarMenu id={moreId} open={moreOpen} onClose={onCloseMore} label={t("markdown.moreTools", "更多")}>
-						{editing ? (
-							<ToolbarMenuItem label={t("markdown.applyChanges", "应用更改")} onClick={onApply}><Save size={14} /></ToolbarMenuItem>
-						) : (
-							<ToolbarMenuItem label={t("markdown.editCopy", "编辑副本")} disabled={isIncomplete} onClick={onEdit}><Pencil size={14} /></ToolbarMenuItem>
-						)}
+						{expandable ? (
+							<ToolbarMenuItem label={expanded ? t("markdown.collapseCode", "折叠代码") : t("markdown.expandCode", "展开代码")} onClick={onExpand}>
+								{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+							</ToolbarMenuItem>
+						) : null}
+						<ToolbarMenuItem label={wrapped ? t("markdown.disableWrapText", "取消自动换行") : t("markdown.wrapText", "自动换行")} onClick={onWrap}>
+							<WrapText size={14} />
+						</ToolbarMenuItem>
 						{hasEditedSource ? <ToolbarMenuItem label={t("markdown.restoreOriginal", "恢复模型原文")} onClick={onRestore}><RotateCcw size={14} /></ToolbarMenuItem> : null}
-						{downloadEnabled ? <ToolbarMenuItem label={t("markdown.downloadCode", "下载代码")} onClick={onDownload}><Download size={14} /></ToolbarMenuItem> : null}
-					{fullscreenEnabled && !isFullscreen ? <ToolbarMenuItem label={t("markdown.fullscreen", "全屏查看")} disabled={isIncomplete} onClick={onFullscreen}><Maximize2 size={14} /></ToolbarMenuItem> : null}
+						{canDownload ? <ToolbarMenuItem label={t("markdown.downloadCode", "下载代码")} onClick={onDownload}><Download size={14} /></ToolbarMenuItem> : null}
+						{canFullscreen ? <ToolbarMenuItem label={t("markdown.fullscreen", "全屏查看")} onClick={onFullscreen}><Maximize2 size={14} /></ToolbarMenuItem> : null}
 					</ToolbarMenu>
-				</div>
+				</div> : null}
 			</MarkdownToolbarGroup>
 		</MarkdownToolbar>
 	);
@@ -317,13 +331,13 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 	// "Run code" feeds the practice terminal, which Simple Mode hides; without
 	// this gate the click would queue a run into a drawer that never renders.
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
-	const canRun = !simpleMode && /^(?:python|py)$/i.test(language) && !isIncomplete;
+	const canRun = !simpleMode && /^(?:python|py)$/i.test(language) && !isIncomplete && !editing;
 	const source = editedSource ?? code;
 	// The length check short-circuits before the line scan for short snippets;
 	// both avoid allocating a per-line array on every streaming re-render.
 	const expandable = source.length > 1800 || countLines(source) > 16;
 
-	useEffect(() => setMoreOpen(false), [code]);
+	useEffect(() => setMoreOpen(false), [code, isIncomplete]);
 
 	const handleCopy = async () => {
 		await navigator.clipboard.writeText(editing ? draft : source);
@@ -398,6 +412,7 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 				<CodeBlockContainer dir="ltr" language={language || "text"} isIncomplete={isIncomplete}>
 					<div data-streamdown="code-block-header" data-language={language || "text"} className="inno-markdown-content-header">
 						<span className="inno-markdown-content-title">{language || "text"}</span>
+						{isIncomplete ? <span className="inno-markdown-content-status"><span className="inno-markdown-content-status-dot" />{t("markdown.generating", "生成中")}</span> : null}
 						{withToolbar ? renderToolbar(forceExpanded ? fullscreenMoreId : moreId, forceExpanded) : null}
 					</div>
 					<StableCodeBlockBody code={source} language={language || "text"} />

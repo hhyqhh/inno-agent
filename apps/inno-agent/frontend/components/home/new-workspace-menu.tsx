@@ -28,7 +28,7 @@ export function NewWorkspaceMenu({
   trigger = "button",
 }: {
   onSelect: (choice: WorkspaceChoice) => void;
-  trigger?: "button" | "text";
+  trigger?: "button" | "text" | "pill";
 }) {
   const workspaces = useSessionsStore((s) => s.workspaces);
 
@@ -38,10 +38,12 @@ export function NewWorkspaceMenu({
         <button
           type="button"
           className={cn(
-            "flex items-center gap-1.5 rounded-xl text-sm text-foreground transition-colors hover:bg-muted",
-            trigger === "button"
-              ? "border border-border/60 bg-background px-3 py-2 font-medium shadow-sm"
-              : "px-2 py-1.5 text-muted-foreground",
+            "flex items-center gap-1.5 transition-colors hover:bg-muted",
+            trigger === "button" &&
+              "rounded-xl border border-border/60 bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm",
+            trigger === "text" && "rounded-lg px-2 py-1.5 text-sm text-muted-foreground",
+            trigger === "pill" &&
+              "rounded-full border border-border/60 bg-background px-2.5 py-1.5 text-xs text-muted-foreground",
           )}
         >
           <Briefcase className="size-4 text-muted-foreground" />

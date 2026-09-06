@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, ArrowUp, Zap } from "lucide-react";
+import { Plus, ArrowUp, Zap, ChevronDown, Lock } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -46,38 +46,40 @@ export function Composer({
   };
 
   return (
-    <div className="shrink-0 px-4 pb-3">
-      <form onSubmit={submit} className="rounded-2xl border border-border/70 bg-muted/40 shadow-sm focus-within:border-primary/30 focus-within:ring-2 focus-within:ring-primary/20">
-        <div className="flex items-center gap-2 px-3 py-2.5">
-          <button
-            type="button"
-            aria-label="附件"
-            className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Plus className="size-5" />
-          </button>
-          <input
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder="继续对话，例如：把这节课延伸成群文阅读"
-            className="min-w-0 flex-1 bg-transparent py-1 text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
-          />
-          <button
-            type="submit"
-            aria-label="发送"
-            disabled={sending || disabled || !value.trim()}
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-90 disabled:opacity-40"
-          >
-            <ArrowUp className="size-4" />
-          </button>
-        </div>
+    <div className="shrink-0">
+      <form
+        onSubmit={submit}
+        className="flex items-center gap-2.5 rounded-full border border-primary/20 bg-background py-2 pl-2.5 pr-2 shadow-sm transition-colors focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/15"
+      >
+        <button
+          type="button"
+          aria-label="附件"
+          className="ml-1 rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <Plus className="size-5" />
+        </button>
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="继续对话，例如：把这节课延伸成群文阅读"
+          className="min-w-0 flex-1 bg-transparent py-2 text-base text-foreground outline-none placeholder:text-muted-foreground"
+        />
+        <button
+          type="submit"
+          aria-label="发送"
+          disabled={sending || disabled || !value.trim()}
+          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+        >
+          <ArrowUp className="size-5" />
+        </button>
       </form>
 
-      <div className="mt-1.5 flex items-center justify-between px-1">
-        <div className="flex items-center gap-2">
-          <NewWorkspaceMenu onSelect={changeWorkspace} trigger="text" />
+      <div className="mt-2 flex items-center justify-between px-0.5">
+        <div className="flex items-center gap-1.5">
+          <NewWorkspaceMenu onSelect={changeWorkspace} trigger="pill" />
           <Select value={permission} onValueChange={setPermission}>
-            <SelectTrigger className="h-8 gap-1 rounded-lg border-transparent px-1.5 text-xs text-muted-foreground shadow-none hover:bg-muted">
+            <SelectTrigger className="h-8 gap-1 rounded-full border border-border/60 bg-background px-2.5 text-xs text-muted-foreground shadow-none hover:bg-muted">
+              <Lock className="size-3.5 text-muted-foreground" />
               <SelectValue placeholder="默认权限" />
             </SelectTrigger>
             <SelectContent>
@@ -91,10 +93,11 @@ export function Composer({
         </div>
         <button
           type="button"
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          className="flex items-center gap-1 rounded-full border border-border/60 bg-background px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted"
         >
           <Zap className="size-3.5" />
           快速生成
+          <ChevronDown className="size-3.5" />
         </button>
       </div>
     </div>

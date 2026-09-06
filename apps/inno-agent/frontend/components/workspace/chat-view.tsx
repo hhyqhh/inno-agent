@@ -140,7 +140,11 @@ export function ChatView({
         </div>
       </div>
 
-      <Composer onSend={onSend} sending={sending} disabled={!sessionId} />
+      <div className="shrink-0 px-6 pb-3">
+        <div className="mx-auto w-full max-w-2xl">
+          <Composer onSend={onSend} sending={sending} disabled={!sessionId} />
+        </div>
+      </div>
     </div>
   );
 }

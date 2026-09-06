@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import {
   Plus,
   Library,
@@ -9,8 +10,10 @@ import {
   UserRound,
   PanelLeft,
   LogIn,
-  MessageSquare,
   PanelLeftClose,
+  Folder,
+  Square,
+  MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "./brand-logo";
@@ -18,6 +21,7 @@ import { AvatarMenu } from "./avatar-menu";
 import { useUiStore } from "@/lib/store/ui-store";
 import { useAuthStore } from "@/lib/store/auth-store";
 import { useSessionsStore } from "@/lib/store/sessions-store";
+import type { SessionSummary } from "@/lib/api/types";
 
 const NAV_ITEMS = [
   { id: "knowledge", label: "知识库", icon: Library },
@@ -46,8 +50,31 @@ export function Sidebar() {
   const user = useAuthStore((s) => s.user);
   const login = useAuthStore((s) => s.login);
   const sessions = useSessionsStore((s) => s.sessions);
+  const workspaces = useSessionsStore((s) => s.workspaces);
   const activeSessionId = useSessionsStore((s) => s.activeSessionId);
   const setActiveSession = useSessionsStore((s) => s.setActiveSession);
+
+  // 工作区 = 一级「任务/工作区」→ 二级该任务下每个会話（prototype 即可见的是
+  // 任务名作为分组头，会话折叠在下面）。collapsed 时收起为图标栏，不显示分组头。
+  const sessionById = useMemo(
+    () => new Map(sessions.map((s) => [s.id, s])),
+    [sessions],
+  );
+  const groups = useMemo(
+    () =>
+      workspaces
+        .map((ws) => ({
+          workspace: ws,
+          items: ws.sessionIds
+            .map((id) => sessionById.get(id))
+            .filter((s): s is SessionSummary => Boolean(s)),
+        })),
+    [workspaces, sessionById],
+  );
+
+  const [collapsedTasks, setCollapsedTasks] = useState<Record<string, boolean>>({});
+  const toggleTask = (id: string) =>
+    setCollapsedTasks((prev) => ({ ...prev, [id]: !prev[id] }));
 
   return (
     <aside
@@ -115,49 +142,108 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* 工作区 sessions (logged in) */}
+      {/* 任务区 sessions (logged in) — two-level: task -> sessions */}
       {user && (
         <>
-          <SectionLabel label="工作区" collapsed={collapsed} />
-          <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3">
-            {sessions.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                title={collapsed ? s.name : undefined}
-                onClick={() => {
-                  setActiveSession(s.id);
-                  router.push(`/workspace?session=${encodeURIComponent(s.id)}`);
-                }}
-                className={cn(
-                  "group flex items-start gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
-                  activeSessionId === s.id
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground",
-                  collapsed && "justify-center px-1.5",
-                )}
-              >
-                <MessageSquare className="mt-0.5 size-4 shrink-0 text-muted-foreground/70" />
-                {!collapsed && (
-                  <>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] leading-5 text-foreground/90">
-                        {s.name}
+          <SectionLabel label="任务区" collapsed={collapsed} />
+          {collapsed ? (
+            // Collapsed rail: show each session as a flat icon button.
+            <div className="flex flex-1 flex-col items-center gap-0.5 overflow-y-auto px-3 pb-3">
+              {sessions.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  title={s.name}
+                  onClick={() => {
+                    setActiveSession(s.id);
+                    router.push(`/workspace?session=${encodeURIComponent(s.id)}`);
+                  }}
+                  className={cn(
+                    "flex items-center justify-center rounded-lg p-2 transition-colors hover:bg-muted",
+                    activeSessionId === s.id
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  <Square className="size-4 shrink-0 text-muted-foreground/70" />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto px-3 pb-3">
+              {groups.map(({ workspace, items }) => {
+                const collapsedTask = collapsedTasks[workspace.id] === true;
+                return (
+                  <div key={workspace.id} className="flex flex-col">
+                    {/* Level 1 — task / workspace header (prototype: folder + name +
+                        count pill when expanded, ellipsis when collapsed) */}
+                    <button
+                      type="button"
+                      onClick={() => toggleTask(workspace.id)}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <Folder className="size-4 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5 text-foreground/90">
+                        {workspace.name}
                       </span>
-                      <span className="block truncate text-[11px] leading-4 text-muted-foreground">
-                        {s.preview}
-                      </span>
-                    </span>
-                    {s.messageCount > 0 && (
-                      <span className="rounded-full bg-muted px-1.5 text-[11px] text-muted-foreground">
-                        {s.messageCount}
-                      </span>
+                      {collapsedTask ? (
+                        <MoreHorizontal className="size-4 shrink-0 text-muted-foreground" />
+                      ) : (
+                        items.length > 0 && (
+                          <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[11px] leading-none text-primary">
+                            {items.length}
+                          </span>
+                        )
+                      )}
+                    </button>
+
+                    {/* Level 2 — sessions under this task */}
+                    {!collapsedTask && (
+                      <div className="ml-3 mt-0.5 flex flex-col gap-0.5">
+                        {items.length === 0 && (
+                          <span className="px-2 py-1 text-[11px] text-muted-foreground/60">
+                            该任务暂无会话
+                          </span>
+                        )}
+                        {items.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            title={s.name}
+                            onClick={() => {
+                              setActiveSession(s.id);
+                              router.push(`/workspace?session=${encodeURIComponent(s.id)}`);
+                            }}
+                            className={cn(
+                              "group flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted",
+                              activeSessionId === s.id
+                                ? "bg-muted"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            <Square className="size-4 shrink-0 text-muted-foreground/80" />
+                            <span
+                              className={cn(
+                                "min-w-0 flex-1 truncate text-[13px] leading-5 text-foreground/90",
+                                activeSessionId === s.id && "font-medium text-foreground",
+                              )}
+                            >
+                              {s.name}
+                            </span>
+                            {s.messageCount > 0 && (
+                              <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[11px] leading-none text-primary">
+                                {s.messageCount}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
                     )}
-                  </>
-                )}
-              </button>
-            ))}
-          </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </>
       )}
 

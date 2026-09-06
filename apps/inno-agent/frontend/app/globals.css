@@ -1,0 +1,245 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+ * Brand: 启创 · InnoSpark  →  indigo/violet (#6366F1 系).
+ * The visual source of truth is prototype/*.png; tokens here are the only
+ * place the brand color is mapped so shadcn `--primary` and friends pick it
+ * up through the semantic names above.
+ */
+:root {
+  --background: oklch(0.985 0.005 285);
+  --foreground: oklch(0.205 0.02 285);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.205 0.02 285);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.205 0.02 285);
+  --primary: oklch(0.585 0.233 277); /* #6366F1 indigo */
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.955 0.015 285);
+  --secondary-foreground: oklch(0.305 0.04 285);
+  --muted: oklch(0.955 0.01 285);
+  --muted-foreground: oklch(0.556 0.02 285);
+  --accent: oklch(0.945 0.03 285);
+  --accent-foreground: oklch(0.305 0.06 285);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0.012 285);
+  --input: oklch(0.922 0.012 285);
+  --ring: oklch(0.585 0.233 277);
+  --chart-1: oklch(0.585 0.233 277);
+  --chart-2: oklch(0.636 0.18 300);
+  --chart-3: oklch(0.66 0.15 250);
+  --chart-4: oklch(0.556 0.17 300);
+  --chart-5: oklch(0.48 0.2 277);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.99 0.004 285);
+  --sidebar-foreground: oklch(0.305 0.03 285);
+  --sidebar-primary: oklch(0.585 0.233 277);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.945 0.03 285);
+  --sidebar-accent-foreground: oklch(0.305 0.06 285);
+  --sidebar-border: oklch(0.922 0.012 285);
+  --sidebar-ring: oklch(0.585 0.233 277);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC",
+    sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+}
+
+.dark {
+  --background: oklch(0.205 0.03 285);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.235 0.03 285);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.235 0.03 285);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.636 0.22 277);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.305 0.04 285);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.305 0.03 285);
+  --muted-foreground: oklch(0.708 0.02 285);
+  --accent: oklch(0.335 0.05 285);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.636 0.22 277);
+  --sidebar: oklch(0.235 0.03 285);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.636 0.22 277);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.305 0.04 285);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.636 0.22 277);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Brand helpers (visual truth = prototype/*.png)                       */
+/* ------------------------------------------------------------------ */
+
+/* Soft radial indigo glow behind the hero, like the login/hero backdrop. */
+.hero-backdrop {
+  background: radial-gradient(
+      circle at 50% 0%,
+      oklch(0.92 0.05 285 / 0.65),
+      transparent 55%,
+      transparent 70%
+    ),
+    var(--background);
+}
+
+/* Bottom purple-gradient used by the logged-out login strip. */
+.brand-gradient {
+  background: linear-gradient(
+    120deg,
+    oklch(0.62 0.22 277),
+    oklch(0.55 0.24 305)
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Markdown body (streamed content from the assistant)                  */
+/* ------------------------------------------------------------------ */
+.markdown-body {
+  @apply text-[15px] leading-7 text-foreground;
+  word-break: break-word;
+}
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+.markdown-body p {
+  @apply my-3;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  @apply font-semibold tracking-tight text-foreground;
+  margin: 1.5rem 0 0.75rem;
+}
+.markdown-body h1 {
+  @apply text-xl;
+}
+.markdown-body h2 {
+  @apply text-lg;
+}
+.markdown-body h3 {
+  @apply text-base;
+}
+.markdown-body ul,
+.markdown-body ol {
+  @apply my-3 list-disc space-y-1 pl-6;
+}
+.markdown-body ol {
+  list-style-type: decimal;
+}
+.markdown-body a {
+  @apply text-primary underline underline-offset-2 hover:text-primary/80;
+}
+.markdown-body blockquote {
+  @apply my-3 border-l-2 border-primary/40 pl-4 text-muted-foreground;
+}
+.markdown-body code:not(pre code) {
+  @apply rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground;
+}
+.markdown-body table {
+  @apply my-3 w-full border-collapse text-sm;
+}
+.markdown-body th,
+.markdown-body td {
+  @apply border border-border px-3 py-1.5 text-left;
+}
+.markdown-body th {
+  @apply bg-muted font-medium;
+}
+/* KaTeX blocks shouldn't collapse into a tiny box. */
+.markdown-body .katex-display {
+  @apply my-3 overflow-x-auto;
+}
+
+/* ------------------------------------------------------------------ */
+/* Scrollbars                                                           */
+/* ------------------------------------------------------------------ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(0.86 0.012 285);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.8 0.012 285);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -8,16 +8,17 @@ This is an npm workspaces monorepo (Node.js >=20.6.0, ES modules) for **Inno Age
 
 - `apps/inno-agent/` — backend (CLI + HTTP server), TypeScript, compiles to `dist/`.
 - `apps/inno-agent/web/` — frontend (React 19 + Lit + Tailwind 4 + Vite), workspace `inno-agent-web`.
+- `apps/showcase/` — standalone session-replay site (workspace `inno-agent-showcase`), replays exported sessions through the real product UI via a Vite alias; no backend/model calls.
 - `electron/` — Electron main process (`main.js` + `loading.html`) for desktop builds.
 - `build/` — desktop app icons (`icon.icns`, `icon.png`, `icon.svg`).
-- `scripts/` — Electron build hooks (`after-pack.cjs`, `build-mac.sh`) and the self-hosted content hub server (`content-hub-server/`).
+- `scripts/` — Electron build hooks (`after-pack.cjs`, `build-mac.sh`, `build-linux.sh`), the self-hosted content hub server (`content-hub-server/`), and dev/CI TS scripts run via `tsx`: `export-showcase-cases.ts` (showcase batch export/publish), `view-showcase-export.mjs` (serve exported cases), `eval-l2-retrieval.ts` (L2 retrieval eval fixture), `smoke-plugins.ts`.
 - `docs/` — screenshots, use-case guides, and `SYSTEM_DEPENDENCIES.md`.
 - `runtime/` — local runtime state (config, data, skills); gitignored. Mapped to `INNO_*` env vars.
 - `workspace/` — default agent working directory; gitignored.
 
 PI SDK packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-web-ui`) are pulled from npm.
 
-Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (scheduler), `@larksuiteoapi/node-sdk` (Feishu), `typebox` (validation), `undici` (HTTP client), `@juicesharp/rpiv-ask-user-question` (bridges agent `ask_user_question` tool calls to the web UI), `@juicesharp/rpiv-todo` (`todo` task-list tool), `pi-web-access` (`fetch_content`/`get_search_content` URL/GitHub/PDF/YouTube extraction), `pi-subagents` (optional subagent support), `pi-sandbox` (optional OS-level sandboxing), `graphology` + `graphology-communities-louvain` (wiki knowledge graph), `yaml` (YAML parsing), `@llamaindex/liteparse` (document parsing).
+Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (scheduler), `@larksuiteoapi/node-sdk` (Feishu), `typebox` (validation), `undici` (HTTP client), `@juicesharp/rpiv-ask-user-question` (bridges agent `ask_user_question` tool calls to the web UI), `@juicesharp/rpiv-todo` (`todo` task-list tool), `pi-web-access` (`fetch_content`/`get_search_content` URL/GitHub/PDF/YouTube extraction), `pi-subagents` (optional subagent support), `pi-sandbox` (optional OS-level sandboxing), `pi-mcp-adapter` (optional MCP server integration), `@tavily/core` (Tavily `web_search` tool), `jiti` (loads the TS-only plugin/adapter sources shipped by pi-web-access/pi-mcp-adapter/pi-subagents), `graphology` + `graphology-communities-louvain` (wiki knowledge graph), `yaml` (YAML parsing), `@llamaindex/liteparse` (document parsing).
 
 Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is 63 files (504 tests), including backend chat-stream/trace persistence coverage and web chat trace/timeline coverage, while remaining skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
 
@@ -39,6 +40,8 @@ Three tsconfig files, each self-contained (no `extends` chain):
 - **[QUICKSTART.md](./QUICKSTART.md)** — 5-minute setup guide (Chinese) with provider config examples.
 - **[ELECTRON_BUILD.md](./ELECTRON_BUILD.md)** — Electron packaging notes (Chinese).
 - **[apps/inno-agent/README.md](./apps/inno-agent/README.md)** — backend API route table and project structure (Chinese).
+- **[apps/showcase/README.md](./apps/showcase/README.md)** — session-replay showcase site architecture, mock backend, and the constraints for keeping the replay UI in sync with product code.
+- **[apps/showcase/EXPORTING.md](./apps/showcase/EXPORTING.md)** — showcase export handbook (Chinese): button flow, CLI reference, sanitization rules, troubleshooting.
 - **[docs/SYSTEM_DEPENDENCIES.md](./docs/SYSTEM_DEPENDENCIES.md)** — full system-level dependency reference (build-time, runtime, Python environment, native modules). Essential for Docker/deployment work.
 
 ## Common Commands
@@ -75,6 +78,13 @@ npx tsx some-script.ts
 # restart-dev.sh orchestration
 npm run restart         # full build + dev restart
 npm run restart:fast    # skip build, restart only
+
+# Session replay showcase — export a recorded session, then serve it standalone
+npm run showcase:export -- --session <substring>   # pick one recorded session
+npm run showcase:view                              # build + serve + open the replay site
+
+# L2 retrieval eval (offline fixture scored against l2-search)
+npm run eval:l2-retrieval
 ```
 
 ### First-run setup
@@ -187,6 +197,8 @@ Key files in `apps/inno-agent/src/agent/`:
 - `web-access-config.ts` — integration support for the bundled `pi-web-access` plugin: writes the managed `<configDir>/web-search.json` default (renames its `web_search` to `web_research` via `toolNames` so it coexists with inno's Tavily `web_search` — PI's tool registry is silent last-wins on name collisions — and forces `workflow: "none"` so no browser curator opens; a file exactly matching the legacy search-disabled default is auto-upgraded), exposes the provider-settings read/write surface behind `GET/PUT /api/settings/web-access` (masked credentials, curated provider list), and builds the jiti alias that pins `@earendil-works/pi-ai` to the backend's 0.84.x copy (the monorepo root hoists pi-ai 0.75.x for pi-web-ui, which lacks the `./compat` export pi-web-access imports). Both bundled plugins (`@juicesharp/rpiv-todo`, `pi-web-access`) ship TS-only sources and load through jiti like pi-subagents; gated by `plugins.todo.enabled` / `plugins.webAccess.enabled` in config.json (default on).
 - `workspace-path-guard.ts` — security path validation ensuring agent file operations stay within workspace bounds.
 - `observability-extension.ts` — two-layer observability: (1) extension layer for session lifecycle/model changes/compaction events, (2) prompt observer for per-turn execution, tool call details (args + results), message lifecycle, and usage/cost extraction. All handlers are wrapped in try-catch so observability never breaks the agent loop. Uses a dedicated child logger (`logger.child({ module: "observability" })`).
+- `tavily-tools.ts` — registers the Tavily `web_search` tool (via `@tavily/core`), the default internet-search capability; reads its API key live from `configHolder` so settings changes apply without restart.
+- `mcp-extension.ts` — MCP integration via `pi-mcp-adapter`: `loadMcpAdapterExtension` conditionally loads the adapter (TS-only source, through jiti like pi-sandbox; any failure degrades to a warning so MCP never breaks boot) and `createMcpStatusExtension` bridges the adapter's event-bus status snapshots into a module-level store consumed by `GET /api/mcp`.
 
 `cli.ts` calls PI's `main(...)` with this extension and forces `--no-skills --skill <skillsDir>` so only the project's skills directory is loaded.
 
@@ -201,6 +213,23 @@ Wraps `globalThis.fetch` at startup to intercept and log all LLM provider API ca
 ### Proxy Bypass (`src/utils/proxy-bypass.ts`)
 
 Manages `NO_PROXY` env var for providers with `bypassProxy: true` in config. Called at startup by both `server.ts` and `cli.ts` to ensure direct connections to specified provider endpoints.
+
+### MCP Integration (`src/mcp/` + `src/agent/mcp-extension.ts`)
+
+Optional Model Context Protocol support via `pi-mcp-adapter`, gated by `mcp.enabled` in config.json (default off). Inno manages one canonical server file — `<configDir>/mcp.json` — that the adapter is pointed at with `createMcpAdapter({ configPath })`. `src/mcp/mcp-config-store.ts` reads the full effective server list (the adapter also merges the standard shared locations read-only so the UI can label each server's source) but only writes to the managed file. Merge precedence, lowest first:
+
+1. `~/.config/mcp/mcp.json` (user-global shared)
+2. `~/.agents/mcp.json` (user-global tool-agnostic)
+3. `~/.agents/mcp/mcp.json` (user-global tool-agnostic)
+4. `<configDir>/mcp.json` (managed — the adapter's "Pi global" layer)
+5. `<workspaceDir>/.mcp.json` (project shared)
+6. `<workspaceDir>/.pi/mcp.json` (project Pi override, highest)
+
+Later sources override earlier ones by server name. `McpServerEntry` is a permissive mirror of the adapter's `ServerEntry` (unknown fields preserved via an index signature) so hand-edited configs don't lose adapter options the UI doesn't model yet.
+
+### Session Replay Showcase (`src/showcase/`)
+
+`case-exporter.ts` reads a session JSONL, replays the same aggregation logic as `server.ts`'s `parseSessionFile` (user / assistant-turn merge / toolResult pairing), sanitizes local paths and secrets, truncates bulky tool output, then writes one case JSON plus an upserted `index.json` into an out dir. It backs two paths: the CLI (scripts/export-showcase-cases.ts) and the backend one-click export (`POST /api/sessions/:id/showcase-export`, which writes to `<dataDir>/showcase-exports/cases`). The standalone replay site at `apps/showcase/` renders an exported case through the real product UI (Vite alias into `apps/inno-agent/web/src`) — no backend, no model calls. Exported cases are meant to be published: the sanitizer rewrites paths and common secret shapes, but message **content** is preserved verbatim, so the output JSON should be reviewed before sharing.
 
 ### Content Hub System (`src/content-source/`)
 
@@ -256,10 +285,14 @@ Three layers, all file-backed under `dataDir`:
 Plain Node `http.createServer` (no framework), ~1600 lines plus route domains extracted under `src/server/routes/` (chat, wiki, workspaces, skills, channels, jobs, sessions, settings, learner, practice, presets). Key endpoints:
 - `POST /api/chat/stream` — SSE streaming chat.
 - `POST /api/chat` — non-streaming chat (full response).
-- `GET /api/chat/events/:id` — SSE event replay for reconnecting to an in-progress chat stream after page navigation (backed by `SessionEventBroadcaster`, an in-memory buffer).
+- `GET /api/chat/status/:sessionId` — snapshot of the active turn(s) for a session.
+- `POST /api/chat/abort` / `POST /api/chat/:sessionId/:turnId/abort` — cancel an in-progress turn.
+- `GET /api/chat/events/:id` — SSE event replay for reconnecting to an in-progress chat stream after page navigation.
+- `src/chat/stream-registry.ts` — in-memory registry of active chat turns, the backbone for the status/abort/events endpoints above. Uses a stable per-turn `traceId` (set by the UI sidecar) that survives reconnects, tracks live tool partial results, and backs `requestCancel`/`cleanupExpiredTurns`. Owns the `StreamInputSnapshot` for a turn (prompt, images, structured attachments).
 - `GET/PUT /api/wiki/*` — wiki CRUD, graph, stats.
 - `GET/POST/PATCH/DELETE /api/jobs[/:id]` — job management; `POST /api/jobs/:id/run` for manual execution.
 - `GET /api/sessions` / `GET /api/sessions/:id` — session listing; `PATCH /api/sessions/:id` for archive/unarchive/topic.
+- `POST /api/sessions/:id/showcase-export` — one-click export of a session to the replay showcase, writing to `<dataDir>/showcase-exports/cases` (`src/showcase/case-exporter.ts`).
 - `GET /api/skills` — list loaded skills.
 - `GET /api/commands` — slash commands the agent session can dispatch/expand (extension commands, prompt templates, skills), backing the composer's slash palette. PI's builtin commands are TUI-only and deliberately excluded.
 - `POST /api/skills/upload` — accepts `<skill-name>.zip`, unpacks into `skillsDir/<name>/` via `spawnSync('unzip', ...)`.
@@ -281,6 +314,9 @@ Plain Node `http.createServer` (no framework), ~1600 lines plus route domains ex
 - `PATCH /api/settings/content-hub` — update content hub config.
 - `PATCH /api/settings/memory` — toggle L1/L2/L3 memory.
 - `PATCH /api/settings/theme` — persist UI theme preference.
+- `PATCH /api/settings/mcp` — toggle `mcp.enabled` (the adapter only engages after a restart; the UI compares `mcp.enabled` against `GET /api/mcp`'s `adapterLoaded`).
+- `GET /api/mcp` — list the effective MCP servers (managed file + merged shared locations) with live runtime status.
+- `PUT/PATCH/DELETE /api/mcp/servers/:name` — create/update, set `disabled`, or remove a server in the managed `<configDir>/mcp.json`.
 - `GET /health` — health check (polled by Electron loading screen).
 - WebSocket upgrade for `/api/terminal` — xterm.js in-browser terminal.
 
@@ -391,6 +427,8 @@ Full config.json structure (see `config.example.json`):
   },
   "bridge": { "token": "replace-me-with-a-secret" },
   "subagents": { "enabled": false },
+  "mcp": { "enabled": false },
+  "scheduler": { "timezone": "Asia/Shanghai" },
   "plugins": {
     "todo": { "enabled": true },
     "webAccess": { "enabled": true }
@@ -418,12 +456,14 @@ Full config.json structure (see `config.example.json`):
 }
 ```
 
-Note: `simpleMode` and parts of `ui` are not in `config.example.json` but are added at runtime by `normalizeConfig` defaults (`simpleMode.enabled: false`, `ui.theme: "light"`, `ui.mathSingleDollar: false`). QQ channel is supported in code via bridge but is not in the template config.
+Note: `simpleMode` and parts of `ui` are added at runtime by `normalizeConfig` defaults when absent (`simpleMode.enabled: false`, `ui.closeBehavior: "ask"`, `ui.mathSingleDollar: false`). QQ channel is supported in code via bridge but is not in the template config.
 
 - `contentHub` configures the remote source for skills and presets. `type` is `"github"` or `"bundle"`. For `"bundle"`, set `baseUrl` to the self-hosted server URL. `token` is the GitHub PAT (for `"github"` type) or bundle auth token.
 - `memory.l1Enabled` / `l2Enabled` / `l3Enabled` individually gate each memory layer. Simple Mode force-disables all three without overwriting these preferences.
 - `simpleMode.enabled` toggles Simple Mode (hides advanced features, surfaces preset workspaces).
-- `ui.theme` persists the UI theme preference.
+- `mcp.enabled` toggles MCP server integration (expect a restart to take effect).
+- `scheduler.timezone` sets the cron timezone used by `CronScheduler` (default `Asia/Shanghai`).
+- `ui.theme` persists the UI theme preference; `ui.closeBehavior` controls the close confirmation behavior; `ui.mathSingleDollar` controls whether `$...$` renders as math.
 - `bridge.token` is the shared secret for bridge-mode IM channels (QQ, WeChat). `personalOnly` (p2p-only) and `allowedUserIds` (whitelist) are enforced by Feishu; WeChat iLink enforces `allowedUserIds` only (its `personalOnly` field was removed as inert); bridge-mode channels (QQ, WeChat bridge) enforce neither — filtering there is the sidecar's responsibility.
 - `ocrApi` configures PaddleOCR-VL for image OCR. Agent uses this via `ocr-tools.ts`. Requires a `token` from Baidu PaddleOCR.
 

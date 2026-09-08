@@ -124,13 +124,20 @@ function piEventToSseEvent(event: any): unknown | null {
 			if (ev.type === "toolcall_start" || ev.type === "toolcall_delta" || ev.type === "toolcall_end") {
 				return toolCallStreamEventFromAssistantEvent(ev);
 			}
-			if (ev.type === "error") return { type: "error", message: ev.error?.errorMessage || "LLM API error", code: "pi_message_error", persisted: false };
+			// Mid-stream model errors must not be published as "error" events:
+			// "error" is a terminal type reserved for finishTurn(), and the
+			// publishStreamEvent guard throws "terminal event error must use
+			// finishTurn()", masking the real provider error. The terminal error
+			// event published from onFinish carries this same message.
+			if (ev.type === "error") return null;
 			return systemEventFromPi(ev, `message_update:${ev.type}`);
 		}
 		case "message_end": {
 			const msg = event.message;
 			if (msg && typeof msg === "object" && "stopReason" in msg && msg.stopReason === "error") {
-				return { type: "error", message: msg.errorMessage || "The model request failed.", code: "pi_message_error", persisted: false };
+				// See the message_update error case above — the terminal event
+				// from onFinish surfaces this error; publishing it here throws.
+				return null;
 			}
 			return systemEventFromPi(msg ?? event, "message_end");
 		}

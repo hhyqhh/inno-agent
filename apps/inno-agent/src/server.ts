@@ -24,7 +24,8 @@ import {
 	reloadResources,
 	setWorkspaceCwdResolver,
 } from "./agent/pi-runner.js";
-import { completePromptOnce, runPromptSerialized, runPromptStreamingInSession, runPromptInSession, abortPromptForTurnToken } from "./agent/pi-runner.js";
+import { completePromptOnce, runPromptSerialized, runPromptStreamingInSession, runPromptInSession, abortPromptForTurnToken, abortJobPromptInSession } from "./agent/pi-runner.js";
+import { configureDeferredRuns } from "./scheduler/deferred-runs.js";
 import { ChannelRegistry } from "./channels/channel.js";
 import type { ChannelStreamEvent } from "./channels/channel.js";
 import { FeishuChannel } from "./channels/feishu/feishu-channel.js";
@@ -33,6 +34,7 @@ import { BridgeChannel } from "./channels/bridge/bridge-channel.js";
 import { WeChatChannel } from "./channels/wechat/wechat-channel.js";
 import type { PersonalBridgeChannelConfig } from "./config.js";
 import { JobStore } from "./scheduler/job-store.js";
+import { CheckInStore } from "./checkins/check-in-store.js";
 import { seedManagedMcpConfig } from "./mcp/mcp-config-store.js";
 import { CronScheduler } from "./scheduler/cron-scheduler.js";
 import { HttpError, json } from "./server/http-helpers.js";
@@ -43,6 +45,7 @@ import {
 import { extractFrontmatterFields } from "./server/skill-frontmatter.js";
 import { handleChannelsRoutes } from "./server/routes/channels.js";
 import { handleJobsRoutes } from "./server/routes/jobs.js";
+import { handleCheckInsRoutes } from "./server/routes/checkins.js";
 import { handleSettingsRoutes } from "./server/routes/settings.js";
 import { handleSkillsRoutes } from "./server/routes/skills.js";
 import { handleWorkspacesRoutes } from "./server/routes/workspaces.js";
@@ -121,6 +124,7 @@ const contentHubCatalog = new ContentHubCatalog({
 // initialised before any API handler that uses them runs, because the HTTP
 // handler calls ensureBootstrapped() before dispatching.
 let jobStore!: JobStore;
+let checkInStore!: CheckInStore;
 let channelRegistry!: ChannelRegistry;
 let workspaceRegistry!: WorkspaceRegistry;
 let runRecordStore!: RunRecordStore;
@@ -190,6 +194,7 @@ async function ensureBootstrapped(): Promise<void> {
 		// ---- stores ----
 		jobStore = new JobStore(paths.jobsDir, config.scheduler?.timezone);
 		jobStore.normalizePersistedJobs();
+		checkInStore = new CheckInStore(dataDir, config.scheduler?.timezone, jobStore);
 
 		channelRegistry = new ChannelRegistry(join(dataDir, "channels", "default-targets.json"));
 
@@ -316,7 +321,25 @@ async function ensureBootstrapped(): Promise<void> {
 			wechatChannel.start();
 		}
 
-		const scheduler = new CronScheduler(jobStore, channelRegistry);
+		const scheduler = new CronScheduler(jobStore, channelRegistry, checkInStore);
+		configureDeferredRuns({
+			jobStore,
+			channelRegistry,
+			checkInStore,
+			// Deferred auto-execution always runs in a fresh, scheduler-born
+			// conversation so it never lands in the user's active chat.
+			createSession: async () => {
+				try {
+					const id = await createNewSession({});
+					recordCurrentSessionChannel("scheduler", id, { setOriginIfEmpty: true });
+					const sessionPath = sessionFileFromId(paths.sessionDir, id);
+					return sessionPath && existsSync(sessionPath) ? sessionPath : null;
+				} catch (err) {
+					logger.error({ err }, "deferred run session creation failed");
+					return null;
+				}
+			},
+		});
 		scheduler.start();
 
 		logger.info({ channels: channelRegistry.all().map((c) => c.name).join(", ") || "none" }, "[inno-server] channels");
@@ -1228,6 +1251,23 @@ function recordCurrentSessionChannel(
 	writeJson(sessionChannelMetadataPath(), metadata);
 }
 
+/**
+ * A manual "run now" job always happens in a conversation created for it, so
+ * the session's birthplace IS the scheduler. Override the "web" origin that
+ * POST /api/sessions stamped at creation time so the sidebar can badge it.
+ */
+function recordJobRunSession(sessionId: string): void {
+	if (!sessionId) return;
+	const metadata = readSessionChannelMetadata();
+	const prev = metadata[sessionId];
+	metadata[sessionId] = {
+		channels: mergeChannels(prev?.channels ?? [], ["scheduler"]),
+		origin: "scheduler",
+		updatedAt: new Date().toISOString(),
+	};
+	writeJson(sessionChannelMetadataPath(), metadata);
+}
+
 function cleanGeneratedTopic(raw: string): string {
 	return raw
 		.replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, "")
@@ -1446,8 +1486,25 @@ const server = createServer(async (req, res) => {
 			await ensureBootstrapped();
 		}
 
+		// --- Check-ins API ---
+		if (await handleCheckInsRoutes(req, res, method, url, { checkInStore })) return;
+
 		// --- Jobs CRUD (extracted to server/routes/jobs.ts) ---
-		if (await handleJobsRoutes(req, res, method, url, { jobStore, channelRegistry })) return;
+		if (await handleJobsRoutes(req, res, method, url, {
+			jobStore,
+			channelRegistry,
+			checkInStore,
+			resolveSessionPath: (sessionId) => {
+				const sessionPath = sessionFileFromId(paths.sessionDir, sessionId);
+				return sessionPath && existsSync(sessionPath) ? sessionPath : null;
+			},
+			recordJobRunSession,
+			abortJobRun: async (sessionId) => {
+				const sessionPath = sessionFileFromId(paths.sessionDir, sessionId);
+				if (!sessionPath || !existsSync(sessionPath)) return false;
+				return abortJobPromptInSession(sessionPath);
+			},
+		})) return;
 
 		// --- Channels + bridge (extracted to server/routes/channels.ts) ---
 		if (await handleChannelsRoutes(req, res, method, url, {

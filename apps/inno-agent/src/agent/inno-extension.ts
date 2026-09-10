@@ -11,6 +11,7 @@ import { createLearnerTools } from "../memory/learner/learner-tools.js";
 import { isProfileEmpty, loadProfile, loadRecentEvents } from "../memory/learner/profile-store.js";
 import { buildContextPack, formatContextPackForPrompt } from "../memory/learner/context-pack.js";
 import { JobStore } from "../scheduler/job-store.js";
+import { CheckInStore } from "../checkins/check-in-store.js";
 import { createSchedulerTools } from "../scheduler/scheduler-tools.js";
 import { createChannelTools } from "../channels/channel-tools.js";
 import { createL2Tools } from "../memory/l2/l2-tools.js";
@@ -307,7 +308,8 @@ export function createInnoExtension(
 
 		// 3. Register scheduler tools
 		const jobStore = new JobStore(paths.jobsDir, configHolder.current.scheduler?.timezone);
-		const schedulerTools = createSchedulerTools(jobStore, channelRegistry);
+		const checkInStore = new CheckInStore(paths.dataDir, configHolder.current.scheduler?.timezone, jobStore);
+		const schedulerTools = createSchedulerTools(jobStore, channelRegistry, checkInStore);
 		for (const tool of schedulerTools) {
 			pi.registerTool(tool);
 		}

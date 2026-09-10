@@ -1935,6 +1935,8 @@ inno-workspace-panel textarea {
 	display: flex;
 	align-items: center;
 	gap: 4px;
+	/* Date + time (e.g. "9月3日 22:53") must stay on a single line. */
+	white-space: nowrap;
 	min-height: 28px;
 	color: var(--inno-text-muted);
 	font-size: 12px;

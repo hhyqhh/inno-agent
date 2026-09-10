@@ -76,7 +76,8 @@ describe("MessageBubble edit and resend", () => {
 		});
 
 		try {
-			const timestamp = new Date(2026, 7, 30, 22, 35).getTime();
+			const now = new Date();
+			const timestamp = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 22, 35).getTime();
 			render(<MessageBubble message={{ ...plainUserMessage, timestamp }} />);
 
 			expect(screen.getByText("22:35")).toBeTruthy();
@@ -95,7 +96,8 @@ describe("MessageBubble edit and resend", () => {
 
 	it("shows copy, time, and retry actions for the last assistant message", () => {
 		const onRetry = vi.fn();
-		const timestamp = new Date(2026, 7, 30, 22, 35).getTime();
+		const now = new Date();
+		const timestamp = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 22, 35).getTime();
 		render(
 			<MessageBubble
 				message={{ role: "assistant", content: "answer", timestamp }}

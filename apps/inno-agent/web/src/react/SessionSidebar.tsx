@@ -97,17 +97,18 @@ function formatTime(iso: string): string {
 	}
 }
 
-function channelLabel(channel: SessionChannel): string {
+function channelLabel(channel: SessionChannel, t: (key: string) => string): string {
 	const labels: Record<string, string> = {
 		cli: "CLI",
 		web: "Web",
 		feishu: "Feishu",
-		scheduler: "Job",
 		qq: "QQ",
 		wechat: "WeChat",
 		unknown: "?",
 	};
-	return labels[channel] ?? channel;
+	// The scheduler badge is user-facing copy (打卡/Check-in), not a brand name —
+	// resolve it through i18n like the rest of the UI.
+	return channel === "scheduler" ? t("sidebar.channelScheduler") : labels[channel] ?? channel;
 }
 
 function channelClass(channel: SessionChannel): string {
@@ -517,10 +518,10 @@ function SessionCard({
 				</div>
 				<div className="relative flex h-4 min-w-[2.25rem] shrink-0 items-center justify-end">
 					<span
-						title={t("sidebar.originChannel", { channel: channelLabel(titleChannel) })}
+						title={t("sidebar.originChannel", { channel: channelLabel(titleChannel, t) })}
 						className={`rounded px-1.5 py-px text-[9px] font-medium leading-none transition-opacity duration-150 group-hover/card:opacity-0 ${channelClass(titleChannel)}`}
 					>
-						{channelLabel(titleChannel)}
+						{channelLabel(titleChannel, t)}
 					</span>
 					<div className="pointer-events-none absolute right-0 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/card:pointer-events-auto group-hover/card:opacity-100">
 						{opening ? (
@@ -755,9 +756,10 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 		const byWs = new Map<string, SessionMeta[]>();
 		const unknown: SessionMeta[] = [];
 		for (const s of state.filteredSessions) {
-			// Simple Mode: only show web-originated conversations; hide sessions
-			// born in feishu/wechat/cli/scheduler channels.
-			if (simpleMode && s.origin && s.origin !== "web") continue;
+			// Simple Mode: only show web-originated conversations plus manual
+			// job runs (created from the web UI); hide sessions born in
+			// feishu/wechat/cli channels.
+			if (simpleMode && s.origin && s.origin !== "web" && s.origin !== "scheduler") continue;
 			if (s.archived) { archived.push(s); continue; }
 			const w = sessionToWs.get(s.id);
 			if (!w) { unknown.push(s); continue; }
@@ -967,6 +969,7 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 
 	// Open a session → preview its workspace files (quarter, tree only).
 	const openSession = useCallback((session: SessionMeta) => {
+		const workspaceWasCollapsed = appStore.workspaceMode === "collapsed";
 		// At the narrowest split layout, opening the preview would make the
 		// layout hide the session sidebar to reclaim its width. Keep both the
 		// current conversation and the session list accessible in that case.
@@ -976,7 +979,10 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 			|| canOpenWorkspaceBesideSidebar(window.innerWidth, 300);
 		if (canOpenWorkspace) {
 			appStore.setRightPanelTab("preview");
-			appStore.setWorkspaceWidth(300);
+			// 300px is the default only when opening the workspace from its
+			// collapsed state. Switching conversations must preserve a width the
+			// user already chose instead of nudging the panel narrower each time.
+			if (workspaceWasCollapsed) appStore.setWorkspaceWidth(300);
 			appStore.setWorkspaceMode("quarter");
 		}
 		void sessionsStore.openSession(session.id);
@@ -1303,7 +1309,7 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 										className={`inno-channel-filter-chip inno-sidebar-meta shrink-0 whitespace-nowrap rounded-full px-1.5 py-px font-medium transition-colors ${channelFilterClass(ch, state.channelFilter === ch)}`}
 										onClick={() => sessionsStore.setChannelFilter(state.channelFilter === ch ? null : ch)}
 									>
-										{channelLabel(ch)}
+										{channelLabel(ch, t)}
 									</button>
 								))}
 							</div>

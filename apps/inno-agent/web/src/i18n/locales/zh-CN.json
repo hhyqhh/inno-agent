@@ -290,6 +290,33 @@
 	"jobs": {
 		"title": "定时任务",
 		"subtitle": "自动复习、推送提醒等周期任务",
+		"todayCompleted": "今日已完成",
+		"todayProgress": "今日完成 {{completed}}/{{total}}",
+		"todayFailed": "今日有失败项",
+		"categories": {
+			"checkInRequired": "需要打卡的任务",
+			"notRequired": "不需要打卡的任务"
+		},
+		"checkIn": {
+			"title": "今日学习打卡",
+			"subtitle": "完成今日计划中的学习任务后自动打卡",
+			"progress": "今日完成 {{completed}}/{{total}} 个计划时段",
+			"noTasks": "今日暂无必做学习任务",
+			"autoCompleted": "今日学习打卡已完成！",
+			"failedCount": "{{count}} 个失败",
+			"slotSuccess": "已完成",
+			"slotPending": "待完成",
+			"slotFailed": "执行失败",
+			"slotSkipped": "已跳过",
+			"runNow": "立即执行",
+			"retry": "重试",
+			"skippedNote": "{{count}} 个已跳过时段不计入打卡要求",
+			"completed": "已完成",
+			"currentStreak": "当前连续",
+			"total": "累计天数",
+			"longestStreak": "最长连续",
+			"error": "操作失败：{{message}}"
+		},
 		"newJob": "新建",
 		"empty": "还没有定时任务。",
 		"lastRun": "上次运行：{{time}}",
@@ -302,6 +329,13 @@
 			"delete": "删除",
 			"enable": "启用",
 			"disable": "停用"
+		},
+		"chat": {
+			"completed": "定时任务「{{name}}」已完成。\n\n{{output}}",
+			"failed": "定时任务「{{name}}」执行失败：{{error}}",
+			"stopped": "任务已手动停止。已完成的部分保留在会话记录中。",
+			"noOutput": "任务已完成，但没有输出。",
+			"unknownError": "未知错误"
 		},
 		"lastResult": "最近运行结果：",
 		"form": {
@@ -349,6 +383,7 @@
 			"graphify_update": "图谱更新",
 			"learner_profile_reflection": "画像反思",
 			"spaced_review": "间隔复习",
+			"check_in_reminder": "打卡提醒",
 			"push_reminder": "推送提醒",
 			"custom_prompt": "自定义提示"
 		},
@@ -359,7 +394,10 @@
 			"timeRequired": "请选择时间",
 			"weekdayRequired": "请至少选择一个星期",
 			"dateRequired": "请选择执行日期",
-			"saveFailed": "保存失败：{{message}}"
+			"saveFailed": "保存失败：{{message}}",
+			"sessionCreateFailed": "无法创建用于显示任务结果的对话",
+			"sessionUnavailable": "当前对话暂时不可用，请稍后重试",
+			"jobNotFound": "未找到该任务的定义，可能已被删除"
 		},
 		"humanCron": {
 			"daily": "每天 {{time}}",
@@ -368,6 +406,13 @@
 			"monthly": "每月{{day}} {{time}}",
 			"monthlyLast": "每月最后一天 {{time}}",
 			"once": "{{date}} {{time}}"
+		},
+		"pending": {
+			"title": "定时任务「{{name}}」已就绪",
+			"countdown": "{{seconds}} 秒后自动开始",
+			"starting": "正在自动开始…",
+			"runNow": "立即执行",
+			"skip": "不执行"
 		}
 	},
 	"skills": {
@@ -972,6 +1017,7 @@
 		"deleteWorkspace": "删除工作区",
 		"originChannel": "来源：{{channel}}",
 		"interactedChannel": "交互过：{{channel}}",
+		"channelScheduler": "打卡",
 		"generateTopic": "AI 生成标题",
 		"rename": "重命名",
 		"archive": "归档",

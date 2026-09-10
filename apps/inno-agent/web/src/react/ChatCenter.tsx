@@ -30,6 +30,7 @@ import { fetchPresetList, readCachedPresets, removeCachedPreset } from "../utils
 import { useStoreSnapshot } from "./hooks.js";
 import { ChatComposer } from "./chat/ChatComposer.js";
 import { ChatConversation } from "./chat/ChatConversation.js";
+import { ScheduledRunBanner } from "./chat/ScheduledRunBanner.js";
 import { BusyBlocker, QuestionHint } from "./chat/ChatStatusBanners.js";
 import { ChatUploadChips } from "./chat/ChatUploadChips.js";
 import { ChatWelcome } from "./chat/ChatWelcome.js";
@@ -235,6 +236,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		messages: chatStore.messages,
 		isSending: chatStore.isSending,
 		isLoadingHistory: chatStore.isLoadingHistory,
+		jobStreaming: chatStore.jobStreaming,
 		canReconnect: chatStore.canReconnect,
 		activeTools: chatStore.activeTools,
 		completedTools: chatStore.completedTools,
@@ -246,6 +248,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		preselectedWorkspaceId: sessionsStore.preselectedWorkspaceId,
 		busyBlocker: sessionsStore.busyBlocker,
 		isWelcome: sessionsStore.isWelcomeView,
+		list: sessionsStore.sessions,
 	}));
 	const workspaces = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
@@ -1254,7 +1257,13 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		}
 	}, [handleSend, slashPaletteOpen, slashEntries, slashActiveIndex, draftValue, handleSlashSelect]);
 
-	const handleStop = useCallback(() => chatStore.cancel(), []);
+	const handleStop = useCallback(() => {
+		if (chatStore.jobStreaming) {
+			chatStore.cancelJobStream();
+			return;
+		}
+		chatStore.cancel();
+	}, []);
 	const handleReconnect = useCallback(() => void chatStore.reconnect(), []);
 	const handleRetry = useCallback(() => {
 		shouldStickToBottomRef.current = true;
@@ -1418,6 +1427,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 			mirrorRef={mirrorRef}
 			hitRef={hitRef}
 			chatIsSending={chat.isSending}
+			jobStreaming={chat.jobStreaming}
 			canReconnect={chat.canReconnect}
 			isUploading={isUploading}
 			hasSendableContent={hasSendableContent}
@@ -1508,11 +1518,14 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		/>
 	) : null;
 
+	const scheduledRunBanner = <ScheduledRunBanner />;
+
 	if (isWelcome) {
 		return (
 			<>
 			{smartOverlayNode}
 			<ChatWelcome
+				topOverlay={scheduledRunBanner}
 				welcomeLayoutRef={welcomeLayoutRef}
 				simpleMode={simpleMode}
 				togglingMode={togglingMode}
@@ -1545,6 +1558,10 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		{smartOverlayNode}
 		<ChatConversation
 			chat={chat}
+			topOverlay={scheduledRunBanner}
+			// Job-run conversations carry the full job prompt as the user turn —
+			// collapse it to its first line so it doesn't drown the conversation.
+			collapseUserMessages={sessions.list.find((s) => s.id === sessions.currentSessionId)?.origin === "scheduler"}
 			scrollRef={scrollRef}
 			onScroll={handleChatScroll}
 			onWheel={markUserScrollGesture}

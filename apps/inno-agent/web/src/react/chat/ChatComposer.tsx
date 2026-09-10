@@ -38,6 +38,9 @@ export interface ChatComposerProps {
 	mirrorRef: RefObject<HTMLDivElement | null>;
 	hitRef: RefObject<HTMLDivElement | null>;
 	chatIsSending: boolean;
+	/** A manual job run is streaming — shows the stop button without locking
+	 *  the composer the way a normal chat turn does. */
+	jobStreaming?: boolean;
 	canReconnect: boolean;
 	isUploading: boolean;
 	hasSendableContent: boolean;
@@ -87,6 +90,7 @@ export function ChatComposer({
 	mirrorRef,
 	hitRef,
 	chatIsSending,
+	jobStreaming = false,
 	canReconnect,
 	isUploading,
 	hasSendableContent,
@@ -504,9 +508,9 @@ export function ChatComposer({
 					{renderModelPicker()}
 				</div>
 				<div className="flex shrink-0 items-center gap-1">
-					{chatIsSending ? (
+					{(chatIsSending || jobStreaming) ? (
 						<>
-							{canReconnect ? (
+							{canReconnect && !jobStreaming ? (
 								<button
 									type="button"
 									className="inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full"

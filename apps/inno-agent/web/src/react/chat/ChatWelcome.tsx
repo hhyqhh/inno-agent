@@ -29,6 +29,8 @@ interface ChatWelcomeProps {
 	presetQuery: string;
 	onPresetQueryChange: (value: string) => void;
 	wsError: string;
+	/** Floating notice rendered over the top of the welcome column. */
+	topOverlay?: import("react").ReactNode;
 }
 
 export function ChatWelcome({
@@ -54,10 +56,12 @@ export function ChatWelcome({
 	presetQuery,
 	onPresetQueryChange,
 	wsError,
+	topOverlay,
 }: ChatWelcomeProps) {
 	const { t } = useTranslation();
 	return (
 		<section className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-chat-bg)]">
+			{topOverlay}
 			{smartToast}
 			<div className="inno-chat-grid flex flex-1 min-h-0 justify-center overflow-y-auto px-4">
 				<div ref={welcomeLayoutRef} className="inno-welcome-layout w-full max-w-2xl pt-[18vh] pb-12">

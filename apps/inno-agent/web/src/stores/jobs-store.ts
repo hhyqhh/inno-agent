@@ -1,6 +1,6 @@
 import { EventEmitter } from "./event-emitter.js";
-import { listJobs, createJob, updateJob, deleteJob, runJob } from "../api/jobs.js";
-import type { ScheduledJob, CreateJobInput } from "../types/jobs.js";
+import { listJobs, createJob, updateJob, deleteJob, streamJobRun } from "../api/jobs.js";
+import type { CreateJobInput, JobRunResult, JobRunStreamEvent, ScheduledJob } from "../types/jobs.js";
 
 interface JobsStoreEvents {
 	change: void;
@@ -10,7 +10,6 @@ class JobsStoreImpl extends EventEmitter<JobsStoreEvents> {
 	jobs: ScheduledJob[] = [];
 	isLoading = false;
 	runningJobId: string | null = null;
-	lastRunResult: string | null = null;
 
 	async load(): Promise<void> {
 		this.isLoading = true;
@@ -40,20 +39,35 @@ class JobsStoreImpl extends EventEmitter<JobsStoreEvents> {
 
 	async remove(id: string): Promise<void> {
 		await deleteJob(id);
-		this.jobs = this.jobs.filter((j) => j.id !== id);
+		this.jobs = this.jobs.filter((j) => (j.id === id));
 		this.emit("change", undefined);
 	}
 
-	async run(id: string): Promise<string> {
+	async runStreaming(
+		id: string,
+		sessionId: string,
+		onEvent: (event: JobRunStreamEvent) => void,
+		signal?: AbortSignal,
+		occurrenceId?: string,
+	): Promise<JobRunResult> {
 		this.runningJobId = id;
-		this.lastRunResult = null;
 		this.emit("change", undefined);
 		try {
-			const result = await runJob(id);
-			this.lastRunResult = result.response;
-			// Refresh list to get updated lastRunAt
+			let result: JobRunResult | null = null;
+			for await (const event of streamJobRun(id, sessionId, signal, occurrenceId)) {
+				if (event.type === "job_result") result = event.result;
+				else onEvent(event);
+			}
+			if (!result) {
+				if (signal?.aborted) {
+					const stopped = new Error("任务已手动停止");
+					stopped.name = "AbortError";
+					throw stopped;
+				}
+				throw new Error("任务流提前结束，未收到执行结果");
+			}
 			await this.load();
-			return result.response;
+			return result;
 		} finally {
 			this.runningJobId = null;
 			this.emit("change", undefined);

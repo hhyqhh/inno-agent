@@ -7,6 +7,7 @@ import { appStore } from "./app-store.js";
 import { workspaceStore, type StreamingWorkspacePreview } from "./workspace-store.js";
 import { ensureWindowForPanel } from "./window-expansion.js";
 import { applyChatTraceEvent, finalizeTraceSteps, traceStepsFromEvents, traceTerminalState } from "../utils/chat-trace.js";
+import type { JobRunStreamEvent } from "../types/jobs.js";
 import { skillMessageFromContent } from "../react/chat/skill-message-collapse.js";
 
 function hasAttachmentFiles(attachments?: ChatAttachments): boolean {
@@ -99,6 +100,15 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	 *  would resurrect a resolved question. */
 	private optimisticQuestionToolIds = new Set<string>();
 	canReconnect = false;
+	/** Live manual job run — same trace rendering as a chat turn, but a separate
+	 *  namespace so it never fights (or locks) an active chat stream. */
+	jobStreaming = false;
+	jobStreamSessionId: string | null = null;
+	jobStreamTrace: ChatTraceStep[] = [];
+	jobStreamText = "";
+	jobStreamStartedAt: string | null = null;
+	jobStreamError = "";
+	private jobUserMessageId: string | null = null;
 	private wikiInvalidated = false;
 	private streamChangeTimer: ReturnType<typeof setTimeout> | null = null;
 	private workspacePreviewId: string | null = null;
@@ -174,6 +184,172 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			}
 			await this.reconnectOwner(owner, err);
 		}
+	}
+
+	/** Start the live trace for a manual job run in the given conversation. */
+	beginJobStream(sessionId: string): void {
+		if (!sessionId || this.currentSessionContext !== sessionId) return;
+		this.jobStreaming = true;
+		this.jobStreamSessionId = sessionId;
+		this.jobStreamController = new AbortController();
+		this.jobStreamTrace = [];
+		this.jobStreamText = "";
+		this.jobStreamStartedAt = new Date().toISOString();
+		this.jobStreamError = "";
+		this.emit("change", undefined);
+	}
+
+	/** Abort signal of the live job run, consumed by the SSE reader. */
+	get jobStreamSignal(): AbortSignal | null {
+		return this.jobStreamController?.signal ?? null;
+	}
+
+	/** Stop button for a live job run: close the SSE stream and tell the
+	 *  server to abort the in-flight prompt. */
+	cancelJobStream(): void {
+		const sessionId = this.jobStreamSessionId;
+		this.jobStreamController?.abort();
+		if (sessionId) {
+			void import("../api/jobs.js").then((module) => module.stopJobRun(sessionId).catch(() => {}));
+		}
+	}
+
+	/** Whether the live job run belongs to the conversation being viewed. */
+	get jobStreamInCurrentSession(): boolean {
+		return this.jobStreamSessionId !== null && this.jobStreamSessionId === this.currentSessionContext;
+	}
+
+	private jobStreamController: AbortController | null = null;
+
+	/** Feed one job-run SSE event into the live trace with the same reducer a
+	 *  normal chat turn uses, so the process timeline is identical. */
+	applyJobStreamEvent(event: JobRunStreamEvent): void {
+		if (!this.jobStreaming) return;
+		if (event.type === "job_state" || event.type === "job_result") return;
+		// The shared reducer types tool_end.result/isError and error.persisted as
+		// required — the job SSE keeps them optional, so normalize first.
+		const chatEvent: ChatStreamEvent | null = event.type === "tool_end"
+			? { type: "tool_end", toolCallId: event.toolCallId, toolName: event.toolName, result: event.result, isError: event.isError === true }
+			: event.type === "error"
+				? { type: "error", message: event.message, persisted: false }
+				: event;
+		this.jobStreamTrace = applyChatTraceEvent(this.jobStreamTrace, chatEvent, new Date().toISOString());
+		if (event.type === "text_delta") this.jobStreamText += event.delta;
+		else if (event.type === "error") {
+			this.jobStreamError = this.jobStreamError ? `${this.jobStreamError}\n${event.message}` : event.message;
+		}
+		// ask_user_question parks the run — surface the same dialog card a chat
+		// turn would show, scoped to the run turn so the answer routes back.
+		else if (event.type === "question") {
+			this.pendingQuestion = {
+				questionId: event.questionId,
+				params: event.params,
+				sessionId: this.jobStreamSessionId ?? undefined,
+				turnId: event.turnId,
+			};
+		} else if (event.type === "question_resolved") {
+			if (this.pendingQuestion?.questionId === event.questionId) this.pendingQuestion = null;
+		}
+		this.scheduleStreamChange();
+	}
+
+	/** Show the job prompt as the user turn of the run conversation right away
+	 *  (the server persists the same turn; history reload converges later).
+	 *  Returns the message id so a raced-out run can roll the bubble back. */
+	appendJobUserMessage(sessionId: string, content: string): string | null {
+		const trimmed = content.trim();
+		if (!sessionId || !trimmed || this.currentSessionContext !== sessionId) return null;
+		const messageId = `job-user:${createClientRequestId()}`;
+		this.messages = [...this.messages, {
+			role: "user",
+			content,
+			timestamp: Date.now(),
+			channel: "scheduler",
+			turnId: messageId,
+			transient: true,
+			complete: false,
+		}];
+		this.jobUserMessageId = messageId;
+		this.emit("change", undefined);
+		return messageId;
+	}
+
+	/** Silent bail-out for a run that lost a race with the server (slot
+	 *  already settled): remove the optimistic user bubble and leave — no
+	 *  result message, no error, nothing. */
+	discardJobStream(): void {
+		this.flushStreamChange();
+		this.jobStreaming = false;
+		const messageId = this.jobUserMessageId;
+		this.jobStreamSessionId = null;
+		this.jobStreamController = null;
+		this.jobStreamTrace = [];
+		this.jobStreamText = "";
+		this.jobStreamError = "";
+		this.jobUserMessageId = null;
+		if (!messageId) return;
+		const index = this.messages.findIndex((message) => message.turnId === messageId && message.transient);
+		if (index < 0) return;
+		this.messages = [...this.messages.slice(0, index), ...this.messages.slice(index + 1)];
+		this.emit("change", undefined);
+	}
+
+	/** Common tail of the job-run paths: clear the live namespace and append
+	 *  the settled assistant record, keeping the finalized process timeline so
+	 *  the run history renders exactly like it did while streaming. */
+	private appendSettledJobMessage(
+		jobId: string,
+		content: string,
+		trace: ChatTraceStep[],
+		piStopReason: "stop" | "aborted",
+	): void {
+		const sessionId = this.jobStreamSessionId;
+		const startedAt = this.jobStreamStartedAt;
+		this.jobStreamSessionId = null;
+		this.jobStreamController = null;
+		this.jobStreamTrace = [];
+		this.jobStreamText = "";
+		this.jobStreamError = "";
+		// The settled record belongs to the run's conversation only — never to
+		// whatever other session the user may be viewing by then.
+		if (!sessionId || sessionId !== this.currentSessionContext) return;
+		this.messages = [...this.messages, {
+			role: "assistant",
+			content,
+			timestamp: Date.now(),
+			channel: "scheduler",
+			turnId: `job:${jobId}:${createClientRequestId()}`,
+			trace,
+			traceStartedAt: startedAt ?? undefined,
+			traceFinishedAt: new Date().toISOString(),
+			stopReason: piStopReason,
+			transient: false,
+			complete: true,
+		}];
+		this.emit("change", undefined);
+	}
+
+	/** Stop path: keep the live process timeline as a settled record (tool
+	 *  rows + partial answer) instead of collapsing it into plain text. */
+	settleJobStreamStopped(jobId: string, stoppedLabel: string): void {
+		this.flushStreamChange();
+		this.jobStreaming = false;
+		const text = this.jobStreamText.trim();
+		const trace = applyChatTraceEvent(
+			this.jobStreamTrace,
+			{ type: "aborted", message: stoppedLabel, persisted: false },
+			new Date().toISOString(),
+		);
+		this.appendSettledJobMessage(jobId, text || stoppedLabel, trace, "aborted");
+	}
+
+	/** Swap the live job trace for the settled result message. The finalized
+	 *  timeline travels with the message so the run stays inspectable. */
+	settleJobStream(jobId: string, content: string): void {
+		this.flushStreamChange();
+		this.jobStreaming = false;
+		const trace = finalizeTraceSteps(this.jobStreamTrace);
+		this.appendSettledJobMessage(jobId, content, trace, "stop");
 	}
 
 	/**

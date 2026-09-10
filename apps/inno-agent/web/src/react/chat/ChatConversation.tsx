@@ -9,6 +9,7 @@ import { buildConversationTurns, ConversationMinimap } from "../ConversationMini
 import { useStoreSnapshot } from "../hooks.js";
 import { Spinner } from "../ui/Spinner.js";
 import { MessageBubble } from "./MessageBubble.js";
+import { JobStreamBubbles } from "./JobStreamBubbles.js";
 import { StreamingBubbles } from "./StreamingBubbles.js";
 import { TodoWidget, extractTodoTasks } from "./TodoWidget.js";
 import { answeredQuestionnaireFromTool } from "../../utils/questionnaire.js";
@@ -27,10 +28,17 @@ interface ChatConversationProps {
 		messages: ChatMessage[];
 		isSending: boolean;
 		isLoadingHistory: boolean;
+		/** A manual job run is streaming into this conversation — the empty
+		 *  session placeholder must not cover the live job timeline. */
+		jobStreaming: boolean;
 		activeTools: ChatToolRecord[];
 		completedTools: ChatToolRecord[];
 		pendingQuestion: PendingQuestion | null;
 	};
+	/** Collapse user messages to their first line (job-prompt turns). */
+	collapseUserMessages?: boolean;
+	/** Floating notice rendered over the top of the conversation column. */
+	topOverlay?: ReactNode;
 	scrollRef: RefObject<HTMLDivElement | null>;
 	onScroll: () => void;
 	onWheel: () => void;
@@ -53,6 +61,8 @@ interface ChatConversationProps {
 
 export function ChatConversation({
 	chat,
+	collapseUserMessages = false,
+	topOverlay,
 	scrollRef,
 	onScroll,
 	onWheel,
@@ -171,6 +181,7 @@ export function ChatConversation({
 
 	return (
 		<section className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-chat-bg)]">
+			{topOverlay}
 			{smartToast}
 			<div className="conversation-stage relative flex-1 min-h-0">
 				<div
@@ -189,7 +200,7 @@ export function ChatConversation({
 							</div>
 						) : null}
 
-						{!chat.isLoadingHistory && chat.messages.length === 0 && !chat.isSending ? (
+						{!chat.isLoadingHistory && chat.messages.length === 0 && !chat.isSending && !chat.jobStreaming ? (
 							<div className="flex flex-col items-center justify-center pt-20 text-center text-[var(--inno-text-muted)]">
 								<div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]"><Sparkles size={18} /></div>
 								<p className="text-sm font-medium text-[var(--inno-text)]">{t("chat.emptySessionTitle")}</p>
@@ -216,6 +227,7 @@ export function ChatConversation({
 									<div key={messageKey} data-conversation-turn={turnIndex}>
 										<MessageBubble
 											message={message}
+											collapseUserToFirstLine={collapseUserMessages}
 											animateEntry={!skipFadeKeysRef.current.has(messageKey)}
 											liveBodies={skipFadeKeysRef.current.has(messageKey)}
 											showChannel={multiChannel}
@@ -234,6 +246,7 @@ export function ChatConversation({
 						})()}
 
 						<StreamingBubbles onOpenSkill={onOpenSkill} holdCompleted={settledSending} />
+						<JobStreamBubbles />
 					</div>
 				</div>
 				<ConversationMinimap messages={chat.messages} scrollContainerRef={scrollRef} onNavigateStart={onPauseAutoScroll} />

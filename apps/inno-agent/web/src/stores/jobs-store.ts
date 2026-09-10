@@ -39,7 +39,7 @@ class JobsStoreImpl extends EventEmitter<JobsStoreEvents> {
 
 	async remove(id: string): Promise<void> {
 		await deleteJob(id);
-		this.jobs = this.jobs.filter((j) => (j.id === id));
+		this.jobs = this.jobs.filter((j) => (j.id !== id));
 		this.emit("change", undefined);
 	}
 

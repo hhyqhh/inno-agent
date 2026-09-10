@@ -53,14 +53,6 @@ function runPython(source: string): void {
 	terminalStore.runCommand("python model_reply.py", "model_reply.py", source);
 }
 
-function countLines(source: string): number {
-	let lines = 1;
-	for (let i = 0; i < source.length; i += 1) {
-		if (source[i] === "\n") lines += 1;
-	}
-	return lines;
-}
-
 function trimTrailingNewlines(source: string): string {
 	let end = source.length;
 	while (end > 0 && source[end - 1] === "\n") end -= 1;
@@ -112,7 +104,7 @@ function rootStyle(result: HighlightResult): CSSProperties {
  * update only its token children so that the first highlight cannot cause a
  * one-frame code-block resize.
  */
-function StableCodeBlockBody({ code, language }: { code: string; language: string }) {
+function StableCodeBlockBody({ code, language, onOverflowChange }: { code: string; language: string; onOverflowChange?: (overflowing: boolean) => void }) {
 	const streamdownContext = useContext(StreamdownContext);
 	const bodyRef = useRef<HTMLDivElement>(null);
 	const stickToBottomRef = useRef(true);
@@ -145,6 +137,20 @@ function StableCodeBlockBody({ code, language }: { code: string; language: strin
 	const lineClassName = streamdownContext.lineNumbers
 		? "block before:content-[counter(line)] before:inline-block before:[counter-increment:line] before:w-6 before:mr-4 before:text-[13px] before:text-right before:text-muted-foreground/50 before:font-mono before:select-none"
 		: "block";
+	const checkOverflow = () => {
+		const body = bodyRef.current;
+		if (!body || !maxHeight || !onOverflowChange) return;
+		onOverflowChange(body.scrollHeight > body.clientHeight + 1);
+	};
+
+	useLayoutEffect(() => {
+		checkOverflow();
+		const body = bodyRef.current;
+		if (!body || !maxHeight || !onOverflowChange || typeof ResizeObserver === "undefined") return;
+		const observer = new ResizeObserver(checkOverflow);
+		observer.observe(body);
+		return () => observer.disconnect();
+	}, [maxHeight, normalizedCode, onOverflowChange, result]);
 
 	useEffect(() => {
 		const body = bodyRef.current;
@@ -324,7 +330,8 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 	const [draft, setDraft] = useState(code);
 	const [editing, setEditing] = useState(false);
 	const [wrapped, setWrapped] = useState(false);
-	const [expanded, setExpanded] = useState(() => countLines(code) <= 16);
+	const [expanded, setExpanded] = useState(false);
+	const [codeOverflowing, setCodeOverflowing] = useState(false);
 	const [fullscreen, setFullscreen] = useState(false);
 	const [moreOpen, setMoreOpen] = useState(false);
 	const [copied, setCopied] = useState(false);
@@ -333,9 +340,7 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const canRun = !simpleMode && /^(?:python|py)$/i.test(language) && !isIncomplete && !editing;
 	const source = editedSource ?? code;
-	// The length check short-circuits before the line scan for short snippets;
-	// both avoid allocating a per-line array on every streaming re-render.
-	const expandable = source.length > 1800 || countLines(source) > 16;
+	const expandable = codeOverflowing;
 
 	useEffect(() => setMoreOpen(false), [code, isIncomplete]);
 
@@ -415,7 +420,7 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 						{isIncomplete ? <span className="inno-markdown-content-status"><span className="inno-markdown-content-status-dot" />{t("markdown.generating", "生成中")}</span> : null}
 						{withToolbar ? renderToolbar(forceExpanded ? fullscreenMoreId : moreId, forceExpanded) : null}
 					</div>
-					<StableCodeBlockBody code={source} language={language || "text"} />
+					<StableCodeBlockBody code={source} language={language || "text"} onOverflowChange={forceExpanded ? undefined : setCodeOverflowing} />
 				</CodeBlockContainer>
 			</div>
 		</StreamdownContext.Provider>

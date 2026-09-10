@@ -886,6 +886,21 @@ export async function abortPromptForTurnToken(token: string): Promise<boolean> {
 }
 
 /**
+ * Abort the active prompt only when it belongs to the given session and no
+ * turn-token-owned prompt (a normal chat turn) is running. Manual job runs
+ * execute without a lifecycle token, so _activePromptToken is null while a
+ * job streams; a queued/running chat turn owns a token and must not be hit.
+ */
+export async function abortJobPromptInSession(sessionPath: string): Promise<boolean> {
+	if (_activePromptToken !== null) return false;
+	const session = getSession();
+	const activeFile = session.sessionFile;
+	if (!activeFile || basename(activeFile) !== basename(sessionPath)) return false;
+	await abortCurrentPrompt();
+	return true;
+}
+
+/**
  * Return current runtime session id.
  */
 export function getCurrentSessionId(): string {
@@ -979,6 +994,18 @@ export function appendAssistantNotification(text: string): void {
 		timestamp: Date.now(),
 	};
 	session.sessionManager.appendMessage(message);
+}
+
+/**
+ * Append a background notification to a specific persisted session. The
+ * session switch and append share one queue slot so a concurrent chat turn
+ * cannot switch the singleton runtime between those two operations.
+ */
+export function appendAssistantNotificationInSession(sessionPath: string, text: string): Promise<void> {
+	return enqueue(async () => {
+		await switchToSession(sessionPath);
+		appendAssistantNotification(text);
+	});
 }
 
 /**

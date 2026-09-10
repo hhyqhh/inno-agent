@@ -290,6 +290,33 @@
 	"jobs": {
 		"title": "Scheduled Jobs",
 		"subtitle": "Recurring automations and reminders",
+		"todayCompleted": "Completed today",
+		"todayProgress": "Today {{completed}}/{{total}}",
+		"todayFailed": "Failed today",
+		"categories": {
+			"checkInRequired": "Check-in required",
+			"notRequired": "No check-in required"
+		},
+		"checkIn": {
+			"title": "Today's learning check-in",
+			"subtitle": "Complete today's planned learning tasks to check in automatically",
+			"progress": "{{completed}}/{{total}} planned slots completed today",
+			"noTasks": "No required learning tasks today",
+			"autoCompleted": "Today's learning check-in is complete!",
+			"failedCount": "{{count}} failed",
+			"slotSuccess": "Completed",
+			"slotPending": "Pending",
+			"slotFailed": "Failed",
+			"slotSkipped": "Skipped",
+			"runNow": "Run now",
+			"retry": "Retry",
+			"skippedNote": "{{count}} skipped slots do not block check-in",
+			"completed": "Completed",
+			"currentStreak": "Current streak",
+			"total": "Total days",
+			"longestStreak": "Longest streak",
+			"error": "Action failed: {{message}}"
+		},
 		"newJob": "New",
 		"empty": "No scheduled jobs.",
 		"lastRun": "Last run: {{time}}",
@@ -302,6 +329,13 @@
 			"delete": "Delete",
 			"enable": "Enable",
 			"disable": "Disable"
+		},
+		"chat": {
+			"completed": "Scheduled job \"{{name}}\" completed.\n\n{{output}}",
+			"failed": "Scheduled job \"{{name}}\" failed: {{error}}",
+			"stopped": "Job stopped manually. Partial output is kept in the conversation.",
+			"noOutput": "The job completed without output.",
+			"unknownError": "Unknown error"
 		},
 		"lastResult": "Last result:",
 		"form": {
@@ -349,6 +383,7 @@
 			"graphify_update": "Graph update",
 			"learner_profile_reflection": "Profile reflection",
 			"spaced_review": "Spaced review",
+			"check_in_reminder": "Check-in reminder",
 			"push_reminder": "Push reminder",
 			"custom_prompt": "Custom prompt"
 		},
@@ -359,7 +394,10 @@
 			"timeRequired": "Pick a time",
 			"weekdayRequired": "Pick at least one weekday",
 			"dateRequired": "Pick a date",
-			"saveFailed": "Failed to save: {{message}}"
+			"saveFailed": "Failed to save: {{message}}",
+			"sessionCreateFailed": "Could not create a conversation to show the job result",
+			"sessionUnavailable": "The conversation is temporarily unavailable; try again later",
+			"jobNotFound": "Job definition not found; it may have been deleted"
 		},
 		"humanCron": {
 			"daily": "Daily at {{time}}",
@@ -368,6 +406,13 @@
 			"monthly": "Monthly on day {{day}} at {{time}}",
 			"monthlyLast": "Last day of month at {{time}}",
 			"once": "Once on {{date}} {{time}}"
+		},
+		"pending": {
+			"title": "Scheduled job \"{{name}}\" is ready",
+			"countdown": "Auto-starts in {{seconds}}s",
+			"starting": "Starting…",
+			"runNow": "Run now",
+			"skip": "Skip"
 		}
 	},
 	"skills": {
@@ -972,6 +1017,7 @@
 		"deleteWorkspace": "Delete workspace",
 		"originChannel": "Origin: {{channel}}",
 		"interactedChannel": "Interacted: {{channel}}",
+		"channelScheduler": "Check-in",
 		"generateTopic": "AI generate topic",
 		"rename": "Rename",
 		"archive": "Archive",

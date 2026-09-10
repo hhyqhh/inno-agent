@@ -99,7 +99,13 @@ export class JobStore {
 			const current = jobs[idx];
 			const patch = mutator(current);
 			const merged = { ...current, ...patch, updatedAt: new Date().toISOString() };
-			if (patch.cron || patch.timezone || patch.lastRunAt || patch.enabled !== undefined) {
+			if (patch.enabled === false) {
+				merged.nextRunAt = undefined;
+			} else if ("nextRunAt" in patch) {
+				// A run tied to a concrete planned slot may provide the next slot
+				// explicitly. Preserve it even though lastRunAt also changes.
+				merged.nextRunAt = patch.nextRunAt;
+			} else if (patch.cron || patch.timezone || patch.lastRunAt || patch.enabled !== undefined) {
 				merged.nextRunAt = merged.enabled ? computeNextRunAt(merged.cron, merged.timezone) : undefined;
 			}
 			jobs[idx] = merged;

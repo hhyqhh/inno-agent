@@ -81,15 +81,18 @@ const CHANNEL_LABEL: Record<string, string> = {
 	cli: "CLI",
 	web: "Web",
 	feishu: "Feishu",
-	scheduler: "Job",
 	qq: "QQ",
 	wechat: "WeChat",
 };
 
 export function ChannelBadge({ channel }: { channel: string }) {
+	const { t } = useTranslation();
+	// The scheduler badge is user-facing copy (打卡/Check-in), not a brand name —
+	// resolve it through i18n like the rest of the UI.
+	const label = channel === "scheduler" ? t("sidebar.channelScheduler") : CHANNEL_LABEL[channel] ?? channel;
 	return (
 		<span className={`inline-block rounded px-1.5 py-px text-[9px] font-medium leading-tight ring-1 ring-black/5 ${CHANNEL_BADGE_CLASS[channel] ?? "bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]"}`}>
-			{CHANNEL_LABEL[channel] ?? channel}
+			{label}
 		</span>
 	);
 }
@@ -481,9 +484,12 @@ export function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; c
 	);
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, showChannel, resolveAttachmentUrl, onOpenAttachment, onOpenSkill, onEdit, showRetry, showActions = true, answeredQuestionnaires: suppliedQuestionnaires, animateEntry = true, liveBodies = false, onRetry }: {
+export const MessageBubble = memo(function MessageBubble({ message, showChannel, collapseUserToFirstLine = false, resolveAttachmentUrl, onOpenAttachment, onOpenSkill, onEdit, showRetry, showActions = true, answeredQuestionnaires: suppliedQuestionnaires, animateEntry = true, liveBodies = false, onRetry }: {
 	message: ChatMessage;
 	showChannel?: boolean;
+	/** Render user messages as their first line only (job-prompt turns in
+	 *  scheduler-born conversations). Full text stays on hover. */
+	collapseUserToFirstLine?: boolean;
 	/** Optional URL resolver for attachment chips (workspace raw link). Kept as
 	 *  a prop so this module stays store/api-free for showcase replay. */
 	resolveAttachmentUrl?: AttachmentUrlResolver;
@@ -561,6 +567,11 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 			? { command: `skill:${skillMessage.skillName}`, args: skillMessage.args }
 			: parseAgentCommandMessage(message.content);
 		const hasAttachments = Boolean(message.attachments && (message.attachments.bindings.length > 0 || message.attachments.loose.length > 0));
+		const fullUserContent = message.content.trim();
+		const collapseContent = (collapseUserToFirstLine || message.channel === "scheduler") && !skillMessage && !agentCommandMessage && !hasAttachments;
+		const displayContent = collapseContent
+			? (fullUserContent.split("\n", 1)[0] ?? fullUserContent)
+			: fullUserContent;
 		const canEdit = Boolean(
 			onEdit
 			&& message.entryId
@@ -604,7 +615,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 						) : agentCommandMessage ? (
 							<AgentCommandMessageContent {...agentCommandMessage} onOpenSkill={onOpenSkill} />
 						) : (
-							message.content.trim()
+							<span title={displayContent !== fullUserContent ? message.content : undefined}>{displayContent}</span>
 						)}
 					</div>
 					<div className="inno-message-actions">

@@ -119,6 +119,16 @@ describe("JobStore.mutate", () => {
 		expect(updated?.nextRunAt).toBeDefined();
 	});
 
+	it("honors an explicit nextRunAt when lastRunAt also changes", async () => {
+		const job = createJob();
+		const explicit = "2099-01-01T09:00:00.000Z";
+		const updated = await store.mutate(job.id, () => ({
+			lastRunAt: "2026-09-10T16:52:00.000Z",
+			nextRunAt: explicit,
+		}));
+		expect(updated?.nextRunAt).toBe(explicit);
+	});
+
 	it("keeps the chain alive after a mutator throws", async () => {
 		const job = createJob();
 		await expect(

@@ -202,6 +202,14 @@ describe("server smoke", () => {
 		expect(res.status).toBe(200);
 	});
 
+	it("GET /api/checkins exposes today's derived plan", async () => {
+		const res = await api("/api/checkins/today");
+		expect(res.status).toBe(200);
+		const body = await res.json() as { dayStatus: string; todayCheckedIn: boolean };
+		expect(body.dayStatus).toBe("no_tasks");
+		expect(body.todayCheckedIn).toBe(false);
+	});
+
 	it("POST /api/jobs with an invalid cron returns 400 (route-domain extraction guard)", async () => {
 		const res = await fetch(`http://127.0.0.1:${port}/api/jobs`, {
 			method: "POST",

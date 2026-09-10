@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeNextRunAt, isCronDue, isOneShotCron, validateCron } from "./cron-utils.js";
+import { computeNextRunAt, getCronDueAt, getCronOccurrencesForDate, isCronDue, isOneShotCron, validateCron } from "./cron-utils.js";
 
 describe("validateCron", () => {
 	it("accepts a valid 5-field expression", () => {
@@ -65,6 +65,34 @@ describe("isCronDue", () => {
 
 	it("returns false for an invalid cron instead of throwing", () => {
 		expect(isCronDue("garbage", "Asia/Shanghai", undefined)).toBe(false);
+	});
+});
+
+describe("getCronDueAt", () => {
+	it("returns the exact occurrence that is due", () => {
+		const now = new Date("2026-08-09T10:00:30Z");
+		expect(getCronDueAt("0 * * * *", "Asia/Shanghai", undefined, now)).toBe("2026-08-09T10:00:00.000Z");
+	});
+
+	it("returns undefined after the latest occurrence has been recorded", () => {
+		const now = new Date("2026-08-09T10:00:30Z");
+		expect(getCronDueAt("0 * * * *", "Asia/Shanghai", "2026-08-09T10:00:05.000Z", now)).toBeUndefined();
+	});
+});
+
+describe("getCronOccurrencesForDate", () => {
+	it("enumerates every occurrence in a local calendar day", () => {
+		expect(getCronOccurrencesForDate("0 9,18 * * *", "Asia/Shanghai", "2026-09-10", "Asia/Shanghai"))
+			.toEqual(["2026-09-10T01:00:00.000Z", "2026-09-10T10:00:00.000Z"]);
+	});
+
+	it("uses the day timezone boundary while preserving the job timezone", () => {
+		expect(getCronOccurrencesForDate("0 0 * * *", "UTC", "2026-09-10", "Asia/Shanghai"))
+			.toEqual(["2026-09-10T00:00:00.000Z"]);
+	});
+
+	it("returns no occurrences for an invalid expression", () => {
+		expect(getCronOccurrencesForDate("not a cron", "Asia/Shanghai", "2026-09-10")).toEqual([]);
 	});
 });
 

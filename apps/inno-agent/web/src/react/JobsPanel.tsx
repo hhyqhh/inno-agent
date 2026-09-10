@@ -3,11 +3,14 @@ import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
 import { Plus, Play, Pencil, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 import { jobsStore } from "../stores/jobs-store.js";
-import type { CreateJobInput, ScheduledJob, TaskType } from "../types/jobs.js";
+import { requiresCheckIn, type CreateJobInput, type ScheduledJob, type TaskType } from "../types/jobs.js";
+import type { CheckInStatus } from "../types/checkins.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { checkboxCls } from "./ui/checkbox.js";
 import { Spinner } from "./ui/Spinner.js";
 import { ScheduleEditor } from "./jobs/ScheduleEditor.js";
+import { CheckInCard } from "./jobs/CheckInCard.js";
+import { runJobInConversation } from "./jobs/runJobInConversation.js";
 import {
 	DEFAULT_SCHEDULE,
 	cronToSchedule,
@@ -23,6 +26,7 @@ const TASK_TYPE_IDS: TaskType[] = [
 	"graphify_update",
 	"learner_profile_reflection",
 	"spaced_review",
+	"check_in_reminder",
 	"push_reminder",
 	"custom_prompt",
 ];
@@ -64,11 +68,11 @@ export function JobsPanel() {
 	const [form, setForm] = useState<JobFormState>(defaultForm);
 	const [formError, setFormError] = useState<string | null>(null);
 	const [isSaving, setIsSaving] = useState(false);
+	const [checkInStatus, setCheckInStatus] = useState<CheckInStatus | null>(null);
 	const state = useStoreSnapshot(jobsStore, () => ({
 		jobs: jobsStore.jobs,
 		isLoading: jobsStore.isLoading,
 		runningJobId: jobsStore.runningJobId,
-		lastRunResult: jobsStore.lastRunResult,
 	}));
 
 	const humanI18n = useMemo(
@@ -162,11 +166,30 @@ export function JobsPanel() {
 		}
 	}
 
+	async function runJobNow(job: ScheduledJob): Promise<void> {
+		await runJobInConversation(job, t);
+	}
+
 	const previewCron = scheduleToCron(form.schedule);
 	const previewLabel = humanizeSchedule(form.schedule, humanI18n);
+	const jobGroups = [
+		{
+			key: "check-in-required",
+			label: t("jobs.categories.checkInRequired"),
+			jobs: state.jobs.filter((job) => requiresCheckIn(job.taskType)),
+			headingClass: "text-[var(--inno-success)]",
+		},
+		{
+			key: "not-required",
+			label: t("jobs.categories.notRequired"),
+			jobs: state.jobs.filter((job) => !requiresCheckIn(job.taskType)),
+			headingClass: "text-[var(--inno-text-muted)]",
+		},
+	];
 
 	return (
 		<div className="flex h-full flex-col p-3">
+			<CheckInCard onStatusChange={setCheckInStatus} />
 			<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
 				<div className="flex items-center justify-between border-b border-[var(--inno-border)] px-3 py-3">
 					<div>
@@ -189,79 +212,101 @@ export function JobsPanel() {
 					{!state.isLoading && state.jobs.length === 0 ? (
 						<p className="py-8 text-center text-sm text-[var(--inno-text-muted)]">{t("jobs.empty")}</p>
 					) : null}
-					<div className="flex flex-col gap-2">
-						{state.jobs.map((job) => {
-							const isRunning = state.runningJobId === job.id;
-							const human = humanizeCron(job.cron, humanI18n);
-							return (
-								<div key={job.id} className={`rounded-lg bg-[var(--inno-surface)] p-3 ${job.enabled ? "" : "opacity-60"}`}>
-									<div className="flex items-start justify-between gap-2">
-										<div className="min-w-0 flex-1">
-											<div className="truncate text-sm font-medium text-[var(--inno-text)]">{job.name}</div>
-											<div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--inno-text-muted)]">
-												<span className="rounded bg-[var(--inno-surface-muted)] px-1.5 py-0.5 text-[var(--inno-text)]">{human}</span>
-												<span className="rounded bg-[var(--inno-surface-muted)] px-1.5 py-0.5 text-[var(--inno-text-muted)]">
-													{t(`jobs.taskTypes.${job.taskType}`)}
-												</span>
-												<span className={job.enabled ? "text-[var(--inno-success)]" : "text-[var(--inno-danger)]"}>
-													{job.enabled ? t("common.enabled") : t("common.disabled")}
-												</span>
-											</div>
-											<div className="mt-1 text-xs text-[var(--inno-text-muted)]">
-												{t("jobs.lastRun", { time: job.lastRunAt ? formatDate(job.lastRunAt) : t("jobs.never") })}
-												{job.nextRunAt ? ` · ${t("jobs.nextRun", { time: formatDate(job.nextRunAt) })}` : ""}
-											</div>
-										</div>
-									</div>
-
-									<div className="mt-2 flex flex-wrap gap-1.5">
-										<button
-											className={`flex items-center gap-1 rounded-md inno-primary-button px-2 py-1 text-xs text-white ${isRunning ? "cursor-wait opacity-50" : ""}`}
-											disabled={isRunning}
-											title={t("jobs.actions.run")}
-											onClick={() => void jobsStore.run(job.id)}
-										>
-											<Play size={12} />
-											{isRunning ? t("jobs.actions.running") : t("jobs.actions.run")}
-										</button>
-										<button
-											className="flex items-center gap-1 rounded bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-											title={t("jobs.actions.edit")}
-											onClick={() => openEditForm(job)}
-										>
-											<Pencil size={12} />
-											{t("jobs.actions.edit")}
-										</button>
-										<button
-											className="flex items-center gap-1 rounded bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-											title={job.enabled ? t("jobs.actions.disable") : t("jobs.actions.enable")}
-											onClick={() => void jobsStore.update(job.id, { enabled: !job.enabled })}
-										>
-											{job.enabled ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
-											{job.enabled ? t("jobs.actions.disable") : t("jobs.actions.enable")}
-										</button>
-										<button
-											className="flex items-center gap-1 rounded px-2 py-1 text-xs text-[var(--inno-danger)] hover:bg-[var(--inno-danger-bg)]"
-											title={t("jobs.actions.delete")}
-											onClick={() => void jobsStore.remove(job.id)}
-										>
-											<Trash2 size={12} />
-											{t("jobs.actions.delete")}
-										</button>
-									</div>
+					<div className="flex flex-col gap-4">
+						{jobGroups.map((group) => group.jobs.length > 0 ? (
+							<section key={group.key}>
+								<div className="mb-2 flex items-center gap-2">
+									<h4 className={`text-xs font-medium ${group.headingClass}`}>{group.label}</h4>
+									<span className="rounded-full bg-[var(--inno-surface-muted)] px-1.5 py-0.5 text-[10px] text-[var(--inno-text-muted)]">
+										{group.jobs.length}
+									</span>
 								</div>
-							);
-						})}
-					</div>
-				</div>
+								<div className="flex flex-col gap-2">
+									{group.jobs.map((job) => {
+										const isRunning = state.runningJobId === job.id;
+										const human = humanizeCron(job.cron, humanI18n);
+										const todayPlanJob = requiresCheckIn(job.taskType)
+											? checkInStatus?.jobs.find((entry) => entry.jobId === job.id)
+											: undefined;
+										const todayRequiredOccurrences = todayPlanJob?.occurrences.filter((occurrence) => occurrence.status !== "skipped") ?? [];
+										const todayCompletedCount = todayRequiredOccurrences.filter((occurrence) => occurrence.status === "success").length;
+										const todayIsComplete = Boolean(todayPlanJob) && todayRequiredOccurrences.every((occurrence) => occurrence.status === "success");
+										const todayHasFailed = todayRequiredOccurrences.some((occurrence) => occurrence.status === "error");
+										return (
+											<div key={job.id} className={`rounded-lg bg-[var(--inno-surface)] p-3 ${job.enabled ? "" : "opacity-60"}`}>
+												<div className="flex items-start justify-between gap-2">
+													<div className="min-w-0 flex-1">
+														<div className="truncate text-sm font-medium text-[var(--inno-text)]">{job.name}</div>
+														<div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--inno-text-muted)]">
+															<span className="rounded bg-[var(--inno-surface-muted)] px-1.5 py-0.5 text-[var(--inno-text)]">{human}</span>
+															<span className="rounded bg-[var(--inno-surface-muted)] px-1.5 py-0.5 text-[var(--inno-text-muted)]">
+																{t(`jobs.taskTypes.${job.taskType}`)}
+															</span>
+															<span className={job.enabled ? "text-[var(--inno-success)]" : "text-[var(--inno-danger)]"}>
+																{job.enabled ? t("common.enabled") : t("common.disabled")}
+															</span>
+															{todayPlanJob ? (
+																<span className={todayIsComplete ? "text-[var(--inno-success)]" : todayHasFailed ? "text-[var(--inno-danger)]" : "text-[var(--inno-warning)]"}>
+																	{todayIsComplete
+																		? t("jobs.todayCompleted")
+																		: todayHasFailed
+																			? t("jobs.todayFailed")
+																			: t("jobs.todayProgress", { completed: todayCompletedCount, total: todayRequiredOccurrences.length })}
+																</span>
+															) : null}
+														</div>
+														<div className="mt-1 text-xs text-[var(--inno-text-muted)]">
+															{t("jobs.lastRun", { time: job.lastRunAt ? formatDate(job.lastRunAt) : t("jobs.never") })}
+															{job.nextRunAt ? ` · ${t("jobs.nextRun", { time: formatDate(job.nextRunAt) })}` : ""}
+														</div>
+													</div>
+											</div>
 
-				{state.lastRunResult ? (
-					<div className="border-t border-[var(--inno-border)] p-3">
-						<div className="mb-1 text-xs font-medium text-[var(--inno-text)]">{t("jobs.lastResult")}</div>
-						<pre className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded bg-[var(--inno-surface-muted)] p-2 text-xs text-[var(--inno-text)]">{state.lastRunResult}</pre>
+												<div className="mt-2 flex flex-wrap gap-1.5">
+													<button
+														className={`flex items-center gap-1 rounded-md inno-primary-button px-2 py-1 text-xs text-white ${isRunning ? "cursor-wait opacity-50" : ""}`}
+														disabled={isRunning}
+														title={t("jobs.actions.run")}
+														onClick={() => void runJobNow(job)}
+													>
+														<Play size={12} />
+														{isRunning ? t("jobs.actions.running") : t("jobs.actions.run")}
+													</button>
+													<button
+														className="flex items-center gap-1 rounded bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+														title={t("jobs.actions.edit")}
+														onClick={() => openEditForm(job)}
+													>
+														<Pencil size={12} />
+														{t("jobs.actions.edit")}
+													</button>
+													<button
+														className="flex items-center gap-1 rounded bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+														title={job.enabled ? t("jobs.actions.disable") : t("jobs.actions.enable")}
+														onClick={() => void jobsStore.update(job.id, { enabled: !job.enabled })}
+													>
+														{job.enabled ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
+														{job.enabled ? t("jobs.actions.disable") : t("jobs.actions.enable")}
+													</button>
+													<button
+														className="flex items-center gap-1 rounded px-2 py-1 text-xs text-[var(--inno-danger)] hover:bg-[var(--inno-danger-bg)]"
+														title={t("jobs.actions.delete")}
+														onClick={() => void jobsStore.remove(job.id)}
+													>
+														<Trash2 size={12} />
+														{t("jobs.actions.delete")}
+													</button>
+												</div>
+											</div>
+										);
+									})}
+								</div>
+							</section>
+						) : null)}
 					</div>
-				) : null}
-			</div>
+					</div>
+
+				</div>
 
 			{showForm ? (
 				<motion.div

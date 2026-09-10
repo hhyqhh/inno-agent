@@ -482,7 +482,7 @@ summary:focus-visible {
 }
 
 .inno-markdown-toolbar-group--modes {
-	gap: 0.125rem;
+	gap: 0;
 	padding: 0.125rem;
 	border-radius: 0.5rem;
 	background: color-mix(in srgb, var(--inno-content-border) 28%, transparent);
@@ -537,8 +537,9 @@ summary:focus-visible {
 .inno-markdown-toolbar-button.is-active,
 .inno-markdown-toolbar-segment.is-active,
 .inno-markdown-toolbar-segment[aria-selected="true"] {
-	background: var(--inno-content-control-active);
-	color: var(--inno-accent);
+	background: var(--inno-surface);
+	color: var(--inno-text);
+	box-shadow: 0 1px 3px color-mix(in srgb, var(--inno-text) 14%, transparent);
 }
 
 .inno-markdown-toolbar-button:disabled,

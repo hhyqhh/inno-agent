@@ -19,7 +19,7 @@ PI SDK packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@e
 
 Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (scheduler), `@larksuiteoapi/node-sdk` (Feishu), `typebox` (validation), `undici` (HTTP client), `@juicesharp/rpiv-ask-user-question` (bridges agent `ask_user_question` tool calls to the web UI), `@juicesharp/rpiv-todo` (`todo` task-list tool), `pi-web-access` (`fetch_content`/`get_search_content` URL/GitHub/PDF/YouTube extraction), `pi-subagents` (optional subagent support), `pi-sandbox` (optional OS-level sandboxing), `graphology` + `graphology-communities-louvain` (wiki knowledge graph), `yaml` (YAML parsing), `@llamaindex/liteparse` (document parsing).
 
-Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is 70 files (541 tests), including backend chat-stream/trace persistence coverage and web chat trace/timeline coverage, while remaining skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
+Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is 72 files (563 tests), including backend chat-stream/trace persistence coverage and web chat trace/timeline coverage, while remaining skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
 
 When a PR changes the test count, the size of `server.ts`, or other structural facts stated in this file, update this file in the same PR — AI agents read it as ground truth.
 
@@ -238,7 +238,7 @@ Three layers, all file-backed under `dataDir`:
 
 ### Scheduler
 
-`src/scheduler/` implements cron-driven background jobs. `JobStore` persists `jobs.json` and appends `runs.jsonl` per execution. `CronScheduler` (uses `cron-parser`) triggers `job-runner.executeJob`. Jobs can also be invoked manually via `/api/jobs/:id/run` or from the agent itself via the `run_scheduled_job` tool. On boot, `normalizePersistedJobs` backfills `nextRunAt`/`lastStatus`/`runCount` fields, and `migrateReminderChannels` repoints legacy `push_reminder` jobs to the registered default Feishu target.
+`src/scheduler/` implements cron-driven background jobs. `JobStore` persists `jobs.json` and appends `runs.jsonl` per execution. `CronScheduler` (uses `cron-parser`) triggers `job-runner.executeJob`. Manual runs always create their own conversation (scheduler-born session badge) and stream agent events into it. `src/checkins/` adds the learning check-in layer: `CheckInStore` derives today's plan from learning jobs (`checkins.json` + `occurrences.json`), successful learning-job runs automatically fulfill their scheduled slot, and `GET /api/checkins/today` exposes it to the web UI (read-only by design — check-ins derive from job runs) (打卡卡片 in the jobs panel). Scheduled learning runs leave a visible trace for the user: a short completion/failure notice is pushed best-effort through the first registered default channel (feishu → wechat → qq). Jobs can also be invoked manually via `/api/jobs/:id/run` or from the agent itself via the `run_scheduled_job` tool. On boot, `normalizePersistedJobs` backfills `nextRunAt`/`lastStatus`/`runCount` fields, and `migrateReminderChannels` repoints legacy `push_reminder` jobs to the registered default Feishu target.
 
 ### Channels
 
@@ -253,12 +253,12 @@ Three layers, all file-backed under `dataDir`:
 
 ### HTTP server (`src/server.ts`)
 
-Plain Node `http.createServer` (no framework), ~1600 lines plus route domains extracted under `src/server/routes/` (chat, wiki, workspaces, skills, channels, jobs, sessions, settings, learner, practice, presets). Key endpoints:
+Plain Node `http.createServer` (no framework), ~1750 lines plus route domains extracted under `src/server/routes/` (chat, wiki, workspaces, skills, channels, jobs, checkins, sessions, settings, learner, practice, presets). Key endpoints:
 - `POST /api/chat/stream` — SSE streaming chat.
 - `POST /api/chat` — non-streaming chat (full response).
 - `GET /api/chat/events/:id` — SSE event replay for reconnecting to an in-progress chat stream after page navigation (backed by `SessionEventBroadcaster`, an in-memory buffer).
 - `GET/PUT /api/wiki/*` — wiki CRUD, graph, stats.
-- `GET/POST/PATCH/DELETE /api/jobs[/:id]` — job management; `POST /api/jobs/:id/run` for manual execution.
+- `GET/POST/PATCH/DELETE /api/jobs[/:id]` — job management; `POST /api/jobs/:id/run` and `POST /api/jobs/:id/run/stream` (SSE of the agent run: text/thinking/tool events) for manual execution into a chosen conversation; `POST /api/jobs/run/stop` aborts an in-flight manual run.
 - `GET /api/sessions` / `GET /api/sessions/:id` — session listing; `PATCH /api/sessions/:id` for archive/unarchive/topic.
 - `GET /api/skills` — list loaded skills.
 - `GET /api/commands` — slash commands the agent session can dispatch/expand (extension commands, prompt templates, skills), backing the composer's slash palette. PI's builtin commands are TUI-only and deliberately excluded.

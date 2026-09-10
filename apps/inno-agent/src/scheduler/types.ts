@@ -6,6 +6,7 @@ export type TaskType =
 	| "graphify_update"
 	| "learner_profile_reflection"
 	| "spaced_review"
+	| "check_in_reminder"
 	| "push_reminder"
 	| "custom_prompt";
 
@@ -35,6 +36,10 @@ export interface JobRunRecord {
 	id: string;
 	jobId: string;
 	jobName: string;
+	/** Stable daily check-in slot this run fulfilled, when applicable. */
+	occurrenceId?: string;
+	/** Scheduled instant for the check-in slot, when applicable. */
+	scheduledAt?: string;
 	status: JobRunStatus;
 	startedAt: string;
 	finishedAt?: string;

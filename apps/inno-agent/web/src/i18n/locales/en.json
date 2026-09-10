@@ -877,6 +877,7 @@
 		"removeImage": "Remove image",
 		"streamingInWorkspace": "Long output is generating in the file panel",
 		"longContentCollapsed": "Long content collapsed to keep the page responsive",
+		"yesterday": "Yesterday",
 		"expandFullContent": "Expand full content",
 		"collapseFullContent": "Collapse full content",
 		"composerPlaceholder": "Type a message…",

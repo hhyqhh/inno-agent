@@ -877,6 +877,7 @@
 		"removeImage": "移除图片",
 		"streamingInWorkspace": "长内容正在右侧文件区生成",
 		"longContentCollapsed": "内容较长，已折叠以保持页面流畅",
+		"yesterday": "昨天",
 		"expandFullContent": "展开完整内容",
 		"collapseFullContent": "收起完整内容",
 		"composerPlaceholder": "输入消息…",

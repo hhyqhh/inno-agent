@@ -2,6 +2,7 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { X, AlertTriangle, FileCode2, History, BookmarkPlus, BookOpen, Check, Copy, Pencil, RotateCcw, TerminalSquare } from "lucide-react";
 import type { AttachmentBinding, AttachmentRef, ChatMessage, ChatToolRecord, ChatTraceStep } from "../../types/chat.js";
 import { splitContentByBindings } from "../../utils/attachment-render.js";
@@ -395,11 +396,35 @@ function shouldCollapseAssistantContent(content: string): boolean {
 	return content.split(/\r\n|\r|\n/).length > LONG_ASSISTANT_LINES;
 }
 
-function formatMessageTime(timestamp: number): string {
+function formatMessageTime(timestamp: number, t: TFunction, language?: string): string {
 	if (!Number.isFinite(timestamp)) return "";
 	const date = new Date(timestamp);
 	if (Number.isNaN(date.getTime())) return "";
-	return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+	const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+	const now = new Date();
+	const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+	if (date >= startOfToday) return time;
+	const startOfYesterday = new Date(startOfToday);
+	startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+	if (date >= startOfYesterday) return `${t("chat.yesterday")} ${time}`;
+	// Weeks start on Monday; anything from this week shows the weekday name.
+	const startOfWeek = new Date(startOfToday);
+	startOfWeek.setDate(startOfWeek.getDate() - ((startOfToday.getDay() + 6) % 7));
+	if (date >= startOfWeek) return `${formatWeekday(date, language)} ${time}`;
+	const withYear = date.getFullYear() !== now.getFullYear();
+	return `${formatDayLabel(date, language, withYear)} ${time}`;
+}
+
+function formatWeekday(date: Date, language?: string): string {
+	return new Intl.DateTimeFormat(language || undefined, { weekday: "short" }).format(date);
+}
+
+function formatDayLabel(date: Date, language: string | undefined, withYear: boolean): string {
+	return new Intl.DateTimeFormat(language || undefined, {
+		year: withYear ? "numeric" : undefined,
+		month: (language ?? "").toLowerCase().startsWith("zh") ? "long" : "short",
+		day: "numeric",
+	}).format(date);
 }
 
 function AssistantContent({ content }: { content: string }) {
@@ -507,7 +532,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 	liveBodies?: boolean;
 	onRetry?: () => void;
 }) {
-	const { t } = useTranslation();
+	const { t, i18n } = useTranslation();
 	const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
 	const copyResetTimerRef = useRef<number | null>(null);
@@ -534,7 +559,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 	// flow so text stays at its original position among thinking/tool rows.
 	const hasTraceTimeline = hasVisibleTraceSteps(traceSteps.filter((step) => step.kind !== "progress" && step.kind !== "answer"));
 	const hasTraceError = traceSteps.some((step) => step.kind === "error");
-	const messageTime = formatMessageTime(message.timestamp);
+	const messageTime = formatMessageTime(message.timestamp, t, i18n?.language);
 
 	useEffect(() => () => {
 		if (copyResetTimerRef.current !== null) window.clearTimeout(copyResetTimerRef.current);

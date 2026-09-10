@@ -217,6 +217,14 @@ export async function handleJobsRoutes(
 			return true;
 		}
 		const occurrenceId = typeof body.occurrenceId === "string" ? body.occurrenceId.trim() : "";
+		// Resolve the target session BEFORE claiming the slot: a 404 here must
+		// not leak the claim, which would wedge the occurrence (auto-exec is
+		// blocked by isOccurrenceClaimed, manual retries 409) until restart.
+		const sessionPath = ctx.resolveSessionPath?.(sessionId);
+		if (!sessionPath) {
+			json(res, 404, { error: "Session not found" });
+			return true;
+		}
 		if (occurrenceId) {
 			// A manual run takes over a fired-but-waiting slot: cancel its
 			// deferred auto-execution and reserve the slot so cron re-fires
@@ -237,11 +245,6 @@ export async function handleJobsRoutes(
 					return true;
 				}
 			}
-		}
-		const sessionPath = ctx.resolveSessionPath?.(sessionId);
-		if (!sessionPath) {
-			json(res, 404, { error: "Session not found" });
-			return true;
 		}
 		ctx.recordJobRunSession?.(sessionId);
 

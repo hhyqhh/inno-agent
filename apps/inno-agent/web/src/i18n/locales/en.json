@@ -626,6 +626,21 @@
 			"title": "Single-dollar inline math",
 			"description": "Allow $...$ math. Off by default so prices remain plain text; \\(...\\) and $$...$$ still work."
 		},
+		"permissions": {
+			"title": "Tool permissions",
+			"description": "How strictly tool calls are approved. Dangerous commands and sensitive files are denied in every mode; changes apply immediately, no restart needed.",
+			"modes": {
+				"default": "Default",
+				"auto": "Auto-approve",
+				"yolo": "Full access"
+			},
+			"modeDesc": {
+				"default": "Commands outside the read-only allowlist ask for approval.",
+				"auto": "Commands run without approval cards.",
+				"yolo": "Nothing asks. Best paired with sandbox mode."
+			},
+			"denyFloorNote": "Dangerous commands and sensitive files stay denied in every mode."
+		},
 		"tabs": {
 			"general": "General",
 			"lab": "Lab",
@@ -842,7 +857,10 @@
 				"requestFailed": "Request failed",
 				"stopped": "Stopped",
 				"reply": "Reply",
-				"progress": "Progress"
+				"progress": "Progress",
+				"waitingForPermission": "Waiting for permission",
+				"permissionApproved": "Permission approved",
+				"permissionDenied": "Permission denied"
 			},
 			"details": {
 				"noThinkingText": "No thinking text",
@@ -1195,5 +1213,26 @@
 		"mermaidRenderError": "The chart could not be rendered. Switch to source to inspect it.",
 		"mermaidLabel": "Mermaid diagram",
 		"mermaidFullscreen": "Mermaid fullscreen"
+	},
+	"permission": {
+		"title": "Permission request",
+		"fromSubagent": "from subagent {{name}}",
+		"allowOnce": "Allow once",
+		"allowSession": "Allow for session",
+		"deny": "Deny"
+	},
+	"btw": {
+		"title": "Quick side question",
+		"subtitle": "Ask aside without interrupting the conversation — never enters the transcript",
+		"close": "Collapse",
+		"emptyHint": "Curious about something here? Ask it aside without touching the main conversation.",
+		"placeholder": "Type your question — Enter to send, Shift+Enter for a newline",
+		"send": "Send",
+		"thinking": "Thinking…",
+		"error": "Request failed: {{message}}",
+		"retry": "Retry",
+		"bringBack": "Bring into conversation",
+		"bringBackHint": "Append this Q&A as a side note to the main session for the tutor to build on",
+		"broughtBack": "Brought into the conversation"
 	}
 }

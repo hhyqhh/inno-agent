@@ -2,6 +2,7 @@ import { motion } from "motion/react";
 import { chatStore } from "../../stores/chat-store.js";
 import { useStoreSnapshot } from "../hooks.js";
 import { QuestionDialog } from "../QuestionDialog.js";
+import { PermissionDialog } from "../PermissionDialog.js";
 import { AgentTraceTimeline } from "./AgentTraceTimeline.js";
 
 /** Live view of a manual job run. Deliberately renders with the exact same
@@ -17,6 +18,7 @@ export function JobStreamBubbles() {
 		startedAt: chatStore.jobStreamStartedAt,
 		error: chatStore.jobStreamError,
 		pendingQuestion: chatStore.pendingQuestion,
+		pendingPermission: chatStore.pendingPermission,
 	}));
 	if (!stream.active || !stream.belongsToCurrentSession) return null;
 	const pendingQuestion = stream.pendingQuestion
@@ -24,6 +26,9 @@ export function JobStreamBubbles() {
 			questionId: stream.pendingQuestion.questionId,
 			card: <QuestionDialog pending={stream.pendingQuestion} />,
 		}
+		: undefined;
+	const permissionCard = stream.pendingPermission
+		? <PermissionDialog pending={stream.pendingPermission} />
 		: undefined;
 	return (
 		<motion.div
@@ -41,6 +46,7 @@ export function JobStreamBubbles() {
 				showText
 				fallbackText={stream.text}
 				pendingQuestion={pendingQuestion}
+				trailingCard={permissionCard}
 			/>
 		</motion.div>
 	);

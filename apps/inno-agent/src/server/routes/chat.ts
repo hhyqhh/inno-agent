@@ -15,6 +15,7 @@ import {
 import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
 import { expandInnoSlashCommand } from "../../agent/inno-extension.js";
 import { questionBridge, type QuestionBridgeResult } from "../../agent/question-bridge.js";
+import { permissionBridge, type PermissionDecision } from "../../agent/permission-bridge.js";
 import {
 	hasCompleteTurnAfterBaseline,
 	streamRegistry,
@@ -590,6 +591,28 @@ export async function handleChatRoutes(
 		return true;
 	}
 
+	// --- Permission response (from web UI) ---
+	// Answers a parked pi-permission-system `ask` (see permission-bridge.ts).
+	// Unlike question-response there is no resubmit-as-turn fallback: a denied
+	// ask simply returns a teaching reason to the agent.
+	if (method === "POST" && url === "/api/chat/permission-response") {
+		const body = (await readBody(req)) as Record<string, unknown>;
+		const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+		const turnId = typeof body.turnId === "string" ? body.turnId : "";
+		const requestId = typeof body.requestId === "string" ? body.requestId : "";
+		const decision = body.decision;
+		const reason = typeof body.reason === "string" ? body.reason : undefined;
+		const validDecision: PermissionDecision | null =
+			decision === "allow_once" || decision === "allow_session" || decision === "deny" ? decision : null;
+		if (!sessionId || !turnId || !requestId || !validDecision) {
+			json(res, 400, { error: "Missing sessionId, turnId, requestId or a valid decision (allow_once|allow_session|deny)" });
+			return true;
+		}
+		const status = permissionBridge.respond({ sessionId, turnId, requestId, decision: validDecision, reason });
+		json(res, status === "accepted" ? 200 : status === "scope_mismatch" || status === "already_resolved" ? 409 : 404, { accepted: status === "accepted" });
+		return true;
+	}
+
 	if (method === "POST" && url === "/api/chat/abort") {
 		json(res, 400, { error: "Scoped abort requires sessionId and turnId" });
 		return true;
@@ -613,6 +636,8 @@ export async function handleChatRoutes(
 		// the 30-minute question timeout. unbindTurn is idempotent — the
 		// onFinish unbind becomes a no-op once the binding is cleared here.
 		questionBridge.unbindTurn({ sessionId: state.sessionId, turnId: state.turnId, reason: "cancelled" });
+		// Same for a parked permission ask — it blocks the agent loop identically.
+		permissionBridge.unbindTurn({ sessionId: state.sessionId, turnId: state.turnId, reason: "cancelled" });
 		if (state.status === "running") await abortPromptForTurnToken(state.turnId);
 		json(res, 202, { status: state.status, cancelRequested: true });
 		return true;
@@ -905,6 +930,12 @@ export async function handleChatRoutes(
 						emit: (event) => streamRegistry.publishStreamEvent(state, event),
 						timeoutMs: 30 * 60_000,
 					});
+					permissionBridge.bindTurn({
+						sessionId: state.sessionId,
+						turnId: state.turnId,
+						emit: (event) => streamRegistry.publishStreamEvent(state, event),
+						timeoutMs: 30 * 60_000,
+					});
 					workspaceChangeMonitor = createWorkspaceChangeMonitor(streamWorkspaceRoot, (event) => {
 						streamRegistry.publishStreamEvent(state, event as { type: string });
 					});
@@ -917,6 +948,7 @@ export async function handleChatRoutes(
 					}
 					const persistence = confirmTurnPersistence(parseSessionFile, sessionRevision, state, targetSessionPath, outcome);
 					questionBridge.unbindTurn({ sessionId: state.sessionId, turnId: state.turnId, reason: outcome.type });
+					permissionBridge.unbindTurn({ sessionId: state.sessionId, turnId: state.turnId, reason: outcome.type });
 					closeWorkspaceChangeMonitor();
 					workspaceChangeMonitor = null;
 					recordCurrentSessionChannel("web", state.sessionId, { setOriginIfEmpty: true });

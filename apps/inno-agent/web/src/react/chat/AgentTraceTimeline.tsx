@@ -50,6 +50,10 @@ export interface AgentTraceTimelineProps {
 		questionId: string;
 		card: ReactNode;
 	};
+	/** Extra card rendered at the end of the flow (e.g. a permission approval
+	 *  card — the gate parks before the tool row exists, so there is nothing
+	 *  to anchor to). */
+	trailingCard?: ReactNode;
 }
 
 function formatDuration(durationMs: number | undefined, t: TFunction): string {
@@ -476,6 +480,7 @@ export function AgentTraceTimeline({
 	fallbackText,
 	answeredQuestionnaires = [],
 	pendingQuestion,
+	trailingCard,
 }: AgentTraceTimelineProps) {
 	const { t } = useTranslation();
 	const [, setClock] = useState(0);
@@ -534,7 +539,7 @@ export function AgentTraceTimeline({
 		: liveDuration(started, finished, now);
 	const showHeader = isSending || Boolean(error) || processSteps.length > 0;
 	const hasUnmatchedQuestionnaires = answeredQuestionnaires.some((view) => !matchedQuestionnaireIds.has(view.tool.toolCallId));
-	if (!showHeader && !flowSteps.length && !showFallbackText && !hasUnmatchedQuestionnaires && !pendingQuestion) return null;
+	if (!showHeader && !flowSteps.length && !showFallbackText && !hasUnmatchedQuestionnaires && !pendingQuestion && !trailingCard) return null;
 	// The step status is the source of truth for the live indicator. During a
 	// question pause or a reconnect, `isSending` can briefly be false while the
 	// trace still correctly reports a running/waiting step.
@@ -619,6 +624,11 @@ export function AgentTraceTimeline({
 						<AnsweredQuestionCard questionnaire={view.questionnaire} />
 					</div>
 				)) : null}
+				{trailingCard ? (
+					<div className="inno-trace-questionnaire">
+						{trailingCard}
+					</div>
+				) : null}
 			</div>
 		</div>
 	);

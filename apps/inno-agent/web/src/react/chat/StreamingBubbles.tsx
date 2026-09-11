@@ -5,6 +5,7 @@ import { useStoreSnapshot } from "../hooks.js";
 import { answeredQuestionnaireFromTool } from "../../utils/questionnaire.js";
 import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
 import { QuestionDialog } from "../QuestionDialog.js";
+import { PermissionDialog } from "../PermissionDialog.js";
 import { AgentTraceTimeline } from "./AgentTraceTimeline.js";
 
 /** Render the live turn as one ordered flow. Text records stay in the same
@@ -20,10 +21,11 @@ export function StreamingBubbles({ onOpenSkill, holdCompleted = false }: { onOpe
 		streamingStartedAt: chatStore.streamingStartedAt,
 		streamingFinishedAt: chatStore.streamingFinishedAt,
 		pendingQuestion: chatStore.pendingQuestion,
+		pendingPermission: chatStore.pendingPermission,
 	}));
 
 	const hasText = Boolean(stream.text.trim());
-	const isLive = hasText || stream.trace.length > 0 || stream.completedTools.length > 0 || Boolean(stream.pendingQuestion) || Boolean(stream.streamingError) || stream.isSending;
+	const isLive = hasText || stream.trace.length > 0 || stream.completedTools.length > 0 || Boolean(stream.pendingQuestion) || Boolean(stream.pendingPermission) || Boolean(stream.streamingError) || stream.isSending;
 
 	// The store clears the stream the instant a turn finalizes, which would
 	// unmount this tree in the same commit the canonical message mounts. While
@@ -44,6 +46,9 @@ export function StreamingBubbles({ onOpenSkill, holdCompleted = false }: { onOpe
 			card: <QuestionDialog pending={effective.pendingQuestion} />,
 		}
 		: undefined;
+	const permissionCard = effective?.pendingPermission
+		? <PermissionDialog pending={effective.pendingPermission} />
+		: undefined;
 
 	if (!effective) return null;
 	return (
@@ -63,6 +68,7 @@ export function StreamingBubbles({ onOpenSkill, holdCompleted = false }: { onOpe
 				fallbackText={effective.text}
 				answeredQuestionnaires={questionnaires}
 				pendingQuestion={pendingQuestion}
+				trailingCard={permissionCard}
 				onOpenSkill={onOpenSkill}
 			/>
 		</motion.div>

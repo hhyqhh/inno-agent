@@ -26,6 +26,7 @@ import {
 	getWebAccessSettingsView,
 	updateWebAccessSettings,
 } from "../../agent/web-access-config.js";
+import { writePermissionPolicyConfig } from "../../agent/permission-system-config.js";
 import {
 	deleteManagedServer,
 	getMcpOverview,
@@ -425,6 +426,35 @@ export async function handleSettingsRoutes(
 		}
 		config.simpleMode = { enabled: body.enabled };
 		save(saveConfig(paths.configPath, config));
+		syncConfig(config);
+		json(res, 200, buildSafeSettings(config));
+		return true;
+	}
+
+	// --- Permission policy mode (default / auto / yolo). Rewrites the plugin's
+	// config file from the managed template, then triggers a resources reload —
+	// the plugin re-reads its config on resources_discover, so the switch takes
+	// effect without a server restart. ---
+	if (method === "PUT" && url === "/api/settings/permissions") {
+		const body = (await readBody(req)) as Record<string, unknown>;
+		const mode = body.mode;
+		if (mode !== "default" && mode !== "auto" && mode !== "yolo") {
+			json(res, 400, { error: "mode must be one of: default, auto, yolo" });
+			return true;
+		}
+		config.plugins = {
+			...config.plugins,
+			permissionSystem: { ...config.plugins?.permissionSystem, mode },
+		};
+		save(saveConfig(paths.configPath, config));
+		try {
+			writePermissionPolicyConfig(paths.configDir, mode);
+		} catch (err) {
+			logger.warn({ err }, "failed to write permission policy config");
+			json(res, 500, { error: "Failed to write permission policy config" });
+			return true;
+		}
+		ctx.scheduleSkillsReload();
 		syncConfig(config);
 		json(res, 200, buildSafeSettings(config));
 		return true;

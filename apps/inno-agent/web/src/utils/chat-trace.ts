@@ -544,6 +544,33 @@ export function applyChatTraceEvent(
 			};
 			return next;
 		}
+		case "permission_request": {
+			// The approval card carries the details; the trace row just marks the pause.
+			return [
+				...steps,
+				{
+					id: `permission:${event.requestId}`,
+					kind: "tool" as const,
+					status: "waiting" as const,
+					title: "等待权限审批",
+					titleKey: "chat.trace.steps.waitingForPermission",
+					toolName: event.toolName ?? event.surface ?? undefined,
+					summary: event.command ?? event.path ?? event.value ?? undefined,
+				},
+			];
+		}
+		case "permission_resolved": {
+			const index = steps.findIndex((step) => step.id === `permission:${event.requestId}`);
+			if (index < 0) return steps;
+			const next = steps.slice();
+			next[index] = {
+				...next[index]!,
+				status: event.allowed === false ? "error" : "running",
+				title: event.allowed === false ? "权限被拒绝" : "已通过审批",
+				titleKey: event.allowed === false ? "chat.trace.steps.permissionDenied" : "chat.trace.steps.permissionApproved",
+			};
+			return next;
+		}
 		case "skill_loaded":
 			if (event.count <= 0 && !event.skills?.length) return steps;
 			return [

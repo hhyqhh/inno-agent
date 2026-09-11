@@ -11,9 +11,11 @@ import {
 	type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { MessageCircleQuestion } from "lucide-react";
 import type { InnoModelInfo, SmartInputSettings } from "../types/settings.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
+import { btwStore } from "../stores/btw-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
 import { settingsStore } from "../stores/settings-store.js";
@@ -44,6 +46,8 @@ import {
 } from "./chat/slash-palette-utils.js";
 import { fetchSlashCommands, type SlashCommandItem } from "../api/commands.js";
 import { WorkspaceContext } from "./chat/WorkspaceContext.js";
+import { BtwPanel } from "./BtwPanel.js";
+import { PermissionModeControl } from "./chat/PermissionModeControl.js";
 import type { WorkspaceChoice } from "./WorkspaceSwitcher.js";
 import { DEFAULT_UPLOAD_MAX_BYTES, DEFAULT_UPLOAD_MAX_LABEL, getOversizedFiles } from "../utils/upload-limits.js";
 import {
@@ -242,6 +246,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		completedTools: chatStore.completedTools,
 		lastUserPrompt: chatStore.lastUserPrompt,
 		pendingQuestion: chatStore.pendingQuestion,
+		pendingPermission: chatStore.pendingPermission,
 	}));
 	const sessions = useStoreSnapshot(sessionsStore, () => ({
 		currentSessionId: sessionsStore.currentSessionId,
@@ -271,7 +276,8 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 	const workspaceTreeError = useStoreSnapshot(workspaceStore, () => workspaceStore.error);
 	const workspaceFiles = useMemo(() => workspaceTree ? flattenWorkspaceFiles(workspaceTree) : [], [workspaceTree]);
 	const isWelcome = sessions.isWelcome;
-	const hasConversationStatus = Boolean(chat.pendingQuestion || sessions.busyBlocker);
+	const hasConversationStatus = Boolean(chat.pendingQuestion || chat.pendingPermission || sessions.busyBlocker);
+	const btwPanelOpen = useStoreSnapshot(btwStore, () => btwStore.panelOpen);
 	// Sidebar/workspace layout shifts (e.g. after desktop window expansion) move
 	// the composer by translation without resizing it, so neither window resize
 	// nor ResizeObserver fires. Track the layout values that shift the chat
@@ -1410,6 +1416,19 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 			modelState={modelState}
 			modelOptions={modelOptions}
 			currentModel={currentModel}
+			btwControl={!isWelcome && sessions.currentSessionId ? (
+				<button
+					type="button"
+					className={`inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50 ${btwPanelOpen ? "text-[var(--inno-accent)]" : ""}`}
+					title={t("btw.title")}
+					aria-label={t("btw.title")}
+					aria-expanded={btwPanelOpen}
+					onClick={() => btwStore.togglePanel()}
+				>
+					<MessageCircleQuestion size={16} />
+				</button>
+			) : undefined}
+			permissionControl={<PermissionModeControl />}
 			smartInputControl={((isWelcome && simpleMode) || (!isWelcome && !simpleMode)) ? (
 				<SmartInputControl
 					smartInputSettings={smartSettings}
@@ -1475,7 +1494,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 				selectedKind={selectedKind}
 				newWorkspaceName={wsMode === "new" ? wsName : ""}
 				busy={isSwitchingWorkspace}
-				disabled={isUploading || Boolean(chat.pendingQuestion)}
+				disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
 				onChange={handleWorkspaceChange}
 				onImport={handleWorkspaceImport}
 				smartInputSettings={smartSettings}
@@ -1574,10 +1593,11 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 			busyBlocker={busyBlocker}
 			smartToast={smartToastNode}
 			composer={renderComposer(t("chat.composerPlaceholder"))}
+			btwPanel={<BtwPanel />}
 			onOpenAttachment={openChatAttachmentPreview}
 			onOpenSkill={openSkillPanel}
 			onEditMessage={handleEditMessage}
-			canRetry={Boolean(chat.lastUserPrompt) && !chat.isSending && !chat.pendingQuestion && !isUploading}
+			canRetry={Boolean(chat.lastUserPrompt) && !chat.isSending && !chat.pendingQuestion && !chat.pendingPermission && !isUploading}
 			onRetry={handleRetry}
 			wsError={wsError}
 		/>

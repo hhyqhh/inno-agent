@@ -154,6 +154,15 @@ export interface InnoSchedulerConfig {
 /** What should happen when the desktop window's close button is clicked. */
 export type InnoCloseBehavior = "ask" | "hide" | "quit";
 
+/**
+ * Permission policy template selected via the settings UI. "default" asks on
+ * bash commands outside the read-only allowlist; "auto" auto-approves all
+ * bash; "yolo" auto-approves every surface (the plugin's yoloMode rewrites
+ * ask → allow). All three keep the hard-deny floor (destructive commands,
+ * credential paths) — yoloMode cannot rewrite a deny.
+ */
+export type PermissionPolicyMode = "default" | "auto" | "yolo";
+
 export interface InnoUiConfig {
 	theme: string;
 	closeBehavior: InnoCloseBehavior;
@@ -274,7 +283,7 @@ export interface InnoConfig {
 		apiKey: string;
 	};
 	/**
-	 * Third-party PI extensions bundled with inno-agent. Both default to
+	 * Third-party PI extensions bundled with inno-agent. All default to
 	 * enabled; set `enabled: false` to opt out without uninstalling.
 	 *
 	 * - `todo` (@juicesharp/rpiv-todo): registers the `todo` task-list tool.
@@ -284,10 +293,22 @@ export interface InnoConfig {
 	 *   `web_search`/`source_check` tools stay disabled via the managed
 	 *   `<configDir>/web-search.json` default so the built-in Tavily
 	 *   `web_search` remains the single search tool.
+	 * - `permissionSystem` (@gotgenes/pi-permission-system): allow/ask/deny
+	 *   policy gate for tool calls, bash commands, MCP, skills and file paths.
+	 *   Policy lives in `<configDir>/extensions/pi-permission-system/config.json`
+	 *   (managed default on first run). In server mode `ask` verdicts are
+	 *   answered by the web approval card via the `inno-web` authorizer link
+	 *   (permission-bridge.ts); no answer → deny (fail-closed). `mode` selects
+	 *   the managed policy template ("default" asks on non-allowlisted bash,
+	 *   "auto" auto-approves bash, "yolo" auto-approves every surface); the
+	 *   hard-deny floor (destructive commands, credential paths) applies in all
+	 *   three. Switching modes rewrites the plugin config file from the
+	 *   template — hand edits to that file are lost on a mode switch.
 	 */
 	plugins?: {
 		todo?: { enabled?: boolean };
 		webAccess?: { enabled?: boolean };
+		permissionSystem?: { enabled?: boolean; mode?: PermissionPolicyMode };
 	};
 }
 

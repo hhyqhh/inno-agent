@@ -109,12 +109,21 @@ export interface InnoSettings {
 	};
 	memory?: { l1Enabled: boolean; l2Enabled: boolean; l3Enabled: boolean };
 	simpleMode?: { enabled: boolean };
+	plugins?: {
+		todo?: { enabled?: boolean };
+		webAccess?: { enabled?: boolean };
+		permissionSystem?: { enabled?: boolean; mode?: PermissionPolicyMode };
+	};
 	smartInput?: SmartInputSettings;
 	mcp?: { enabled: boolean };
 	ui?: { theme: string; closeBehavior: WindowCloseBehavior; mathSingleDollar: boolean };
 }
 
 /* ---------- Web research (pi-web-access: web_research / source_check / fetch_content) ---------- */
+
+/** Permission policy template: default asks on unlisted bash, auto approves
+ * bash, yolo approves everything. Hard-deny floor applies in all three. */
+export type PermissionPolicyMode = "default" | "auto" | "yolo";
 
 export type WebAccessProviderKind = "key" | "url" | "none";
 

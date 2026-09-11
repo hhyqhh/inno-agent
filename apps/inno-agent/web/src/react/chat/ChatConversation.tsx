@@ -51,6 +51,8 @@ interface ChatConversationProps {
 	busyBlocker: ReactNode;
 	smartToast: ReactNode;
 	composer: ReactNode;
+	/** "顺便问问" slide-up panel, rendered above the composer layer. */
+	btwPanel?: ReactNode;
 	onOpenAttachment: (file: AttachmentRef) => void;
 	onOpenSkill: (skillName: string) => void;
 	onEditMessage: (message: ChatMessage) => void;
@@ -75,6 +77,7 @@ export function ChatConversation({
 	busyBlocker,
 	smartToast,
 	composer,
+	btwPanel,
 	onOpenAttachment,
 	onOpenSkill,
 	onEditMessage,
@@ -282,6 +285,7 @@ export function ChatConversation({
 						</div>
 					</div>
 				</div>
+				{btwPanel}
 			</div>
 			{simpleMode ? null : <TerminalDrawer />}
 		</section>

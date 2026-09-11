@@ -135,6 +135,7 @@ npm run web:dev        # 终端 2 — Vite :5173（代理 /api 到 :3000）
 ## 下一步
 
 - 完整文档见 [README.md](./README.md)
+- 权限审批与 OS 沙箱(三档权限模式、`--sandbox` 启动、deny 底线与配置细节):[docs/PERMISSIONS_AND_SANDBOX.md](./docs/PERMISSIONS_AND_SANDBOX.md)
 - 自定义 skill：把 `<skill-name>.zip` 通过 Web UI 的 Skills 页面上传，或直接放进 `runtime/skills/<name>/`
 - 配 Feishu / WeChat 渠道：编辑 `runtime/config/config.json` 的 `channels` 块
 - 部署到生产：参考 README 的 Production Shape 一节，或用 `Dockerfile` / `docker-compose.yml`

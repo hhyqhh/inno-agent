@@ -1,7 +1,7 @@
 import { EventEmitter } from "./event-emitter.js";
-import { streamChat, abortChat, getChatStatus, streamSessionEvents, submitChatQuestion, formatQuestionnaireAsPrompt } from "../api/chat.js";
+import { streamChat, abortChat, getChatStatus, streamSessionEvents, submitChatQuestion, submitChatPermission, formatQuestionnaireAsPrompt } from "../api/chat.js";
 import type { InlineImage } from "../api/chat.js";
-import type { ChatAttachments, ChatMessage, ChatStreamEvent, ChatToolRecord, ChatTraceStep, PendingQuestion, QuestionnaireResult, StreamEventEnvelope, StreamSnapshot, WorkspaceFileChange } from "../types/chat.js";
+import type { ChatAttachments, ChatMessage, ChatStreamEvent, ChatToolRecord, ChatTraceStep, PendingPermission, PendingQuestion, PermissionDecisionKind, QuestionnaireResult, StreamEventEnvelope, StreamSnapshot, WorkspaceFileChange } from "../types/chat.js";
 import { notebookStore } from "./notebook-store.js";
 import { appStore } from "./app-store.js";
 import { workspaceStore, type StreamingWorkspacePreview } from "./workspace-store.js";
@@ -93,6 +93,10 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	 *  (backend may re-push a question event before the answer POST lands) and
 	 *  guards restored cards against reappearing from a stale cache. */
 	private answeredQuestionIds = new Set<string>();
+	/** Pending permission ask from pi-permission-system's gate (web approval card). */
+	pendingPermission: PendingPermission | null = null;
+	/** Permission request IDs the user already decided. Suppresses stale replays. */
+	private answeredPermissionIds = new Set<string>();
 	/** Tool calls swapped to a completed questionnaire card before the answer
 	 *  POST returned. tool_end removes the id; a submit failure may only roll
 	 *  the card back while the id is still here — once tool_end landed, the
@@ -249,6 +253,28 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			};
 		} else if (event.type === "question_resolved") {
 			if (this.pendingQuestion?.questionId === event.questionId) this.pendingQuestion = null;
+		}
+		// A permission gate parks the run the same way — surface the approval
+		// card, scoped to the run turn so the decision routes back.
+		else if (event.type === "permission_request") {
+			if (!this.answeredPermissionIds.has(event.requestId)) {
+				this.pendingPermission = {
+					requestId: event.requestId,
+					source: event.source ?? "tool_call",
+					surface: event.surface ?? null,
+					value: event.value ?? null,
+					toolName: event.toolName ?? null,
+					command: event.command ?? null,
+					path: event.path ?? null,
+					agentName: event.agentName ?? null,
+					forwardedFrom: event.forwardedFrom ?? null,
+					preview: event.preview ?? null,
+					sessionId: this.jobStreamSessionId ?? undefined,
+					turnId: event.turnId,
+				};
+			}
+		} else if (event.type === "permission_resolved") {
+			if (this.pendingPermission?.requestId === event.requestId) this.pendingPermission = null;
 		}
 		this.scheduleStreamChange();
 	}
@@ -829,6 +855,31 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				if (this.pendingQuestion?.questionId === event.questionId) this.pendingQuestion = null;
 				this.emit("change", undefined);
 				break;
+			case "permission_request":
+				// Skip replays of asks the user already decided (the backend may
+				// re-push the event briefly after the decision POST lands).
+				if (this.answeredPermissionIds.has(event.requestId)) break;
+				this.flushStreamChange();
+				this.pendingPermission = {
+					requestId: event.requestId,
+					source: event.source ?? "tool_call",
+					surface: event.surface ?? null,
+					value: event.value ?? null,
+					toolName: event.toolName ?? null,
+					command: event.command ?? null,
+					path: event.path ?? null,
+					agentName: event.agentName ?? null,
+					forwardedFrom: event.forwardedFrom ?? null,
+					preview: event.preview ?? null,
+					sessionId: owner.sessionId,
+					turnId: owner.turnId ?? undefined,
+				};
+				this.emit("change", undefined);
+				break;
+			case "permission_resolved":
+				if (this.pendingPermission?.requestId === event.requestId) this.pendingPermission = null;
+				this.emit("change", undefined);
+				break;
 			case "done":
 				this.flushStreamChange();
 				// Final message set with full content
@@ -885,6 +936,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.completedTools = [];
 		this.optimisticQuestionToolIds.clear();
 		this.pendingQuestion = null;
+		this.pendingPermission = null;
 		if (this.workspacePreviewId) workspaceStore.clearStreamingPreview(this.workspacePreviewId);
 		this.resetWorkspaceStreamState();
 	}
@@ -1094,10 +1146,34 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		await this.submitQuestionResponse(questionId, { answers: [], cancelled: true });
 	}
 
+	async submitPermissionResponse(requestId: string, decision: PermissionDecisionKind, reason?: string): Promise<void> {
+		const pending = this.pendingPermission;
+		if (pending?.requestId !== requestId) return;
+		// Live cards take the scope from the active stream owner; job-stream
+		// cards carry their own run scope on the pending record.
+		const sessionId = this.activeOwner?.sessionId ?? pending.sessionId;
+		const turnId = this.activeOwner?.turnId ?? pending.turnId;
+		if (!sessionId || !turnId) return;
+		this.answeredPermissionIds.add(requestId);
+		this.pendingPermission = null;
+		this.emit("change", undefined);
+		try {
+			await submitChatPermission(sessionId, turnId, requestId, decision, reason);
+		} catch (err) {
+			if (!this.activeOwner || this.owns(this.activeOwner)) {
+				this.pendingPermission = pending;
+				this.answeredPermissionIds.delete(requestId);
+				this.streamingError = err instanceof Error ? err.message : "提交审批失败";
+				this.emit("change", undefined);
+			}
+		}
+	}
+
 	clear() {
 		this.detach();
 		this.messages = [];
 		this.answeredQuestionIds.clear();
+		this.answeredPermissionIds.clear();
 		this.optimisticQuestionToolIds.clear();
 		this.emit("change", undefined);
 	}

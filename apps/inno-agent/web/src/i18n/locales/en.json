@@ -626,6 +626,21 @@
 			"title": "Single-dollar inline math",
 			"description": "Allow $...$ math. Off by default so prices remain plain text; \\(...\\) and $$...$$ still work."
 		},
+		"permissions": {
+			"title": "Tool permissions",
+			"description": "How strictly tool calls are approved. Dangerous commands and sensitive files are denied in every mode; changes apply immediately, no restart needed.",
+			"modes": {
+				"default": "Default",
+				"auto": "Auto-approve",
+				"yolo": "Full access"
+			},
+			"modeDesc": {
+				"default": "Commands outside the read-only allowlist ask for approval.",
+				"auto": "Commands run without approval cards.",
+				"yolo": "Nothing asks. Best paired with sandbox mode."
+			},
+			"denyFloorNote": "Dangerous commands and sensitive files stay denied in every mode."
+		},
 		"tabs": {
 			"general": "General",
 			"lab": "Lab",

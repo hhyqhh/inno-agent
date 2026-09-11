@@ -29,12 +29,16 @@
  *    remains pi-sandbox's job; inno's workspace-path-guard bounds the agent's
  *    own file tools.
  *
- * The file is only written when absent — user edits are never clobbered.
+ * The file is only written when absent — user edits are never clobbered —
+ * except by an explicit mode switch from the settings UI
+ * (writePermissionPolicyConfig), which regenerates the file from the
+ * template for the chosen PermissionPolicyMode.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { PermissionPolicyMode } from "../config.js";
 import { logger } from "../logger.js";
 
 /**
@@ -116,6 +120,43 @@ const MANAGED_DEFAULT = {
 		external_directory: "allow",
 	},
 };
+
+export type ManagedPermissionPolicy = typeof MANAGED_DEFAULT;
+
+/**
+ * Build the managed policy for a mode. "auto" flips bash's wildcard to allow
+ * (the read-only allowlist becomes redundant but harmless; the deny entries
+ * still win over "*"). "yolo" sets yoloMode, which rewrites every ask to
+ * allow inside the plugin — deny rules are never rewritten. All modes share
+ * the same hard-deny floor.
+ */
+export function buildPermissionPolicy(mode: PermissionPolicyMode): ManagedPermissionPolicy {
+	if (mode === "auto") {
+		return {
+			...MANAGED_DEFAULT,
+			permission: {
+				...MANAGED_DEFAULT.permission,
+				bash: { ...MANAGED_DEFAULT.permission.bash, "*": "allow" },
+			},
+		};
+	}
+	if (mode === "yolo") {
+		return { ...MANAGED_DEFAULT, yoloMode: true };
+	}
+	return MANAGED_DEFAULT;
+}
+
+/**
+ * Overwrite the plugin config file with the managed policy for `mode`. Unlike
+ * ensurePermissionSystemConfig this is an explicit user action (settings UI),
+ * so it intentionally clobbers hand edits to the file.
+ */
+export function writePermissionPolicyConfig(configDir: string, mode: PermissionPolicyMode): void {
+	const configPath = join(configDir, PERMISSION_SYSTEM_CONFIG_RELATIVE_PATH);
+	mkdirSync(dirname(configPath), { recursive: true });
+	writeFileSync(configPath, JSON.stringify(buildPermissionPolicy(mode), null, 2) + "\n", "utf-8");
+	logger.info({ configPath, mode }, "wrote pi-permission-system policy");
+}
 
 /**
  * Write the managed default config if the user has no

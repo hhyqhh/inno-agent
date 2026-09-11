@@ -19,7 +19,7 @@ PI SDK packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@e
 
 Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (scheduler), `@larksuiteoapi/node-sdk` (Feishu), `typebox` (validation), `undici` (HTTP client), `@juicesharp/rpiv-ask-user-question` (bridges agent `ask_user_question` tool calls to the web UI), `@juicesharp/rpiv-todo` (`todo` task-list tool), `pi-web-access` (`fetch_content`/`get_search_content` URL/GitHub/PDF/YouTube extraction), `pi-subagents` (optional subagent support), `pi-sandbox` (optional OS-level sandboxing), `graphology` + `graphology-communities-louvain` (wiki knowledge graph), `yaml` (YAML parsing), `@llamaindex/liteparse` (document parsing).
 
-Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is 76 files (588 tests), including backend chat-stream/trace persistence coverage and web chat trace/timeline coverage, while remaining skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
+Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is 77 files (596 tests), including backend chat-stream/trace persistence coverage and web chat trace/timeline coverage, while remaining skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
 
 When a PR changes the test count, the size of `server.ts`, or other structural facts stated in this file, update this file in the same PR — AI agents read it as ground truth.
 
@@ -40,6 +40,7 @@ Three tsconfig files, each self-contained (no `extends` chain):
 - **[ELECTRON_BUILD.md](./ELECTRON_BUILD.md)** — Electron packaging notes (Chinese).
 - **[apps/inno-agent/README.md](./apps/inno-agent/README.md)** — backend API route table and project structure (Chinese).
 - **[docs/SYSTEM_DEPENDENCIES.md](./docs/SYSTEM_DEPENDENCIES.md)** — full system-level dependency reference (build-time, runtime, Python environment, native modules). Essential for Docker/deployment work.
+- **[docs/PERMISSIONS_AND_SANDBOX.md](./docs/PERMISSIONS_AND_SANDBOX.md)** — permission layer (three policy modes, approval cards, deny floor) and sandbox layer (`--sandbox`, filesystem/network policy) explained with configuration details.
 
 ## Common Commands
 
@@ -182,7 +183,7 @@ Key files in `apps/inno-agent/src/agent/`:
 - `provider-sync.ts` — syncs providers from config into PI runtime and subagents.
 - `question-bridge.ts` — bridges `ask_user_question` tool calls from agent to web UI via an EventEmitter.
 - `permission-bridge.ts` — bridges pi-permission-system `ask` verdicts to the web UI approval card via the plugin's `inno-web` authorizer chain link; fail-closed (no bound turn / timeout / abort → deny with a teaching reason), with in-process `allow_session` caching. Answered via `POST /api/chat/permission-response`; parked asks block the agent loop exactly like question cards (same queue-release handling).
-- `permission-system-config.ts` — managed default policy for `@gotgenes/pi-permission-system` written to `<configDir>/extensions/pi-permission-system/config.json` on first run (`"*": allow` fallback so inno's own tools stay silent, bash asks with a read-only allowlist and destructive denylist, sensitive-path denies, `authorizerChain: ["inno-web"]`); also `resolvePluginFile` for jiti-loading packages whose exports map blocks the extension entry subpath. Gated by `plugins.permissionSystem.enabled` (default on).
+- `permission-system-config.ts` — managed default policy for `@gotgenes/pi-permission-system` written to `<configDir>/extensions/pi-permission-system/config.json` on first run (`"*": allow` fallback so inno's own tools stay silent, bash asks with a read-only allowlist and destructive denylist, sensitive-path denies, `authorizerChain: ["inno-web"]`); also `resolvePluginFile` for jiti-loading packages whose exports map blocks the extension entry subpath. Gated by `plugins.permissionSystem.enabled` (default on). Three policy modes (`plugins.permissionSystem.mode`: `default` / `auto` / `yolo`, default `default`) are built by `buildPermissionPolicy` and written on demand by `writePermissionPolicyConfig` from the settings endpoint — `auto` flips bash `"*"` to allow, `yolo` sets `yoloMode`, and every mode keeps the destructive-command and sensitive-path deny floor (yoloMode rewrites only `ask`, never `deny`).
 - `practice-tools.ts` — Practice Lab tools (run commands, read run records).
 - `document-tools.ts` — file uploads, workspace file reading, document preview (CSV, Office formats).
 - `ocr-tools.ts` — OCR via external PaddleOCR-VL API, configured by `ocrApi` in config.json.
@@ -281,6 +282,7 @@ Plain Node `http.createServer` (no framework), ~1750 lines plus route domains ex
 - `GET /api/settings` — current config (redacted API keys).
 - `GET/PUT /api/settings/web-access` — pi-web-access provider settings (default provider + per-provider credentials, masked on read; backed by `<configDir>/web-search.json`).
 - `PATCH /api/settings/simple-mode` — toggle Simple Mode.
+- `PUT /api/settings/permissions` — switch the pi-permission-system policy mode (`default` / `auto` / `yolo`; stored as `plugins.permissionSystem.mode`). Rewrites `extensions/pi-permission-system/config.json` from the managed template (clobbering hand edits) and triggers a resources reload so the plugin re-reads it without a restart. All modes keep the hard-deny floor; `auto` allows all bash, `yolo` sets `yoloMode`.
 - `PATCH /api/settings/content-hub` — update content hub config.
 - `PATCH /api/settings/memory` — toggle L1/L2/L3 memory.
 - `PATCH /api/settings/theme` — persist UI theme preference.

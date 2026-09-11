@@ -1391,6 +1391,104 @@ export async function completePromptOnce(prompt: string, maxTokens = 64, timeout
 }
 
 /**
+ * Answer a "btw" side question without touching the active chat session.
+ *
+ * Same side-channel discipline as completePromptOnce (own network call, own
+ * abortable timeout, NEVER through the shared `enqueue` queue — the whole
+ * point of btw is that it works while the main turn is streaming), but the
+ * request carries a read-only digest of the recent conversation plus the
+ * follow-up thread, so the answer is grounded in what the learner is looking
+ * at. Tool-less by design: fast, safe, and never mutates the workspace.
+ *
+ * Returns "" on any failure (best-effort; the route maps that to a 502).
+ */
+export async function completeSideQuestion(input: {
+	contextDigest: string;
+	thread: Array<{ question: string; answer: string }>;
+	question: string;
+	maxTokens?: number;
+	timeoutMs?: number;
+}): Promise<string> {
+	if (!_runtime) return "";
+	const session = _runtime.session;
+	const model = session.model;
+	if (!model) return "";
+
+	const auth = await registryOf(session).getApiKeyAndHeaders(model);
+	if (!auth.ok || !auth.apiKey) return "";
+
+	const timeoutMs = input.timeoutMs ?? 60_000;
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	const promptStartTime = Date.now();
+	try {
+		const messages: Array<UserMessage | AssistantMessage> = [];
+		if (input.contextDigest) {
+			messages.push({
+				role: "user" as const,
+				content: [{ type: "text" as const, text: input.contextDigest }],
+				timestamp: Date.now(),
+			});
+		}
+		for (const exchange of input.thread) {
+			messages.push(
+				{ role: "user" as const, content: [{ type: "text" as const, text: exchange.question }], timestamp: Date.now() },
+				{
+					role: "assistant" as const,
+					content: [{ type: "text" as const, text: exchange.answer }],
+					api: model.api,
+					provider: model.provider,
+					model: model.id,
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, totalTokens: 0 },
+					stopReason: "stop" as const,
+					timestamp: Date.now(),
+				} as AssistantMessage,
+			);
+		}
+		messages.push({
+			role: "user" as const,
+			content: [{ type: "text" as const, text: input.question }],
+			timestamp: Date.now(),
+		});
+
+		const response = await complete(
+			model,
+			{
+				systemPrompt: [
+					"你是学习对话的“旁注问答”通道。学生正在主线学习对话中,临时向你提了一个顺带的问题。",
+					"规则:基于提供的对话片段回答;简洁直接,不要把回答扩展成一节新课;不要声称自己查阅了资料或运行了程序(你没有工具);",
+					"如果问题与对话片段无关,直接回答问题本身即可;如果片段缺失或不足,明说“主对话里还没有相关信息”。",
+					"用中文回答,除非学生用其他语言提问。",
+				].join("\n"),
+				messages,
+			},
+			{
+				apiKey: auth.apiKey,
+				headers: auth.headers,
+				maxTokens: input.maxTokens ?? 2048,
+				signal: controller.signal,
+				timeoutMs,
+			},
+		);
+
+		if (response.stopReason === "error") {
+			logger.warn({ errorMessage: response.errorMessage, stopReason: response.stopReason }, "completeSideQuestion received error stopReason");
+			return "";
+		}
+		return response.content
+			.filter((item): item is { type: "text"; text: string } => item.type === "text")
+			.map((item) => item.text)
+			.join("\n")
+			.trim();
+	} catch (err) {
+		logger.warn({ err, elapsedMs: Date.now() - promptStartTime }, "completeSideQuestion failed (non-fatal)");
+		return "";
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+/**
  * Callback type for streaming events from the AgentSession.
  */
 export type StreamEventCallback = (event: AgentSessionEvent) => void;

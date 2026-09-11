@@ -31,6 +31,8 @@ export interface ChatComposerProps {
 	modelOptions: InnoModelInfo[];
 	currentModel?: InnoModelInfo;
 	smartInputControl?: ReactNode;
+	/** "顺便问问" entry button, rendered in the toolbar's left group (conversation view only). */
+	btwControl?: ReactNode;
 	modelPickerOpen: boolean;
 	attachMenuOpen: boolean;
 	workspaceFiles: Array<{ name: string; path: string }>;
@@ -83,6 +85,7 @@ export function ChatComposer({
 	modelOptions,
 	currentModel,
 	smartInputControl,
+	btwControl,
 	modelPickerOpen,
 	attachMenuOpen,
 	workspaceFiles,
@@ -502,6 +505,7 @@ export function ChatComposer({
 					>
 						<Image size={16} />
 					</button>
+					{btwControl}
 				</div>
 				<div className="ml-auto flex shrink-0 items-center gap-1">
 					{smartInputControl}

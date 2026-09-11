@@ -1205,5 +1205,19 @@
 		"allowOnce": "允许一次",
 		"allowSession": "本会话允许",
 		"deny": "拒绝"
+	},
+	"btw": {
+		"title": "顺便问问",
+		"subtitle": "不打断当前对话的旁注问答，不会进入会话记录",
+		"close": "收起",
+		"emptyHint": "对当前内容有疑问？在这里顺手一问，不影响主线对话。",
+		"placeholder": "输入你的问题，Enter 发送，Shift+Enter 换行",
+		"send": "发送",
+		"thinking": "思考中…",
+		"error": "请求失败：{{message}}",
+		"retry": "重试",
+		"bringBack": "带回主对话",
+		"bringBackHint": "把这条问答作为旁注追加到主会话，供助教后续参考",
+		"broughtBack": "已带回主对话"
 	}
 }

@@ -56,6 +56,7 @@ import { handlePresetsRoutes } from "./server/routes/presets.js";
 import { handlePracticeRoutes } from "./server/routes/practice.js";
 import { handleChatRoutes } from "./server/routes/chat.js";
 import { handleCommandsRoutes } from "./server/routes/commands.js";
+import { handleBtwRoutes } from "./server/routes/btw.js";
 import { mergeSessionAgentCommands } from "./server/agent-command-store.js";
 import {
 	mergeChannels,
@@ -1581,6 +1582,11 @@ const server = createServer(async (req, res) => {
 
 		// --- Slash commands API (extracted to server/routes/commands.ts) ---
 		if (await handleCommandsRoutes(req, res, method, url)) return;
+
+		// --- Btw side-question API (extracted to server/routes/btw.ts) ---
+		if (await handleBtwRoutes(req, res, method, url, {
+			dataDir, sessionFileFromId, parseSessionFile,
+		})) return;
 
 		// --- Chat API (extracted to server/routes/chat.ts) ---
 		if (await handleChatRoutes(req, res, method, url, {

@@ -3,6 +3,7 @@ import {
 	createAgentSessionRuntime,
 	createAgentSessionServices,
 	getAgentDir,
+	initTheme,
 	ModelRegistry,
 	type ModelRuntime,
 	SessionManager,
@@ -331,6 +332,21 @@ export async function initSession(
 			},
 		});
 	};
+	// pi-sandbox's session_start handler ends with an unguarded
+	// `ctx.ui.setStatus("sandbox", ctx.ui.theme.fg(...))`. In headless server
+	// mode the PI theme is never initialized, so the theme proxy getter throws
+	// ("Theme not initialized"), the handler's catch flips `sandboxEnabled`
+	// back to false, and every sandboxed bash call silently falls back to the
+	// plain local bash tool — the sandbox never enforces anything. Initializing
+	// a headless theme lets the handler complete; the theme lives on a
+	// globalThis Symbol.for key, so the jiti-loaded plugin sees it too.
+	if (options?.sandbox) {
+		try {
+			initTheme();
+		} catch {
+			// Cosmetic only — the theme exists so extension UI calls don't throw.
+		}
+	}
 	await bindSessionExtensions(session);
 	runtime.setRebindSession(bindSessionExtensions);
 

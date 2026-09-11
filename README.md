@@ -149,6 +149,10 @@ Both CLI and server resolve paths through `apps/inno-agent/src/runtime.ts`. Prec
 | `--workspace` | `INNO_WORKSPACE_DIR` | invocation CWD |
 | `--port` | `INNO_PORT` | `3000` |
 
+### Permissions & Sandbox
+
+Two independent guardrails control what the agent's tools can do. The **permission layer** (pi-permission-system, on by default) gates tool calls with allow/ask/deny rules — `ask` pops an approval card in the web UI (allow once / allow for session / deny). Three policy modes — `default` (asks on non-allowlisted bash), `auto` (approves bash), `yolo` (approves everything) — switchable from the shield button in the composer toolbar, persisted as `plugins.permissionSystem.mode`, effective immediately without restart. A hard-deny floor (destructive commands, `~/.ssh/*`, `*.env`, …) applies in every mode. The **sandbox layer** (pi-sandbox, opt-in via `--sandbox`) enforces filesystem/network limits at the OS level (sandbox-exec on macOS, bubblewrap on Linux) — a permission approval never overrides it. Full details and configuration: [docs/PERMISSIONS_AND_SANDBOX.md](./docs/PERMISSIONS_AND_SANDBOX.md).
+
 ### Content Hub
 
 The skill library and Simple Mode presets are fetched from a remote **content hub** — by default the public GitHub repo [`Chloris-Blaxk/inno-agent-hub`](https://github.com/Chloris-Blaxk/inno-agent-hub). Point `contentHub` in `config.json` (or **Settings → Content Hub**) at a private GitHub repo (`"type": "github"`) or a self-hosted bundle service (`"type": "bundle"`) — a zero-dependency bundle server lives in [`scripts/content-hub-server/`](./scripts/content-hub-server/). Presets are cached locally; bundled templates serve as an offline fallback.

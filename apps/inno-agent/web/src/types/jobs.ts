@@ -53,6 +53,8 @@ export type JobRunStreamEvent =
 	| { type: "tool_end"; toolCallId: string; toolName: string; result?: unknown; isError?: boolean }
 	| { type: "question"; questionId: string; params: { questions: import("./chat.js").QuestionData[] }; turnId?: string; toolCallId?: string }
 	| { type: "question_resolved"; questionId: string; cancelled?: boolean; error?: string }
+	| { type: "permission_request"; requestId: string; source?: string; surface?: string | null; value?: string | null; toolName?: string | null; command?: string | null; path?: string | null; agentName?: string | null; forwardedFrom?: string | null; preview?: string | null; turnId?: string }
+	| { type: "permission_resolved"; requestId: string; decision?: string; allowed?: boolean }
 	| { type: "job_result"; result: JobRunResult }
 	| { type: "error"; message: string };
 

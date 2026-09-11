@@ -9,6 +9,7 @@ import { json, matchRoute, readBody } from "../http-helpers.js";
 import { isLearningJob, type CheckInStore } from "../../checkins/check-in-store.js";
 import { logger } from "../../logger.js";
 import { questionBridge } from "../../agent/question-bridge.js";
+import { permissionBridge } from "../../agent/permission-bridge.js";
 import { cancelDeferredRun, isDeferredExecuting } from "../../scheduler/deferred-runs.js";
 
 type JobRunStreamEvent =
@@ -288,6 +289,16 @@ export async function handleJobsRoutes(
 				writeJobStreamEvent(res, forwarded as JobRunStreamEvent);
 			},
 		});
+		// Same for permission asks: the job stream view can approve/deny them.
+		permissionBridge.bindTurn({
+			sessionId,
+			turnId: runTurnId,
+			timeoutMs: 30 * 60_000,
+			emit: (event) => {
+				const forwarded = event.type === "permission_request" ? { ...event, turnId: runTurnId } : event;
+				writeJobStreamEvent(res, forwarded as JobRunStreamEvent);
+			},
+		});
 		res.on("close", () => {
 			disconnected = true;
 			clearInterval(heartbeat);
@@ -295,6 +306,7 @@ export async function handleJobsRoutes(
 			logger.info({ jobId: job.id, sessionId }, "Manual job run stream disconnected");
 			// Nobody can answer a question with the stream gone — release the tool.
 			questionBridge.unbindTurn({ sessionId, turnId: runTurnId, reason: "client_disconnected" });
+			permissionBridge.unbindTurn({ sessionId, turnId: runTurnId, reason: "client_disconnected" });
 		});
 		try {
 			const result = await executeJob(
@@ -325,6 +337,7 @@ export async function handleJobsRoutes(
 			}
 		} finally {
 			questionBridge.unbindTurn({ sessionId, turnId: runTurnId, reason: "finished" });
+			permissionBridge.unbindTurn({ sessionId, turnId: runTurnId, reason: "finished" });
 			finish();
 		}
 		return true;

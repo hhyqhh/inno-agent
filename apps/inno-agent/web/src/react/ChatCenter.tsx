@@ -242,6 +242,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		completedTools: chatStore.completedTools,
 		lastUserPrompt: chatStore.lastUserPrompt,
 		pendingQuestion: chatStore.pendingQuestion,
+		pendingPermission: chatStore.pendingPermission,
 	}));
 	const sessions = useStoreSnapshot(sessionsStore, () => ({
 		currentSessionId: sessionsStore.currentSessionId,
@@ -271,7 +272,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 	const workspaceTreeError = useStoreSnapshot(workspaceStore, () => workspaceStore.error);
 	const workspaceFiles = useMemo(() => workspaceTree ? flattenWorkspaceFiles(workspaceTree) : [], [workspaceTree]);
 	const isWelcome = sessions.isWelcome;
-	const hasConversationStatus = Boolean(chat.pendingQuestion || sessions.busyBlocker);
+	const hasConversationStatus = Boolean(chat.pendingQuestion || chat.pendingPermission || sessions.busyBlocker);
 	// Sidebar/workspace layout shifts (e.g. after desktop window expansion) move
 	// the composer by translation without resizing it, so neither window resize
 	// nor ResizeObserver fires. Track the layout values that shift the chat
@@ -1475,7 +1476,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 				selectedKind={selectedKind}
 				newWorkspaceName={wsMode === "new" ? wsName : ""}
 				busy={isSwitchingWorkspace}
-				disabled={isUploading || Boolean(chat.pendingQuestion)}
+				disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
 				onChange={handleWorkspaceChange}
 				onImport={handleWorkspaceImport}
 				smartInputSettings={smartSettings}
@@ -1577,7 +1578,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 			onOpenAttachment={openChatAttachmentPreview}
 			onOpenSkill={openSkillPanel}
 			onEditMessage={handleEditMessage}
-			canRetry={Boolean(chat.lastUserPrompt) && !chat.isSending && !chat.pendingQuestion && !isUploading}
+			canRetry={Boolean(chat.lastUserPrompt) && !chat.isSending && !chat.pendingQuestion && !chat.pendingPermission && !isUploading}
 			onRetry={handleRetry}
 			wsError={wsError}
 		/>

@@ -274,7 +274,7 @@ export interface InnoConfig {
 		apiKey: string;
 	};
 	/**
-	 * Third-party PI extensions bundled with inno-agent. Both default to
+	 * Third-party PI extensions bundled with inno-agent. All default to
 	 * enabled; set `enabled: false` to opt out without uninstalling.
 	 *
 	 * - `todo` (@juicesharp/rpiv-todo): registers the `todo` task-list tool.
@@ -284,10 +284,17 @@ export interface InnoConfig {
 	 *   `web_search`/`source_check` tools stay disabled via the managed
 	 *   `<configDir>/web-search.json` default so the built-in Tavily
 	 *   `web_search` remains the single search tool.
+	 * - `permissionSystem` (@gotgenes/pi-permission-system): allow/ask/deny
+	 *   policy gate for tool calls, bash commands, MCP, skills and file paths.
+	 *   Policy lives in `<configDir>/extensions/pi-permission-system/config.json`
+	 *   (managed default on first run). In server mode `ask` verdicts are
+	 *   answered by the web approval card via the `inno-web` authorizer link
+	 *   (permission-bridge.ts); no answer → deny (fail-closed).
 	 */
 	plugins?: {
 		todo?: { enabled?: boolean };
 		webAccess?: { enabled?: boolean };
+		permissionSystem?: { enabled?: boolean };
 	};
 }
 

@@ -842,7 +842,10 @@
 				"requestFailed": "Request failed",
 				"stopped": "Stopped",
 				"reply": "Reply",
-				"progress": "Progress"
+				"progress": "Progress",
+				"waitingForPermission": "Waiting for permission",
+				"permissionApproved": "Permission approved",
+				"permissionDenied": "Permission denied"
 			},
 			"details": {
 				"noThinkingText": "No thinking text",
@@ -1195,5 +1198,12 @@
 		"mermaidRenderError": "The chart could not be rendered. Switch to source to inspect it.",
 		"mermaidLabel": "Mermaid diagram",
 		"mermaidFullscreen": "Mermaid fullscreen"
+	},
+	"permission": {
+		"title": "Permission request",
+		"fromSubagent": "from subagent {{name}}",
+		"allowOnce": "Allow once",
+		"allowSession": "Allow for session",
+		"deny": "Deny"
 	}
 }

@@ -842,7 +842,10 @@
 				"requestFailed": "请求失败",
 				"stopped": "已停止",
 				"reply": "回复",
-				"progress": "进度"
+				"progress": "进度",
+				"waitingForPermission": "等待权限审批",
+				"permissionApproved": "已通过审批",
+				"permissionDenied": "权限被拒绝"
 			},
 			"details": {
 				"noThinkingText": "暂无思考文本",
@@ -1195,5 +1198,12 @@
 		"mermaidRenderError": "图表暂时无法渲染，请切换到代码查看。",
 		"mermaidLabel": "Mermaid 图表",
 		"mermaidFullscreen": "Mermaid 全屏查看"
+	},
+	"permission": {
+		"title": "权限请求",
+		"fromSubagent": "来自子代理 {{name}}",
+		"allowOnce": "允许一次",
+		"allowSession": "本会话允许",
+		"deny": "拒绝"
 	}
 }

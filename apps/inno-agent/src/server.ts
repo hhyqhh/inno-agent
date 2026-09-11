@@ -71,6 +71,7 @@ import { logger } from "./logger.js";
 import { applyRuntimeEnvironment, parseRuntimeArgs, resolveRuntimePaths } from "./runtime.js";
 import { installProcessFallbacks } from "./utils/process-fallback.js";
 import { questionBridge } from "./agent/question-bridge.js";
+import { permissionBridge } from "./agent/permission-bridge.js";
 import { streamRegistry } from "./chat/stream-registry.js";
 import { DEFAULT_WORKSPACE_ID, WorkspaceRegistry, type WorkspaceMeta } from "./workspace/workspace-registry.js";
 import type { RemoteContentSource } from "./content-source/index.js";
@@ -1404,10 +1405,12 @@ function getQueueBlocker(): { sessionId: string; turnId: string; questionPending
 	const state = streamRegistry.getByTurn(token);
 	if (!state || (state.status !== "queued" && state.status !== "running")) return null;
 	const pending = questionBridge.pendingInfo();
+	const pendingPermission = permissionBridge.pendingInfo();
 	return {
 		sessionId: state.sessionId,
 		turnId: state.turnId,
-		questionPending: pending?.turnId === state.turnId,
+		// A permission card parks the agent loop exactly like a question card.
+		questionPending: pending?.turnId === state.turnId || pendingPermission?.turnId === state.turnId,
 	};
 }
 
@@ -1431,6 +1434,7 @@ function releaseQueueFromQuestionBlockedTurn(targetSessionId: string): void {
 	logger.info({ blockedSession: blocker.sessionId, turnId: blocker.turnId, targetSessionId }, "auto-aborting question-blocked turn to release the prompt queue");
 	streamRegistry.requestCancel(state);
 	questionBridge.unbindTurn({ sessionId: state.sessionId, turnId: state.turnId, reason: "switched_away" });
+	permissionBridge.unbindTurn({ sessionId: state.sessionId, turnId: state.turnId, reason: "switched_away" });
 	if (state.status === "running") void abortPromptForTurnToken(state.turnId);
 }
 

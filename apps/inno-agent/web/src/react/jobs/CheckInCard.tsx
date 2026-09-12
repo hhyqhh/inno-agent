@@ -89,7 +89,7 @@ export function CheckInCard({ onStatusChange }: CheckInCardProps) {
 	}
 
 	return (
-		<section className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-3" aria-live="polite">
+		<section className="rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] p-4" aria-live="polite">
 			<button
 				type="button"
 				className="flex w-full items-start justify-between gap-3 text-left"

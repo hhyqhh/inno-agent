@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { X, AlertTriangle, FileCode2, History, BookmarkPlus, BookOpen, Check, Copy, Pencil, RotateCcw, Sparkles, TerminalSquare } from "lucide-react";
+import { X, AlertTriangle, FileCode2, History, BookmarkPlus, BookOpen, Check, Copy, Pencil, RotateCcw, TerminalSquare } from "lucide-react";
 import type { AttachmentBinding, AttachmentRef, ChatMessage, ChatToolRecord, ChatTraceStep } from "../../types/chat.js";
 import { splitContentByBindings } from "../../utils/attachment-render.js";
 import { answeredQuestionnaireFromTool, buildAnsweredQuestionnaireTimeline } from "../../utils/questionnaire.js";
@@ -98,16 +98,16 @@ export function ChannelBadge({ channel }: { channel: string }) {
 	);
 }
 
-/** 28px gradient brand avatar shown beside every assistant message (live and
- *  persisted), per the InnoSpark chat anatomy. */
+/** 28px brand avatar shown beside every assistant message (live and
+ *  persisted). Unified with the other IA marks: surface background, primary
+ *  text color (white-on-black in light theme). */
 export function AgentAvatar() {
 	return (
 		<div
-			className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white"
-			style={{ background: "linear-gradient(135deg, var(--inno-brand-1), var(--inno-brand-2))" }}
+			className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)]"
 			aria-hidden="true"
 		>
-			<Sparkles size={14} fill="currentColor" strokeWidth={1} />
+			IA
 		</div>
 	);
 }

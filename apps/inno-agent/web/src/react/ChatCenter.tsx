@@ -12,7 +12,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { MessageCircleQuestion } from "lucide-react";
-import type { InnoModelInfo, SmartInputSettings } from "../types/settings.js";
+import type { InnoModelInfo } from "../types/settings.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { btwStore } from "../stores/btw-store.js";
@@ -36,7 +36,6 @@ import { ScheduledRunBanner } from "./chat/ScheduledRunBanner.js";
 import { BusyBlocker, QuestionHint } from "./chat/ChatStatusBanners.js";
 import { ChatUploadChips } from "./chat/ChatUploadChips.js";
 import { ChatWelcome } from "./chat/ChatWelcome.js";
-import { SmartInputControl } from "./chat/SmartInputControl.js";
 import { SlashCommandPalette } from "./chat/SlashCommandPalette.js";
 import {
 	buildSlashPaletteEntries,
@@ -602,14 +601,9 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	// ── Smart input engine (便捷输入) ─────────────────────────────────────
 	const smartInputState = useStoreSnapshot(settingsStore, () => ({
 		smartInput: settingsStore.settings?.smartInput,
-		isSavingSmartInput: settingsStore.isSavingSmartInput,
 	}));
 	const smartSettings = smartInputState.smartInput;
 	const smartInputEnabled = smartSettings?.enabled === true;
-
-	const openSmartInputSettings = useCallback(() => {
-		appStore.openSettings("lab");
-	}, []);
 
 	const showSmartToast = useCallback((message: string, error?: boolean) => {
 		setSmartToast({ message, error });
@@ -627,24 +621,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		if (oversized.length > 0) notifyUploadLimitExceeded(oversized.length);
 		return files.filter((file) => file.size <= DEFAULT_UPLOAD_MAX_BYTES);
 	}, [notifyUploadLimitExceeded]);
-	const saveSmartInput = useCallback((next: SmartInputSettings) => {
-		void settingsStore.saveSmartInput(next).catch(() => {
-			showSmartToast(t("settings.smartInput.saveFailed", "便捷输入设置保存失败"), true);
-		});
-	}, [showSmartToast, t]);
-	const toggleSmartInput = useCallback(() => {
-		if (!smartSettings || settingsStore.isSavingSmartInput) return;
-		saveSmartInput({ ...smartSettings, enabled: !smartSettings.enabled });
-	}, [saveSmartInput, smartSettings]);
-	const toggleSmartInputRule = useCallback((ruleId: string) => {
-		if (!smartSettings || settingsStore.isSavingSmartInput) return;
-		const rule = smartSettings.rules.find((entry) => entry.id === ruleId);
-		if (!rule) return;
-		const rules = smartSettings.rules.map((entry) =>
-			entry.id === ruleId ? { ...entry, enabled: !entry.enabled } : entry,
-		);
-		saveSmartInput({ ...smartSettings, rules });
-	}, [saveSmartInput, smartSettings]);
 	useEffect(() => () => {
 		if (smartToastTimer.current !== null) window.clearTimeout(smartToastTimer.current);
 	}, []);
@@ -1425,16 +1401,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 					onImport={handleWorkspaceImport}
 				/>
 			)}
-			smartInputControl={!isWelcome ? (
-				<SmartInputControl
-					smartInputSettings={smartSettings}
-					onToggleSmartInput={toggleSmartInput}
-					onToggleSmartInputRule={toggleSmartInputRule}
-					smartInputSaving={smartInputState.isSavingSmartInput}
-					onOpenSmartInputSettings={openSmartInputSettings}
-					compact
-				/>
-			) : null}
 			modelPickerOpen={modelPickerOpen}
 			attachMenuOpen={attachMenuOpen}
 			workspaceFiles={workspaceFiles}
@@ -1493,11 +1459,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 				disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
 				onChange={handleWorkspaceChange}
 				onImport={handleWorkspaceImport}
-				smartInputSettings={smartSettings}
-				onToggleSmartInput={toggleSmartInput}
-				onToggleSmartInputRule={toggleSmartInputRule}
-				smartInputSaving={smartInputState.isSavingSmartInput}
-				onOpenSmartInputSettings={openSmartInputSettings}
 			/>
 	);
 

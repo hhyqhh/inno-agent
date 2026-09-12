@@ -180,9 +180,15 @@ function ModelEditForm({ model, settings, onClose }: {
 export function ModelsSettings({ settings }: { settings: InnoSettings }) {
 	const { t } = useTranslation();
 	const [editingModel, setEditingModel] = useState<string | null>(null);
-	const isSavingModel = useStoreSnapshot(settingsStore, () => settingsStore.isSavingModel);
+	const { isSavingModel, storeError } = useStoreSnapshot(settingsStore, () => ({
+		isSavingModel: settingsStore.isSavingModel,
+		storeError: settingsStore.error,
+	}));
 
-	const models = settings.availableModels ?? settings.configuredModels ?? [];
+	// Only configured (config.json) models are manageable. availableModels also
+	// contains the built-in provider catalog (e.g. anthropic/*), whose rows
+	// cannot be edited or deleted and only confused the delete action.
+	const models = settings.configuredModels ?? [];
 
 	// Group models by provider, preserving first-seen order.
 	const groups = new Map<string, InnoModelInfo[]>();
@@ -196,6 +202,7 @@ export function ModelsSettings({ settings }: { settings: InnoSettings }) {
 		<SettingsSection title={t("settings.tabs.models")} description={t("settings.sections.models.desc", "配置模型提供商与默认模型")}>
 			<SettingsCard>
 				<h4 className="mb-3 text-sm font-medium text-[var(--inno-text)]">{t("settings.models")}</h4>
+				{storeError ? <div className="mb-3 rounded bg-[var(--inno-danger-bg)] p-2 text-sm text-[var(--inno-danger)]">{storeError}</div> : null}
 				<div className="grid gap-4">
 					{[...groups.entries()].map(([providerId, providerModels]) => {
 						const preset = findPreset(providerId);
@@ -245,17 +252,19 @@ export function ModelsSettings({ settings }: { settings: InnoSettings }) {
 													>
 														<Pencil size={14} />
 													</button>
-													<button
-														className="flex h-7 w-7 items-center justify-center rounded text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)] group-hover:opacity-100"
-														title={t("common.delete", "Delete")}
-														onClick={() => {
-															if (window.confirm(t("settings.confirmDelete", { id: `${model.provider}/${model.id}` }) ?? "")) {
-																void settingsStore.deleteModel(model.provider, model.id);
-															}
-														}}
-													>
-														<Trash2 size={14} />
-													</button>
+													{!current && (
+														<button
+															className="flex h-7 w-7 items-center justify-center rounded text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)] group-hover:opacity-100"
+															title={t("common.delete", "Delete")}
+															onClick={() => {
+																if (window.confirm(t("settings.confirmDelete", { id: `${model.provider}/${model.id}` }) ?? "")) {
+																	void settingsStore.deleteModel(model.provider, model.id);
+																}
+															}}
+														>
+															<Trash2 size={14} />
+														</button>
+													)}
 													{!current && (
 														<button
 															className="rounded-md border border-[var(--inno-border)] px-2.5 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
@@ -277,7 +286,7 @@ export function ModelsSettings({ settings }: { settings: InnoSettings }) {
 				</div>
 			</SettingsCard>
 
-			{/* New Provider — hidden in Simple Mode */}
+			{/* New Provider */}
 			<AddProviderWizard providers={settings.providers} />
 		</SettingsSection>
 	);

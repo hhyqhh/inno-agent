@@ -376,7 +376,7 @@ function SkillCard({ skill, category, onClick }: { skill: SkillInfo; category: s
 
 /* ---------- Main SkillsPanel ---------- */
 
-type SkillsTab = "all" | "mine" | "library";
+type SkillsTab = "mine" | "library";
 
 export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 	const { t } = useTranslation();
@@ -391,8 +391,9 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 		isLoadingLibrary: skillsStore.isLoadingLibrary,
 		libraryError: skillsStore.libraryError,
 		importing: skillsStore.importing,
+		notice: skillsStore.notice,
 	}));
-	const [tab, setTab] = useState<SkillsTab>("all");
+	const [tab, setTab] = useState<SkillsTab>("mine");
 	const [query, setQuery] = useState("");
 	const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
@@ -414,9 +415,10 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 	const activeSkill = state.selectedSkill ? state.skills.find((s) => s.name === state.selectedSkill) : null;
 
 	const uncategorizedLabel = t("skills.uncategorized");
+	// "mine" lists every installed skill (cards carry their own enable toggle);
+	// the former "all" tab was the same list and has been merged into it.
 	const sourceItems = useMemo<(SkillInfo | SkillLibraryItem)[]>(() => {
 		if (tab === "library") return state.library;
-		if (tab === "mine") return state.skills.filter((s) => s.enabled);
 		return state.skills;
 	}, [tab, state.skills, state.library]);
 
@@ -459,7 +461,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 				{/* Tabs + search + actions */}
 				<div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
 					<div className="flex gap-6">
-						{(["all", "mine", "library"] as SkillsTab[]).map((key) => (
+						{(["mine", "library"] as SkillsTab[]).map((key) => (
 							<button
 								key={key}
 								className={`border-b-[2.5px] py-2.5 text-[15px] ${
@@ -629,6 +631,15 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 					))
 				)}
 			</div>
+			{state.notice ? (
+				<div
+					role="status"
+					className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-2.5 text-[13px] text-[var(--inno-text)] shadow-lg"
+				>
+					<Check size={14} className="shrink-0 text-[var(--inno-success)]" />
+					{t("skills.importDone", { name: state.notice })}
+				</div>
+			) : null}
 		</div>
 	);
 }

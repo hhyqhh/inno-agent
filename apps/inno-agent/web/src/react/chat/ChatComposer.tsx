@@ -30,7 +30,6 @@ export interface ChatComposerProps {
 	modelState: ChatComposerModelState;
 	modelOptions: InnoModelInfo[];
 	currentModel?: InnoModelInfo;
-	smartInputControl?: ReactNode;
 	/** "顺便问问" entry button, rendered in the toolbar's left group (conversation view only). */
 	btwControl?: ReactNode;
 	/** Permission policy mode switcher, rendered as a pill in the sub-pill row. */
@@ -88,7 +87,6 @@ export function ChatComposer({
 	modelState,
 	modelOptions,
 	currentModel,
-	smartInputControl,
 	btwControl,
 	permissionControl,
 	workspaceControl,
@@ -553,7 +551,6 @@ export function ChatComposer({
 			<div className="inno-composer-subrow">
 				{workspaceControl}
 				{permissionControl}
-				{smartInputControl}
 				<span className="flex-1" aria-hidden="true" />
 				{renderModelPicker()}
 			</div>

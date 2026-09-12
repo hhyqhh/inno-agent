@@ -2690,24 +2690,25 @@ inno-workspace-panel textarea {
 .inno-workspace-switcher-trigger {
 	display: inline-flex;
 	max-width: min(100%, 320px);
-	height: 36px;
 	align-items: center;
-	gap: 7px;
-	padding: 0 10px;
-	border: 0;
-	border-radius: 9px;
-	background: transparent;
+	gap: 6px;
+	padding: 5px 13px;
+	border: 1px solid var(--inno-border);
+	border-radius: 15px;
+	background: var(--inno-surface);
+	box-shadow: 0 1px 2px color-mix(in srgb, var(--inno-text) 8%, transparent);
 	color: var(--inno-text-muted);
-	font-size: 13px;
+	font-size: 12.5px;
 	font-weight: 500;
 	text-align: left;
 	cursor: pointer;
-	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), border-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
 }
 
 .inno-workspace-switcher-trigger:hover:not(:disabled),
 .inno-workspace-switcher-trigger[aria-expanded="true"] {
 	background: var(--inno-surface-muted);
+	border-color: var(--inno-border-strong);
 	color: var(--inno-text);
 }
 

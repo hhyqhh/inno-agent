@@ -468,13 +468,13 @@
 		"libraryEmpty": "No skills available in the library",
 		"import": "Import",
 		"importing": "Importing…",
+		"importDone": "Downloaded and installed \"{{name}}\"",
 		"installed": "Installed",
 		"libraryError": "Failed to load skills library",
 		"searchPlaceholder": "Search by name, description, or category…",
 		"uncategorized": "Uncategorized",
 		"noResults": "No matching skills",
 		"tabs": {
-			"all": "All Skills",
 			"mine": "My Skills",
 			"library": "Library"
 		},

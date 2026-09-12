@@ -658,6 +658,9 @@ export function deleteModel(config: InnoConfig, providerId: string, modelId: str
 	const provider = config.providers[id];
 	if (!provider) throw new Error(`Provider ${id} not found`);
 	if (!provider.models.some((m) => m.id === mid)) throw new Error(`Model ${id}/${mid} not found`);
+	if (id === config.defaultProvider && mid === config.defaultModel) {
+		throw new Error("Cannot delete the default model; switch to another model first");
+	}
 
 	const totalModels = Object.values(config.providers).reduce((sum, p) => sum + p.models.length, 0);
 	if (totalModels <= 1) throw new Error("Cannot delete the last model");

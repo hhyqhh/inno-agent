@@ -188,31 +188,32 @@ export function JobsPanel() {
 	];
 
 	return (
-		<div className="flex h-full flex-col p-3">
-			<CheckInCard onStatusChange={setCheckInStatus} />
-			<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
-				<div className="flex items-center justify-between border-b border-[var(--inno-border)] px-3 py-3">
-					<div>
-						<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("jobs.title")}</h3>
-						<p className="text-xs text-[var(--inno-text-muted)]">{t("jobs.subtitle")}</p>
-					</div>
-					<button className="flex items-center gap-1 rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={openNewForm}>
-						<Plus size={14} />
-						{t("jobs.newJob")}
-					</button>
-				</div>
-
-				<div className="min-h-0 flex-1 overflow-y-auto p-3">
-					{state.isLoading ? (
-						<div className="flex items-center justify-center py-8 text-[var(--inno-text-muted)]">
-							<Spinner size={16} className="mr-2" />
-							{t("common.loading")}
+		<div className="h-full overflow-y-auto">
+			<div className="mx-auto flex w-full max-w-[860px] flex-col gap-4 px-5 pb-8 pt-2.5">
+				<CheckInCard onStatusChange={setCheckInStatus} />
+				<div className="overflow-hidden rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)]">
+					<div className="flex items-center justify-between border-b border-[var(--inno-border)] px-[18px] py-[15px]">
+						<div>
+							<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("jobs.title")}</h3>
+							<p className="text-xs text-[var(--inno-text-muted)]">{t("jobs.subtitle")}</p>
 						</div>
-					) : null}
-					{!state.isLoading && state.jobs.length === 0 ? (
-						<p className="py-8 text-center text-sm text-[var(--inno-text-muted)]">{t("jobs.empty")}</p>
-					) : null}
-					<div className="flex flex-col gap-4">
+						<button className="flex items-center gap-1 rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={openNewForm}>
+							<Plus size={14} />
+							{t("jobs.newJob")}
+						</button>
+					</div>
+
+					<div className="px-[18px] pb-[18px] pt-3">
+						{state.isLoading ? (
+							<div className="flex items-center justify-center py-8 text-[var(--inno-text-muted)]">
+								<Spinner size={16} className="mr-2" />
+								{t("common.loading")}
+							</div>
+						) : null}
+						{!state.isLoading && state.jobs.length === 0 ? (
+							<p className="py-8 text-center text-sm text-[var(--inno-text-muted)]">{t("jobs.empty")}</p>
+						) : null}
+						<div className="flex flex-col gap-4">
 						{jobGroups.map((group) => group.jobs.length > 0 ? (
 							<section key={group.key}>
 								<div className="mb-2 flex items-center gap-2">
@@ -233,7 +234,7 @@ export function JobsPanel() {
 										const todayIsComplete = Boolean(todayPlanJob) && todayRequiredOccurrences.every((occurrence) => occurrence.status === "success");
 										const todayHasFailed = todayRequiredOccurrences.some((occurrence) => occurrence.status === "error");
 										return (
-											<div key={job.id} className={`rounded-lg bg-[var(--inno-surface)] p-3 ${job.enabled ? "" : "opacity-60"}`}>
+											<div key={job.id} className={`rounded-xl border border-[var(--inno-border)] px-[15px] py-[13px] ${job.enabled ? "" : "opacity-60"}`}>
 												<div className="flex items-start justify-between gap-2">
 													<div className="min-w-0 flex-1">
 														<div className="truncate text-sm font-medium text-[var(--inno-text)]">{job.name}</div>
@@ -404,6 +405,7 @@ export function JobsPanel() {
 					</motion.div>
 				</motion.div>
 			) : null}
+			</div>
 		</div>
 	);
 }

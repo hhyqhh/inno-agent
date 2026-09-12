@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
-import { ArrowDown, Sparkles } from "lucide-react";
+import { ArrowDown, Folder, PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { AttachmentRef, ChatMessage, ChatToolRecord, PendingQuestion } from "../../types/chat.js";
 import { workspaceFileUrl } from "../../api/workspace.js";
@@ -59,6 +59,13 @@ interface ChatConversationProps {
 	canRetry: boolean;
 	onRetry: () => void;
 	wsError: string;
+	/** Session topic shown in the conversation header. */
+	sessionTitle?: string;
+	/** Bound workspace name rendered as a chip next to the title. */
+	workspaceName?: string | null;
+	/** Whether the right artifact panel is currently open. */
+	panelOpen?: boolean;
+	onTogglePanel?: () => void;
 }
 
 export function ChatConversation({
@@ -84,6 +91,10 @@ export function ChatConversation({
 	canRetry,
 	onRetry,
 	wsError,
+	sessionTitle,
+	workspaceName,
+	panelOpen,
+	onTogglePanel,
 }: ChatConversationProps) {
 	const { t } = useTranslation();
 	// Simple Mode hides the practice terminal entirely; the drawer entry points
@@ -186,6 +197,29 @@ export function ChatConversation({
 		<section className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-chat-bg)]">
 			{topOverlay}
 			{smartToast}
+			{sessionTitle ? (
+				<header className="relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] px-4 backdrop-blur-md">
+					<span className="min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]">{sessionTitle}</span>
+					{workspaceName && !simpleMode ? (
+						<span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] bg-[var(--inno-chip-bg)] px-2.5 py-[3px] text-[11px] text-[var(--inno-text-subtle)]">
+							<Folder size={11} aria-hidden="true" />
+							<span className="max-w-40 truncate">{workspaceName}</span>
+						</span>
+					) : null}
+					{onTogglePanel ? (
+						<button
+							type="button"
+							className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							title={panelOpen ? (t("workspace.collapse") ?? "") : (t("workspace.openWorkspace") ?? "")}
+							aria-label={panelOpen ? (t("workspace.collapse") ?? "") : (t("workspace.openWorkspace") ?? "")}
+							aria-pressed={panelOpen}
+							onClick={onTogglePanel}
+						>
+							{panelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+						</button>
+					) : null}
+				</header>
+			) : null}
 			<div className="conversation-stage relative flex-1 min-h-0">
 				<div
 					ref={scrollRef}
@@ -195,7 +229,7 @@ export function ChatConversation({
 					onPointerDown={onPointerDown}
 					className="chat-scroll inno-chat-grid h-full min-h-0 overflow-y-scroll px-4 py-4"
 				>
-					<div data-conversation-content className="mx-auto flex min-w-0 max-w-3xl flex-col gap-3">
+					<div data-conversation-content className="mx-auto flex min-w-0 max-w-[780px] flex-col gap-3">
 						{showHistoryLoading ? (
 							<div className="flex h-full flex-col items-center justify-center pt-20 text-[var(--inno-text-muted)]">
 								<Spinner size={20} className="mb-3 text-[var(--inno-border-strong)]" />
@@ -266,7 +300,7 @@ export function ChatConversation({
 							</button>
 						</div>
 					) : null}
-					<div className="inno-conversation-composer-content mx-auto max-w-3xl">
+					<div className="inno-conversation-composer-content mx-auto max-w-[780px]">
 						{questionHint || busyBlocker ? (
 							<div className="inno-conversation-status-wrap">
 								<div className="inno-conversation-composer-mask" aria-hidden="true" />

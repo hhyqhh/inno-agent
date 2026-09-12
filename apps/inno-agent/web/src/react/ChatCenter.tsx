@@ -1512,6 +1512,14 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 
 	const questionHint = chat.pendingQuestion ? <QuestionHint scrollRef={scrollRef} /> : null;
 	const busyBlocker = sessions.busyBlocker ? <BusyBlocker busyBlocker={sessions.busyBlocker} /> : null;
+
+	// Conversation header (InnoSpark anatomy): session topic + workspace chip +
+	// right-panel toggle. The panel flip mirrors the workspace panel's own
+	// open/close controls.
+	const currentSessionMeta = sessions.list.find((session) => session.id === sessions.currentSessionId);
+	const activeWorkspaceName = workspaces.list.find((workspace) => workspace.id === activeWorkspaceId)?.name ?? null;
+	const panelOpen = appLayout.workspaceMode !== "collapsed";
+	const togglePanel = useCallback(() => appStore.toggleWorkspace(), []);
 	const smartToastNode = smartToast ? (
 		<div className={`inno-smart-toast ${smartToast.error ? "is-error" : ""}`} role="status">{smartToast.message}</div>
 	) : null;
@@ -1605,6 +1613,10 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 			canRetry={Boolean(chat.lastUserPrompt) && !chat.isSending && !chat.pendingQuestion && !chat.pendingPermission && !isUploading}
 			onRetry={handleRetry}
 			wsError={wsError}
+			sessionTitle={currentSessionMeta?.name}
+			workspaceName={activeWorkspaceName}
+			panelOpen={panelOpen}
+			onTogglePanel={togglePanel}
 		/>
 		</>
 	);

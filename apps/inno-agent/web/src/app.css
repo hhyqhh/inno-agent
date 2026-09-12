@@ -1376,7 +1376,9 @@ inno-app-shell {
 	top: 50%;
 	bottom: -12px;
 	z-index: 0;
-	background: var(--inno-chat-bg);
+	/* Fade the mask's top edge so scrolled text dissolves instead of hard-clipping
+	   at the composer lane (InnoSpark composer-bottom treatment). */
+	background: linear-gradient(to bottom, transparent, var(--inno-chat-bg) 32%);
 	pointer-events: none;
 }
 

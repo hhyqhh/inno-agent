@@ -433,7 +433,7 @@
 		}
 	},
 	"skills": {
-		"title": "Skills",
+		"title": "Skill Store",
 		"subtitle": "Loaded from the configured skills directory",
 		"reload": "Reload",
 		"upload": "Upload",
@@ -455,7 +455,16 @@
 		"libraryError": "Failed to load skills library",
 		"searchPlaceholder": "Search by name, description, or category…",
 		"uncategorized": "Uncategorized",
-		"noResults": "No matching skills"
+		"noResults": "No matching skills",
+		"tabs": {
+			"all": "All Skills",
+			"mine": "My Skills",
+			"library": "Library"
+		},
+		"filterCategory": "Category",
+		"filterAll": "All",
+		"mineEmpty": "No skills enabled yet",
+		"mineEmptyDesc": "Enable skills in “All Skills”, or import new ones from the “Library”"
 	},
 	"presets": {
 		"simpleModeHeader": "Ready to go · pick one to start",

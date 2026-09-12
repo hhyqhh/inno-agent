@@ -433,7 +433,7 @@
 		}
 	},
 	"skills": {
-		"title": "技能",
+		"title": "技能仓库",
 		"subtitle": "从技能目录中加载",
 		"reload": "重新加载",
 		"upload": "上传",
@@ -455,7 +455,16 @@
 		"libraryError": "加载技能库失败",
 		"searchPlaceholder": "按名称、描述或分类搜索…",
 		"uncategorized": "未分类",
-		"noResults": "无匹配技能"
+		"noResults": "无匹配技能",
+		"tabs": {
+			"all": "所有技能",
+			"mine": "我的技能",
+			"library": "技能库"
+		},
+		"filterCategory": "分类",
+		"filterAll": "全部",
+		"mineEmpty": "还没有启用的技能",
+		"mineEmptyDesc": "在「所有技能」中启用技能，或从「技能库」导入新技能"
 	},
 	"presets": {
 		"simpleModeHeader": "开箱即用 · 选一个开始",

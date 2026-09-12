@@ -20,7 +20,7 @@ interface WorkspaceContextProps {
 	onOpenSmartInputSettings: () => void;
 }
 
-/** Workspace context row used below the welcome composer. */
+/** Workspace context controls for the composer's sub-pill row (welcome view). */
 export function WorkspaceContext({
 	workspaces,
 	selectedWorkspaceId,
@@ -36,8 +36,10 @@ export function WorkspaceContext({
 	smartInputSaving = false,
 	onOpenSmartInputSettings,
 }: WorkspaceContextProps) {
+	// Fragment (not a row wrapper) so the controls can join the composer's
+	// sub-pill row as direct children.
 	return (
-		<div className="inno-workspace-context-row">
+		<>
 			<WorkspaceSwitcher
 				workspaces={workspaces}
 				selectedWorkspaceId={selectedWorkspaceId}
@@ -55,6 +57,6 @@ export function WorkspaceContext({
 				smartInputSaving={smartInputSaving}
 				onOpenSmartInputSettings={onOpenSmartInputSettings}
 			/>
-		</div>
+		</>
 	);
 }

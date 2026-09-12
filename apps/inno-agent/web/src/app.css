@@ -76,6 +76,11 @@
 	--inno-user-bubble-bg: #e9eef6;
 	--inno-card-bg: #ffffff;
 	--inno-chip-bg: #f1f4f9;
+	/* Send button: near-black circle in light, inverted in dark. */
+	--inno-send-bg: #1f1f1f;
+	--inno-send-fg: #ffffff;
+	--inno-send-bg-hover: #000000;
+	--inno-shadow-composer: 0 1px 3px rgba(60, 64, 67, 0.18), 0 4px 12px rgba(60, 64, 67, 0.10);
 
 	/* Transition tokens — custom cubic-bezier per Emil's design engineering.
 	   `ease`/`ease-in` feel sluggish; these give punchy, responsive motion. */
@@ -2062,18 +2067,84 @@ inno-workspace-panel textarea {
 	box-shadow: var(--inno-ring);
 }
 
+/* The composer root is an unstyled stack: the rounded card plus the sub-pill
+   row beneath it. ChatCenter measures this root for the conversation bottom
+   space, so the pills count toward the covered area. */
 .inno-composer {
 	display: flex;
 	flex-direction: column;
+	gap: 10px;
+}
+
+.inno-composer-card {
+	display: flex;
+	flex-direction: column;
 	border: 1px solid var(--inno-border);
+	border-radius: 28px;
 	background: var(--inno-surface);
-	box-shadow: var(--inno-shadow-soft);
+	box-shadow: var(--inno-shadow-composer);
 	transition: border-color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out);
 }
 
-.inno-composer:focus-within {
+.inno-composer-card:focus-within {
 	border-color: var(--inno-focus-border);
-	box-shadow: var(--inno-ring);
+	box-shadow: var(--inno-shadow-composer), var(--inno-ring);
+}
+
+/* Sub-pill row below the card (InnoSpark composer-sub): workspace, permission,
+   smart input and model selectors as small floating pills. */
+.inno-composer-subrow {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 0 4px;
+}
+
+.inno-composer-subpill {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	border: 1px solid var(--inno-border);
+	border-radius: 15px;
+	background: var(--inno-surface);
+	padding: 5px 13px;
+	font-size: 12.5px;
+	color: var(--inno-text-muted);
+	box-shadow: 0 1px 2px color-mix(in srgb, var(--inno-text) 8%, transparent);
+	cursor: pointer;
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), border-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-composer-subpill:hover:not(:disabled) {
+	background: var(--inno-surface-muted);
+	border-color: var(--inno-border-strong);
+	color: var(--inno-text);
+}
+
+/* Yolo (完全权限) reads as a red "full access" pill in both themes. */
+.inno-composer-subpill.is-perm-full {
+	background: var(--inno-danger-bg);
+	border-color: color-mix(in srgb, var(--inno-danger) 32%, transparent);
+	color: var(--inno-danger);
+}
+
+/* The model trigger joins the subrow as one more pill. */
+.inno-composer-subrow .inno-composer-model-trigger {
+	height: auto;
+	border: 1px solid var(--inno-border);
+	border-radius: 15px;
+	background: var(--inno-surface);
+	padding: 5px 13px;
+	font-size: 12.5px;
+	color: var(--inno-text-muted);
+	box-shadow: 0 1px 2px color-mix(in srgb, var(--inno-text) 8%, transparent);
+}
+
+.inno-composer-subrow .inno-composer-model-trigger:hover:not(:disabled),
+.inno-composer-subrow .inno-composer-model-trigger[aria-expanded="true"] {
+	background: var(--inno-surface-muted);
+	border-color: var(--inno-border-strong);
+	color: var(--inno-text);
 }
 
 .inno-composer-textarea {
@@ -2980,13 +3051,13 @@ inno-workspace-panel textarea {
 
 .inno-composer-send {
 	border: 0;
-	background: var(--inno-accent);
-	color: #ffffff;
+	background: var(--inno-send-bg);
+	color: var(--inno-send-fg);
 	box-shadow: var(--inno-shadow-soft);
 }
 
 .inno-composer-send:hover:not(:disabled):not(.is-disabled) {
-	background: var(--inno-tech);
+	background: var(--inno-send-bg-hover);
 	box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
 }
 
@@ -3804,7 +3875,7 @@ button.inno-smart-ref-chip:hover {
 }
 
 /* ── OS-file drag-over affordance on the composer ── */
-.inno-composer.is-osfile-over {
+.inno-composer-card.is-osfile-over {
 	border-color: color-mix(in srgb, var(--inno-success) 45%, transparent);
 	box-shadow: 0 0 0 3px color-mix(in srgb, var(--inno-success) 12%, transparent);
 }

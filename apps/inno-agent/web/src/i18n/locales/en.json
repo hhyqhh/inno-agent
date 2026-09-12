@@ -663,7 +663,13 @@
 				"auto": "Commands run without approval cards.",
 				"yolo": "Nothing asks. Best paired with sandbox mode."
 			},
-			"denyFloorNote": "Dangerous commands and sensitive files stay denied in every mode."
+			"denyFloorNote": "Dangerous commands and sensitive files stay denied in every mode.",
+			"risk": {
+				"title": "Allow full access?",
+				"body": "With full access, the AI skips confirmation steps and can directly perform more operations, including sensitive actions, file modifications, or external commands.\nOnly enable this when you trust the current task.",
+				"checkbox": "I understand the risks and want to continue",
+				"confirm": "Allow full access"
+			}
 		},
 		"tabs": {
 			"general": "General",

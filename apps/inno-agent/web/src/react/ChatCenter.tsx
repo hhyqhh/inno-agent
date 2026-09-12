@@ -48,7 +48,7 @@ import { fetchSlashCommands, type SlashCommandItem } from "../api/commands.js";
 import { WorkspaceContext } from "./chat/WorkspaceContext.js";
 import { BtwPanel } from "./BtwPanel.js";
 import { PermissionModeControl } from "./chat/PermissionModeControl.js";
-import type { WorkspaceChoice } from "./WorkspaceSwitcher.js";
+import { WorkspaceSwitcher, type WorkspaceChoice } from "./WorkspaceSwitcher.js";
 import { DEFAULT_UPLOAD_MAX_BYTES, DEFAULT_UPLOAD_MAX_LABEL, getOversizedFiles } from "../utils/upload-limits.js";
 import {
 	flattenWorkspaceFiles,
@@ -1433,7 +1433,20 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 					<MessageCircleQuestion size={16} />
 				</button>
 			) : undefined}
-			permissionControl={<PermissionModeControl />}
+			permissionControl={<PermissionModeControl variant="pill" />}
+			workspaceControl={!simpleMode ? (
+				isWelcome ? workspaceContext : (
+					<WorkspaceSwitcher
+						workspaces={workspaces.list}
+						selectedWorkspaceId={activeWorkspaceId}
+						selectedKind="workspace"
+						busy={isSwitchingWorkspace}
+						disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
+						onChange={handleWorkspaceChange}
+						onImport={handleWorkspaceImport}
+					/>
+				)
+			) : undefined}
 			smartInputControl={((isWelcome && simpleMode) || (!isWelcome && !simpleMode)) ? (
 				<SmartInputControl
 					smartInputSettings={smartSettings}
@@ -1566,7 +1579,6 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 				busyBlocker={busyBlocker}
 				smartToast={smartToastNode}
 				composer={renderComposer(t("chat.welcomePlaceholder"))}
-				workspaceContext={workspaceContext}
 				presets={presets}
 				presetsLoaded={presetsLoaded}
 				isLoadingPresets={isLoadingPresets}

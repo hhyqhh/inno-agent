@@ -1,4 +1,4 @@
-import { Check, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Check, ChevronUp, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -16,13 +16,18 @@ const MODE_ICONS: Record<PermissionPolicyMode, typeof Shield> = {
 };
 
 /**
- * Permission policy mode switcher for the composer toolbar. The same three
- * modes as Settings → General → Tool permissions (default / auto / yolo),
- * exposed next to the input box so the learner can loosen or tighten approval
- * right where the approval cards appear. Global setting, takes effect
- * immediately (the plugin re-reads its config on resources reload).
+ * Permission policy mode switcher for the composer. The same three modes as
+ * Settings → General → Tool permissions (default / auto / yolo), exposed next
+ * to the input box so the learner can loosen or tighten approval right where
+ * the approval cards appear. Global setting, takes effect immediately (the
+ * plugin re-reads its config on resources reload).
+ *
+ * Two trigger variants: the legacy compact `icon` button, and the InnoSpark
+ * `pill` for the composer sub-pill row. Switching to yolo from the pill first
+ * passes through a risk confirmation modal (mirrors the design mockup's
+ * 允许完全访问 dialog); the active yolo pill renders red ("full access").
  */
-export function PermissionModeControl() {
+export function PermissionModeControl({ variant = "icon" }: { variant?: "icon" | "pill" }) {
 	const { t } = useTranslation();
 	const state = useStoreSnapshot(settingsStore, () => ({
 		mode: settingsStore.settings?.plugins?.permissionSystem?.mode ?? "default",
@@ -33,6 +38,8 @@ export function PermissionModeControl() {
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const [open, setOpen] = useState(false);
 	const [position, setPosition] = useState({ left: 8, top: 8 });
+	const [riskOpen, setRiskOpen] = useState(false);
+	const [riskAccepted, setRiskAccepted] = useState(false);
 
 	useLayoutEffect(() => {
 		if (!open) return;
@@ -75,6 +82,24 @@ export function PermissionModeControl() {
 		};
 	}, [open]);
 
+	const selectMode = (mode: PermissionPolicyMode, active: boolean) => {
+		setOpen(false);
+		if (active) return;
+		// Yolo (完全权限) removes the approval step entirely — require an
+		// explicit risk confirmation before persisting the switch.
+		if (mode === "yolo") {
+			setRiskAccepted(false);
+			setRiskOpen(true);
+			return;
+		}
+		void settingsStore.savePermissionMode(mode).catch(() => undefined);
+	};
+
+	const confirmRisk = () => {
+		setRiskOpen(false);
+		void settingsStore.savePermissionMode("yolo").catch(() => undefined);
+	};
+
 	const TriggerIcon = MODE_ICONS[state.mode];
 
 	return (
@@ -82,7 +107,9 @@ export function PermissionModeControl() {
 			<button
 				type="button"
 				ref={triggerRef}
-				className={`inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50 ${state.mode !== "default" ? "text-[var(--inno-accent)]" : ""}`}
+				className={variant === "pill"
+					? `inno-composer-subpill shrink-0 disabled:opacity-50 ${state.mode === "yolo" ? "is-perm-full" : ""}`
+					: `inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50 ${state.mode !== "default" ? "text-[var(--inno-accent)]" : ""}`}
 				title={`${t("settings.permissions.title")} · ${t(`settings.permissions.modes.${state.mode}`)}`}
 				aria-label={t("settings.permissions.title")}
 				aria-haspopup="dialog"
@@ -90,7 +117,13 @@ export function PermissionModeControl() {
 				disabled={state.isSaving}
 				onClick={() => setOpen((value) => !value)}
 			>
-				<TriggerIcon size={16} />
+				<TriggerIcon size={variant === "pill" ? 14 : 16} />
+				{variant === "pill" ? (
+					<>
+						<span className="whitespace-nowrap">{t(`settings.permissions.modes.${state.mode}`)}</span>
+						<ChevronUp size={13} aria-hidden="true" />
+					</>
+				) : null}
 			</button>
 			{open && typeof document !== "undefined" ? createPortal(
 				<PopoverSurface
@@ -108,10 +141,7 @@ export function PermissionModeControl() {
 								key={mode}
 								type="button"
 								disabled={state.isSaving}
-								onClick={() => {
-									setOpen(false);
-									if (!active) void settingsStore.savePermissionMode(mode).catch(() => undefined);
-								}}
+								onClick={() => selectMode(mode, active)}
 								className={`flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${
 									active ? "bg-[var(--inno-accent-soft,rgba(0,0,0,0.04))]" : "hover:bg-[var(--inno-surface-hover,rgba(0,0,0,0.03))]"
 								}`}
@@ -133,6 +163,55 @@ export function PermissionModeControl() {
 						{t("settings.permissions.denyFloorNote")}
 					</p>
 				</PopoverSurface>,
+				document.body,
+			) : null}
+			{riskOpen && typeof document !== "undefined" ? createPortal(
+				<div
+					className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4"
+					onClick={() => setRiskOpen(false)}
+				>
+					<div
+						role="alertdialog"
+						aria-modal="true"
+						aria-label={t("settings.permissions.risk.title")}
+						className="w-[min(460px,88vw)] rounded-[20px] bg-[var(--inno-surface)] p-6 shadow-2xl"
+						onClick={(event) => event.stopPropagation()}
+					>
+						<div className="mb-3 flex items-center gap-2.5 text-base font-semibold text-[var(--inno-text)]">
+							<AlertTriangle size={20} className="shrink-0 text-[var(--inno-danger)]" />
+							{t("settings.permissions.risk.title")}
+						</div>
+						<p className="mb-4 text-[13.5px] leading-[1.75] text-[var(--inno-text-muted)]">
+							{t("settings.permissions.risk.body")}
+						</p>
+						<label className="mb-5 flex cursor-pointer select-none items-center gap-2 text-[13px] text-[var(--inno-text)]">
+							<input
+								type="checkbox"
+								className="h-[15px] w-[15px] accent-[var(--inno-send-bg)]"
+								checked={riskAccepted}
+								onChange={(event) => setRiskAccepted(event.target.checked)}
+							/>
+							{t("settings.permissions.risk.checkbox")}
+						</label>
+						<div className="flex justify-end gap-2.5">
+							<button
+								type="button"
+								className="rounded-[18px] bg-[var(--inno-surface-muted)] px-5 py-2 text-[13px] text-[var(--inno-text)] transition-colors hover:bg-[var(--inno-border)]"
+								onClick={() => setRiskOpen(false)}
+							>
+								{t("common.cancel")}
+							</button>
+							<button
+								type="button"
+								disabled={!riskAccepted || state.isSaving}
+								className="rounded-[18px] bg-[var(--inno-danger)] px-5 py-2 text-[13px] text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+								onClick={confirmRisk}
+							>
+								{t("settings.permissions.risk.confirm")}
+							</button>
+						</div>
+					</div>
+				</div>,
 				document.body,
 			) : null}
 		</div>

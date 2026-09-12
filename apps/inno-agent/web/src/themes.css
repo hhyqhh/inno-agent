@@ -45,6 +45,10 @@
 	--inno-user-bubble-bg: #e9eef6;
 	--inno-card-bg: #ffffff;
 	--inno-chip-bg: #f1f4f9;
+	--inno-send-bg: #1f1f1f;
+	--inno-send-fg: #ffffff;
+	--inno-send-bg-hover: #000000;
+	--inno-shadow-composer: 0 1px 3px rgba(60, 64, 67, 0.18), 0 4px 12px rgba(60, 64, 67, 0.10);
 	color-scheme: light;
 }
 
@@ -86,5 +90,9 @@
 	--inno-user-bubble-bg: #26282d;
 	--inno-card-bg: #1e2023;
 	--inno-chip-bg: #2a2c30;
+	--inno-send-bg: #e8eaed;
+	--inno-send-fg: #1f1f1f;
+	--inno-send-bg-hover: #ffffff;
+	--inno-shadow-composer: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
 	color-scheme: dark;
 }

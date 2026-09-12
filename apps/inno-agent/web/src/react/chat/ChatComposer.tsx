@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CompositionEvent as ReactCompositionEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { Paperclip, X, ArrowUp, Square, RotateCcw, Image, ScrollText, Check, ChevronDown, ChevronUp, Settings2, HardDriveUpload } from "lucide-react";
+import { X, ArrowUp, Square, RotateCcw, Image, ScrollText, Check, ChevronDown, ChevronUp, Plus, Settings2, HardDriveUpload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "../ui/Spinner.js";
 import { FileName } from "../FileName.js";
@@ -33,8 +33,10 @@ export interface ChatComposerProps {
 	smartInputControl?: ReactNode;
 	/** "顺便问问" entry button, rendered in the toolbar's left group (conversation view only). */
 	btwControl?: ReactNode;
-	/** Permission policy mode switcher, rendered in the toolbar's left group. */
+	/** Permission policy mode switcher, rendered as a pill in the sub-pill row. */
 	permissionControl?: ReactNode;
+	/** Workspace selector pill for the sub-pill row (conversation view). */
+	workspaceControl?: ReactNode;
 	modelPickerOpen: boolean;
 	attachMenuOpen: boolean;
 	workspaceFiles: Array<{ name: string; path: string }>;
@@ -89,6 +91,7 @@ export function ChatComposer({
 	smartInputControl,
 	btwControl,
 	permissionControl,
+	workspaceControl,
 	modelPickerOpen,
 	attachMenuOpen,
 	workspaceFiles,
@@ -359,7 +362,7 @@ export function ChatComposer({
 				aria-expanded={attachMenuOpen}
 				onClick={onToggleAttachMenu}
 			>
-				{isUploading ? <Spinner size={16} /> : <Paperclip size={16} />}
+				{isUploading ? <Spinner size={16} /> : <Plus size={18} />}
 			</button>
 			{attachMenuOpen && typeof document !== "undefined" ? createPortal(
 				<div
@@ -465,7 +468,7 @@ export function ChatComposer({
 	const sendDisabled = !hasSendableContent || isUploading;
 	return (
 		<div
-			className={`inno-composer relative rounded-2xl p-2 ${osFileDragOver ? "is-osfile-over" : ""}`}
+			className="inno-composer relative"
 			onDragOverCapture={handleComposerDragOver}
 			onDragOver={handleComposerDragOver}
 			onDragLeave={(event) => {
@@ -474,71 +477,66 @@ export function ChatComposer({
 			onDropCapture={handleComposerDrop}
 			onDrop={handleComposerDrop}
 		>
-			{slashPalette}
-			<input ref={fileInputRef} id="file-input" type="file" className="hidden" multiple onChange={onFiles} />
-			<input ref={imageInputRef} id="image-input" type="file" className="hidden" multiple accept="image/*" onChange={onImageFiles} />
-			{renderComposerAttachments()}
-			<div className={`inno-smart-wrap ${smartInputEnabled ? "is-active" : ""}`}>
-				{smartInputEnabled ? <div ref={mirrorRef} className="inno-smart-mirror" aria-hidden="true" /> : null}
-				<textarea
-					ref={inputRef}
-					id="chat-input"
-					defaultValue={defaultValue}
-					className="inno-composer-textarea w-full resize-none border-0 bg-transparent px-2 py-2 text-sm leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
-					placeholder={placeholder}
-					rows={2}
-					onKeyDown={onKeyDown}
-					onInput={onInput}
-					onCompositionStart={onCompositionStart}
-					onCompositionEnd={onCompositionEnd}
-					onPaste={onPaste}
-					disabled={chatIsSending || isUploading || hasPendingQuestion}
-				/>
-				{smartInputEnabled ? <div ref={hitRef} className="inno-smart-hit" /> : null}
-			</div>
-			<div className="inno-composer-toolbar flex shrink-0 items-center justify-between gap-2">
-				<div className="flex min-w-0 items-center gap-1">
-					{renderAttachMenu()}
-					<button
-						type="button"
-						className="inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50"
-						title={modelState.currentModelSupportsNativeImages ? t("chat.attachImage") : t("chat.attachImageViaOcr")}
-						disabled={chatIsSending || isUploading}
-						onClick={() => imageInputRef.current?.click()}
-					>
-						<Image size={16} />
-					</button>
-					{btwControl}
-					{permissionControl}
+			<div className={`inno-composer-card relative p-2 ${osFileDragOver ? "is-osfile-over" : ""}`}>
+				{slashPalette}
+				<input ref={fileInputRef} id="file-input" type="file" className="hidden" multiple onChange={onFiles} />
+				<input ref={imageInputRef} id="image-input" type="file" className="hidden" multiple accept="image/*" onChange={onImageFiles} />
+				{renderComposerAttachments()}
+				<div className={`inno-smart-wrap ${smartInputEnabled ? "is-active" : ""}`}>
+					{smartInputEnabled ? <div ref={mirrorRef} className="inno-smart-mirror" aria-hidden="true" /> : null}
+					<textarea
+						ref={inputRef}
+						id="chat-input"
+						defaultValue={defaultValue}
+						className="inno-composer-textarea w-full resize-none border-0 bg-transparent px-2 py-2 text-sm leading-5 text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] disabled:opacity-60"
+						placeholder={placeholder}
+						rows={2}
+						onKeyDown={onKeyDown}
+						onInput={onInput}
+						onCompositionStart={onCompositionStart}
+						onCompositionEnd={onCompositionEnd}
+						onPaste={onPaste}
+						disabled={chatIsSending || isUploading || hasPendingQuestion}
+					/>
+					{smartInputEnabled ? <div ref={hitRef} className="inno-smart-hit" /> : null}
 				</div>
-				<div className="ml-auto flex shrink-0 items-center gap-1">
-					{smartInputControl}
-					{renderModelPicker()}
-				</div>
-				<div className="flex shrink-0 items-center gap-1">
-					{(chatIsSending || jobStreaming) ? (
-						<>
-							{canReconnect && !jobStreaming ? (
+				<div className="inno-composer-toolbar flex shrink-0 items-center justify-between gap-2">
+					<div className="flex min-w-0 items-center gap-1">
+						{renderAttachMenu()}
+						<button
+							type="button"
+							className="inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50"
+							title={modelState.currentModelSupportsNativeImages ? t("chat.attachImage") : t("chat.attachImageViaOcr")}
+							disabled={chatIsSending || isUploading}
+							onClick={() => imageInputRef.current?.click()}
+						>
+							<Image size={16} />
+						</button>
+						{btwControl}
+					</div>
+					<div className="flex shrink-0 items-center gap-1">
+						{(chatIsSending || jobStreaming) ? (
+							<>
+								{canReconnect && !jobStreaming ? (
+									<button
+										type="button"
+										className="inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full"
+										title={t("chat.reconnect", "重新连接")}
+										onClick={onReconnect}
+									>
+										<RotateCcw size={16} />
+									</button>
+								) : null}
 								<button
 									type="button"
-									className="inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full"
-									title={t("chat.reconnect", "重新连接")}
-									onClick={onReconnect}
+									className="inno-composer-stop flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
+									title={t("chat.stopGeneration")}
+									onClick={onStop}
 								>
-									<RotateCcw size={16} />
+									<Square size={15} />
 								</button>
-							) : null}
-							<button
-								type="button"
-								className="inno-composer-stop flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
-								title={t("chat.stopGeneration")}
-								onClick={onStop}
-							>
-								<Square size={15} />
-							</button>
-						</>
-					) : (
-						<>
+							</>
+						) : (
 							<button
 								type="button"
 								className={`inno-composer-send flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${sendDisabled ? "is-disabled" : ""}`}
@@ -548,9 +546,16 @@ export function ChatComposer({
 							>
 								<ArrowUp size={16} strokeWidth={2} />
 							</button>
-						</>
-					)}
+						)}
+					</div>
 				</div>
+			</div>
+			<div className="inno-composer-subrow">
+				{workspaceControl}
+				{permissionControl}
+				{smartInputControl}
+				<span className="flex-1" aria-hidden="true" />
+				{renderModelPicker()}
 			</div>
 		</div>
 	);

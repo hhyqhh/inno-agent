@@ -30,7 +30,6 @@ interface ChatWelcomeProps {
 	busyBlocker: ReactNode;
 	smartToast: ReactNode;
 	composer: ReactNode;
-	workspaceContext: ReactNode;
 	presets: PresetMeta[];
 	presetsLoaded: boolean;
 	isLoadingPresets: boolean;
@@ -65,7 +64,6 @@ export function ChatWelcome({
 	busyBlocker,
 	smartToast,
 	composer,
-	workspaceContext,
 	presets,
 	presetsLoaded,
 	isLoadingPresets,
@@ -131,7 +129,6 @@ export function ChatWelcome({
 
 					<div className="inno-welcome-composer-shell w-full max-w-[620px]">
 						{composer}
-						{workspaceContext ? <div className="mt-2">{workspaceContext}</div> : null}
 					</div>
 
 					{suggestions.length > 0 ? (

@@ -104,7 +104,7 @@ function rememberWsChoice(mode: WsMode, existingId: string): void {
 const SMART_FILE_PREVIEW_WIDTH = 560;
 const SMART_HOVER_OPEN_MS = 250;
 // Keep the copy/time action row below the last message above the composer mask.
-const CONVERSATION_ACTION_ROW_RESERVE = 40;
+const CONVERSATION_ACTION_ROW_RESERVE = 60;
 
 function pendingUploadsFromRefs(refs: AttachmentRef[]): PendingUpload[] {
 	const seen = new Set<string>();
@@ -1470,8 +1470,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	// open/close controls.
 	const currentSessionMeta = sessions.list.find((session) => session.id === sessions.currentSessionId);
 	const activeWorkspaceName = workspaces.list.find((workspace) => workspace.id === activeWorkspaceId)?.name ?? null;
-	const panelOpen = appLayout.workspaceMode !== "collapsed";
-	const togglePanel = useCallback(() => appStore.toggleWorkspace(), []);
 	const smartToastNode = smartToast ? (
 		<div className={`inno-smart-toast ${smartToast.error ? "is-error" : ""}`} role="status">{smartToast.message}</div>
 	) : null;
@@ -1563,8 +1561,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 			wsError={wsError}
 			sessionTitle={currentSessionMeta?.name}
 			workspaceName={activeWorkspaceName}
-			panelOpen={panelOpen}
-			onTogglePanel={togglePanel}
+			sidebarCollapsed={appLayout.sidebarCollapsed}
 		/>
 		</>
 	);

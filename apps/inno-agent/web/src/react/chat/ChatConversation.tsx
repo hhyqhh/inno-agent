@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
-import { ArrowDown, Folder, PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
+import { ArrowDown, Folder, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { AttachmentRef, ChatMessage, ChatToolRecord, PendingQuestion } from "../../types/chat.js";
 import { workspaceFileUrl } from "../../api/workspace.js";
@@ -62,9 +62,8 @@ interface ChatConversationProps {
 	sessionTitle?: string;
 	/** Bound workspace name rendered as a chip next to the title. */
 	workspaceName?: string | null;
-	/** Whether the right artifact panel is currently open. */
-	panelOpen?: boolean;
-	onTogglePanel?: () => void;
+	/** When the session sidebar is collapsed its floating expand button overlaps the header's left edge. */
+	sidebarCollapsed?: boolean;
 }
 
 export function ChatConversation({
@@ -92,8 +91,7 @@ export function ChatConversation({
 	wsError,
 	sessionTitle,
 	workspaceName,
-	panelOpen,
-	onTogglePanel,
+	sidebarCollapsed = false,
 }: ChatConversationProps) {
 	const { t } = useTranslation();
 	const [showHistoryLoading, setShowHistoryLoading] = useState(false);
@@ -194,25 +192,13 @@ export function ChatConversation({
 			{topOverlay}
 			{smartToast}
 			{sessionTitle ? (
-				<header className="relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] px-4 backdrop-blur-md">
+				<header className={`relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] pr-4 backdrop-blur-md ${sidebarCollapsed ? "pl-14" : "pl-4"}`}>
 					<span className="min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]">{sessionTitle}</span>
 					{workspaceName ? (
 						<span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] bg-[var(--inno-chip-bg)] px-2.5 py-[3px] text-[11px] text-[var(--inno-text-subtle)]">
 							<Folder size={11} aria-hidden="true" />
 							<span className="max-w-40 truncate">{workspaceName}</span>
 						</span>
-					) : null}
-					{onTogglePanel ? (
-						<button
-							type="button"
-							className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-							title={panelOpen ? (t("workspace.collapse") ?? "") : (t("workspace.openWorkspace") ?? "")}
-							aria-label={panelOpen ? (t("workspace.collapse") ?? "") : (t("workspace.openWorkspace") ?? "")}
-							aria-pressed={panelOpen}
-							onClick={onTogglePanel}
-						>
-							{panelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
-						</button>
 					) : null}
 				</header>
 			) : null}

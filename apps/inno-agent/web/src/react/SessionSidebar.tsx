@@ -1041,7 +1041,7 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 		return (
 			<aside className="relative h-full w-0 overflow-visible">
 				<button
-					className="absolute left-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] shadow-sm transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+					className="absolute left-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] shadow-sm transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 					title={t("sidebar.expand")}
 					onClick={onOpen}
 				>

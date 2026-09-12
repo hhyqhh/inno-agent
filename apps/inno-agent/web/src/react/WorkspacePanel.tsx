@@ -324,7 +324,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 			{resizePreviewPortal}
 			{collapsed ? (
 				<button
-					className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--inno-text-subtle)] transition-colors hover:bg-white/90 hover:text-[var(--inno-text)] hover:shadow-sm"
+					className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] shadow-sm transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 					title={t("workspace.openWorkspace") ?? ""}
 					onClick={() => onModeChange("half")}
 				>

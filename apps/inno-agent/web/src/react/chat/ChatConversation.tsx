@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import type { AttachmentRef, ChatMessage, ChatToolRecord, PendingQuestion } from "../../types/chat.js";
 import { workspaceFileUrl } from "../../api/workspace.js";
 import { workspaceStore } from "../../stores/workspace-store.js";
-import { settingsStore } from "../../stores/settings-store.js";
 import { buildConversationTurns, ConversationMinimap } from "../ConversationMinimap.js";
 import { useStoreSnapshot } from "../hooks.js";
 import { Spinner } from "../ui/Spinner.js";
@@ -97,9 +96,6 @@ export function ChatConversation({
 	onTogglePanel,
 }: ChatConversationProps) {
 	const { t } = useTranslation();
-	// Simple Mode hides the practice terminal entirely; the drawer entry points
-	// (panel toggle, run-code action) are gated the same way.
-	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const [showHistoryLoading, setShowHistoryLoading] = useState(false);
 	useEffect(() => {
 		const shouldShow = chat.isLoadingHistory && chat.messages.length === 0;
@@ -200,7 +196,7 @@ export function ChatConversation({
 			{sessionTitle ? (
 				<header className="relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] px-4 backdrop-blur-md">
 					<span className="min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]">{sessionTitle}</span>
-					{workspaceName && !simpleMode ? (
+					{workspaceName ? (
 						<span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] bg-[var(--inno-chip-bg)] px-2.5 py-[3px] text-[11px] text-[var(--inno-text-subtle)]">
 							<Folder size={11} aria-hidden="true" />
 							<span className="max-w-40 truncate">{workspaceName}</span>
@@ -321,7 +317,7 @@ export function ChatConversation({
 				</div>
 				{btwPanel}
 			</div>
-			{simpleMode ? null : <TerminalDrawer />}
+			<TerminalDrawer />
 		</section>
 	);
 }

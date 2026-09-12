@@ -24,9 +24,6 @@ const TABS: { id: SettingsTab; icon: React.ReactNode }[] = [
 	{ id: "about", icon: <Info size={15} /> },
 ];
 
-// In Simple Mode the advanced categories are hidden, mirroring the workspace tabs.
-const HIDDEN_IN_SIMPLE: SettingsTab[] = ["integrations", "channels", "mcp"];
-
 export function SettingsOverlay() {
 	const { t } = useTranslation();
 	const { settingsOpen, activeSettingsTab } = useStoreSnapshot(appStore, () => ({
@@ -37,7 +34,6 @@ export function SettingsOverlay() {
 		settings: settingsStore.settings,
 		isLoading: settingsStore.isLoading,
 	}));
-	const simpleMode = settings?.simpleMode?.enabled === true;
 
 	// Revalidate settings each time the overlay opens.
 	useEffect(() => {
@@ -54,16 +50,7 @@ export function SettingsOverlay() {
 		return () => window.removeEventListener("keydown", onKey);
 	}, [settingsOpen]);
 
-	// If Simple Mode turns on while a hidden tab is active, fall back to general.
-	useEffect(() => {
-		if (simpleMode && HIDDEN_IN_SIMPLE.includes(activeSettingsTab)) {
-			appStore.setSettingsTab("general");
-		}
-	}, [simpleMode, activeSettingsTab]);
-
 	if (!settingsOpen) return null;
-
-	const visibleTabs = simpleMode ? TABS.filter((tab) => !HIDDEN_IN_SIMPLE.includes(tab.id)) : TABS;
 
 	return (
 		<div
@@ -91,7 +78,7 @@ export function SettingsOverlay() {
 				{/* Left nav */}
 				<aside className="flex w-[208px] shrink-0 flex-col gap-0.5 overflow-y-auto bg-[var(--inno-sidebar-bg)] px-3 py-5">
 					<div className="px-3 pb-3 text-sm font-semibold text-[var(--inno-text)]">{t("settings.title")}</div>
-					{visibleTabs.map(({ id, icon }) => {
+					{TABS.map(({ id, icon }) => {
 						const active = activeSettingsTab === id;
 						return (
 							<button

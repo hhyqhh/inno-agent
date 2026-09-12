@@ -66,13 +66,6 @@ export async function saveMemorySettings(patch: MemorySettingsPatch): Promise<In
 	});
 }
 
-export async function saveSimpleModeSettings(enabled: boolean): Promise<InnoSettings> {
-	return apiFetch<InnoSettings>("/api/settings/simple-mode", {
-		method: "PUT",
-		body: JSON.stringify({ enabled }),
-	});
-}
-
 export async function savePermissionMode(mode: PermissionPolicyMode): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings/permissions", {
 		method: "PUT",

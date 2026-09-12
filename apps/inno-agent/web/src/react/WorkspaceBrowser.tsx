@@ -7,7 +7,6 @@ import { workspaceStore, type StreamingWorkspacePreview } from "../stores/worksp
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
-import { settingsStore } from "../stores/settings-store.js";
 import { appStore } from "../stores/app-store.js";
 import { getSessionWorkspace } from "../api/workspaces.js";
 import { RunButton } from "./terminal/RunButton.js";
@@ -575,7 +574,6 @@ function isStreamingMarkdownPreview(preview: StreamingWorkspacePreview): boolean
 
 function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: () => void; sidebarOpen: boolean }) {
 	const { t } = useTranslation();
-	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const state = useStoreSnapshot(workspaceStore, () => ({
 		file: workspaceStore.currentFile,
 		isLoadingFile: workspaceStore.isLoadingFile,
@@ -653,7 +651,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 					</div>
 				</div>
 				<div className="flex items-center gap-2">
-					{state.file && !simpleMode ? <RunButton filePath={state.file.path} /> : null}
+					{state.file ? <RunButton filePath={state.file.path} /> : null}
 					{canEdit && (
 						<button
 							className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"

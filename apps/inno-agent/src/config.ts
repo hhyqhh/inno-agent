@@ -54,17 +54,6 @@ export interface InnoMemoryConfig {
 }
 
 /**
- * Simple Mode. A global, opt-in switch (default OFF) that turns Inno into a
- * streamlined, ready-to-use experience: it force-locks the L1/L2/L3 memory
- * layers OFF at runtime (without overwriting the user's memory preferences, so
- * exiting restores them) and the web UI hides the notebook/profile tabs and
- * surfaces preset workspaces for one-click start.
- */
-export interface InnoSimpleModeConfig {
-	enabled: boolean;
-}
-
-/**
  * Smart Input (便捷输入). Global, enabled by default. When enabled, the web
  * composer recognizes literal keywords (e.g. "pdf", "word") in the typed text
  * and converts them into file-binding bubbles; files bound to a bubble are
@@ -259,7 +248,6 @@ export interface InnoConfig {
 	contentHub?: InnoContentHubConfig;
 	subagents?: InnoSubagentsConfig;
 	memory?: InnoMemoryConfig;
-	simpleMode?: InnoSimpleModeConfig;
 	smartInput?: InnoSmartInputConfig;
 	mcp?: InnoMcpConfig;
 	ui?: InnoUiConfig;
@@ -383,13 +371,6 @@ export function normalizeMemoryConfig(memory: Partial<InnoMemoryConfig> | undefi
 		l1Enabled: memory?.l1Enabled !== false,
 		l2Enabled: memory?.l2Enabled !== false,
 		l3Enabled: memory?.l3Enabled !== false,
-	};
-}
-
-export function normalizeSimpleModeConfig(simpleMode: Partial<InnoSimpleModeConfig> | undefined): InnoSimpleModeConfig {
-	// Simple Mode defaults OFF; only an explicit `true` enables it.
-	return {
-		enabled: simpleMode?.enabled === true,
 	};
 }
 
@@ -566,7 +547,6 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		contentHub: normalizeContentHubConfig(config.contentHub, config.github?.token),
 		subagents: config.subagents,
 		memory: normalizeMemoryConfig(config.memory),
-		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
 		smartInput: normalizeSmartInputConfig(config.smartInput),
 		mcp: normalizeMcpConfig(config.mcp),
 		ui: normalizeUiConfig(config.ui),

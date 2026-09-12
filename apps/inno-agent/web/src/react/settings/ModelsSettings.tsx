@@ -181,7 +181,6 @@ export function ModelsSettings({ settings }: { settings: InnoSettings }) {
 	const { t } = useTranslation();
 	const [editingModel, setEditingModel] = useState<string | null>(null);
 	const isSavingModel = useStoreSnapshot(settingsStore, () => settingsStore.isSavingModel);
-	const simpleMode = settings.simpleMode?.enabled === true;
 
 	const models = settings.availableModels ?? settings.configuredModels ?? [];
 
@@ -279,7 +278,7 @@ export function ModelsSettings({ settings }: { settings: InnoSettings }) {
 			</SettingsCard>
 
 			{/* New Provider — hidden in Simple Mode */}
-			{!simpleMode && <AddProviderWizard providers={settings.providers} />}
+			<AddProviderWizard providers={settings.providers} />
 		</SettingsSection>
 	);
 }

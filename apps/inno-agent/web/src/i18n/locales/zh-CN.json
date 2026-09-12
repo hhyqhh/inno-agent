@@ -484,14 +484,15 @@
 		"mineEmptyDesc": "在「所有技能」中启用技能，或从「技能库」导入新技能"
 	},
 	"presets": {
-		"simpleModeHeader": "开箱即用 · 选一个开始",
+		"sectionTitle": "预设空间",
 		"refresh": "刷新技能",
 		"refreshSucceeded": "刷新成功",
 		"refreshFailed": "刷新技能失败，仍保留旧列表",
 		"searchPlaceholder": "搜索预设…",
 		"uncategorized": "未分类",
 		"noResults": "无匹配预设",
-		"opening": "正在打开…"
+		"opening": "正在打开…",
+		"loaded": "已载入"
 	},
 	"settings": {
 		"title": "设置",
@@ -512,12 +513,6 @@
 		"providers": "服务提供方",
 		"newProvider": "新增提供方",
 		"memorySection": "记忆分层",
-		"simpleMode": {
-			"title": "简单模式",
-			"onDesc": "已开启：精简、开箱即用的体验。记忆与画像已关闭，笔记/画像/定时任务/技能标签页与终端(实验面板)已隐藏，设置页已简化；欢迎页提供预设工作区一键开始。",
-			"offDesc": "已关闭：完整体验，学习者画像、记忆、笔记、定时任务、技能与终端均可用。",
-			"memoryLocked": "简单模式下记忆已统一关闭。如需调整,请先关闭简单模式。"
-		},
 		"l1": {
 			"title": "学习者画像 (L1)",
 			"onDesc": "已开启：每轮注入学习者画像，并允许工具更新画像以实现个性化教学。",
@@ -1114,16 +1109,6 @@
 		"confirmDeleteWorkspace": "删除工作区「{{name}}」？\n{{detail}}",
 		"deleteWsWithSessions": "其中的 {{count}} 个会话将解绑(归入临时工作区),会话记录与文件不会被删除。",
 		"deleteWsEmpty": "该工作区当前没有会话,工作区记录将被移除。"
-	},
-	"mode": {
-		"selectorLabel": "工作模式",
-		"simpleLabel": "简单模式",
-		"normalLabel": "普通模式",
-		"currentSimpleClickNormal": "当前:简单模式 · 点击切换到普通模式",
-		"currentNormalClickSimple": "当前:普通模式 · 点击切换到简单模式",
-		"switchToNormal": "切换到普通模式",
-		"switchToSimple": "切换到简单模式",
-		"simpleTag": "(简单模式)"
 	},
 	"terminal": {
 		"title": "终端",

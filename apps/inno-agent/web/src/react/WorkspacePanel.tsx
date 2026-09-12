@@ -8,7 +8,6 @@ import { PanelRightOpen, PanelRightClose, Columns2, Maximize2, Terminal as Termi
 import type { WorkspaceMode } from "../stores/app-store.js";
 import { getMaximumWorkspaceWidth, WORKSPACE_MAX_WIDTH, WORKSPACE_MIN_WIDTH, WORKSPACE_QUARTER_MIN_WIDTH } from "../stores/app-layout.js";
 import { appStore } from "../stores/app-store.js";
-import { settingsStore } from "../stores/settings-store.js";
 import { terminalStore } from "../stores/terminal-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
 import type { WorkspaceTreeNode } from "../types/workspace.js";
@@ -155,7 +154,6 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	const [hasOpenedWorkspace, setHasOpenedWorkspace] = useState(mode !== "collapsed");
 	const retryContent = useCallback(() => setContentRetryKey((key) => key + 1), []);
 
-	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const terminalOpen = useStoreSnapshot(terminalStore, () => terminalStore.isOpen);
 	const fileCount = useStoreSnapshot(workspaceStore, () => countTreeFiles(workspaceStore.tree?.children));
 
@@ -350,16 +348,14 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 					<span className="whitespace-nowrap text-[11.5px] text-[var(--inno-text-subtle)]">{t("workspace.fileCount", { count: fileCount })}</span>
 				</div>
 				<div className="flex shrink-0 items-center gap-1">
-					{simpleMode ? null : (
-						<button
-							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
-							title={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
-							aria-label={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
-							onClick={() => terminalStore.setOpen(!terminalOpen)}
-						>
-							<TerminalIcon size={14} />
-						</button>
-					)}
+					<button
+						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
+						title={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
+						aria-label={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
+						onClick={() => terminalStore.setOpen(!terminalOpen)}
+					>
+						<TerminalIcon size={14} />
+					</button>
 					<button
 						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
 						title={mode === "full" ? (t("workspace.half") ?? "") : (t("workspace.full") ?? "")}

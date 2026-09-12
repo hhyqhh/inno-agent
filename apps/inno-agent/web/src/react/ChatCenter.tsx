@@ -179,7 +179,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	const [wsError, setWsError] = useState("");
 	const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
 
-	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const modelState = useStoreSnapshot(settingsStore, () => {
 		const settings = settingsStore.settings;
 		const models = settings?.availableModels ?? settings?.configuredModels ?? [];
@@ -212,7 +211,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	const presetRefreshStatusTimerRef = useRef<number | null>(null);
 	const presetAutoRefreshStartedRef = useRef(false);
 	const [openingPresetId, setOpeningPresetId] = useState<string | null>(null);
-	const [togglingMode, setTogglingMode] = useState(false);
 	const [presetQuery, setPresetQuery] = useState("");
 
 	const cancelPresetRefreshStatusTimer = useCallback(() => {
@@ -294,13 +292,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		() => workspaces.list.filter((workspace) => !workspace.isTemp && !workspace.id.startsWith("channel-")),
 		[workspaces.list],
 	);
-
-	const toggleMode = useCallback(() => {
-		if (togglingMode) return;
-		const next = !(settingsStore.settings?.simpleMode?.enabled === true);
-		setTogglingMode(true);
-		void settingsStore.saveSimpleMode(next).finally(() => setTogglingMode(false));
-	}, [togglingMode]);
 
 	const closeModelPicker = useCallback(() => setModelPickerOpen(false), []);
 	const toggleModelPicker = useCallback(() => setModelPickerOpen((open) => !open), []);
@@ -394,7 +385,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 
 	const tempWorkspaceId = workspaces.list.find((workspace) => workspace.isTemp)?.id;
 	const uploadWorkspaceId: string | undefined | null = isWelcome
-		? (simpleMode || wsMode === "temp"
+		? (wsMode === "temp"
 			? tempWorkspaceId
 			: wsMode === "existing" && wsExistingId
 				? wsExistingId
@@ -834,7 +825,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	}, [smartSettings]);
 
 	const buildSessionInput = useCallback((): CreateSessionInput | { __error: string } => {
-		if (simpleMode || wsMode === "temp") return { newWorkspace: { isTemp: true } };
+		if (wsMode === "temp") return { newWorkspace: { isTemp: true } };
 		if (wsMode === "new") {
 			const trimmed = wsName.trim();
 			if (!trimmed) return { __error: t("chat.errWsName") };
@@ -842,7 +833,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		}
 		if (!wsExistingId) return { __error: t("chat.errWsSelect") };
 		return { workspaceId: wsExistingId };
-	}, [simpleMode, wsMode, wsName, wsExistingId, t]);
+	}, [wsMode, wsName, wsExistingId, t]);
 
 	const loadPresets = useCallback(async (forceRefresh = false) => {
 		setPresetsRefreshError(null);
@@ -882,23 +873,16 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		}
 	}, [cancelPresetRefreshStatusTimer, showPresetRefreshStatus, t]);
 
-	// Refresh the preset catalog once when the app first opens in Simple Mode.
-	// ChatCenter stays mounted across session changes, so this also works when
-	// the app restores an existing session instead of showing the welcome view.
-	// Cached cards render immediately; the forced request updates them in the
-	// background and reuses the same success/error indicator as manual refresh.
+	// The welcome screen renders the preset catalog as one-click workspace
+	// cards. Cached cards render immediately; a forced refresh updates them in
+	// the background once per app mount and reuses the same success/error
+	// indicator as manual refresh. ChatCenter stays mounted across session
+	// changes, so this also runs when the app restores an existing session.
 	useEffect(() => {
-		if (!simpleMode || presetAutoRefreshStartedRef.current) return;
+		if (presetAutoRefreshStartedRef.current) return;
 		presetAutoRefreshStartedRef.current = true;
 		void loadPresets(true);
-	}, [simpleMode, loadPresets]);
-
-	// Normal mode needs the catalog too: the welcome screen renders
-	// preset-derived suggestion cards. Cache-first, no forced refresh.
-	useEffect(() => {
-		if (simpleMode || presetsLoaded) return;
-		void loadPresets(false);
-	}, [simpleMode, presetsLoaded, loadPresets]);
+	}, [loadPresets]);
 
 	const openPreset = useCallback((presetId: string) => {
 		setWsError("");
@@ -959,7 +943,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 						return;
 					}
 					setWsError("");
-					if (!simpleMode) rememberWsChoice(wsMode, wsExistingId);
+					rememberWsChoice(wsMode, wsExistingId);
 					await sessionsStore.createSessionWith(wsInput);
 					targetSessionId = sessionsStore.currentSessionId;
 				}
@@ -1094,7 +1078,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		resizeInput,
 		sessions.currentSessionId,
 		showSmartToast,
-		simpleMode,
 		t,
 		uploadWorkspaceId,
 		uploads,
@@ -1170,15 +1153,12 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		// so "new chat" would be a no-op.
 		if (!isWelcome) actions.push({ action: "new-chat", name: "new", description: t("chat.slashPalette.newChatDesc") });
 		actions.push({ action: "model", name: "model", description: t("chat.slashPalette.modelDesc") });
-		// Simple Mode hides the Notebook/Profile surfaces, so don't offer them.
-		if (!simpleMode) {
-			actions.push({ action: "profile", name: "profile", description: t("chat.slashPalette.profileDesc") });
-		}
+		actions.push({ action: "profile", name: "profile", description: t("chat.slashPalette.profileDesc") });
 		actions.push({ action: "jobs", name: "jobs", description: t("chat.slashPalette.jobsDesc") });
 		actions.push({ action: "skills", name: "skills", description: t("chat.slashPalette.skillsDesc") });
 		actions.push({ action: "settings", name: "settings", description: t("chat.slashPalette.settingsDesc") });
 		return actions;
-	}, [isWelcome, simpleMode, t]);
+	}, [isWelcome, t]);
 
 	const slashEntries = useMemo(() => {
 		if (slashQuery === null) return [];
@@ -1434,20 +1414,18 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 				</button>
 			) : undefined}
 			permissionControl={<PermissionModeControl variant="pill" />}
-			workspaceControl={!simpleMode ? (
-				isWelcome ? workspaceContext : (
-					<WorkspaceSwitcher
-						workspaces={workspaces.list}
-						selectedWorkspaceId={activeWorkspaceId}
-						selectedKind="workspace"
-						busy={isSwitchingWorkspace}
-						disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
-						onChange={handleWorkspaceChange}
-						onImport={handleWorkspaceImport}
-					/>
-				)
-			) : undefined}
-			smartInputControl={((isWelcome && simpleMode) || (!isWelcome && !simpleMode)) ? (
+			workspaceControl={isWelcome ? workspaceContext : (
+				<WorkspaceSwitcher
+					workspaces={workspaces.list}
+					selectedWorkspaceId={activeWorkspaceId}
+					selectedKind="workspace"
+					busy={isSwitchingWorkspace}
+					disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
+					onChange={handleWorkspaceChange}
+					onImport={handleWorkspaceImport}
+				/>
+			)}
+			smartInputControl={!isWelcome ? (
 				<SmartInputControl
 					smartInputSettings={smartSettings}
 					onToggleSmartInput={toggleSmartInput}
@@ -1505,7 +1483,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 
 	const selectedWorkspaceId = wsMode === "existing" ? wsExistingId : null;
 	const selectedKind: "workspace" | "temp" | "new" = wsMode === "existing" ? "workspace" : wsMode;
-	const workspaceContext = !simpleMode ? (
+	const workspaceContext = (
 			<WorkspaceContext
 				workspaces={workspaces.list}
 				selectedWorkspaceId={selectedWorkspaceId}
@@ -1521,7 +1499,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 				smartInputSaving={smartInputState.isSavingSmartInput}
 				onOpenSmartInputSettings={openSmartInputSettings}
 			/>
-	) : null;
+	);
 
 	const questionHint = chat.pendingQuestion ? <QuestionHint scrollRef={scrollRef} /> : null;
 	const busyBlocker = sessions.busyBlocker ? <BusyBlocker busyBlocker={sessions.busyBlocker} /> : null;
@@ -1572,9 +1550,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 			<ChatWelcome
 				topOverlay={scheduledRunBanner}
 				welcomeLayoutRef={welcomeLayoutRef}
-				simpleMode={simpleMode}
-				togglingMode={togglingMode}
-				onToggleMode={toggleMode}
 				questionHint={questionHint}
 				busyBlocker={busyBlocker}
 				smartToast={smartToastNode}

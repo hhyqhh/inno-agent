@@ -484,14 +484,15 @@
 		"mineEmptyDesc": "Enable skills in “All Skills”, or import new ones from the “Library”"
 	},
 	"presets": {
-		"simpleModeHeader": "Ready to go · pick one to start",
+		"sectionTitle": "Preset spaces",
 		"refresh": "Refresh skills",
 		"refreshSucceeded": "Refresh succeeded",
 		"refreshFailed": "Refresh failed; keeping the previous list",
 		"searchPlaceholder": "Search presets…",
 		"uncategorized": "Uncategorized",
 		"noResults": "No matching presets",
-		"opening": "Opening…"
+		"opening": "Opening…",
+		"loaded": "Loaded"
 	},
 	"settings": {
 		"title": "Settings",
@@ -512,12 +513,6 @@
 		"providers": "Providers",
 		"newProvider": "New provider",
 		"memorySection": "Memory layers",
-		"simpleMode": {
-			"title": "Simple Mode",
-			"onDesc": "On: a streamlined, ready-to-use experience. Memory and profile are turned off; the notebook, profile, jobs and skills tabs and the terminal (experiment panel) are hidden and the settings page is simplified; preset workspaces are offered on the welcome screen.",
-			"offDesc": "Off: the full experience with learner profile, memory, notebook, scheduled jobs, skills, and the terminal available.",
-			"memoryLocked": "Memory is turned off while Simple Mode is on. Turn off Simple Mode to change these."
-		},
 		"l1": {
 			"title": "Learner profile (L1)",
 			"onDesc": "On: injects the learner profile each turn and lets tools update it for personalized teaching.",
@@ -1114,16 +1109,6 @@
 		"confirmDeleteWorkspace": "Delete workspace \"{{name}}\"?\n{{detail}}",
 		"deleteWsWithSessions": "Its {{count}} conversation(s) will be unbound (moved to the temp workspace); conversation records and files will not be deleted.",
 		"deleteWsEmpty": "This workspace has no conversations; the workspace record will be removed."
-	},
-	"mode": {
-		"selectorLabel": "Work mode",
-		"simpleLabel": "Simple Mode",
-		"normalLabel": "Normal Mode",
-		"currentSimpleClickNormal": "Current: Simple Mode · click to switch to Normal Mode",
-		"currentNormalClickSimple": "Current: Normal Mode · click to switch to Simple Mode",
-		"switchToNormal": "Switch to Normal Mode",
-		"switchToSimple": "Switch to Simple Mode",
-		"simpleTag": "(Simple Mode)"
 	},
 	"terminal": {
 		"title": "Terminal",

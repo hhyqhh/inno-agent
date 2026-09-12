@@ -41,7 +41,6 @@ import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
-import { settingsStore } from "../stores/settings-store.js";
 import { themeStore } from "../stores/theme-store.js";
 import { setLocale } from "../i18n/index.js";
 import type { WorkspaceMeta } from "../api/workspaces.js";
@@ -563,135 +562,6 @@ function SessionCard({
 	);
 }
 
-interface SimpleSessionRowProps {
-	session: SessionMeta;
-	workspace?: WorkspaceMeta;
-	active: boolean;
-	editing: boolean;
-	editingName: string;
-	generating: boolean;
-	onOpen: () => void;
-	onStartEdit: () => void;
-	onEditChange: (value: string) => void;
-	onEditSave: () => void;
-	onEditCancel: () => void;
-	onGenerate: () => void;
-	onDelete: () => void;
-	onExport: () => void;
-	onExportShowcase: () => void;
-}
-
-function SimpleSessionRow({
-	session,
-	workspace,
-	active,
-	editing,
-	editingName,
-	generating,
-	onOpen,
-	onStartEdit,
-	onEditChange,
-	onEditSave,
-	onEditCancel,
-	onGenerate,
-	onDelete,
-	onExport,
-	onExportShowcase,
-}: SimpleSessionRowProps) {
-	const { t } = useTranslation();
-	const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-	const [hovered, setHovered] = useState(false);
-	const titleState = useTitleMarquee<HTMLDivElement>(session.name, hovered);
-	const menuItems: ContextMenuItem[] = [
-		{
-			label: menuLabel(
-				generating ? <Spinner size={14} /> : <Sparkles size={14} aria-hidden="true" />,
-				t("sidebar.generateTopic"),
-			),
-			onSelect: onGenerate,
-		},
-		{
-			label: menuLabel(<Pencil size={14} aria-hidden="true" />, t("sidebar.rename")),
-			onSelect: onStartEdit,
-		},
-		{
-			label: menuLabel(<Download size={14} aria-hidden="true" />, t("sessions.export", "导出为 Markdown")),
-			onSelect: onExport,
-		},
-		{
-			label: menuLabel(<Clapperboard size={14} aria-hidden="true" />, t("sessions.exportShowcase", "导出为回放案例")),
-			onSelect: onExportShowcase,
-		},
-		{
-			label: menuLabel(<Trash2 size={14} aria-hidden="true" />, t("common.delete")),
-			danger: true,
-			onSelect: onDelete,
-		},
-	];
-	return (
-		<div
-			className={`group/srow relative mb-1 block w-full cursor-pointer rounded-lg border px-2.5 py-2 text-left transition-all duration-150 ${
-				active
-					? "border-[var(--inno-border)] bg-[var(--inno-surface-muted)] shadow-sm"
-					: "border-transparent hover:border-[var(--inno-border)] hover:bg-[var(--inno-surface)]"
-			}`}
-			role="button"
-			tabIndex={0}
-			onMouseEnter={() => setHovered(true)}
-			onMouseLeave={() => setHovered(false)}
-			onClick={onOpen}
-			onKeyDown={(event) => {
-				if (event.key === "Enter" || event.key === " ") {
-					event.preventDefault();
-					onOpen();
-				}
-			}}
-			onContextMenu={(event) => {
-				event.preventDefault();
-				setMenu({ x: event.clientX, y: event.clientY });
-			}}
-		>
-			<SessionTitleRow
-				session={session}
-				titleState={titleState}
-				editing={editing}
-				editingName={editingName}
-				onEditChange={onEditChange}
-				onEditSave={onEditSave}
-				onEditCancel={onEditCancel}
-			/>
-
-			{/* Subtitle row: preview left, workspace right; hover replaces workspace with delete. */}
-			<div className="mt-1 flex min-w-0 items-center justify-between gap-1">
-				<div className="inno-sidebar-meta min-w-0 flex-1 truncate text-[var(--inno-text-subtle)]">
-					{session.preview && session.preview !== session.name ? session.preview : null}
-				</div>
-				<div className="relative flex min-w-[2.25rem] max-w-[140px] shrink-0 items-center justify-end">
-					{workspace ? (
-						<span
-							className="inline-flex max-w-[140px] min-w-0 items-center gap-1 rounded bg-[var(--inno-surface-muted)] px-1.5 py-px text-[9px] font-medium leading-none text-[var(--inno-text-muted)] transition-opacity duration-150 group-hover/srow:opacity-0"
-							title={t("sidebar.workspaceLabel", { name: workspace.name })}
-						>
-							<FolderKanban size={12} className="shrink-0" />
-							<span className="truncate">{workspace.name}</span>
-						</span>
-					) : null}
-					<button
-						className="absolute right-0 rounded p-0.5 text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)] group-hover/srow:opacity-100"
-						title={t("sidebar.deleteConversation")}
-						onClick={(event) => { event.stopPropagation(); onDelete(); }}
-					>
-						<Trash2 size={12} />
-					</button>
-				</div>
-			</div>
-			{menu ? createPortal(
-				<ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />,
-				document.body,
-			) : null}
-		</div>
-	);
-}
 
 /* ── Workbench nav item ── */
 
@@ -839,17 +709,7 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 	const wsActive = useStoreSnapshot(workspaceStore, () => ({
 		activeWorkspaceId: workspaceStore.activeWorkspaceId,
 	}));
-	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const page = useStoreSnapshot(appStore, () => appStore.page);
-	const [togglingMode, setTogglingMode] = useState(false);
-
-	// Toggle Simple/Normal mode from the top-left logo (flip animation).
-	const toggleMode = useCallback(() => {
-		if (togglingMode) return;
-		const next = !(settingsStore.settings?.simpleMode?.enabled === true);
-		setTogglingMode(true);
-		void settingsStore.saveSimpleMode(next).finally(() => setTogglingMode(false));
-	}, [togglingMode]);
 
 	const orderedChannels = CHANNEL_FILTER_ORDER.filter((ch) => state.availableChannels.includes(ch as SessionChannel));
 	const workspaceFiltering = Boolean(state.searchQuery || state.channelFilter);
@@ -878,10 +738,6 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 		const byWs = new Map<string, SessionMeta[]>();
 		const unknown: SessionMeta[] = [];
 		for (const s of state.filteredSessions) {
-			// Simple Mode: only show web-originated conversations plus manual
-			// job runs (created from the web UI); hide sessions born in
-			// feishu/wechat/cli channels.
-			if (simpleMode && s.origin && s.origin !== "web" && s.origin !== "scheduler") continue;
 			if (s.archived) { archived.push(s); continue; }
 			const w = sessionToWs.get(s.id);
 			if (!w) { unknown.push(s); continue; }
@@ -900,8 +756,6 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 		for (const w of wsState.list) {
 			const sessions = byWs.get(w.id) ?? [];
 			const isChannel = CHANNEL_WS_ORDER.includes(w.id);
-			// Simple Mode: hide channel-backed workspaces entirely (web-only view).
-			if (simpleMode && isChannel) continue;
 			// Channel and temp workspaces are synthetic/auto-managed — hide them
 			// when they have no sessions. Project (user) workspaces always show,
 			// even with zero sessions, so they stay visible and deletable after
@@ -961,7 +815,7 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 			result.push({ id: "archived", name: t("sidebar.archived"), activityAt: 0, manageable: false, sortable: false, canCreate: false, sessions: sortSessions(archived) });
 		}
 		return result;
-	}, [wsState.list, state.filteredSessions, state.searchQuery, state.channelFilter, simpleMode, t, workspaceSort, customOrder, isCustomSorting, customOrderDraft, pinnedSessionIds]);
+	}, [wsState.list, state.filteredSessions, state.searchQuery, state.channelFilter, t, workspaceSort, customOrder, isCustomSorting, customOrderDraft, pinnedSessionIds]);
 
 	const sortableGroupIds = useMemo(() => groups.filter((group) => group.sortable).map((group) => group.id), [groups]);
 
@@ -1023,30 +877,6 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 			return next;
 		});
 	}, [draggingWorkspaceId]);
-
-	// Simple Mode (P7): a flat, recency-sorted list of web conversations — the
-	// lightweight way back to a previously generated artifact (PPT, lesson plan,
-	// etc.) without exposing workspace groups, channel filters or management UI.
-	const recentSessions = useMemo<SessionMeta[]>(() => {
-		if (!simpleMode) return [];
-		return state.filteredSessions
-			.filter((s) => !s.archived && (!s.origin || s.origin === "web"))
-			.slice()
-			.sort((a, b) => {
-				const pinnedDiff = Number(pinnedSessionIds.has(b.id)) - Number(pinnedSessionIds.has(a.id));
-				return pinnedDiff || Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
-			});
-	}, [simpleMode, state.filteredSessions, pinnedSessionIds]);
-
-	// Session → bound workspace lookup (shared by the Simple Mode list so each
-	// row can show which workspace its files live in).
-	const sessionToWorkspace = useMemo(() => {
-		const map = new Map<string, WorkspaceMeta>();
-		for (const w of wsState.list) {
-			for (const sid of w.sessionIds ?? []) map.set(sid, w);
-		}
-		return map;
-	}, [wsState.list]);
 
 	const newChat = useCallback(() => {
 		void (async () => {
@@ -1223,99 +1053,6 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 
 	/* ── Simple Mode sidebar (P7): minimal recent list + explicit mode switch ── */
 
-	if (simpleMode) {
-		return (
-			<aside className="inno-sidebar-scope flex h-full min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-sidebar-bg)]">
-				{/* Header: brand + collapse */}
-				<div className="flex items-center justify-between gap-2 border-b border-[var(--inno-border)] px-3 py-2.5">
-					<div className="flex min-w-0 items-center gap-2">
-						<button
-							type="button"
-							onClick={toggleMode}
-							disabled={togglingMode}
-							title={simpleMode ? t("mode.currentSimpleClickNormal") : t("mode.currentNormalClickSimple")}
-							aria-label={simpleMode ? t("mode.switchToNormal") : t("mode.switchToSimple")}
-							className="flip-card-scene shrink-0 rounded-lg outline-none focus-visible:shadow-[var(--inno-ring)] disabled:cursor-wait"
-						>
-							<motion.div
-								animate={{ rotateY: simpleMode ? 180 : 0 }}
-								transition={{ type: "spring", stiffness: 320, damping: 22 }}
-								className="flip-card h-7 w-7"
-							>
-								<span
-									className="flip-card-face absolute inset-0 flex items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)] shadow-sm"
-								>
-									IA
-								</span>
-								<span
-									className="flip-card-back absolute inset-0 flex items-center justify-center rounded-lg border border-[var(--inno-accent)] bg-[var(--inno-accent)] text-[10px] font-semibold text-white shadow-sm"
-								>
-									IA
-								</span>
-							</motion.div>
-						</button>
-						<h1 className="inno-sidebar-title truncate font-semibold tracking-tight text-[var(--inno-text)]">
-							Inno Agent
-						</h1>
-					</div>
-					<button
-						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
-						title={t("sidebar.collapse")}
-						onClick={() => appStore.setSidebarCollapsed(true)}
-					>
-						<PanelLeftClose size={14} />
-					</button>
-				</div>
-
-				{/* Recent conversations — the way back to a generated artifact */}
-				<div className="flex-1 min-h-0 overflow-y-auto px-1.5 py-2 sidebar-scroll">
-					<div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-[var(--inno-text-subtle)]">{t("sidebar.recent")}</div>
-					{state.isLoading ? (
-						<div className="flex items-center justify-center py-8">
-							<Spinner size={16} className="text-[var(--inno-border-strong)]" />
-						</div>
-					) : recentSessions.length === 0 ? (
-						<div className="inno-sidebar-text px-2 py-8 text-center text-[var(--inno-text-subtle)]">{t("sidebar.noConversations")}</div>
-					) : (
-						recentSessions.map((session) => {
-							const ws = sessionToWorkspace.get(session.id);
-							return (
-								<SimpleSessionRow
-									key={session.id}
-									session={session}
-									workspace={ws}
-									active={state.currentSessionId === session.id}
-									editing={editingId === session.id}
-									editingName={editingName}
-									generating={generatingId === session.id}
-									onOpen={() => openSession(session)}
-									onStartEdit={() => { setEditingId(session.id); setEditingName(session.name); }}
-									onEditChange={setEditingName}
-									onEditSave={() => saveName(session.id)}
-									onEditCancel={() => setEditingId(null)}
-									onGenerate={() => generateName(session)}
-									onDelete={() => handleDelete(session)}
-									onExport={() => handleExport(session)}
-									onExportShowcase={() => handleExportShowcase(session)}
-								/>
-							);
-						})
-					)}
-				</div>
-
-				{/* Footer: new chat + user menu (mode switch lives on the IA logo above) */}
-				<div className="space-y-1.5 border-t border-[var(--inno-border)] p-2">
-					<button
-						className="inno-sidebar-text inno-new-chat-button flex w-full items-center justify-center gap-2 rounded-lg inno-primary-button px-3 py-1.5 font-medium text-white shadow-sm transition-colors"
-						onClick={newChat}
-					>
-						<Plus size={14} /> {t("sidebar.newChat")}
-					</button>
-					<SidebarUserMenu />
-				</div>
-			</aside>
-		);
-	}
 
 	/* ── Expanded sidebar ── */
 
@@ -1325,37 +1062,15 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 			<div className="border-b border-[var(--inno-border)] px-3 py-2.5">
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex items-center gap-2 min-w-0">
-						<button
-							type="button"
-							onClick={toggleMode}
-							disabled={togglingMode}
-							title={simpleMode ? t("mode.currentSimpleClickNormal") : t("mode.currentNormalClickSimple")}
-							aria-label={simpleMode ? t("mode.switchToNormal") : t("mode.switchToSimple")}
-							className="flip-card-scene shrink-0 rounded-lg outline-none focus-visible:shadow-[var(--inno-ring)] disabled:cursor-wait"
-						>
-							<motion.div
-								animate={{ rotateY: simpleMode ? 180 : 0 }}
-								transition={{ type: "spring", stiffness: 320, damping: 22 }}
-								className="flip-card h-7 w-7"
-							>
-								<span
-									className="flip-card-face absolute inset-0 flex items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)] shadow-sm"
-								>
-									IA
-								</span>
-								<span
-									className="flip-card-back absolute inset-0 flex items-center justify-center rounded-lg border border-[var(--inno-accent)] bg-[var(--inno-accent)] text-[10px] font-semibold text-white shadow-sm"
-								>
-									IA
-								</span>
-							</motion.div>
-						</button>
+						<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)] shadow-sm">
+							IA
+						</div>
 						<div className="min-w-0">
 							<h1
 								className="inno-sidebar-title bg-clip-text font-semibold tracking-tight text-transparent"
 								style={{ backgroundImage: "linear-gradient(120deg, var(--inno-brand-1), var(--inno-brand-2))" }}
 							>
-								Inno Agent{simpleMode ? <span className="font-normal text-[var(--inno-accent)]">{t("mode.simpleTag")}</span> : null}
+								Inno Agent
 							</h1>
 						</div>
 					</div>
@@ -1457,8 +1172,8 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 					)}
 				</div>
 
-				{/* Channel filters + workspace ordering — hidden in Simple Mode. */}
-				{!simpleMode && (
+				{/* Channel filters + workspace ordering */}
+				{(
 					<div className="relative flex h-6 items-center gap-1">
 						{state.availableChannels.length > 1 ? (
 							<div className="chip-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">

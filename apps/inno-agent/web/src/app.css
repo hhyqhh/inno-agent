@@ -3492,22 +3492,6 @@ inno-workspace-panel textarea {
 	}
 }
 
-/* Flip-card 3D — shared by ChatCenter (switch-workspace) and SessionSidebar.
-   Replaces duplicated inline style={{ transformStyle, backfaceVisibility }}. */
-.flip-card-scene {
-	perspective: 600px;
-}
-.flip-card {
-	transform-style: preserve-3d;
-	position: relative;
-}
-.flip-card-face {
-	backface-visibility: hidden;
-}
-.flip-card-back {
-	backface-visibility: hidden;
-	transform: rotateY(180deg);
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Smart input (便捷输入) — keyword bubbles + structured file bindings.

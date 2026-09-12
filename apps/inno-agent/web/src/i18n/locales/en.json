@@ -107,8 +107,8 @@
 			"analysis": "Analysis"
 		},
 		"view": {
-			"graph": "Graph",
-			"page": "Page"
+			"graph": "Knowledge Graph",
+			"page": "Notes"
 		},
 		"graph": {
 			"fit": "Fit",

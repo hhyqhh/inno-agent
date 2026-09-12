@@ -107,8 +107,8 @@
 			"analysis": "分析"
 		},
 		"view": {
-			"graph": "图谱",
-			"page": "页面"
+			"graph": "知识图谱",
+			"page": "笔记"
 		},
 		"graph": {
 			"fit": "自适应",

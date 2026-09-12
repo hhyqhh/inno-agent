@@ -549,9 +549,7 @@
 		"theme": "Theme",
 		"themeOptions": {
 			"light": "Light",
-			"warm": "Warm",
-			"ocean": "Ocean",
-			"innospark": "InnoSpark"
+			"dark": "Dark"
 		},
 		"closeBehavior": {
 			"title": "Close behavior",

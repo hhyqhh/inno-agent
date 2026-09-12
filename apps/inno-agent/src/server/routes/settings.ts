@@ -664,7 +664,9 @@ export async function handleSettingsRoutes(
 	if (method === "PUT" && url === "/api/settings/theme") {
 		const body = (await readBody(req)) as Record<string, unknown>;
 		const theme = typeof body.theme === "string" ? body.theme.trim() : "";
-		const ALLOWED_THEMES = ["light", "warm", "ocean", "innospark"];
+		// Legacy values (warm/ocean/innospark) stay accepted so older clients do
+		// not break; the web UI normalizes them to "light" on read.
+		const ALLOWED_THEMES = ["light", "dark", "warm", "ocean", "innospark"];
 		if (!ALLOWED_THEMES.includes(theme)) {
 			json(res, 400, { error: `Invalid theme. Allowed: ${ALLOWED_THEMES.join(", ")}` });
 			return true;

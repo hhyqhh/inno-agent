@@ -1,31 +1,38 @@
 import { EventEmitter } from "./event-emitter.js";
 
-export type ThemeId = "light" | "warm" | "ocean" | "innospark";
+export type ThemeId = "light" | "dark";
 
-export const THEME_IDS: ThemeId[] = ["light", "innospark", "warm", "ocean"];
-const DARK_THEMES: Set<ThemeId> = new Set();
+export const THEME_IDS: ThemeId[] = ["light", "dark"];
+const DARK_THEMES: Set<ThemeId> = new Set(["dark"]);
 const STORAGE_KEY = "inno.theme";
 
 /** Preview swatch colors for the theme picker UI. */
 export const THEME_PREVIEW_COLORS: Record<ThemeId, string> = {
-	light: "#f1f1f2",
-	warm: "#faf8f5",
-	ocean: "#f0f4f8",
-	innospark: "#555aff",
+	light: "#f8fafd",
+	dark: "#131415",
 };
+
+/** Retired themes (warm/ocean/innospark) migrate to light. */
+const LEGACY_THEMES = new Set(["warm", "ocean", "innospark"]);
 
 interface ThemeStoreEvents {
 	change: void;
 }
 
-function isValidTheme(v: string | null): v is ThemeId {
-	return v !== null && THEME_IDS.includes(v as ThemeId);
+/**
+ * Normalize any stored/remote value to a valid ThemeId. Legacy theme ids and
+ * unknown values both fall back to "light" — this covers localStorage, the
+ * backend-sync path in App.tsx, and hand-edited config.json files.
+ */
+export function normalizeThemeId(v: string | null | undefined): ThemeId {
+	if (v === "dark") return "dark";
+	if (v === "light") return "light";
+	if (v && LEGACY_THEMES.has(v)) return "light";
+	return "light";
 }
 
 function getInitialTheme(): ThemeId {
-	const saved = localStorage.getItem(STORAGE_KEY);
-	if (isValidTheme(saved)) return saved;
-	return "light";
+	return normalizeThemeId(localStorage.getItem(STORAGE_KEY));
 }
 
 function applyThemeToDOM(id: ThemeId): void {
@@ -43,11 +50,11 @@ class ThemeStoreImpl extends EventEmitter<ThemeStoreEvents> {
 	isSaving = false;
 
 	/** Apply theme locally (DOM + localStorage) without persisting to backend. */
-	apply(id: ThemeId): void {
-		if (!isValidTheme(id)) return;
-		this.current = id;
-		applyThemeToDOM(id);
-		localStorage.setItem(STORAGE_KEY, id);
+	apply(id: string): void {
+		const next = normalizeThemeId(id);
+		this.current = next;
+		applyThemeToDOM(next);
+		localStorage.setItem(STORAGE_KEY, next);
 		this.emit("change", undefined);
 	}
 

@@ -25,14 +25,25 @@ import {
 	GripVertical,
 	ChevronUp,
 	ChevronDown,
+	SquarePen,
+	BookOpen,
+	Puzzle,
+	UserRound,
+	CalendarClock,
+	Settings as SettingsIcon,
+	Sun,
+	Moon,
+	Languages,
 } from "lucide-react";
-import { appStore } from "../stores/app-store.js";
+import { appStore, type AppPage } from "../stores/app-store.js";
 import { canOpenWorkspaceBesideSidebar } from "../stores/app-layout.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
 import { settingsStore } from "../stores/settings-store.js";
+import { themeStore } from "../stores/theme-store.js";
+import { setLocale } from "../i18n/index.js";
 import type { WorkspaceMeta } from "../api/workspaces.js";
 import { triggerDownload } from "../api/workspace.js";
 import { exportSessionShowcase } from "../api/sessions.js";
@@ -682,6 +693,116 @@ function SimpleSessionRow({
 	);
 }
 
+/* ── Workbench nav item ── */
+
+function NavItem({
+	icon,
+	label,
+	active,
+	onClick,
+}: {
+	icon: ReactNode;
+	label: string;
+	active: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			className={`flex w-full items-center gap-3 rounded-full px-3.5 py-2 text-left text-[13.5px] transition-colors ${
+				active
+					? "bg-[var(--inno-sidebar-active)] font-medium text-[var(--inno-text)]"
+					: "text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]"
+			}`}
+			onClick={onClick}
+		>
+			<span className="shrink-0 text-[var(--inno-text-muted)]">{icon}</span>
+			<span className="min-w-0 truncate">{label}</span>
+		</button>
+	);
+}
+
+/* ── Bottom user menu (theme / language / settings) ── */
+
+function SidebarUserMenu() {
+	const { t, i18n } = useTranslation();
+	const [open, setOpen] = useState(false);
+	const theme = useStoreSnapshot(themeStore, () => themeStore.current);
+
+	useEffect(() => {
+		if (!open) return;
+		const closeOnEscape = (event: KeyboardEvent) => {
+			if (event.key === "Escape") setOpen(false);
+		};
+		document.addEventListener("keydown", closeOnEscape);
+		return () => document.removeEventListener("keydown", closeOnEscape);
+	}, [open]);
+
+	return (
+		<div className="relative">
+			<button
+				type="button"
+				aria-haspopup="menu"
+				aria-expanded={open}
+				className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors ${open ? "bg-[var(--inno-surface-muted)]" : "hover:bg-[var(--inno-surface-muted)]"}`}
+				onClick={() => setOpen((v) => !v)}
+			>
+				<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--inno-accent)] text-[10px] font-semibold text-white">
+					IA
+				</span>
+				<span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--inno-text)]">Inno Agent</span>
+				<SettingsIcon size={14} className="shrink-0 text-[var(--inno-text-subtle)]" />
+			</button>
+			{open ? (
+				<>
+					<div aria-hidden="true" className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+					<div role="menu" className="absolute bottom-full left-0 z-40 mb-1.5 w-full min-w-44 rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-surface)] p-1.5 shadow-lg">
+						<div className="px-2.5 pb-1 pt-1.5 text-[11px] text-[var(--inno-text-subtle)]">{t("nav.theme")}</div>
+						{(["light", "dark"] as const).map((id) => (
+							<button
+								key={id}
+								type="button"
+								role="menuitemradio"
+								aria-checked={theme === id}
+								className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]"
+								onClick={() => void themeStore.save(id)}
+							>
+								{id === "light" ? <Sun size={14} className="text-[var(--inno-text-muted)]" /> : <Moon size={14} className="text-[var(--inno-text-muted)]" />}
+								<span className="flex-1">{t(`settings.themeOptions.${id}`)}</span>
+								{theme === id ? <Check size={13} className="text-[var(--inno-accent)]" /> : null}
+							</button>
+						))}
+						<div className="px-2.5 pb-1 pt-2 text-[11px] text-[var(--inno-text-subtle)]">{t("nav.language")}</div>
+						{(["zh-CN", "en"] as const).map((lng) => (
+							<button
+								key={lng}
+								type="button"
+								role="menuitemradio"
+								aria-checked={i18n.language === lng}
+								className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]"
+								onClick={() => setLocale(lng)}
+							>
+								<Languages size={14} className="text-[var(--inno-text-muted)]" />
+								<span className="flex-1">{t(`settings.languageOptions.${lng}`)}</span>
+								{i18n.language === lng ? <Check size={13} className="text-[var(--inno-accent)]" /> : null}
+							</button>
+						))}
+						<div className="my-1.5 border-t border-[var(--inno-border)]" />
+						<button
+							type="button"
+							className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]"
+							onClick={() => { setOpen(false); appStore.openSettings("general"); }}
+						>
+							<SettingsIcon size={14} className="text-[var(--inno-text-muted)]" />
+							{t("nav.settings")}
+						</button>
+					</div>
+				</>
+			) : null}
+		</div>
+	);
+}
+
 /* ── Main sidebar ── */
 
 export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
@@ -719,6 +840,7 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 		activeWorkspaceId: workspaceStore.activeWorkspaceId,
 	}));
 	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
+	const page = useStoreSnapshot(appStore, () => appStore.page);
 	const [togglingMode, setTogglingMode] = useState(false);
 
 	// Toggle Simple/Normal mode from the top-left logo (flip animation).
@@ -930,6 +1052,7 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 		void (async () => {
 			await sessionsStore.clearSelection();
 			chatStore.clear();
+			appStore.setPage("chat");
 			appStore.setRightPanelTab("preview");
 			appStore.setWorkspaceMode("collapsed");
 		})();
@@ -952,6 +1075,7 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 	// Click a workspace group header → load that workspace into the right panel (half screen).
 	const selectWorkspace = useCallback((group: WsGroup) => {
 		if (!group.canCreate) return; // synthetic groups (未分组 / 已归档)
+		appStore.setPage("chat");
 		void workspaceStore.setActiveWorkspace(group.id);
 		appStore.setRightPanelTab("preview");
 		appStore.setWorkspaceWidth(560);
@@ -960,6 +1084,7 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 
 	// Start a new chat pre-bound to this workspace → preview its files (quarter, tree only).
 	const newChatIn = useCallback((group: WsGroup) => {
+		appStore.setPage("chat");
 		sessionsStore.beginNewSessionIn(group.id);
 		void workspaceStore.setActiveWorkspace(group.id);
 		appStore.setRightPanelTab("preview");
@@ -969,6 +1094,7 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 
 	// Open a session → preview its workspace files (quarter, tree only).
 	const openSession = useCallback((session: SessionMeta) => {
+		appStore.setPage("chat");
 		const workspaceWasCollapsed = appStore.workspaceMode === "collapsed";
 		// At the narrowest split layout, opening the preview would make the
 		// layout hide the session sidebar to reclaim its width. Keep both the
@@ -1079,13 +1205,13 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 		})();
 	}, [t]);
 
-	/* ── Collapsed sidebar ── */
+	/* ── Collapsed sidebar: floating expand circle (harness style) ── */
 
 	if (collapsed) {
 		return (
 			<aside className="relative h-full w-0 overflow-visible">
 				<button
-					className="absolute left-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--inno-text-subtle)] transition-colors hover:bg-white/90 hover:text-[var(--inno-text)] hover:shadow-sm"
+					className="absolute left-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] shadow-sm transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 					title={t("sidebar.expand")}
 					onClick={onOpen}
 				>
@@ -1177,14 +1303,15 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 					)}
 				</div>
 
-				{/* Footer: new chat (mode switch lives on the IA logo above) */}
-				<div className="border-t border-[var(--inno-border)] p-2">
+				{/* Footer: new chat + user menu (mode switch lives on the IA logo above) */}
+				<div className="space-y-1.5 border-t border-[var(--inno-border)] p-2">
 					<button
 						className="inno-sidebar-text inno-new-chat-button flex w-full items-center justify-center gap-2 rounded-lg inno-primary-button px-3 py-1.5 font-medium text-white shadow-sm transition-colors"
 						onClick={newChat}
 					>
 						<Plus size={14} /> {t("sidebar.newChat")}
 					</button>
+					<SidebarUserMenu />
 				</div>
 			</aside>
 		);
@@ -1224,7 +1351,10 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 							</motion.div>
 						</button>
 						<div className="min-w-0">
-							<h1 className="inno-sidebar-title font-semibold tracking-tight text-[var(--inno-text)]">
+							<h1
+								className="inno-sidebar-title bg-clip-text font-semibold tracking-tight text-transparent"
+								style={{ backgroundImage: "linear-gradient(120deg, var(--inno-brand-1), var(--inno-brand-2))" }}
+							>
 								Inno Agent{simpleMode ? <span className="font-normal text-[var(--inno-accent)]">{t("mode.simpleTag")}</span> : null}
 							</h1>
 						</div>
@@ -1247,6 +1377,41 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 					</div>
 				</div>
 			</div>
+
+			{/* Primary nav: new chat + workbench pages (page-based IA) */}
+			<nav className="space-y-0.5 border-b border-[var(--inno-border)] px-2 py-2">
+				<NavItem
+					icon={<SquarePen size={16} />}
+					label={t("nav.newChat")}
+					active={page === "chat" && !state.currentSessionId}
+					onClick={newChat}
+				/>
+				<div className="px-3.5 pb-1 pt-3 text-[11px] text-[var(--inno-text-subtle)]">{t("nav.workbench")}</div>
+				<NavItem
+					icon={<BookOpen size={16} />}
+					label={t("nav.notebook")}
+					active={page === "notebook"}
+					onClick={() => appStore.setPage("notebook")}
+				/>
+				<NavItem
+					icon={<Puzzle size={16} />}
+					label={t("nav.skills")}
+					active={page === "skills"}
+					onClick={() => appStore.setPage("skills")}
+				/>
+				<NavItem
+					icon={<UserRound size={16} />}
+					label={t("nav.learner")}
+					active={page === "learner"}
+					onClick={() => appStore.setPage("learner")}
+				/>
+				<NavItem
+					icon={<CalendarClock size={16} />}
+					label={t("nav.jobs")}
+					active={page === "jobs"}
+					onClick={() => appStore.setPage("jobs")}
+				/>
+			</nav>
 
 			{/* Search + Filter bar */}
 			<div className="space-y-1.5 border-b border-[var(--inno-border)] px-2 py-1.5">
@@ -1375,6 +1540,7 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 
 			{/* Session list */}
 			<div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-2 sidebar-scroll">
+				<div className="px-3.5 pb-1 pt-2.5 text-[11px] text-[var(--inno-text-subtle)]">{t("nav.workspaces")}</div>
 				{state.isLoading ? (
 					<div className="flex items-center justify-center py-8">
 						<Spinner size={16} className="text-[var(--inno-border-strong)]" />
@@ -1454,14 +1620,9 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 				)}
 			</div>
 
-			{/* Footer */}
+			{/* Footer: user menu (theme / language / settings) */}
 			<div className="border-t border-[var(--inno-border)] p-2">
-				<button
-					className="inno-sidebar-text inno-new-chat-button flex w-full items-center justify-center gap-2 rounded-lg inno-primary-button px-3 py-1.5 font-medium text-white shadow-sm transition-colors"
-					onClick={newChat}
-				>
-					<Plus size={14} /> {t("sidebar.newChat")}
-				</button>
+				<SidebarUserMenu />
 			</div>
 		</aside>
 	);

@@ -1191,10 +1191,6 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 	const handleSlashSelect = useCallback((entry: SlashPaletteEntry) => {
 		if (entry.group === "app") {
 			setComposerText("");
-			const openRightPanelTab = (tab: "notebook" | "profile" | "skills" | "jobs") => {
-				appStore.setRightPanelTab(tab);
-				if (appStore.workspaceMode === "collapsed") appStore.setWorkspaceMode("quarter");
-			};
 			switch (entry.action) {
 				case "new-chat": {
 					const workspaceId = workspaceStore.activeWorkspaceId;
@@ -1205,14 +1201,16 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 				case "model":
 					setModelPickerOpen(true);
 					break;
+				// Feature panels became full pages in the new IA — navigate instead
+				// of opening a right-panel tab.
 				case "profile":
-					openRightPanelTab("profile");
+					appStore.setPage("learner");
 					break;
 				case "jobs":
-					openRightPanelTab("jobs");
+					appStore.setPage("jobs");
 					break;
 				case "skills":
-					openRightPanelTab("skills");
+					appStore.setPage("skills");
 					break;
 				case "settings":
 					appStore.openSettings();

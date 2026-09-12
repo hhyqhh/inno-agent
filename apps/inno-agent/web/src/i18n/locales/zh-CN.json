@@ -79,6 +79,18 @@
 		"exportShowcaseDone": "已导出回放案例「{{title}}」\n\n案例目录：{{dir}}\n运行 npm run showcase:view 打开回放界面。",
 		"exportShowcaseFailed": "导出回放案例失败：{{message}}"
 	},
+	"nav": {
+		"newChat": "新建会话",
+		"workbench": "工作台",
+		"notebook": "笔记本",
+		"skills": "技能仓库",
+		"learner": "学习者画像",
+		"jobs": "任务",
+		"workspaces": "工作区",
+		"theme": "主题",
+		"language": "语言",
+		"settings": "设置"
+	},
 	"notebook": {
 		"title": "笔记本",
 		"subtitle": "{{nodes}} 个节点 · {{edges}} 条连接",

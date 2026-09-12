@@ -79,6 +79,18 @@
 		"exportShowcaseDone": "Replay case \"{{title}}\" exported.\n\nCases dir: {{dir}}\nRun npm run showcase:view to open the replay.",
 		"exportShowcaseFailed": "Failed to export replay case: {{message}}"
 	},
+	"nav": {
+		"newChat": "New chat",
+		"workbench": "Workbench",
+		"notebook": "Notebook",
+		"skills": "Skill Store",
+		"learner": "Learner Profile",
+		"jobs": "Jobs",
+		"workspaces": "Workspaces",
+		"theme": "Theme",
+		"language": "Language",
+		"settings": "Settings"
+	},
 	"notebook": {
 		"title": "Notebook",
 		"subtitle": "{{nodes}} nodes · {{edges}} edges",

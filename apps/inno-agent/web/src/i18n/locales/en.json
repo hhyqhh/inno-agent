@@ -1258,5 +1258,8 @@
 		"bringBack": "Bring into conversation",
 		"bringBackHint": "Append this Q&A as a side note to the main session for the tutor to build on",
 		"broughtBack": "Brought into the conversation"
+	},
+	"welcome": {
+		"greeting": "What would you like to learn today?"
 	}
 }

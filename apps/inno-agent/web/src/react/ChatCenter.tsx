@@ -893,6 +893,13 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		void loadPresets(true);
 	}, [simpleMode, loadPresets]);
 
+	// Normal mode needs the catalog too: the welcome screen renders
+	// preset-derived suggestion cards. Cache-first, no forced refresh.
+	useEffect(() => {
+		if (simpleMode || presetsLoaded) return;
+		void loadPresets(false);
+	}, [simpleMode, presetsLoaded, loadPresets]);
+
 	const openPreset = useCallback((presetId: string) => {
 		setWsError("");
 		setOpeningPresetId(presetId);

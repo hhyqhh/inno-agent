@@ -1258,5 +1258,8 @@
 		"bringBack": "带回主对话",
 		"bringBackHint": "把这条问答作为旁注追加到主会话，供助教后续参考",
 		"broughtBack": "已带回主对话"
+	},
+	"welcome": {
+		"greeting": "今天想学点什么？"
 	}
 }

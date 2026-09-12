@@ -2464,16 +2464,6 @@ inno-workspace-panel textarea {
 	cursor: pointer;
 }
 
-/* Workspace context selector — intentionally sits outside the composer so
-   workspace choice reads as session context, not as another input control. */
-.inno-workspace-context-row {
-	display: flex;
-	flex-wrap: wrap;
-	min-width: 0;
-	align-items: center;
-	gap: 8px;
-	min-height: 36px;
-}
 
 /* Center label text with the Beta badge on one flex line so the badge never
    shifts the button content off the container's vertical center. */
@@ -3180,10 +3170,6 @@ inno-workspace-panel textarea {
 	white-space: nowrap;
 }
 
-.inno-workspace-tab {
-	font-size: 11px;
-	line-height: 1;
-}
 
 .inno-stream-status-dot {
 	display: inline-block;
@@ -3312,10 +3298,6 @@ inno-workspace-panel textarea {
 	white-space: normal;
 }
 
-.inno-workspace-scope .inno-workspace-tab {
-	font-size: 11px;
-	line-height: 1;
-}
 
 .inno-sidebar-title {
 	font-size: 12px;
@@ -3458,129 +3440,6 @@ inno-workspace-panel textarea {
 	box-shadow: none;
 }
 
-/* InnoSpark theme: inspired by agent.aiecnu.net's public chat UI. */
-:root[data-theme="innospark"] body {
-	background: var(--inno-background);
-}
-
-:root[data-theme="innospark"] .app-layout {
-	background: var(--inno-background);
-	box-shadow: inset 0 2px 0 rgba(85, 90, 255, 0.48);
-}
-
-:root[data-theme="innospark"] .app-layout::before {
-	background:
-		linear-gradient(120deg, transparent 0 30%, rgba(85, 90, 255, 0.025) 30.2% 30.8%, transparent 31% 100%),
-		linear-gradient(155deg, transparent 0 56%, rgba(85, 90, 255, 0.018) 56.2% 56.7%, transparent 57% 100%);
-	background-size: 560px 280px, 760px 360px;
-	mask-image: linear-gradient(to right, rgba(0, 0, 0, 0.38), transparent 42%, transparent 100%);
-}
-
-:root[data-theme="innospark"] .inno-chat-grid {
-	background: var(--inno-chat-bg);
-}
-
-:root[data-theme="innospark"] .inno-chat-grid {
-	background-image: none;
-}
-
-:root[data-theme="innospark"] .inno-sidebar-scope header,
-:root[data-theme="innospark"] .inno-sidebar-scope [class*="border-b"] {
-	border-color: rgba(85, 90, 255, 0.1);
-}
-
-:root[data-theme="innospark"] .inno-sidebar-scope [role="button"],
-:root[data-theme="innospark"] .inno-sidebar-scope button {
-	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), border-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out), transform var(--inno-dur-fast) var(--inno-ease-out);
-}
-
-:root[data-theme="innospark"] .inno-sidebar-scope [role="button"]:hover,
-:root[data-theme="innospark"] .inno-sidebar-scope button:hover:not(:disabled):not(.inno-channel-filter-chip):not(.inno-primary-button):not(.inno-sidebar-workspace-button) {
-	background: rgba(255, 255, 255, 0.86);
-	box-shadow: 0 1px 2px rgba(85, 90, 255, 0.05);
-}
-
-:root[data-theme="innospark"] .inno-sidebar-scope [role="button"]:active,
-:root[data-theme="innospark"] .inno-sidebar-scope button:active:not(:disabled) {
-	transform: scale(0.97);
-}
-
-:root[data-theme="innospark"] .inno-sidebar-title,
-:root[data-theme="innospark"] .inno-workspace-tab,
-:root[data-theme="innospark"] h1,
-:root[data-theme="innospark"] h2 {
-	color: var(--inno-text);
-}
-
-:root[data-theme="innospark"] .inno-chat-grid h1,
-:root[data-theme="innospark"] .inno-chat-grid h2 {
-	color: var(--inno-accent);
-	text-shadow: 0 8px 22px rgba(85, 90, 255, 0.12);
-}
-
-:root[data-theme="innospark"] .inno-composer {
-	border: 2px solid rgba(85, 90, 255, 0.25);
-	border-radius: 22px;
-	background: var(--inno-surface);
-	box-shadow: 0 2px 4px rgba(85, 90, 255, 0.08), 0 10px 28px rgba(85, 90, 255, 0.1);
-	transition: border-color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out);
-}
-
-:root[data-theme="innospark"] .inno-composer:focus-within {
-	border-color: rgba(85, 90, 255, 0.36);
-	box-shadow: 0 3px 8px rgba(85, 90, 255, 0.1), 0 14px 34px rgba(85, 90, 255, 0.14);
-}
-
-:root[data-theme="innospark"] .inno-composer textarea {
-	color: var(--inno-text);
-}
-
-:root[data-theme="innospark"] .inno-icon-button,
-:root[data-theme="innospark"] .inno-composer button:not(.inno-composer-model-trigger):not(.inno-composer-model-option):not(.inno-composer-model-manage) {
-	border-radius: 999px;
-}
-
-:root[data-theme="innospark"] .inno-composer button[title="Send"],
-:root[data-theme="innospark"] .inno-composer button[title="Stop generation"],
-:root[data-theme="innospark"] .inno-composer .inno-composer-send:not(.is-disabled),
-:root[data-theme="innospark"] .inno-composer .inno-composer-stop {
-	background: var(--inno-accent);
-	color: #ffffff;
-	box-shadow: 0 6px 18px rgba(85, 90, 255, 0.22);
-}
-
-:root[data-theme="innospark"] .inno-composer button[title="Send"]:hover:not(:disabled),
-:root[data-theme="innospark"] .inno-composer button[title="Stop generation"]:hover:not(:disabled),
-:root[data-theme="innospark"] .inno-composer .inno-composer-send:hover:not(:disabled):not(.is-disabled),
-:root[data-theme="innospark"] .inno-composer .inno-composer-stop:hover:not(:disabled) {
-	background: #474cf2;
-}
-
-:root[data-theme="innospark"] .inno-composer .inno-composer-send:not(.is-disabled) {
-	background: var(--inno-accent);
-	color: #ffffff;
-	box-shadow: 0 4px 12px rgba(85, 90, 255, 0.2);
-}
-
-:root[data-theme="innospark"] .inno-composer .inno-composer-send:hover:not(:disabled):not(.is-disabled) {
-	background: var(--inno-tech);
-}
-
-:root[data-theme="innospark"] .inno-message {
-	border-radius: 22px;
-	box-shadow: none;
-}
-
-:root[data-theme="innospark"] .justify-end .inno-user-message {
-	border-radius: 16px 16px 0 16px;
-	border-color: transparent;
-	background: var(--inno-accent-soft);
-}
-
-:root[data-theme="innospark"] .justify-start > details.inno-message {
-	border-color: rgba(85, 90, 255, 0.16);
-	background: rgba(255, 255, 255, 0.7);
-}
 
 @media (max-width: 960px) {
 	.app-layout--workspace-half {
@@ -3594,33 +3453,6 @@ inno-workspace-panel textarea {
 	}
 }
 
-/* Settings lives in a resizable workspace panel, so its responsive layout
-   must follow the panel width rather than the browser viewport width. */
-.settings-panel {
-	container: settings-panel / inline-size;
-}
-
-.settings-stats-grid {
-	grid-template-columns: minmax(0, 1fr);
-}
-
-@container settings-panel (min-width: 30rem) {
-	.settings-stats-grid {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-	}
-}
-
-@container settings-panel (min-width: 40rem) {
-	.settings-panel-header {
-		align-items: center;
-		flex-direction: row;
-		justify-content: space-between;
-	}
-
-	.settings-panel-controls {
-		flex-wrap: nowrap;
-	}
-}
 
 /* Sidebar scrollbar */
 .sidebar-scroll {

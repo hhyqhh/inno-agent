@@ -1595,8 +1595,8 @@ inno-workspace-panel textarea {
 	padding: 0 !important;
 }
 
-/* PI process timeline: intentionally containerless so the conversation reads
-   like a sequence of lightweight status rows rather than nested bubbles. */
+/* PI process timeline: process rows group into bordered steps cards while
+   assistant text keeps its normal body position between cards. */
 .inno-trace-timeline {
 	width: 100%;
 	min-width: 0;
@@ -1610,8 +1610,7 @@ inno-workspace-panel textarea {
 	align-items: center;
 	gap: 6px;
 	min-width: 0;
-	padding: 5px 0 10px;
-	border-bottom: 1px solid var(--inno-border);
+	padding: 2px 0 10px;
 	color: var(--inno-text-subtle);
 	font-size: 12px;
 	font-variant-numeric: tabular-nums;
@@ -1650,13 +1649,38 @@ inno-workspace-panel textarea {
 	margin: 8px 0 16px;
 }
 
+/* Steps card (InnoSpark anatomy): consecutive process rows group into one
+   bordered card — the first row in a run rounds the top, the last rounds the
+   bottom and closes the border. Text bodies between rows break the run into
+   separate cards, matching the mockup's steps-card placement between agent
+   paragraphs. */
 .inno-trace-row {
 	min-width: 0;
-	border-bottom: 1px solid color-mix(in srgb, var(--inno-border) 62%, transparent);
+	padding: 0 14px;
+	border: 1px solid var(--inno-border);
+	border-bottom: none;
+	background: var(--inno-card-bg);
+}
+
+.inno-trace-row + .inno-trace-row {
+	border-top: 1px solid color-mix(in srgb, var(--inno-border) 62%, transparent);
+}
+
+.inno-trace-row:not(.inno-trace-row + .inno-trace-row) {
+	border-radius: 14px 14px 0 0;
+}
+
+.inno-trace-row:not(:has(+ .inno-trace-row)) {
+	border-bottom: 1px solid var(--inno-border);
+	border-radius: 0 0 14px 14px;
+	margin-bottom: 4px;
+}
+
+.inno-trace-row:not(.inno-trace-row + .inno-trace-row):not(:has(+ .inno-trace-row)) {
+	border-radius: 14px;
 }
 
 .inno-trace-row.is-system {
-	border-bottom-color: transparent;
 	color: var(--inno-text-subtle);
 	font-size: 12px;
 }
@@ -1672,7 +1696,7 @@ inno-workspace-panel textarea {
 	width: 100%;
 	min-width: 0;
 	min-height: 34px;
-	padding: 8px 0;
+	padding: 10px 0;
 	border: 0;
 	background: transparent;
 	color: inherit;

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { X, AlertTriangle, FileCode2, History, BookmarkPlus, BookOpen, Check, Copy, Pencil, RotateCcw, TerminalSquare } from "lucide-react";
+import { X, AlertTriangle, FileCode2, History, BookmarkPlus, BookOpen, Check, Copy, Pencil, RotateCcw, Sparkles, TerminalSquare } from "lucide-react";
 import type { AttachmentBinding, AttachmentRef, ChatMessage, ChatToolRecord, ChatTraceStep } from "../../types/chat.js";
 import { splitContentByBindings } from "../../utils/attachment-render.js";
 import { answeredQuestionnaireFromTool, buildAnsweredQuestionnaireTimeline } from "../../utils/questionnaire.js";
@@ -98,8 +98,21 @@ export function ChannelBadge({ channel }: { channel: string }) {
 	);
 }
 
-function AgentCommandIcon({ command }: { command: string }) {
-	if (command.startsWith("skill:")) {
+/** 28px gradient brand avatar shown beside every assistant message (live and
+ *  persisted), per the InnoSpark chat anatomy. */
+export function AgentAvatar() {
+	return (
+		<div
+			className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white"
+			style={{ background: "linear-gradient(135deg, var(--inno-brand-1), var(--inno-brand-2))" }}
+			aria-hidden="true"
+		>
+			<Sparkles size={14} fill="currentColor" strokeWidth={1} />
+		</div>
+	);
+}
+
+function AgentCommandIcon({ command }: { command: string }) {	if (command.startsWith("skill:")) {
 		return (
 			<svg className="inno-smart-agent-mark" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 				<path d="m13 2-10 12h9l-1 8 10-12h-9z" />
@@ -612,7 +625,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 				transition={{ duration: 0.25, ease: "easeOut" }}
 			>
 				<div className="inno-message-wrap group relative w-fit max-w-full" style={{ maxWidth: "min(70%, 38rem)" }}>
-					<div className="inno-message inno-user-message whitespace-pre-wrap break-words rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-3.5 py-2.5 text-[13px] leading-relaxed text-[var(--inno-text)]">
+					<div className="inno-message inno-user-message whitespace-pre-wrap break-words rounded-[20px_20px_6px_20px] bg-[var(--inno-user-bubble-bg)] px-[17px] py-[11px] text-[14px] leading-[1.65] text-[var(--inno-text)] shadow-none">
 						{showChannel && message.channel ? (
 							<div className="mb-1 flex justify-end"><ChannelBadge channel={message.channel} /></div>
 						) : null}
@@ -686,12 +699,13 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 
 	return (
 		<motion.div
-			className="flex justify-start"
+			className="flex justify-start gap-3"
 			initial={animateEntry ? { opacity: 0 } : false}
 			animate={{ opacity: 1 }}
 			transition={{ duration: 0.25, ease: "easeOut" }}
 		>
-			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : hasAnsweredQuestionnaire ? "w-full max-w-[76%]" : "max-w-[78%]"} ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-3.5 py-2.5 text-[13px] leading-relaxed text-[var(--inno-text)]`}>
+			<AgentAvatar />
+			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : hasAnsweredQuestionnaire ? "w-full max-w-[76%]" : "max-w-[78%]"} ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-0 py-0 text-[14px] leading-[1.75] text-[var(--inno-text)]`}>
 				{showChannel && message.channel ? (
 					<div className="mb-1"><ChannelBadge channel={message.channel} /></div>
 				) : null}

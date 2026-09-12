@@ -176,6 +176,22 @@ export function ChatConversation({
 		}
 		return { coveredAssistantIndexes, actionOwnerIndexes, questionnairesByOwner };
 	}, [chat.messages, conversationTurns]);
+	// The message that carries "regenerate": the last visible assistant record of
+	// the final turn. A trailing record folded into the trace timeline (e.g. a
+	// scheduler push merged into the previous turn) renders nothing, so anchoring
+	// retry to the raw last index would hide the button entirely.
+	const retryOwnerIndex = useMemo(() => {
+		const lastTurn = conversationTurns.at(-1);
+		if (!lastTurn) return -1;
+		for (let index = lastTurn.endMessageIndex; index >= lastTurn.startMessageIndex; index -= 1) {
+			if (chat.messages[index]?.role !== "assistant") continue;
+			if (traceTurnPresentation.coveredAssistantIndexes.has(index)) continue;
+			return index;
+		}
+		// An unanswered turn (aborted before any assistant reply): retry hangs on
+		// the user message itself.
+		return chat.messages[lastTurn.startMessageIndex]?.role === "user" ? lastTurn.startMessageIndex : -1;
+	}, [chat.messages, conversationTurns, traceTurnPresentation]);
 	const todoTasks = useMemo(
 		() => extractTodoTasks(chat),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -254,7 +270,7 @@ export function ChatConversation({
 											onOpenAttachment={onOpenAttachment}
 											onOpenSkill={onOpenSkill}
 												onEdit={chat.isSending || chat.pendingQuestion ? undefined : onEditMessage}
-											showRetry={canRetry && index === chat.messages.length - 1}
+											showRetry={canRetry && index === retryOwnerIndex}
 											showActions={showActions}
 											answeredQuestionnaires={traceTurnPresentation.questionnairesByOwner.get(index)}
 											onRetry={onRetry}

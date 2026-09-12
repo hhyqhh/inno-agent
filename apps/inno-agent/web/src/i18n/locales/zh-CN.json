@@ -21,6 +21,23 @@
 			"profile": "学习者画像",
 			"skills": "技能",
 			"jobs": "定时任务"
+		},
+		"panelTitle": "工作区文件",
+		"fileCount": "{{count}} 个文件",
+		"filters": {
+			"all": "全部",
+			"docs": "文档",
+			"sheets": "表格",
+			"images": "图片"
+		},
+		"kind": {
+			"markdown": "Markdown",
+			"html": "HTML",
+			"pdf": "PDF",
+			"image": "图片",
+			"office": "Office",
+			"text": "文本",
+			"binary": "二进制"
 		}
 	},
 	"common": {

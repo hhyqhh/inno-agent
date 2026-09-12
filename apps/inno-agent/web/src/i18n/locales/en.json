@@ -21,6 +21,23 @@
 			"profile": "Profile",
 			"skills": "Skills",
 			"jobs": "Jobs"
+		},
+		"panelTitle": "Workspace files",
+		"fileCount": "{{count}} files",
+		"filters": {
+			"all": "All",
+			"docs": "Docs",
+			"sheets": "Sheets",
+			"images": "Images"
+		},
+		"kind": {
+			"markdown": "Markdown",
+			"html": "HTML",
+			"pdf": "PDF",
+			"image": "Image",
+			"office": "Office",
+			"text": "Text",
+			"binary": "Binary"
 		}
 	},
 	"common": {

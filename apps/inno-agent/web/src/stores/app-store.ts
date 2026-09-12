@@ -1,7 +1,12 @@
 import { EventEmitter } from "./event-emitter.js";
 import { fitPanelLayout } from "./app-layout.js";
 
-export type RightPanelTab = "notebook" | "preview" | "profile" | "skills" | "jobs";
+/**
+ * The right panel only hosts the artifact/file browser now — notebook,
+ * profile, skills and jobs graduated to full pages in the workbench nav.
+ * The type remains so legacy call sites keep compiling until Phase 11.
+ */
+export type RightPanelTab = "preview";
 /** Top-level main-area pages (new IA): chat plus the workbench feature pages. */
 export type AppPage = "chat" | "notebook" | "skills" | "learner" | "jobs";
 export type WorkspaceMode = "collapsed" | "quarter" | "half" | "full";
@@ -11,7 +16,6 @@ interface AppStoreEvents {
 	change: void;
 }
 
-const VALID_TABS: RightPanelTab[] = ["notebook", "preview", "profile", "skills", "jobs"];
 const VALID_PAGES: AppPage[] = ["chat", "notebook", "skills", "learner", "jobs"];
 
 /**
@@ -40,7 +44,7 @@ export function pageFromSearch(search: string): AppPage {
 
 class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 	page: AppPage = getInitialPage();
-	rightPanelTab: RightPanelTab = getInitialRightPanelTab();
+	rightPanelTab: RightPanelTab = "preview";
 	sidebarCollapsed = false;
 	workspaceMode: WorkspaceMode = "collapsed";
 	workspaceWidth = getInitialWorkspaceWidth();
@@ -194,15 +198,6 @@ function getInitialWorkspaceWidth(): number {
 function getInitialPage(): AppPage {
 	if (typeof window === "undefined") return "chat";
 	return pageFromSearch(window.location.search);
-}
-
-function getInitialRightPanelTab(): RightPanelTab {
-	if (typeof window === "undefined") return "preview";
-	const tab = new URLSearchParams(window.location.search).get("tab");
-	// Tabs that became pages are handled by getInitialPage — the panel only
-	// honors its own remaining values here.
-	if (tab && !TAB_TO_PAGE[tab] && (VALID_TABS as string[]).includes(tab)) return tab as RightPanelTab;
-	return "preview";
 }
 
 function getInitialSettingsOpen(): boolean {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from "react";
-import { appStore, pageFromSearch, type AppPage, type RightPanelTab, type WorkspaceMode } from "../stores/app-store.js";
+import { appStore, pageFromSearch, type AppPage, type WorkspaceMode } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { themeStore, type ThemeId } from "../stores/theme-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
@@ -33,7 +33,6 @@ function initializeApp(): Promise<void> {
 export function App() {
 	const app = useStoreSnapshot(appStore, () => ({
 		page: appStore.page,
-		rightPanelTab: appStore.rightPanelTab,
 		sidebarCollapsed: appStore.sidebarCollapsed,
 		workspaceMode: appStore.workspaceMode,
 		workspaceWidth: appStore.workspaceWidth,
@@ -117,7 +116,6 @@ export function App() {
 		return () => window.removeEventListener("resize", fitCurrentLayout);
 	}, [app.page]);
 
-	const setTab = useCallback((tab: RightPanelTab) => appStore.setRightPanelTab(tab), []);
 	const openPresetPanels = useCallback(async () => {
 		const previewWidth = 560;
 		if (appStore.workspaceMode === "full") {
@@ -154,15 +152,6 @@ export function App() {
 		// below already collapse it if (and only if) that is what makes the panel fit.
 		appStore.setWorkspaceWidth(previewWidth);
 		appStore.setWorkspaceMode("half");
-	}, [ensureWindowForPanel]);
-
-	const openRightPanel = useCallback(async (tab: Exclude<RightPanelTab, "preview">) => {
-		if (appStore.workspaceMode === "collapsed") {
-			const result = await ensureWindowForPanel("right", appStore.workspaceWidth, "quarter");
-			if (result === "busy") return;
-		}
-		appStore.setRightPanelTab(tab);
-		if (appStore.workspaceMode === "collapsed") appStore.setWorkspaceMode("quarter");
 	}, [ensureWindowForPanel]);
 
 	const openSidebar = useCallback(() => {
@@ -205,16 +194,14 @@ export function App() {
 			>
 				<SessionSidebar collapsed={app.sidebarCollapsed} onOpen={openSidebar} />
 				{chatVisible ? (
-					<ChatCenter onOpenPresetPanels={openPresetPanels} onOpenRightPanel={openRightPanel} onPreviewFile={openFilePreview} />
+					<ChatCenter onOpenPresetPanels={openPresetPanels} onPreviewFile={openFilePreview} />
 				) : (
 					<FeaturePage page={app.page as Exclude<AppPage, "chat">} />
 				)}
 				{chatVisible ? (
 					<WorkspacePanel
-						activeTab={app.rightPanelTab}
 						mode={app.workspaceMode}
 						width={app.workspaceWidth}
-						onTabChange={setTab}
 						onModeChange={setWorkspaceMode}
 						onWidthChange={setWorkspaceWidth}
 						onPreviewFile={openFilePreview}

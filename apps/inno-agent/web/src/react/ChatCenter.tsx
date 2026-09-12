@@ -82,7 +82,6 @@ const LAST_WS_ID_KEY = "inno.lastWorkspaceId";
 
 interface ChatCenterProps {
 	onOpenPresetPanels: () => void | Promise<void>;
-	onOpenRightPanel: (tab: "notebook" | "profile" | "skills" | "jobs") => void | Promise<void>;
 	onPreviewFile: (minimumWidth: number) => void | Promise<void>;
 }
 
@@ -119,7 +118,7 @@ function pendingUploadsFromRefs(refs: AttachmentRef[]): PendingUpload[] {
 	});
 }
 
-export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile }: ChatCenterProps) {
+export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProps) {
 	const { t } = useTranslation();
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 	const welcomeLayoutRef = useRef<HTMLDivElement | null>(null);
@@ -729,8 +728,9 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 
 	const openSkillPanel = useCallback((skillName: string) => {
 		void skillsStore.selectSkill(skillName);
-		void onOpenRightPanel("skills");
-	}, [onOpenRightPanel]);
+		// Skills graduated from a right-panel tab to a full workbench page.
+		appStore.setPage("skills");
+	}, []);
 
 	const cancelSmartHoverTimers = useCallback(() => {
 		if (smartHoverTimer.current !== null) {

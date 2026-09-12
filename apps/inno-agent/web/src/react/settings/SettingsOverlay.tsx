@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Settings2, FlaskConical, Cpu, Brain, Plug, Radio, Blocks, Info } from "lucide-react";
+import { Settings2, FlaskConical, Cpu, Brain, Plug, Radio, Blocks, Info, X } from "lucide-react";
 import { appStore, type SettingsTab } from "../../stores/app-store.js";
 import { settingsStore } from "../../stores/settings-store.js";
 import { useStoreSnapshot } from "../hooks.js";
@@ -66,20 +66,38 @@ export function SettingsOverlay() {
 	const visibleTabs = simpleMode ? TABS.filter((tab) => !HIDDEN_IN_SIMPLE.includes(tab.id)) : TABS;
 
 	return (
-		<div className="absolute inset-0 z-50 flex bg-[var(--inno-background)]">
-			{/* Sidebar */}
-			<aside className="flex w-[240px] shrink-0 flex-col border-r border-[var(--inno-border)] bg-[var(--inno-sidebar-bg)]">
-				<div className="flex h-12 shrink-0 items-center border-b border-[var(--inno-border)] px-4 text-sm font-semibold text-[var(--inno-text)]">
-					{t("settings.title")}
-				</div>
-				<nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2">
+		<div
+			className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(32,33,36,0.45)] p-4"
+			onClick={() => appStore.closeSettings()}
+		>
+			{/* 980x680 card with a 208px left nav, mirroring the design mockup. */}
+			<div
+				role="dialog"
+				aria-modal="true"
+				aria-label={t("settings.title")}
+				className="relative flex h-[min(680px,88vh)] w-[min(980px,92vw)] overflow-hidden rounded-[20px] bg-[var(--inno-card-bg)] shadow-[0_16px_48px_rgba(0,0,0,0.22)]"
+				onClick={(event) => event.stopPropagation()}
+			>
+				<button
+					type="button"
+					onClick={() => appStore.closeSettings()}
+					title={t("common.close")}
+					aria-label={t("common.close")}
+					className="absolute right-3.5 top-3.5 z-[5] flex h-[30px] w-[30px] items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+				>
+					<X size={17} />
+				</button>
+
+				{/* Left nav */}
+				<aside className="flex w-[208px] shrink-0 flex-col gap-0.5 overflow-y-auto bg-[var(--inno-sidebar-bg)] px-3 py-5">
+					<div className="px-3 pb-3 text-sm font-semibold text-[var(--inno-text)]">{t("settings.title")}</div>
 					{visibleTabs.map(({ id, icon }) => {
 						const active = activeSettingsTab === id;
 						return (
 							<button
 								key={id}
 								onClick={() => appStore.setSettingsTab(id)}
-								className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+								className={`flex items-center gap-2.5 rounded-xl px-3 py-[9px] text-[13.5px] transition-colors ${
 									active
 										? "bg-[var(--inno-sidebar-active)] font-medium text-[var(--inno-text)]"
 										: "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
@@ -91,21 +109,10 @@ export function SettingsOverlay() {
 							</button>
 						);
 					})}
-				</nav>
-				<div className="shrink-0 border-t border-[var(--inno-border)] p-2">
-					<button
-						onClick={() => appStore.closeSettings()}
-						className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
-					>
-						<ArrowLeft size={15} />
-						<span>{t("settings.back")}</span>
-					</button>
-				</div>
-			</aside>
+				</aside>
 
-			{/* Content */}
-			<div className="min-w-0 flex-1 overflow-y-auto">
-				<div className="mx-auto max-w-[860px] px-6 py-8">
+				{/* Content */}
+				<div className="min-w-0 flex-1 overflow-y-auto px-[26px] pb-8 pt-[22px]">
 					{!settings && isLoading ? (
 						<div className="text-sm text-[var(--inno-text-muted)]">{t("settings.loading")}</div>
 					) : (

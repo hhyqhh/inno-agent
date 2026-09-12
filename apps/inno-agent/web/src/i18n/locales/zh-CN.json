@@ -276,7 +276,12 @@
 			"diagnosis": "诊断",
 			"diagnosisPlaceholder": "对当前掌握程度的诊断…",
 			"nextActions": "下一步动作",
-			"nextActionsPlaceholder": "每行一条…"
+			"nextActionsPlaceholder": "每行一条…",
+			"masteryState": {
+				"mastered": "已掌握",
+				"consolidating": "巩固中",
+				"needsReview": "待复习"
+			}
 		},
 		"misconceptions": {
 			"empty": "暂未发现误解，太棒了。",

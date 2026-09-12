@@ -276,7 +276,12 @@
 			"diagnosis": "Diagnosis",
 			"diagnosisPlaceholder": "Notes about current understanding…",
 			"nextActions": "Next actions",
-			"nextActionsPlaceholder": "One per line…"
+			"nextActionsPlaceholder": "One per line…",
+			"masteryState": {
+				"mastered": "Mastered",
+				"consolidating": "Consolidating",
+				"needsReview": "Needs review"
+			}
 		},
 		"misconceptions": {
 			"empty": "No misconceptions tracked.",

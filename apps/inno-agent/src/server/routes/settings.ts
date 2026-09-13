@@ -416,21 +416,6 @@ export async function handleSettingsRoutes(
 		return true;
 	}
 
-	// --- Simple Mode toggle (streamlined experience: force-locks memory off
-	// at runtime and hides notebook/profile tabs; does not touch memory config) ---
-	if (method === "PUT" && url === "/api/settings/simple-mode") {
-		const body = (await readBody(req)) as Record<string, unknown>;
-		if (typeof body.enabled !== "boolean") {
-			json(res, 400, { error: "enabled must be a boolean" });
-			return true;
-		}
-		config.simpleMode = { enabled: body.enabled };
-		save(saveConfig(paths.configPath, config));
-		syncConfig(config);
-		json(res, 200, buildSafeSettings(config));
-		return true;
-	}
-
 	// --- Permission policy mode (default / auto / yolo). Rewrites the plugin's
 	// config file from the managed template, then triggers a resources reload —
 	// the plugin re-reads its config on resources_discover, so the switch takes
@@ -664,7 +649,9 @@ export async function handleSettingsRoutes(
 	if (method === "PUT" && url === "/api/settings/theme") {
 		const body = (await readBody(req)) as Record<string, unknown>;
 		const theme = typeof body.theme === "string" ? body.theme.trim() : "";
-		const ALLOWED_THEMES = ["light", "warm", "ocean", "innospark"];
+		// Legacy values (warm/ocean/innospark) stay accepted so older clients do
+		// not break; the web UI normalizes them to "light" on read.
+		const ALLOWED_THEMES = ["light", "dark", "warm", "ocean", "innospark"];
 		if (!ALLOWED_THEMES.includes(theme)) {
 			json(res, 400, { error: `Invalid theme. Allowed: ${ALLOWED_THEMES.join(", ")}` });
 			return true;

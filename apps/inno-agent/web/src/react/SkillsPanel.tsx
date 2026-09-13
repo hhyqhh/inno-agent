@@ -2,10 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DragDropManager } from "dnd-core";
 import { Tree, type NodeRendererProps } from "react-arborist";
-import { RefreshCw, Upload, Trash2, ChevronLeft, File, FileText, FileType, Folder, FolderOpen, Globe, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Library, Download, Check, FileCode2, Search } from "lucide-react";
+import { RefreshCw, Upload, Trash2, ChevronLeft, File, FileText, FileType, Folder, FolderOpen, Globe, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Download, Check, FileCode2, Search, Puzzle } from "lucide-react";
 import { skillsStore } from "../stores/skills-store.js";
 import { skillRawUrl } from '../api/skills.js';
-import type { SkillInfo } from "../types/skills.js";
+import type { SkillInfo, SkillLibraryItem } from "../types/skills.js";
 import type { WorkspaceFileDetail, WorkspaceFileKind, WorkspaceTreeNode } from "../types/workspace.js";
 import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
@@ -264,7 +264,7 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 	return (
 		<div className={`grid h-full min-h-0 gap-3 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[240px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
 			{/* File tree sidebar */}
-			<aside className={`flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+			<aside className={`flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
 				{/* Skill header */}
 				<div className="flex items-center gap-2 border-b border-[var(--inno-border)] px-2 py-2">
 					<button className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onBack}>
@@ -322,161 +322,61 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 			</aside>
 
 			{/* File content pane */}
-			<section className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
+			<section className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)]">
 				<SkillFilePane skillName={skill.name} onToggleSidebar={() => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} />
 			</section>
 		</div>
 	);
 }
 
-/* ---------- Skill Row ---------- */
+/* ---------- Skill cards ---------- */
 
-function SkillRow({ skill, onClick }: { skill: SkillInfo; onClick: () => void }) {
+// Category tiles cycle through the semantic token pairs so both themes work.
+const TILE_TONES = [
+	{ bg: "var(--inno-accent-soft)", fg: "var(--inno-accent)" },
+	{ bg: "var(--inno-success-bg)", fg: "var(--inno-success)" },
+	{ bg: "var(--inno-warning-bg)", fg: "var(--inno-warning)" },
+	{ bg: "var(--inno-danger-bg)", fg: "var(--inno-danger)" },
+	{ bg: "var(--inno-chip-bg)", fg: "var(--inno-text-muted)" },
+];
+
+function tileToneFor(category: string): { bg: string; fg: string } {
+	let hash = 0;
+	for (let i = 0; i < category.length; i++) hash = (hash * 31 + category.charCodeAt(i)) | 0;
+	return TILE_TONES[Math.abs(hash) % TILE_TONES.length];
+}
+
+function SkillCard({ skill, category, onClick }: { skill: SkillInfo; category: string; onClick: () => void }) {
+	const { t } = useTranslation();
+	const tone = tileToneFor(category);
 	return (
 		<button
-			className="flex w-full items-center gap-3 border-b border-[var(--inno-border)] px-3 py-2.5 text-left transition-colors hover:bg-[var(--inno-surface-muted)]"
+			className="flex items-center gap-3 rounded-[14px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-3.5 text-left transition-shadow hover:shadow-[var(--inno-shadow-soft)]"
 			onClick={onClick}
 		>
-			<span className={`h-2 w-2 shrink-0 rounded-full ${skill.enabled ? "bg-[var(--inno-success)]" : "bg-[var(--inno-border-strong)]"}`} />
+			<span
+				className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px]"
+				style={{ background: tone.bg, color: tone.fg }}
+			>
+				<Puzzle size={19} strokeWidth={1.8} />
+			</span>
 			<div className="min-w-0 flex-1">
-				<div className="truncate text-sm font-medium text-[var(--inno-text)]">{skill.name}</div>
-				{skill.description && <div className="truncate text-xs text-[var(--inno-text-muted)]">{skill.description}</div>}
+				<div className="truncate text-[13.5px] font-medium text-[var(--inno-text)]">{skill.name}</div>
+				<div className="mt-0.5 truncate text-[11.5px] text-[var(--inno-text-subtle)]">
+					{skill.description || t("skills.noDescription")} · {formatSize(skill.size)}
+				</div>
 			</div>
-			<span className="shrink-0 text-[10px] text-[var(--inno-text-subtle)]">{formatSize(skill.size)}</span>
+			<span
+				className={`h-2 w-2 shrink-0 rounded-full ${skill.enabled ? "bg-[var(--inno-success)]" : "bg-[var(--inno-border-strong)]"}`}
+				title={skill.enabled ? t("common.enabled", "Enabled") : t("common.disabled", "Disabled")}
+			/>
 		</button>
 	);
 }
 
-/* ---------- Skill Library Modal ---------- */
-
-function SkillLibraryModal({ onClose }: { onClose: () => void }) {
-	const { t } = useTranslation();
-	const state = useStoreSnapshot(skillsStore, () => ({
-		library: skillsStore.library,
-		isLoading: skillsStore.isLoadingLibrary,
-		error: skillsStore.libraryError,
-		importing: skillsStore.importing,
-	}));
-	const [query, setQuery] = useState("");
-
-	const uncategorizedLabel = t("skills.uncategorized");
-	const groups = useMemo(
-		() => groupByCategory(state.library.filter((item) => matchesQuery(item, query, item.category ? t(`categories.${item.category}`, item.category) : undefined)), uncategorizedLabel),
-		[state.library, query, uncategorizedLabel, t],
-	);
-	const totalMatched = useMemo(() => groups.reduce((sum, [, items]) => sum + items.length, 0), [groups]);
-
-	return (
-		<div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-			<div
-				className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] shadow-xl"
-				onClick={(e) => e.stopPropagation()}
-			>
-				{/* Header */}
-				<div className="flex items-center justify-between gap-3 border-b border-[var(--inno-border)] px-4 py-3">
-					<div className="flex min-w-0 items-center gap-2">
-						<Library size={16} className="shrink-0 text-[var(--inno-accent)]" />
-						<div className="min-w-0">
-							<div className="truncate text-sm font-medium text-[var(--inno-text)]">{t("skills.libraryTitle")}</div>
-							<div className="truncate text-[11px] text-[var(--inno-text-muted)]">{t("skills.librarySubtitle")}</div>
-						</div>
-					</div>
-					<div className="flex shrink-0 items-center gap-1">
-						<button
-							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-							title={t("skills.reload")}
-							onClick={() => void skillsStore.loadLibrary(true)}
-						>
-							<RefreshCw size={14} />
-						</button>
-						<button
-							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-							onClick={onClose}
-						>
-							<X size={16} />
-						</button>
-					</div>
-				</div>
-
-				{/* Search */}
-				<div className="flex items-center gap-2 border-b border-[var(--inno-border)] px-4 py-2">
-					<Search size={14} className="shrink-0 text-[var(--inno-text-subtle)]" />
-					<input
-						type="text"
-						value={query}
-						onChange={(e) => setQuery(e.target.value)}
-						placeholder={t("skills.searchPlaceholder")}
-						className="min-w-0 flex-1 bg-transparent text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:outline-none"
-					/>
-					{query ? (
-						<button
-							className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-							onClick={() => setQuery("")}
-							title={t("common.clear", "Clear")}
-						>
-							<X size={12} />
-						</button>
-					) : null}
-				</div>
-
-				{state.error ? <div className="border-b border-[var(--inno-border)] bg-[var(--inno-danger-bg)] px-4 py-2 text-xs text-[var(--inno-danger)]">{state.error}</div> : null}
-
-				{/* Body */}
-				<div className="min-h-0 flex-1 overflow-y-auto">
-					{state.isLoading ? (
-						<div className="flex items-center justify-center py-12 text-[var(--inno-text-muted)]">
-							<Spinner size={16} className="mr-2" />
-							{t("common.loading")}
-						</div>
-					) : state.library.length === 0 ? (
-						<div className="flex h-full flex-col items-center justify-center py-12 text-center text-sm text-[var(--inno-text-muted)]">
-							{t("skills.libraryEmpty")}
-						</div>
-					) : totalMatched === 0 ? (
-						<div className="flex h-full flex-col items-center justify-center py-12 text-center text-sm text-[var(--inno-text-muted)]">
-							{t("skills.noResults")}
-						</div>
-					) : (
-						groups.map(([category, items]) => (
-							<div key={category}>
-								<div className="sticky top-0 z-10 border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--inno-text-muted)]">
-									{t(`categories.${category}`, category)} <span className="ml-1 text-[var(--inno-text-subtle)]">· {items.length}</span>
-								</div>
-								{items.map((item) => {
-									const isImporting = state.importing.has(item.name);
-									return (
-										<div key={item.name} className="flex items-start gap-3 px-4 py-3">
-											<div className="min-w-0 flex-1">
-												<div className="truncate text-sm font-medium text-[var(--inno-text)]">{item.name}</div>
-												{item.description && <div className="mt-0.5 line-clamp-3 text-xs leading-relaxed text-[var(--inno-text-muted)]">{item.description}</div>}
-											</div>
-											{item.installed ? (
-												<span className="flex shrink-0 items-center gap-1 rounded-md bg-[var(--inno-success-bg)] px-2.5 py-1 text-xs font-medium text-[var(--inno-success)]">
-													<Check size={12} /> {t("skills.installed")}
-												</span>
-											) : (
-												<button
-													disabled={isImporting}
-													className="flex h-7 shrink-0 items-center gap-1 rounded-md inno-primary-button px-2.5 text-xs text-white disabled:opacity-50"
-													onClick={() => void skillsStore.importFromLibrary(item.name)}
-												>
-													<Download size={12} />
-													{isImporting ? t("skills.importing") : t("skills.import")}
-												</button>
-											)}
-										</div>
-									);
-								})}
-							</div>
-						))
-					)}
-				</div>
-			</div>
-		</div>
-	);
-}
-
 /* ---------- Main SkillsPanel ---------- */
+
+type SkillsTab = "mine" | "library";
 
 export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 	const { t } = useTranslation();
@@ -487,13 +387,23 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 		isLoading: skillsStore.isLoading,
 		isUploading: skillsStore.isUploading,
 		error: skillsStore.error,
-		libraryOpen: skillsStore.libraryOpen,
+		library: skillsStore.library,
+		isLoadingLibrary: skillsStore.isLoadingLibrary,
+		libraryError: skillsStore.libraryError,
+		importing: skillsStore.importing,
+		notice: skillsStore.notice,
 	}));
+	const [tab, setTab] = useState<SkillsTab>("mine");
 	const [query, setQuery] = useState("");
+	const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
 	useEffect(() => {
 		void skillsStore.load();
 	}, []);
+
+	useEffect(() => {
+		if (tab === "library") void skillsStore.loadLibrary();
+	}, [tab]);
 
 	function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
 		const file = event.target.files?.[0];
@@ -505,16 +415,36 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 	const activeSkill = state.selectedSkill ? state.skills.find((s) => s.name === state.selectedSkill) : null;
 
 	const uncategorizedLabel = t("skills.uncategorized");
+	// "mine" lists every installed skill (cards carry their own enable toggle);
+	// the former "all" tab was the same list and has been merged into it.
+	const sourceItems = useMemo<(SkillInfo | SkillLibraryItem)[]>(() => {
+		if (tab === "library") return state.library;
+		return state.skills;
+	}, [tab, state.skills, state.library]);
+
 	const groups = useMemo(
-		() => groupByCategory(state.skills.filter((s) => matchesQuery(s, query, s.category ? t(`categories.${s.category}`, s.category) : undefined)), uncategorizedLabel),
-		[state.skills, query, uncategorizedLabel, t],
+		() => groupByCategory(
+			sourceItems.filter((s) => matchesQuery(s, query, s.category ? t(`categories.${s.category}`, s.category) : undefined)),
+			uncategorizedLabel,
+		),
+		[sourceItems, query, uncategorizedLabel, t],
+	);
+	const visibleGroups = useMemo(
+		() => (categoryFilter ? groups.filter(([cat]) => cat === categoryFilter) : groups),
+		[groups, categoryFilter],
 	);
 	const totalMatched = useMemo(() => groups.reduce((sum, [, items]) => sum + items.length, 0), [groups]);
+
+	// Reset the category filter when switching tabs (categories differ per source).
+	function switchTab(next: SkillsTab) {
+		setTab(next);
+		setCategoryFilter(null);
+	}
 
 	// Detail view — file browser
 	if (activeSkill) {
 		return (
-			<div className="flex h-full flex-col p-3">
+			<div className="mx-auto flex h-full w-full max-w-[1160px] flex-col p-5">
 				<div className="flex min-h-0 flex-1 flex-col overflow-hidden">
 					<SkillDetail skill={activeSkill} onBack={() => skillsStore.deselectSkill()} dndManager={dndManager} />
 				</div>
@@ -522,84 +452,194 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 		);
 	}
 
-	// List view — one skill per row
+	const isLibraryTab = tab === "library";
+	const isEmptySource = isLibraryTab ? state.library.length === 0 : state.skills.length === 0;
+
 	return (
-		<div className="relative flex h-full flex-col p-3">
-			<div className="@container/skillspanel flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
-				{/* Toolbar */}
-				<div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b border-[var(--inno-border)] px-3 py-2">
-					<h3 className="min-w-0 truncate text-sm font-medium text-[var(--inno-text)]">{t("skills.title")}</h3>
-					<div className="flex shrink-0 items-center gap-1.5">
+		<div className="h-full overflow-y-auto">
+			<div className="mx-auto flex w-full max-w-[1160px] flex-col px-5 pb-10 pt-2">
+				{/* Tabs + search + actions */}
+				<div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+					<div className="flex gap-6">
+						{(["mine", "library"] as SkillsTab[]).map((key) => (
+							<button
+								key={key}
+								className={`border-b-[2.5px] py-2.5 text-[15px] ${
+									tab === key
+										? "border-[var(--inno-text)] font-medium text-[var(--inno-text)]"
+										: "border-transparent text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"
+								}`}
+								onClick={() => switchTab(key)}
+							>
+								{t(`skills.tabs.${key}`)}
+							</button>
+						))}
+					</div>
+					<div className="flex items-center gap-2">
+						<div className="flex w-[220px] items-center gap-2 rounded-[18px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-3.5 py-[7px]">
+							<Search size={15} className="shrink-0 text-[var(--inno-text-subtle)]" />
+							<input
+								type="text"
+								value={query}
+								onChange={(e) => setQuery(e.target.value)}
+								placeholder={t("skills.searchPlaceholder")}
+								className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:outline-none"
+							/>
+							{query ? (
+								<button
+									className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]"
+									onClick={() => setQuery("")}
+									title={t("common.clear", "Clear")}
+								>
+									<X size={12} />
+								</button>
+							) : null}
+						</div>
+						<button
+							className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							title={isLibraryTab ? t("skills.reload") : t("preview.refresh", "Refresh")}
+							onClick={() => void (isLibraryTab ? skillsStore.loadLibrary(true) : skillsStore.reload())}
+						>
+							<RefreshCw size={15} />
+						</button>
 						<input ref={uploadRef} type="file" className="hidden" accept=".zip,application/zip,.md,text/markdown,text/plain" onChange={handleUpload} />
-						<button className="flex h-7 items-center gap-1 rounded-md px-2 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" title={t("skills.library")} onClick={() => skillsStore.openLibrary()}>
-							<Library size={14} />
-							<span className="hidden @[26rem]/skillspanel:inline">{t("skills.library")}</span>
-						</button>
-						<button className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" title={t("preview.refresh", "Refresh")} onClick={() => void skillsStore.reload()}>
-							<RefreshCw size={14} />
-						</button>
-						<button className="flex h-7 items-center gap-1 rounded-md inno-primary-button px-2 text-xs text-white disabled:opacity-50" disabled={state.isUploading} title={state.isUploading ? t("skills.uploading") : t("skills.upload")} onClick={() => uploadRef.current?.click()}>
+						<button
+							className="flex h-8 items-center gap-1.5 rounded-[10px] inno-primary-button px-3.5 text-[13px] text-white disabled:opacity-50"
+							disabled={state.isUploading}
+							title={state.isUploading ? t("skills.uploading") : t("skills.upload")}
+							onClick={() => uploadRef.current?.click()}
+						>
 							<Upload size={14} />
-							<span className="hidden @[26rem]/skillspanel:inline">{state.isUploading ? t("skills.uploading") : t("skills.upload")}</span>
+							{state.isUploading ? t("skills.uploading") : t("skills.upload")}
 						</button>
 					</div>
 				</div>
-				{/* Search (visible when there's anything to search through) */}
-				{state.skills.length > 0 ? (
-					<div className="flex items-center gap-2 border-b border-[var(--inno-border)] px-3 py-2">
-						<Search size={14} className="shrink-0 text-[var(--inno-text-subtle)]" />
-						<input
-							type="text"
-							value={query}
-							onChange={(e) => setQuery(e.target.value)}
-							placeholder={t("skills.searchPlaceholder")}
-							className="min-w-0 flex-1 bg-transparent text-xs text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:outline-none"
-						/>
-						{query ? (
+
+				{/* Category filter row (real categories only — no invented metadata) */}
+				{groups.length > 1 || categoryFilter ? (
+					<div className="mb-4 flex flex-wrap items-baseline gap-1 py-1.5">
+						<span className="mr-2 min-w-[46px] shrink-0 text-[13px] text-[var(--inno-text-subtle)]">{t("skills.filterCategory")}</span>
+						<button
+							className={`whitespace-nowrap rounded-lg px-2.5 py-[3px] text-[13px] ${
+								categoryFilter === null
+									? "bg-[var(--inno-accent-soft)] font-medium text-[var(--inno-accent)]"
+									: "text-[var(--inno-text-muted)] hover:text-[var(--inno-accent)]"
+							}`}
+							onClick={() => setCategoryFilter(null)}
+						>
+							{t("skills.filterAll")}
+						</button>
+						{groups.map(([cat]) => (
 							<button
-								className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-								onClick={() => setQuery("")}
-								title={t("common.clear", "Clear")}
+								key={cat}
+								className={`whitespace-nowrap rounded-lg px-2.5 py-[3px] text-[13px] ${
+									categoryFilter === cat
+										? "bg-[var(--inno-accent-soft)] font-medium text-[var(--inno-accent)]"
+										: "text-[var(--inno-text-muted)] hover:text-[var(--inno-accent)]"
+								}`}
+								onClick={() => setCategoryFilter(cat)}
 							>
-								<X size={12} />
+								{cat === uncategorizedLabel ? cat : t(`categories.${cat}`, cat)}
 							</button>
-						) : null}
+						))}
 					</div>
 				) : null}
 
-				{state.error ? <div className="border-b border-[var(--inno-border)] bg-[var(--inno-danger-bg)] px-3 py-2 text-xs text-[var(--inno-danger)]">{state.error}</div> : null}
+				{(isLibraryTab ? state.libraryError : state.error) ? (
+					<div className="mb-3 rounded-lg bg-[var(--inno-danger-bg)] px-3 py-2 text-xs text-[var(--inno-danger)]">
+						{isLibraryTab ? state.libraryError : state.error}
+					</div>
+				) : null}
 
-				{/* Skills list */}
-				<div className="min-h-0 flex-1 overflow-y-auto">
-					{state.isLoading ? (
-						<div className="flex items-center justify-center py-8 text-[var(--inno-text-muted)]">
-							<Spinner size={16} className="mr-2" />
-							{t("common.loading")}
-						</div>
-					) : state.skills.length === 0 ? (
-						<div className="flex h-full flex-col items-center justify-center text-center text-sm text-[var(--inno-text-muted)]">
-							<div className="text-base font-medium text-[var(--inno-text)]">{t("skills.empty")}</div>
-							<p className="mt-1 max-w-sm text-xs">{t("skills.emptyDesc")}</p>
-						</div>
-					) : totalMatched === 0 ? (
-						<div className="flex h-full flex-col items-center justify-center py-12 text-center text-sm text-[var(--inno-text-muted)]">
-							{t("skills.noResults")}
+				{/* Body */}
+				{(isLibraryTab ? state.isLoadingLibrary : state.isLoading) ? (
+					<div className="flex items-center justify-center py-16 text-[var(--inno-text-muted)]">
+						<Spinner size={16} className="mr-2" />
+						{t("common.loading")}
+					</div>
+				) : isEmptySource ? (
+					tab === "mine" ? (
+						<div className="flex flex-col items-center py-24 text-center">
+							<Puzzle size={44} strokeWidth={1.5} className="mb-3.5 text-[var(--inno-text-subtle)] opacity-60" />
+							<div className="mb-1.5 text-[15px] font-semibold text-[var(--inno-text)]">{t("skills.mineEmpty")}</div>
+							<div className="text-[12.5px] text-[var(--inno-text-subtle)]">{t("skills.mineEmptyDesc")}</div>
 						</div>
 					) : (
-						groups.map(([category, items]) => (
-							<div key={category}>
-								<div className="sticky top-0 z-10 border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--inno-text-muted)]">
-									{t(`categories.${category}`, category)} <span className="ml-1 text-[var(--inno-text-subtle)]">· {items.length}</span>
-								</div>
-								{items.map((skill) => (
-									<SkillRow key={skill.name} skill={skill} onClick={() => void skillsStore.selectSkill(skill.name)} />
-								))}
+						<div className="flex flex-col items-center py-24 text-center">
+							<Puzzle size={44} strokeWidth={1.5} className="mb-3.5 text-[var(--inno-text-subtle)] opacity-60" />
+							<div className="mb-1.5 text-[15px] font-semibold text-[var(--inno-text)]">
+								{isLibraryTab ? t("skills.libraryEmpty") : t("skills.empty")}
 							</div>
-						))
-					)}
-				</div>
+							{!isLibraryTab ? <div className="max-w-sm text-[12.5px] text-[var(--inno-text-subtle)]">{t("skills.emptyDesc")}</div> : null}
+						</div>
+					)
+				) : totalMatched === 0 ? (
+					<div className="py-16 text-center text-sm text-[var(--inno-text-muted)]">{t("skills.noResults")}</div>
+				) : (
+					visibleGroups.map(([category, items]) => (
+						<div key={category} className="mb-7">
+							<div className="mb-3.5 mt-2 flex items-baseline gap-3">
+								<span className="text-[15px] font-semibold text-[var(--inno-text)]">
+									{category === uncategorizedLabel ? category : t(`categories.${category}`, category)}
+								</span>
+								<span className="text-[12.5px] text-[var(--inno-text-subtle)]">· {items.length}</span>
+							</div>
+							<div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
+								{isLibraryTab
+									? (items as SkillLibraryItem[]).map((item) => {
+											const isImporting = state.importing.has(item.name);
+											const tone = tileToneFor(category);
+											return (
+												<div
+													key={item.name}
+													className="flex items-center gap-3 rounded-[14px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-3.5"
+												>
+													<span
+														className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px]"
+														style={{ background: tone.bg, color: tone.fg }}
+													>
+														<Puzzle size={19} strokeWidth={1.8} />
+													</span>
+													<div className="min-w-0 flex-1">
+														<div className="truncate text-[13.5px] font-medium text-[var(--inno-text)]">{item.name}</div>
+														{item.description ? (
+															<div className="mt-0.5 line-clamp-2 text-[11.5px] leading-relaxed text-[var(--inno-text-subtle)]">{item.description}</div>
+														) : null}
+													</div>
+													{item.installed ? (
+														<span className="flex shrink-0 items-center gap-1 rounded-md bg-[var(--inno-success-bg)] px-2 py-1 text-[11px] font-medium text-[var(--inno-success)]">
+															<Check size={12} /> {t("skills.installed")}
+														</span>
+													) : (
+														<button
+															disabled={isImporting}
+															className="flex h-7 shrink-0 items-center gap-1 rounded-md inno-primary-button px-2.5 text-xs text-white disabled:opacity-50"
+															onClick={() => void skillsStore.importFromLibrary(item.name)}
+														>
+															<Download size={12} />
+															{isImporting ? t("skills.importing") : t("skills.import")}
+														</button>
+													)}
+												</div>
+											);
+										})
+									: (items as SkillInfo[]).map((skill) => (
+											<SkillCard key={skill.name} skill={skill} category={category} onClick={() => void skillsStore.selectSkill(skill.name)} />
+										))}
+							</div>
+						</div>
+					))
+				)}
 			</div>
-			{state.libraryOpen ? <SkillLibraryModal onClose={() => skillsStore.closeLibrary()} /> : null}
+			{state.notice ? (
+				<div
+					role="status"
+					className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-2.5 text-[13px] text-[var(--inno-text)] shadow-lg"
+				>
+					<Check size={14} className="shrink-0 text-[var(--inno-success)]" />
+					{t("skills.importDone", { name: state.notice })}
+				</div>
+			) : null}
 		</div>
 	);
 }

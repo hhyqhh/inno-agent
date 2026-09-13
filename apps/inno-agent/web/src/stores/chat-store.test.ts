@@ -465,6 +465,26 @@ describe("ChatStore stream ownership", () => {
 		expect(store.pendingQuestion).toBeNull();
 	});
 
+	it("derives the retry prompt from history so regenerate survives a reload", () => {
+		const store = new ChatStoreImpl();
+		store.loadHistory([
+			{ role: "user", content: "讲解一次函数", timestamp: 1 },
+			{ role: "assistant", content: "好的，先看定义。", timestamp: 2 },
+		], "session.jsonl");
+
+		expect(store.lastUserPrompt).toBe("讲解一次函数");
+	});
+
+	it("keeps regenerate unavailable when the last user turn is not replayable", () => {
+		const store = new ChatStoreImpl();
+		store.loadHistory([
+			{ role: "user", content: "来自飞书的问题", timestamp: 1, channel: "feishu" },
+			{ role: "assistant", content: "回答", timestamp: 2 },
+		], "session.jsonl");
+
+		expect(store.lastUserPrompt).toBeNull();
+	});
+
 	it("restores a hidden skill row from expanded cold-start history", () => {
 		const store = new ChatStoreImpl();
 		store.loadHistory([

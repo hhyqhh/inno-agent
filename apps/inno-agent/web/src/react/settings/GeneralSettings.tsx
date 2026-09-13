@@ -11,7 +11,7 @@ function ThemePicker() {
 	const { t } = useTranslation();
 	const state = useStoreSnapshot(themeStore, () => ({ current: themeStore.current }));
 	return (
-		<div className="flex gap-1.5">
+		<div className="flex gap-2">
 			{THEME_IDS.map((id) => {
 				const active = state.current === id;
 				return (
@@ -19,15 +19,21 @@ function ThemePicker() {
 						key={id}
 						type="button"
 						aria-label={t(`settings.themeOptions.${id}`)}
+						aria-pressed={active}
 						title={t(`settings.themeOptions.${id}`)}
 						onClick={() => void themeStore.save(id)}
-						className={`h-5 w-5 rounded-full border-2 transition-all ${
+						className={`flex items-center gap-2 rounded-full border py-1.5 pl-2 pr-3.5 text-xs transition-colors ${
 							active
-								? "border-[var(--inno-accent)] ring-2 ring-[var(--inno-accent)]/30 scale-110"
-								: "border-[var(--inno-border-strong)] hover:border-[var(--inno-border-strong)]"
+								? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] font-medium text-[var(--inno-accent)]"
+								: "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:border-[var(--inno-border-strong)] hover:text-[var(--inno-text)]"
 						}`}
-						style={{ backgroundColor: THEME_PREVIEW_COLORS[id] }}
-					/>
+					>
+						<span
+							className="h-4 w-4 rounded-full border border-[var(--inno-border-strong)]"
+							style={{ backgroundColor: THEME_PREVIEW_COLORS[id] }}
+						/>
+						{t(`settings.themeOptions.${id}`)}
+					</button>
 				);
 			})}
 		</div>

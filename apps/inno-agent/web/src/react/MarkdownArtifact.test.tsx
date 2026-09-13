@@ -102,6 +102,28 @@ describe("MarkdownArtifact", () => {
 		expect(container.querySelector(".inno-markdown-code-fallback")).toBeNull();
 	});
 
+	it("routes a bare inline svg block to the svg artifact renderer", async () => {
+		// Models sometimes emit raw <svg> without a fence; the sanitize schema
+		// would strip defs/rect/text to an empty box, so the block is wrapped
+		// into an ```svg fence before rendering.
+		const source = [
+			"这是本周天气的可视化 SVG：",
+			"",
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 960 440\" width=\"100%\">",
+			"  <defs><linearGradient id=\"tempBand\"><stop offset=\"0%\" stop-color=\"#fb923c\"/></linearGradient></defs>",
+			"  <rect x=\"0\" y=\"0\" width=\"960\" height=\"440\" rx=\"16\" fill=\"#f8fafc\"/>",
+			"  <text x=\"32\" y=\"40\" font-size=\"20\">上海未来一周天气</text>",
+			"  <g stroke=\"#e2e8f0\"><line x1=\"90\" y1=\"100\" x2=\"870\" y2=\"100\"/></g>",
+			"</svg>",
+		].join("\n");
+		const { container } = render(<MarkdownArtifact content={source} />);
+
+		await waitFor(() => {
+			expect(container.querySelector('[data-inno-artifact="svg"] iframe')).not.toBeNull();
+		});
+		expect(container.querySelector(".inno-markdown-code-fallback")).toBeNull();
+	});
+
 	it("repairs an unfinished tail while tokens are still streaming", async () => {
 		const { container } = render(<MarkdownArtifact content="正在生成 **重要内容" streaming />);
 

@@ -7,7 +7,6 @@ import { workspaceStore, type StreamingWorkspacePreview } from "../stores/worksp
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
-import { settingsStore } from "../stores/settings-store.js";
 import { appStore } from "../stores/app-store.js";
 import { getSessionWorkspace } from "../api/workspaces.js";
 import { RunButton } from "./terminal/RunButton.js";
@@ -160,6 +159,60 @@ function langFromName(name: string): string {
 function isCsvName(name: string): boolean {
 	const lower = name.toLowerCase();
 	return lower.endsWith(".csv") || lower.endsWith(".tsv");
+}
+
+/* ---------- Artifact type filters (design mockup ap-tabs) ---------- */
+
+type ArtifactFilter = "all" | "docs" | "sheets" | "images";
+
+const FILTER_ORDER: ArtifactFilter[] = ["all", "docs", "sheets", "images"];
+
+const FILTER_EXTS: Record<Exclude<ArtifactFilter, "all">, string[]> = {
+	docs: [".md", ".markdown", ".txt", ".pdf", ".docx", ".html", ".htm"],
+	sheets: [".csv", ".tsv", ".xlsx"],
+	images: [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"],
+};
+
+function collectFilesByExtension(nodes: ArboristNode[], exts: string[], out: ArboristNode[] = []): ArboristNode[] {
+	for (const node of nodes) {
+		if (node.isLeaf) {
+			const lower = node.name.toLowerCase();
+			if (exts.some((ext) => lower.endsWith(ext))) out.push(node);
+		} else if (node.children) {
+			collectFilesByExtension(node.children, exts, out);
+		}
+	}
+	return out;
+}
+
+/** Semantic tone per file kind for the artifact icon chips / preview card. */
+function artifactTone(file: { kind: WorkspaceFileKind; format?: WorkspaceOfficeFormat }): { bg: string; fg: string } {
+	if (file.kind === "office") return { bg: "var(--inno-accent-soft)", fg: "var(--inno-accent)" };
+	if (file.kind === "pdf") return { bg: "var(--inno-danger-bg)", fg: "var(--inno-danger)" };
+	if (file.kind === "image") return { bg: "var(--inno-success-bg)", fg: "var(--inno-success)" };
+	return { bg: "var(--inno-chip-bg)", fg: "var(--inno-text-subtle)" };
+}
+
+/** Semantic tone by filename for flat filtered rows (no kind info in tree nodes). */
+function artifactToneForName(name: string): { bg: string; fg: string } {
+	const lower = name.toLowerCase();
+	if (FILTER_EXTS.images.some((ext) => lower.endsWith(ext))) return { bg: "var(--inno-success-bg)", fg: "var(--inno-success)" };
+	if (lower.endsWith(".pdf")) return { bg: "var(--inno-danger-bg)", fg: "var(--inno-danger)" };
+	if (lower.endsWith(".pptx") || lower.endsWith(".docx") || lower.endsWith(".xlsx")) {
+		return { bg: "var(--inno-accent-soft)", fg: "var(--inno-accent)" };
+	}
+	return { bg: "var(--inno-chip-bg)", fg: "var(--inno-text-subtle)" };
+}
+
+function artifactIcon(name: string, kind?: WorkspaceFileKind) {
+	const lower = name.toLowerCase();
+	if (kind === "image") return <FileType size={17} />;
+	if (lower.endsWith(".pptx")) return <Presentation size={17} />;
+	if (lower.endsWith(".xlsx") || isCsvName(lower)) return <FileSpreadsheet size={17} />;
+	if (lower.endsWith(".pdf")) return <FileType size={17} />;
+	if (lower.endsWith(".html") || lower.endsWith(".htm")) return <Globe size={17} />;
+	if (lower.endsWith(".docx") || lower.endsWith(".md") || lower.endsWith(".markdown")) return <FileText size={17} />;
+	return <File size={17} />;
 }
 
 /**
@@ -521,7 +574,6 @@ function isStreamingMarkdownPreview(preview: StreamingWorkspacePreview): boolean
 
 function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: () => void; sidebarOpen: boolean }) {
 	const { t } = useTranslation();
-	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const state = useStoreSnapshot(workspaceStore, () => ({
 		file: workspaceStore.currentFile,
 		isLoadingFile: workspaceStore.isLoadingFile,
@@ -599,7 +651,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 					</div>
 				</div>
 				<div className="flex items-center gap-2">
-					{state.file && !simpleMode ? <RunButton filePath={state.file.path} /> : null}
+					{state.file ? <RunButton filePath={state.file.path} /> : null}
 					{canEdit && (
 						<button
 							className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
@@ -867,6 +919,51 @@ function DeleteConfirm({ paths, onConfirm, onCancel }: { paths: string[]; onConf
 
 /* ---------- Main Component ---------- */
 
+/**
+ * Selected-file summary card (design mockup ap-preview) shown above the file
+ * list while the panel is too narrow for the side-by-side content pane. Its
+ * "open" action widens the panel so the real preview pane appears.
+ */
+function ArtifactPreviewCard({ file, workspaceId, onOpen }: { file: WorkspaceFileDetail; workspaceId?: string; onOpen: () => void }) {
+	const { t } = useTranslation();
+	const tone = artifactTone(file);
+	const kindLabel = file.kind === "office" && file.format ? file.format.toUpperCase() : t(`workspace.kind.${file.kind}`, file.kind);
+	const updated = file.updatedAt
+		? new Date(file.updatedAt).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+		: "";
+	return (
+		<div className="mx-3 mt-3 shrink-0 rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] p-3.5">
+			<div
+				className="mb-3 flex aspect-[16/8] items-center justify-center rounded-[10px] border border-[var(--inno-border)]"
+				style={{ background: tone.bg, color: tone.fg }}
+				aria-hidden="true"
+			>
+				{artifactIcon(file.name, file.kind)}
+			</div>
+			<div className="truncate text-[13.5px] font-semibold text-[var(--inno-text)]" title={file.name}>{file.name}</div>
+			<div className="mb-3 mt-1 truncate text-[11.5px] text-[var(--inno-text-subtle)]">
+				{[kindLabel, formatSize(file.size), updated].filter(Boolean).join(" · ")}
+			</div>
+			<div className="flex gap-2">
+				<button
+					type="button"
+					className="flex-1 rounded-[15px] border border-[var(--inno-send-bg)] bg-[var(--inno-send-bg)] py-[7px] text-[12.5px] text-[var(--inno-send-fg)] transition-opacity hover:opacity-90"
+					onClick={onOpen}
+				>
+					{t("common.open", "打开")}
+				</button>
+				<button
+					type="button"
+					className="flex-1 rounded-[15px] border border-[var(--inno-border)] bg-[var(--inno-surface)] py-[7px] text-[12.5px] text-[var(--inno-text)] transition-colors hover:bg-[var(--inno-surface-muted)]"
+					onClick={() => triggerDownload(workspaceFileUrl(file.path, workspaceId, true))}
+				>
+					{t("common.download", "下载")}
+				</button>
+			</div>
+		</div>
+	);
+}
+
 export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?: PreviewFileHandler; dndManager: DragDropManager }) {
 	const { t } = useTranslation();
 	const treeRef = useRef<TreeApi<ArboristNode>>(null);
@@ -884,10 +981,12 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 	const uploadErrorTimerRef = useRef<number | null>(null);
 	const [multiSelectMode, setMultiSelectMode] = useState(false);
 	const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
+	const [typeFilter, setTypeFilter] = useState<ArtifactFilter>("all");
 
 	const state = useStoreSnapshot(workspaceStore, () => ({
 		tree: workspaceStore.tree,
 		currentFilePath: workspaceStore.currentFile?.path ?? null,
+		currentFile: workspaceStore.currentFile,
 		isLoadingTree: workspaceStore.isLoadingTree,
 		isMutating: workspaceStore.isMutating,
 		activeWorkspaceId: workspaceStore.activeWorkspaceId,
@@ -1002,6 +1101,30 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 		if (!state.tree?.children) return [];
 		return toArboristNodes(state.tree.children);
 	}, [state.tree]);
+
+	// Type filter tabs flatten the tree to matching files (read-only browsing;
+	// create/rename/move stay available in the unfiltered tree view).
+	const filteredFiles = useMemo(
+		() => (typeFilter === "all" ? [] : collectFilesByExtension(arboristData, FILTER_EXTS[typeFilter])),
+		[typeFilter, arboristData],
+	);
+
+	/** Open a file from the flat filtered list (mirrors the tree row click). */
+	const openArtifactFile = useCallback((path: string) => {
+		treeRef.current?.deselectAll();
+		treeRef.current?.get(path)?.select();
+		workspaceStore.clearStreamingPreview();
+		if (onPreviewFile) void onPreviewFile(DEFAULT_PREVIEW_PANEL_WIDTH);
+		else {
+			if (appStore.workspaceWidth < CONTENT_REVEAL_WIDTH) {
+				appStore.setWorkspaceWidth(DEFAULT_PREVIEW_PANEL_WIDTH);
+			}
+			if (appStore.workspaceMode === "quarter") {
+				appStore.setWorkspaceMode("half");
+			}
+		}
+		void workspaceStore.selectFile(path);
+	}, [onPreviewFile]);
 
 	// File previews can also be opened from the smart-input panel, bypassing
 	// the tree node's click handler. Keep react-arborist's visual selection in
@@ -1238,6 +1361,43 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 					</button>
 					<input ref={skillUploadRef} type="file" multiple accept=".zip,application/zip,.md,text/markdown" className="hidden" onChange={handleSkillUploadChange} />
 				</div>
+
+				{/* Type filter tabs (design mockup ap-tabs). */}
+				<div className="flex shrink-0 flex-wrap gap-1.5 border-b border-[var(--inno-border)] px-3 py-2.5">
+					{FILTER_ORDER.map((filter) => {
+						const active = typeFilter === filter;
+						return (
+							<button
+								key={filter}
+								type="button"
+								aria-pressed={active}
+								className={`rounded-[13px] border px-3 py-1 text-xs transition-colors ${
+									active
+										? "border-[var(--inno-send-bg)] bg-[var(--inno-send-bg)] text-[var(--inno-send-fg)]"
+										: "border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+								}`}
+								onClick={() => setTypeFilter(filter)}
+							>
+								{t(`workspace.filters.${filter}`)}
+							</button>
+						);
+					})}
+				</div>
+
+				{/* Selected-file preview card (mockup ap-preview). Only useful while the
+				    panel is too narrow for the side-by-side content pane — once the
+				    preview pane is visible it is the preview. */}
+				{!showContent && state.currentFile ? (
+					<ArtifactPreviewCard
+						file={state.currentFile}
+						workspaceId={state.activeWorkspaceId ?? undefined}
+						onOpen={() => {
+							if (onPreviewFile) void onPreviewFile(DEFAULT_PREVIEW_PANEL_WIDTH);
+							else appStore.setWorkspaceWidth(DEFAULT_PREVIEW_PANEL_WIDTH);
+						}}
+					/>
+				) : null}
+
 				{uploadError ? <div className="border-b border-[var(--inno-border)] bg-[var(--inno-danger-bg)] px-3 py-2 text-xs text-[var(--inno-danger)]" role="alert">{uploadError}</div> : null}
 
 				{multiSelectMode ? (
@@ -1259,7 +1419,38 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 					</div>
 				) : null}
 
-				{/* Tree */}
+				{/* Tree (unfiltered) or flat type-filtered file list */}
+				{typeFilter !== "all" ? (
+					<div className="workspace-scroll min-h-0 flex-1 overflow-y-auto px-2 py-2">
+						{filteredFiles.length === 0 ? (
+							<div className="p-3 text-xs text-[var(--inno-text-muted)]">{t("preview.empty", "Empty workspace")}</div>
+						) : (
+							filteredFiles.map((node) => {
+								const tone = artifactToneForName(node.name);
+								const selected = state.currentFilePath === node.path;
+								return (
+									<button
+										key={node.path}
+										type="button"
+										data-ws-path={node.path}
+										onClick={() => openArtifactFile(node.path)}
+										className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-[9px] text-left transition-colors ${
+											selected ? "bg-[var(--inno-accent-soft)]" : "hover:bg-[var(--inno-surface-muted)]"
+										}`}
+									>
+										<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: tone.bg, color: tone.fg }}>
+											{artifactIcon(node.name)}
+										</span>
+										<span className="min-w-0 flex-1">
+											<FileName name={node.name} className="block truncate text-[13px] font-medium text-[var(--inno-text)]" />
+											<span className="mt-0.5 block text-[11px] text-[var(--inno-text-subtle)]">{formatSize(node.size)}</span>
+										</span>
+									</button>
+								);
+							})
+						)}
+					</div>
+				) : (
 				<div
 					ref={treeContainerRef}
 					className="workspace-scroll relative min-h-0 flex-1 overflow-hidden"
@@ -1304,6 +1495,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 						</>
 					)}
 				</div>
+				)}
 
 				{/* Drag overlay */}
 				{isDragOver && (

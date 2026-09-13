@@ -9,9 +9,9 @@
 			(function () {
 				try {
 					var t = localStorage.getItem("inno.theme") || "light";
-					var valid = ["light", "warm", "ocean", "innospark"];
-					if (valid.indexOf(t) === -1) t = "light";
+					if (t !== "light" && t !== "dark") t = "light";
 					document.documentElement.setAttribute("data-theme", t);
+					if (t === "dark") document.documentElement.classList.add("dark");
 				} catch (e) {}
 			})();
 		</script>

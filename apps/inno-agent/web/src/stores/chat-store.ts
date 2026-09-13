@@ -14,6 +14,25 @@ function hasAttachmentFiles(attachments?: ChatAttachments): boolean {
 	return Boolean(attachments && (attachments.bindings.some((binding) => binding.files.length > 0) || attachments.loose.length > 0));
 }
 
+/**
+ * The user message "regenerate" would re-send for a cold-loaded session.
+ * Only the most recent user turn qualifies, and only when the history alone
+ * can replay it: channel/scheduler turns, image uploads and file-attachment
+ * turns all carry context that is lost on reload, so they stay non-retryable.
+ */
+function lastRetryableUserMessage(messages: ChatMessage[]): ChatMessage | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message?.role !== "user") continue;
+		if (message.channel && message.channel !== "web") return undefined;
+		if (message.images?.length) return undefined;
+		if (hasAttachmentFiles(message.attachments)) return undefined;
+		if (!message.content.trim()) return undefined;
+		return message;
+	}
+	return undefined;
+}
+
 function createClientRequestId(): string {
 	try {
 		if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
@@ -1185,8 +1204,19 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.canReconnect = false;
 		this.currentSessionContext = sessionId ?? null;
 		const retryInput = sessionId ? this.retryInputBySession.get(sessionId) : undefined;
-		this.lastUserPrompt = retryInput?.prompt ?? null;
-		this.lastImages = retryInput?.images;
+		if (retryInput) {
+			this.lastUserPrompt = retryInput.prompt;
+			this.lastImages = retryInput.images;
+		} else {
+			// A cold-loaded session has no in-memory retry input, so without this
+			// fallback the regenerate button vanished after every page reload.
+			const lastUserMessage = lastRetryableUserMessage(this.messages);
+			this.lastUserPrompt = lastUserMessage?.content ?? null;
+			this.lastImages = undefined;
+			if (sessionId && lastUserMessage) {
+				this.retryInputBySession.set(sessionId, { prompt: lastUserMessage.content });
+			}
+		}
 		this.resetTransientStreamState();
 		this.emit("change", undefined);
 	}

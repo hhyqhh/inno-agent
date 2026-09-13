@@ -86,7 +86,6 @@ export class ContentHubCatalog {
 	}
 
 	async warm(): Promise<void> {
-		if (this.options.getConfig().simpleMode?.enabled !== true) return;
 		for (const [category, load] of [
 			["presets", () => this.listPresetLibrary()] as const,
 			["skills", () => this.listSkillLibrary()] as const,

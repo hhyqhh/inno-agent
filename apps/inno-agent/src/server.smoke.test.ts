@@ -231,6 +231,16 @@ describe("server smoke", () => {
 		const body = (await ok.json()) as { ui: { theme: string } };
 		expect(body.ui.theme).toBe("ocean");
 
+		// dark is the second supported theme in the redesigned UI
+		const dark = await fetch(`http://127.0.0.1:${port}/api/settings/theme`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ theme: "dark" }),
+		});
+		expect(dark.status).toBe(200);
+		const darkBody = (await dark.json()) as { ui: { theme: string } };
+		expect(darkBody.ui.theme).toBe("dark");
+
 		const bad = await fetch(`http://127.0.0.1:${port}/api/settings/theme`, {
 			method: "PUT",
 			headers: { "Content-Type": "application/json" },

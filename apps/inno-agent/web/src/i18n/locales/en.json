@@ -21,6 +21,23 @@
 			"profile": "Profile",
 			"skills": "Skills",
 			"jobs": "Jobs"
+		},
+		"panelTitle": "Workspace files",
+		"fileCount": "{{count}} files",
+		"filters": {
+			"all": "All",
+			"docs": "Docs",
+			"sheets": "Sheets",
+			"images": "Images"
+		},
+		"kind": {
+			"markdown": "Markdown",
+			"html": "HTML",
+			"pdf": "PDF",
+			"image": "Image",
+			"office": "Office",
+			"text": "Text",
+			"binary": "Binary"
 		}
 	},
 	"common": {
@@ -79,6 +96,18 @@
 		"exportShowcaseDone": "Replay case \"{{title}}\" exported.\n\nCases dir: {{dir}}\nRun npm run showcase:view to open the replay.",
 		"exportShowcaseFailed": "Failed to export replay case: {{message}}"
 	},
+	"nav": {
+		"newChat": "New chat",
+		"workbench": "Workbench",
+		"notebook": "Notebook",
+		"skills": "Skill Store",
+		"learner": "Learner Profile",
+		"jobs": "Jobs",
+		"workspaces": "Workspaces",
+		"theme": "Theme",
+		"language": "Language",
+		"settings": "Settings"
+	},
 	"notebook": {
 		"title": "Notebook",
 		"subtitle": "{{nodes}} nodes · {{edges}} edges",
@@ -95,8 +124,8 @@
 			"analysis": "Analysis"
 		},
 		"view": {
-			"graph": "Graph",
-			"page": "Page"
+			"graph": "Knowledge Graph",
+			"page": "Notes"
 		},
 		"graph": {
 			"fit": "Fit",
@@ -264,7 +293,12 @@
 			"diagnosis": "Diagnosis",
 			"diagnosisPlaceholder": "Notes about current understanding…",
 			"nextActions": "Next actions",
-			"nextActionsPlaceholder": "One per line…"
+			"nextActionsPlaceholder": "One per line…",
+			"masteryState": {
+				"mastered": "Mastered",
+				"consolidating": "Consolidating",
+				"needsReview": "Needs review"
+			}
 		},
 		"misconceptions": {
 			"empty": "No misconceptions tracked.",
@@ -416,7 +450,7 @@
 		}
 	},
 	"skills": {
-		"title": "Skills",
+		"title": "Skill Store",
 		"subtitle": "Loaded from the configured skills directory",
 		"reload": "Reload",
 		"upload": "Upload",
@@ -434,21 +468,31 @@
 		"libraryEmpty": "No skills available in the library",
 		"import": "Import",
 		"importing": "Importing…",
+		"importDone": "Downloaded and installed \"{{name}}\"",
 		"installed": "Installed",
 		"libraryError": "Failed to load skills library",
 		"searchPlaceholder": "Search by name, description, or category…",
 		"uncategorized": "Uncategorized",
-		"noResults": "No matching skills"
+		"noResults": "No matching skills",
+		"tabs": {
+			"mine": "My Skills",
+			"library": "Library"
+		},
+		"filterCategory": "Category",
+		"filterAll": "All",
+		"mineEmpty": "No skills enabled yet",
+		"mineEmptyDesc": "Enable skills in “All Skills”, or import new ones from the “Library”"
 	},
 	"presets": {
-		"simpleModeHeader": "Ready to go · pick one to start",
+		"sectionTitle": "Preset spaces",
 		"refresh": "Refresh skills",
 		"refreshSucceeded": "Refresh succeeded",
 		"refreshFailed": "Refresh failed; keeping the previous list",
 		"searchPlaceholder": "Search presets…",
 		"uncategorized": "Uncategorized",
 		"noResults": "No matching presets",
-		"opening": "Opening…"
+		"opening": "Opening…",
+		"loaded": "Loaded"
 	},
 	"settings": {
 		"title": "Settings",
@@ -469,12 +513,6 @@
 		"providers": "Providers",
 		"newProvider": "New provider",
 		"memorySection": "Memory layers",
-		"simpleMode": {
-			"title": "Simple Mode",
-			"onDesc": "On: a streamlined, ready-to-use experience. Memory and profile are turned off; the notebook, profile, jobs and skills tabs and the terminal (experiment panel) are hidden and the settings page is simplified; preset workspaces are offered on the welcome screen.",
-			"offDesc": "Off: the full experience with learner profile, memory, notebook, scheduled jobs, skills, and the terminal available.",
-			"memoryLocked": "Memory is turned off while Simple Mode is on. Turn off Simple Mode to change these."
-		},
 		"l1": {
 			"title": "Learner profile (L1)",
 			"onDesc": "On: injects the learner profile each turn and lets tools update it for personalized teaching.",
@@ -549,9 +587,7 @@
 		"theme": "Theme",
 		"themeOptions": {
 			"light": "Light",
-			"warm": "Warm",
-			"ocean": "Ocean",
-			"innospark": "InnoSpark"
+			"dark": "Dark"
 		},
 		"closeBehavior": {
 			"title": "Close behavior",
@@ -639,7 +675,13 @@
 				"auto": "Commands run without approval cards.",
 				"yolo": "Nothing asks. Best paired with sandbox mode."
 			},
-			"denyFloorNote": "Dangerous commands and sensitive files stay denied in every mode."
+			"denyFloorNote": "Dangerous commands and sensitive files stay denied in every mode.",
+			"risk": {
+				"title": "Allow full access?",
+				"body": "With full access, the AI skips confirmation steps and can directly perform more operations, including sensitive actions, file modifications, or external commands.\nOnly enable this when you trust the current task.",
+				"checkbox": "I understand the risks and want to continue",
+				"confirm": "Allow full access"
+			}
 		},
 		"tabs": {
 			"general": "General",
@@ -1068,16 +1110,6 @@
 		"deleteWsWithSessions": "Its {{count}} conversation(s) will be unbound (moved to the temp workspace); conversation records and files will not be deleted.",
 		"deleteWsEmpty": "This workspace has no conversations; the workspace record will be removed."
 	},
-	"mode": {
-		"selectorLabel": "Work mode",
-		"simpleLabel": "Simple Mode",
-		"normalLabel": "Normal Mode",
-		"currentSimpleClickNormal": "Current: Simple Mode · click to switch to Normal Mode",
-		"currentNormalClickSimple": "Current: Normal Mode · click to switch to Simple Mode",
-		"switchToNormal": "Switch to Normal Mode",
-		"switchToSimple": "Switch to Simple Mode",
-		"simpleTag": "(Simple Mode)"
-	},
 	"terminal": {
 		"title": "Terminal",
 		"expand": "Expand terminal",
@@ -1234,5 +1266,8 @@
 		"bringBack": "Bring into conversation",
 		"bringBackHint": "Append this Q&A as a side note to the main session for the tutor to build on",
 		"broughtBack": "Brought into the conversation"
+	},
+	"welcome": {
+		"greeting": "What would you like to learn today?"
 	}
 }

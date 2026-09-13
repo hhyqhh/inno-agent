@@ -21,6 +21,23 @@
 			"profile": "学习者画像",
 			"skills": "技能",
 			"jobs": "定时任务"
+		},
+		"panelTitle": "工作区文件",
+		"fileCount": "{{count}} 个文件",
+		"filters": {
+			"all": "全部",
+			"docs": "文档",
+			"sheets": "表格",
+			"images": "图片"
+		},
+		"kind": {
+			"markdown": "Markdown",
+			"html": "HTML",
+			"pdf": "PDF",
+			"image": "图片",
+			"office": "Office",
+			"text": "文本",
+			"binary": "二进制"
 		}
 	},
 	"common": {
@@ -79,6 +96,18 @@
 		"exportShowcaseDone": "已导出回放案例「{{title}}」\n\n案例目录：{{dir}}\n运行 npm run showcase:view 打开回放界面。",
 		"exportShowcaseFailed": "导出回放案例失败：{{message}}"
 	},
+	"nav": {
+		"newChat": "新建会话",
+		"workbench": "工作台",
+		"notebook": "笔记本",
+		"skills": "技能仓库",
+		"learner": "学习者画像",
+		"jobs": "任务",
+		"workspaces": "工作区",
+		"theme": "主题",
+		"language": "语言",
+		"settings": "设置"
+	},
 	"notebook": {
 		"title": "笔记本",
 		"subtitle": "{{nodes}} 个节点 · {{edges}} 条连接",
@@ -95,8 +124,8 @@
 			"analysis": "分析"
 		},
 		"view": {
-			"graph": "图谱",
-			"page": "页面"
+			"graph": "知识图谱",
+			"page": "笔记"
 		},
 		"graph": {
 			"fit": "自适应",
@@ -264,7 +293,12 @@
 			"diagnosis": "诊断",
 			"diagnosisPlaceholder": "对当前掌握程度的诊断…",
 			"nextActions": "下一步动作",
-			"nextActionsPlaceholder": "每行一条…"
+			"nextActionsPlaceholder": "每行一条…",
+			"masteryState": {
+				"mastered": "已掌握",
+				"consolidating": "巩固中",
+				"needsReview": "待复习"
+			}
 		},
 		"misconceptions": {
 			"empty": "暂未发现误解，太棒了。",
@@ -416,7 +450,7 @@
 		}
 	},
 	"skills": {
-		"title": "技能",
+		"title": "技能仓库",
 		"subtitle": "从技能目录中加载",
 		"reload": "重新加载",
 		"upload": "上传",
@@ -434,21 +468,31 @@
 		"libraryEmpty": "技能库中暂无可用技能",
 		"import": "导入",
 		"importing": "导入中…",
+		"importDone": "已下载并安装「{{name}}」",
 		"installed": "已安装",
 		"libraryError": "加载技能库失败",
 		"searchPlaceholder": "按名称、描述或分类搜索…",
 		"uncategorized": "未分类",
-		"noResults": "无匹配技能"
+		"noResults": "无匹配技能",
+		"tabs": {
+			"mine": "我的技能",
+			"library": "技能库"
+		},
+		"filterCategory": "分类",
+		"filterAll": "全部",
+		"mineEmpty": "还没有启用的技能",
+		"mineEmptyDesc": "在「所有技能」中启用技能，或从「技能库」导入新技能"
 	},
 	"presets": {
-		"simpleModeHeader": "开箱即用 · 选一个开始",
+		"sectionTitle": "预设空间",
 		"refresh": "刷新技能",
 		"refreshSucceeded": "刷新成功",
 		"refreshFailed": "刷新技能失败，仍保留旧列表",
 		"searchPlaceholder": "搜索预设…",
 		"uncategorized": "未分类",
 		"noResults": "无匹配预设",
-		"opening": "正在打开…"
+		"opening": "正在打开…",
+		"loaded": "已载入"
 	},
 	"settings": {
 		"title": "设置",
@@ -469,12 +513,6 @@
 		"providers": "服务提供方",
 		"newProvider": "新增提供方",
 		"memorySection": "记忆分层",
-		"simpleMode": {
-			"title": "简单模式",
-			"onDesc": "已开启：精简、开箱即用的体验。记忆与画像已关闭，笔记/画像/定时任务/技能标签页与终端(实验面板)已隐藏，设置页已简化；欢迎页提供预设工作区一键开始。",
-			"offDesc": "已关闭：完整体验，学习者画像、记忆、笔记、定时任务、技能与终端均可用。",
-			"memoryLocked": "简单模式下记忆已统一关闭。如需调整,请先关闭简单模式。"
-		},
 		"l1": {
 			"title": "学习者画像 (L1)",
 			"onDesc": "已开启：每轮注入学习者画像，并允许工具更新画像以实现个性化教学。",
@@ -549,9 +587,7 @@
 		"theme": "主题",
 		"themeOptions": {
 			"light": "浅色",
-			"warm": "暖色",
-			"ocean": "海洋",
-			"innospark": "启创"
+			"dark": "深色"
 		},
 		"closeBehavior": {
 			"title": "关闭行为",
@@ -639,7 +675,13 @@
 				"auto": "命令自动放行，不再弹审批卡片。",
 				"yolo": "所有操作免询问。仅建议配合沙箱模式使用。"
 			},
-			"denyFloorNote": "危险命令与敏感文件在任何模式下都会被拒绝。"
+			"denyFloorNote": "危险命令与敏感文件在任何模式下都会被拒绝。",
+			"risk": {
+				"title": "确认允许完全权限？",
+				"body": "开启完全权限后，AI 将减少确认步骤，并可直接执行更多操作，包括敏感操作、文件修改或外部命令。\n仅建议在您信任当前任务时使用。",
+				"checkbox": "我已了解风险，并愿意继续",
+				"confirm": "允许完全权限"
+			}
 		},
 		"tabs": {
 			"general": "通用",
@@ -1068,16 +1110,6 @@
 		"deleteWsWithSessions": "其中的 {{count}} 个会话将解绑(归入临时工作区),会话记录与文件不会被删除。",
 		"deleteWsEmpty": "该工作区当前没有会话,工作区记录将被移除。"
 	},
-	"mode": {
-		"selectorLabel": "工作模式",
-		"simpleLabel": "简单模式",
-		"normalLabel": "普通模式",
-		"currentSimpleClickNormal": "当前:简单模式 · 点击切换到普通模式",
-		"currentNormalClickSimple": "当前:普通模式 · 点击切换到简单模式",
-		"switchToNormal": "切换到普通模式",
-		"switchToSimple": "切换到简单模式",
-		"simpleTag": "(简单模式)"
-	},
 	"terminal": {
 		"title": "终端",
 		"expand": "展开终端",
@@ -1234,5 +1266,8 @@
 		"bringBack": "带回主对话",
 		"bringBackHint": "把这条问答作为旁注追加到主会话，供助教后续参考",
 		"broughtBack": "已带回主对话"
+	},
+	"welcome": {
+		"greeting": "今天想学点什么？"
 	}
 }

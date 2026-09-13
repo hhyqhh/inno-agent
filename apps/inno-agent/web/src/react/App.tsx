@@ -1,11 +1,12 @@
 import { useCallback, useEffect } from "react";
-import { appStore, type RightPanelTab, type WorkspaceMode } from "../stores/app-store.js";
+import { appStore, pageFromSearch, type AppPage, type WorkspaceMode } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { themeStore, type ThemeId } from "../stores/theme-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { ChatCenter } from "./ChatCenter.js";
+import { FeaturePage } from "./FeaturePage.js";
 import { SessionSidebar } from "./SessionSidebar.js";
 import { WorkspacePanel } from "./WorkspacePanel.js";
 import { SettingsOverlay } from "./settings/SettingsOverlay.js";
@@ -31,7 +32,7 @@ function initializeApp(): Promise<void> {
 
 export function App() {
 	const app = useStoreSnapshot(appStore, () => ({
-		rightPanelTab: appStore.rightPanelTab,
+		page: appStore.page,
 		sidebarCollapsed: appStore.sidebarCollapsed,
 		workspaceMode: appStore.workspaceMode,
 		workspaceWidth: appStore.workspaceWidth,
@@ -39,6 +40,8 @@ export function App() {
 	useEffect(() => {
 		void initializeApp();
 		const onPopState = () => {
+			// Restore the main-area page from the URL (back/forward navigation).
+			appStore.setPage(pageFromSearch(window.location.search), "none");
 			const sessionId = new URL(window.location.href).searchParams.get("session");
 			if (!sessionId) sessionsStore.showWelcomeFromHistory();
 			else if (sessionId !== sessionsStore.currentSessionId) void sessionsStore.openSession(sessionId, { historyMode: "none" });
@@ -81,7 +84,9 @@ export function App() {
 
 	// A window can be resized after a panel was opened. Keep that action from
 	// leaving the chat squeezed beside a stale, oversized workspace preview.
+	// Feature pages don't render the right panel — leave its layout state alone.
 	useEffect(() => {
+		if (app.page !== "chat") return;
 		const fitCurrentLayout = () => {
 			const currentMode = appStore.workspaceMode;
 			if (currentMode === "collapsed" || currentMode === "full") return;
@@ -109,9 +114,8 @@ export function App() {
 		fitCurrentLayout();
 		window.addEventListener("resize", fitCurrentLayout);
 		return () => window.removeEventListener("resize", fitCurrentLayout);
-	}, []);
+	}, [app.page]);
 
-	const setTab = useCallback((tab: RightPanelTab) => appStore.setRightPanelTab(tab), []);
 	const openPresetPanels = useCallback(async () => {
 		const previewWidth = 560;
 		if (appStore.workspaceMode === "full") {
@@ -150,15 +154,6 @@ export function App() {
 		appStore.setWorkspaceMode("half");
 	}, [ensureWindowForPanel]);
 
-	const openRightPanel = useCallback(async (tab: Exclude<RightPanelTab, "preview">) => {
-		if (appStore.workspaceMode === "collapsed") {
-			const result = await ensureWindowForPanel("right", appStore.workspaceWidth, "quarter");
-			if (result === "busy") return;
-		}
-		appStore.setRightPanelTab(tab);
-		if (appStore.workspaceMode === "collapsed") appStore.setWorkspaceMode("quarter");
-	}, [ensureWindowForPanel]);
-
 	const openSidebar = useCallback(() => {
 		void (async () => {
 			const result = await ensureWindowForPanel("left");
@@ -185,23 +180,33 @@ export function App() {
 	}, [app.workspaceMode, ensureWindowForPanel]);
 	const setWorkspaceWidth = useCallback((width: number) => appStore.setWorkspaceWidth(width), []);
 
+	// Feature pages occupy the whole center column; the right workspace panel is
+	// a chat-only surface. Its mode/width state is preserved (not mutated) so
+	// returning to chat restores the exact previous layout.
+	const chatVisible = app.page === "chat";
+	const layoutWorkspaceMode = chatVisible ? app.workspaceMode : "collapsed";
+
 	return (
 		<>
 			<div
-				className={`app-layout app-layout--sidebar-${app.sidebarCollapsed ? "collapsed" : "expanded"} app-layout--workspace-${app.workspaceMode}`}
+				className={`app-layout app-layout--sidebar-${app.sidebarCollapsed ? "collapsed" : "expanded"} app-layout--workspace-${layoutWorkspaceMode}`}
 				style={{ "--inno-workspace-width": `${app.workspaceWidth}px` } as React.CSSProperties}
 			>
 				<SessionSidebar collapsed={app.sidebarCollapsed} onOpen={openSidebar} />
-				<ChatCenter onOpenPresetPanels={openPresetPanels} onOpenRightPanel={openRightPanel} onPreviewFile={openFilePreview} />
-				<WorkspacePanel
-					activeTab={app.rightPanelTab}
-					mode={app.workspaceMode}
-					width={app.workspaceWidth}
-					onTabChange={setTab}
-					onModeChange={setWorkspaceMode}
-					onWidthChange={setWorkspaceWidth}
-					onPreviewFile={openFilePreview}
-				/>
+				{chatVisible ? (
+					<ChatCenter onOpenPresetPanels={openPresetPanels} onPreviewFile={openFilePreview} />
+				) : (
+					<FeaturePage page={app.page as Exclude<AppPage, "chat">} />
+				)}
+				{chatVisible ? (
+					<WorkspacePanel
+						mode={app.workspaceMode}
+						width={app.workspaceWidth}
+						onModeChange={setWorkspaceMode}
+						onWidthChange={setWorkspaceWidth}
+						onPreviewFile={openFilePreview}
+					/>
+				) : null}
 			</div>
 			<SettingsOverlay />
 		</>

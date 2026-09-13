@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronRight } from "lucide-react";
+import { ChevronDown, Plus, RefreshCw, TriangleAlert } from "lucide-react";
 import { Spinner } from "./ui/Spinner.js";
 import { learnerStore } from "../stores/learner-store.js";
 import type {
@@ -47,17 +47,22 @@ function Section({
 }) {
 	const [collapsed, setCollapsed] = useState(defaultCollapsed);
 	return (
-		<section className="rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)]">
-			<div className="flex items-center justify-between gap-3 px-4 py-3.5">
+		<section className="overflow-hidden rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)]">
+			<div className="flex items-center gap-2 px-[18px] py-[15px]">
 				<button
-					className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+					className="flex min-w-0 flex-1 items-center gap-2 text-left"
 					onClick={() => setCollapsed(!collapsed)}
 					aria-expanded={!collapsed}
 				>
-					<ChevronRight size={16} className={`shrink-0 text-[var(--inno-text-subtle)] transition-transform duration-150 ${collapsed ? "" : "rotate-90"}`} />
-					<h4 className="truncate text-base font-semibold text-[var(--inno-text)]">{title}</h4>
+					<ChevronDown
+						size={16}
+						className={`shrink-0 text-[var(--inno-text-muted)] transition-transform duration-150 ${collapsed ? "-rotate-90" : ""}`}
+					/>
+					<h4 className="truncate text-[14.5px] font-semibold text-[var(--inno-text)]">{title}</h4>
 					{typeof count === "number" ? (
-						<span className="rounded-full bg-[var(--inno-surface-muted)] px-2 py-0.5 text-xs font-medium text-[var(--inno-text-muted)]">{count}</span>
+						<span className="rounded-[10px] bg-[var(--inno-accent-soft)] px-2 py-0.5 text-[11.5px] font-medium text-[var(--inno-accent)]">
+							{count}
+						</span>
 					) : null}
 				</button>
 				{!collapsed && action ? <div className="shrink-0">{action}</div> : null}
@@ -71,7 +76,7 @@ function Section({
 						transition={{ duration: 0.2, ease: "easeOut" }}
 						style={{ overflow: "hidden" }}
 					>
-						<div className="border-t border-[var(--inno-border)] px-4 py-4">{children}</div>
+						<div className="px-[18px] pb-[18px] pt-1">{children}</div>
 					</motion.div>
 				) : null}
 			</AnimatePresence>
@@ -100,14 +105,14 @@ function SummarySection() {
 
 	return (
 		<Section title={t("profile.sections.summary")}>
-			<div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+			<div className="mb-3.5 grid grid-cols-2 gap-3 sm:grid-cols-4">
 				<Stat label={t("profile.summary.activeGoals")} value={activeGoals} />
 				<Stat label={t("profile.summary.concepts")} value={concepts} />
 				<Stat label={t("profile.summary.dueReviews")} value={due} />
 				<Stat label={t("profile.summary.openMisconceptions")} value={openMisc} />
 			</div>
 			<textarea
-				className="h-32 w-full resize-none rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+				className="min-h-[110px] w-full resize-y rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3.5 py-3 text-[13px] leading-relaxed text-[var(--inno-text-muted)] focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 				placeholder={t("profile.summary.placeholder") ?? ""}
 				value={buffer}
 				onChange={(e) => {
@@ -118,7 +123,7 @@ function SummarySection() {
 			{dirty ? (
 				<div className="mt-2 flex justify-end gap-2">
 					<button
-						className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+						className="rounded-lg bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"
 						onClick={() => {
 							setBuffer(profile?.profile_summary ?? "");
 							setDirty(false);
@@ -127,7 +132,7 @@ function SummarySection() {
 						{t("common.cancel")}
 					</button>
 					<button
-						className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50"
+						className="rounded-lg inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50"
 						disabled={state.isSaving}
 						onClick={async () => {
 							await learnerStore.patchSummary(buffer);
@@ -144,9 +149,9 @@ function SummarySection() {
 
 function Stat({ label, value }: { label: string; value: number }) {
 	return (
-		<div className="rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
-			<div className="text-xs text-[var(--inno-text-muted)]">{label}</div>
-			<div className="text-lg font-medium text-[var(--inno-text)]">{value}</div>
+		<div className="rounded-xl bg-[var(--inno-accent-soft)] px-4 py-3.5">
+			<div className="mb-1.5 text-xs text-[var(--inno-text-muted)]">{label}</div>
+			<div className="text-2xl font-semibold text-[var(--inno-text)]">{value}</div>
 		</div>
 	);
 }
@@ -202,18 +207,19 @@ function GoalsSection() {
 				count={goals.length}
 				action={
 					<button
-						className="rounded-md inno-primary-button px-3 py-1.5 text-xs text-white"
+						className="inline-flex items-center gap-1.5 rounded-[9px] inno-primary-button px-3 py-1.5 text-xs text-white"
 						onClick={openForm}
 					>
+						<Plus size={12} strokeWidth={2.2} />
 						{t("profile.goals.addNew")}
 					</button>
 				}
 			>
 				{error ? <div className="mb-2 rounded bg-[var(--inno-danger-bg)] p-2 text-xs text-[var(--inno-danger)]">{error}</div> : null}
 				{goals.length === 0 ? (
-					<p className="text-sm text-[var(--inno-text-muted)]">{t("profile.goals.empty")}</p>
+					<p className="py-4 text-center text-[13px] text-[var(--inno-text-subtle)]">{t("profile.goals.empty")}</p>
 				) : (
-					<div className="flex flex-col gap-3">
+					<div className="flex flex-col gap-2.5">
 						{goals.map((g) => (
 							<GoalCard key={g.goal_id} goal={g} />
 						))}
@@ -257,7 +263,7 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 			onClick={onClose}
 		>
 			<motion.div
-				className="max-h-[85vh] w-[460px] overflow-y-auto rounded-xl bg-[var(--inno-surface)] p-5 shadow-xl"
+				className="max-h-[85vh] w-[460px] overflow-y-auto rounded-2xl bg-[var(--inno-surface)] p-5 shadow-xl"
 				initial={{ opacity: 0, scale: 0.95 }}
 				animate={{ opacity: 1, scale: 1 }}
 				transition={{ duration: 0.2, ease: "easeOut" }}
@@ -268,7 +274,7 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 					<label className="block text-sm">
 						<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.goals.title")}</span>
 						<input
-							className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+							className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 							placeholder={t("profile.goals.namePlaceholder") ?? ""}
 							value={draft.title}
 							autoFocus
@@ -279,7 +285,7 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 						<label className="block text-sm">
 							<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.goals.type")}</span>
 							<select
-								className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm"
+								className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm"
 								value={draft.type}
 								onChange={(e) => setDraft({ ...draft, type: e.target.value as GoalType })}
 							>
@@ -291,7 +297,7 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 						<label className="block text-sm">
 							<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.goals.status")}</span>
 							<select
-								className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm"
+								className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm"
 								value={draft.status}
 								onChange={(e) => setDraft({ ...draft, status: e.target.value as GoalStatus })}
 							>
@@ -317,7 +323,7 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 					<label className="block text-sm">
 						<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.goals.successCriteria")}</span>
 						<textarea
-							className="h-20 w-full resize-none rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+							className="h-20 w-full resize-none rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 							placeholder={t("profile.goals.successCriteriaPlaceholder") ?? ""}
 							value={draft.success_criteria.join("\n")}
 							onChange={(e) =>
@@ -332,14 +338,14 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 				<div className="mt-4 flex justify-end gap-2">
 					{error ? <div className="mr-auto text-xs text-[var(--inno-danger)]">{error}</div> : null}
 					<button
-						className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
+						className="rounded-lg bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
 						disabled={saving}
 						onClick={onClose}
 					>
 						{t("common.cancel")}
 					</button>
 					<button
-						className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50"
+						className="rounded-lg inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50"
 						disabled={saving}
 						onClick={() => void save()}
 					>
@@ -349,6 +355,19 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 			</motion.div>
 		</motion.div>
 	);
+}
+
+function goalDotColor(status: GoalStatus): string {
+	switch (status) {
+		case "active":
+			return "var(--inno-accent)";
+		case "completed":
+			return "var(--inno-success)";
+		case "paused":
+			return "var(--inno-warning)";
+		default:
+			return "var(--inno-text-subtle)";
+	}
 }
 
 function GoalCard({ goal }: { goal: LearningGoal }) {
@@ -392,49 +411,59 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 
 	if (!editing) {
 		return (
-			<div className="rounded-lg bg-[var(--inno-surface)] p-3">
-				<div className="flex items-start justify-between gap-2">
-					<div className="min-w-0">
-						<div className="text-sm font-medium text-[var(--inno-text)]">{goal.title}</div>
-						<div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--inno-text-muted)]">
-							<span className="rounded bg-[var(--inno-surface-muted)] px-1.5 py-0.5">{t(`profile.goals.typeOptions.${goal.type}`)}</span>
-							<span className={`rounded px-1.5 py-0.5 ${statusToneFor(goal.status)}`}>{t(`profile.goals.statusOptions.${goal.status}`)}</span>
-							<span>· {t("profile.goals.priority")} {(goal.priority * 100).toFixed(0)}%</span>
-						</div>
-						{goal.success_criteria.length > 0 ? (
-							<ul className="mt-2 list-disc pl-5 text-xs text-[var(--inno-text-muted)]">
-								{goal.success_criteria.map((s) => (
-									<li key={s}>{s}</li>
-								))}
-							</ul>
-						) : null}
+			<div className="flex items-start gap-3 rounded-xl border border-[var(--inno-border)] px-[15px] py-[13px]">
+				<span
+					className="mt-1.5 h-[9px] w-[9px] shrink-0 rounded-full"
+					style={{ background: goalDotColor(goal.status) }}
+				/>
+				<div className="min-w-0 flex-1">
+					<div className="mb-0.5 text-[13.5px] font-medium text-[var(--inno-text)]">{goal.title}</div>
+					<div className="flex flex-wrap items-center gap-2 text-xs text-[var(--inno-text-subtle)]">
+						<span className="rounded-md bg-[var(--inno-chip-bg)] px-1.5 py-0.5">{t(`profile.goals.typeOptions.${goal.type}`)}</span>
+						<span>· {t("profile.goals.priority")} {(goal.priority * 100).toFixed(0)}%</span>
 					</div>
-					<div className="flex shrink-0 gap-1.5">
-						<button className="rounded bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => setEditing(true)}>
-							{t("common.edit")}
-						</button>
-						<button className="rounded px-2 py-1 text-xs text-[var(--inno-danger)] hover:bg-[var(--inno-danger-bg)]" onClick={() => void doDelete()}>
-							{t("common.delete")}
-						</button>
-					</div>
+					{goal.success_criteria.length > 0 ? (
+						<ul className="mt-2 list-disc pl-5 text-xs text-[var(--inno-text-muted)]">
+							{goal.success_criteria.map((s) => (
+								<li key={s}>{s}</li>
+							))}
+						</ul>
+					) : null}
+					{error ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] p-2 text-xs text-[var(--inno-danger)]">{error}</div> : null}
 				</div>
-				{error ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] p-2 text-xs text-[var(--inno-danger)]">{error}</div> : null}
+				<div className="ml-auto flex shrink-0 items-center gap-1.5">
+					<span className={`rounded-[9px] px-2.5 py-0.5 text-[11px] ${statusToneFor(goal.status)}`}>
+						{t(`profile.goals.statusOptions.${goal.status}`)}
+					</span>
+					<button
+						className="rounded-md px-2 py-1 text-xs text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+						onClick={() => setEditing(true)}
+					>
+						{t("common.edit")}
+					</button>
+					<button
+						className="rounded-md px-2 py-1 text-xs text-[var(--inno-danger)] hover:bg-[var(--inno-danger-bg)]"
+						onClick={() => void doDelete()}
+					>
+						{t("common.delete")}
+					</button>
+				</div>
 			</div>
 		);
 	}
 	return (
-		<div className="rounded-lg bg-[var(--inno-surface)] p-3">
+		<div className="rounded-xl border border-[var(--inno-border)] px-[15px] py-[13px]">
 			<div className="grid gap-2">
 				<input
-					className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm"
+					className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm"
 					value={draft.title}
 					onChange={(e) => setDraft({ ...draft, title: e.target.value })}
 				/>
 				<div className="grid grid-cols-2 gap-2">
 					<label className="block text-xs">
-						<span className="mb-0.5 block text-[var(--inno-text-muted)]">{t("profile.goals.type")}</span>
+						<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.goals.type")}</span>
 						<select
-							className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+							className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
 							value={draft.type}
 							onChange={(e) => setDraft({ ...draft, type: e.target.value as GoalType })}
 						>
@@ -446,9 +475,9 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 						</select>
 					</label>
 					<label className="block text-xs">
-						<span className="mb-0.5 block text-[var(--inno-text-muted)]">{t("profile.goals.status")}</span>
+						<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.goals.status")}</span>
 						<select
-							className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+							className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
 							value={draft.status}
 							onChange={(e) => setDraft({ ...draft, status: e.target.value as GoalStatus })}
 						>
@@ -461,7 +490,7 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 					</label>
 				</div>
 				<label className="block text-xs">
-					<span className="mb-0.5 block text-[var(--inno-text-muted)]">{t("profile.goals.priority")}: {(draft.priority * 100).toFixed(0)}%</span>
+					<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.goals.priority")}: {(draft.priority * 100).toFixed(0)}%</span>
 					<input
 						type="range"
 						min={0}
@@ -472,19 +501,19 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 					/>
 				</label>
 				<label className="block text-xs">
-					<span className="mb-0.5 block text-[var(--inno-text-muted)]">{t("profile.goals.successCriteria")}</span>
+					<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.goals.successCriteria")}</span>
 					<textarea
-						className="h-20 w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+						className="h-20 w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
 						placeholder={t("profile.goals.successCriteriaPlaceholder") ?? ""}
 						value={draft.success_criteria.join("\n")}
 						onChange={(e) => setDraft({ ...draft, success_criteria: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
 					/>
 				</label>
 				<div className="flex justify-end gap-2 pt-1">
-					<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1 text-xs text-[var(--inno-text-muted)]" onClick={() => setEditing(false)}>
+					<button className="rounded-lg bg-[var(--inno-surface-muted)] px-3 py-1 text-xs text-[var(--inno-text-muted)]" onClick={() => setEditing(false)}>
 						{t("common.cancel")}
 					</button>
-					<button className="rounded-md inno-primary-button px-3 py-1 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void save()}>
+					<button className="rounded-lg inno-primary-button px-3 py-1 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void save()}>
 						{saving ? t("common.saving") : t("common.save")}
 					</button>
 				</div>
@@ -497,11 +526,11 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 function statusToneFor(status: string): string {
 	switch (status) {
 		case "active":
-			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)]";
+			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]";
 		case "paused":
 			return "bg-[var(--inno-warning-bg)] text-[var(--inno-warning)]";
 		case "completed":
-			return "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]";
+			return "bg-[var(--inno-success-bg)] text-[var(--inno-success)]";
 		case "archived":
 			return "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]";
 		case "repairing":
@@ -515,6 +544,26 @@ function statusToneFor(status: string): string {
 	}
 }
 
+type MasteryState = "mastered" | "consolidating" | "needsReview";
+
+function masteryStateFor(mastery: number): MasteryState {
+	if (mastery >= 0.8) return "mastered";
+	if (mastery >= 0.4) return "consolidating";
+	return "needsReview";
+}
+
+const MASTERY_STATE_TONE: Record<MasteryState, string> = {
+	mastered: "bg-[var(--inno-success-bg)] text-[var(--inno-success)]",
+	consolidating: "bg-[var(--inno-warning-bg)] text-[var(--inno-warning)]",
+	needsReview: "bg-[var(--inno-danger-bg)] text-[var(--inno-danger)]",
+};
+
+const MASTERY_BAR_COLOR: Record<MasteryState, string> = {
+	mastered: "var(--inno-success)",
+	consolidating: "var(--inno-warning)",
+	needsReview: "var(--inno-danger)",
+};
+
 function KnowledgeSection() {
 	const { t } = useTranslation();
 	const state = useStoreSnapshot(learnerStore, () => ({ profile: learnerStore.profile }));
@@ -523,7 +572,7 @@ function KnowledgeSection() {
 	if (knowledge.length === 0) {
 		return (
 			<Section title={t("profile.sections.knowledge")} count={0}>
-				<p className="text-sm text-[var(--inno-text-muted)]">{t("profile.knowledge.empty")}</p>
+				<p className="py-4 text-center text-[13px] text-[var(--inno-text-subtle)]">{t("profile.knowledge.empty")}</p>
 			</Section>
 		);
 	}
@@ -533,7 +582,7 @@ function KnowledgeSection() {
 			count={knowledge.length}
 			defaultCollapsed={knowledge.length > 5}
 		>
-			<div className="flex flex-col gap-2">
+			<div className="flex flex-col">
 				{knowledge.map((k) => (
 					<KnowledgeRow key={k.concept_id} state={k} />
 				))}
@@ -557,6 +606,7 @@ function KnowledgeRow({ state }: { state: KnowledgeState }) {
 	}, [state, expanded]);
 
 	const pct = Math.round(state.mastery * 100);
+	const masteryState = masteryStateFor(state.mastery);
 
 	async function save() {
 		setSaving(true);
@@ -573,29 +623,35 @@ function KnowledgeRow({ state }: { state: KnowledgeState }) {
 	}
 
 	return (
-		<div className="rounded-lg bg-[var(--inno-surface)]">
+		<div className="border-b border-[var(--inno-border)] last:border-b-0">
 			<button
-				className="grid w-full grid-cols-[1fr_120px_100px_90px] items-center gap-3 px-3 py-2 text-left text-sm hover:bg-[var(--inno-surface-muted)]"
+				className="flex w-full items-center gap-3 px-1 py-[11px] text-left"
 				onClick={() => setExpanded(!expanded)}
+				aria-expanded={expanded}
 			>
-				<div className="min-w-0">
-					<div className="truncate font-medium text-[var(--inno-text)]">{state.concept_name}</div>
-					<div className="truncate text-xs text-[var(--inno-text-muted)]">{state.concept_id}</div>
+				<div className="w-[170px] min-w-0 shrink-0">
+					<div className="truncate text-[13.5px] font-medium text-[var(--inno-text)]">{state.concept_name}</div>
+					<div className="truncate text-xs text-[var(--inno-text-subtle)]">{state.domain || state.concept_id}</div>
 				</div>
-				<div className="truncate text-xs text-[var(--inno-text-muted)]">{state.domain || "-"}</div>
-				<div>
-					<div className="h-1.5 w-full rounded-full bg-[var(--inno-surface-muted)]">
-						<div className="h-1.5 rounded-full bg-[var(--inno-accent)]" style={{ width: `${pct}%` }} />
-					</div>
-					<div className="mt-0.5 text-[10px] text-[var(--inno-text-muted)]">{pct}%</div>
+				<div className="h-2 min-w-0 flex-1 overflow-hidden rounded bg-[var(--inno-chip-bg)]">
+					<div
+						className="h-full rounded"
+						style={{ width: `${pct}%`, background: MASTERY_BAR_COLOR[masteryState] }}
+					/>
 				</div>
-				<div className="text-right text-xs text-[var(--inno-text-muted)]">{state.review_due_at ? formatDate(state.review_due_at) : "-"}</div>
+				<span className="w-[42px] shrink-0 text-right text-xs text-[var(--inno-text-subtle)]">{pct}%</span>
+				<span className={`w-[74px] shrink-0 rounded-[9px] px-1 py-0.5 text-center text-[11px] ${MASTERY_STATE_TONE[masteryState]}`}>
+					{t(`profile.knowledge.masteryState.${masteryState}`)}
+				</span>
+				<span className="hidden w-[110px] shrink-0 text-right text-xs text-[var(--inno-text-subtle)] sm:block">
+					{state.review_due_at ? formatDate(state.review_due_at) : "-"}
+				</span>
 			</button>
 			{expanded ? (
-				<div className="border-t border-[var(--inno-border)] p-3">
-					<div className="grid gap-2">
+				<div className="pb-3 pl-1 pr-1">
+					<div className="grid gap-2 rounded-xl bg-[var(--inno-surface-muted)] p-3">
 						<label className="block text-xs">
-							<span className="mb-0.5 block text-[var(--inno-text-muted)]">{t("profile.knowledge.mastery")}: {Math.round(draft.mastery * 100)}%</span>
+							<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.knowledge.mastery")}: {Math.round(draft.mastery * 100)}%</span>
 							<input
 								type="range"
 								min={0}
@@ -606,28 +662,28 @@ function KnowledgeRow({ state }: { state: KnowledgeState }) {
 							/>
 						</label>
 						<label className="block text-xs">
-							<span className="mb-0.5 block text-[var(--inno-text-muted)]">{t("profile.knowledge.diagnosis")}</span>
+							<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.knowledge.diagnosis")}</span>
 							<textarea
-								className="h-20 w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+								className="h-20 w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
 								placeholder={t("profile.knowledge.diagnosisPlaceholder") ?? ""}
 								value={draft.diagnosis}
 								onChange={(e) => setDraft({ ...draft, diagnosis: e.target.value })}
 							/>
 						</label>
 						<label className="block text-xs">
-							<span className="mb-0.5 block text-[var(--inno-text-muted)]">{t("profile.knowledge.nextActions")}</span>
+							<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.knowledge.nextActions")}</span>
 							<textarea
-								className="h-20 w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+								className="h-20 w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
 								placeholder={t("profile.knowledge.nextActionsPlaceholder") ?? ""}
 								value={draft.nextActions.join("\n")}
 								onChange={(e) => setDraft({ ...draft, nextActions: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
 							/>
 						</label>
 						<div className="flex justify-end gap-2 pt-1">
-							<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1 text-xs text-[var(--inno-text-muted)]" onClick={() => setExpanded(false)}>
+							<button className="rounded-lg bg-[var(--inno-surface)] px-3 py-1 text-xs text-[var(--inno-text-muted)]" onClick={() => setExpanded(false)}>
 								{t("common.cancel")}
 							</button>
-							<button className="rounded-md inno-primary-button px-3 py-1 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void save()}>
+							<button className="rounded-lg inno-primary-button px-3 py-1 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void save()}>
 								{saving ? t("common.saving") : t("common.save")}
 							</button>
 						</div>
@@ -646,7 +702,7 @@ function MisconceptionsSection() {
 	if (items.length === 0) {
 		return (
 			<Section title={t("profile.sections.misconceptions")} count={0}>
-				<p className="text-sm text-[var(--inno-text-muted)]">{t("profile.misconceptions.empty")}</p>
+				<p className="py-4 text-center text-[13px] text-[var(--inno-text-subtle)]">{t("profile.misconceptions.empty")}</p>
 			</Section>
 		);
 	}
@@ -656,7 +712,7 @@ function MisconceptionsSection() {
 			count={items.length}
 			defaultCollapsed={items.length > 5}
 		>
-			<div className="flex flex-col gap-2">
+			<div className="flex flex-col gap-2.5">
 				{items.map((m) => (
 					<MisconceptionRow key={m.misconception_id} item={m} />
 				))}
@@ -690,14 +746,20 @@ function MisconceptionRow({ item }: { item: Misconception }) {
 	}
 
 	return (
-		<div className="rounded-lg bg-[var(--inno-surface)] p-3">
-			<div className="mb-2 text-sm text-[var(--inno-text)]">{item.description}</div>
-			<div className="mb-2 text-xs text-[var(--inno-text-muted)]">{item.concept_id} · {formatDate(item.last_seen_at)}</div>
+		<div className="rounded-xl border border-[color-mix(in_srgb,var(--inno-danger)_28%,transparent)] bg-[var(--inno-danger-bg)] px-[15px] py-[13px]">
+			<div className="mb-1 flex items-center gap-2 text-[13.5px] font-medium text-[var(--inno-danger)]">
+				<TriangleAlert size={14} className="shrink-0" />
+				<span className="min-w-0">{item.description}</span>
+				<span className={`ml-auto shrink-0 rounded-[9px] px-2.5 py-0.5 text-[11px] ${statusToneFor(item.status)}`}>
+					{t(`profile.misconceptions.statusOptions.${item.status}`)}
+				</span>
+			</div>
+			<div className="mb-2 text-xs text-[var(--inno-text-subtle)]">{item.concept_id} · {formatDate(item.last_seen_at)}</div>
 			<div className="grid grid-cols-2 gap-2">
 				<label className="block text-xs">
-					<span className="mb-0.5 block text-[var(--inno-text-muted)]">{t("profile.misconceptions.status")}</span>
+					<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.misconceptions.status")}</span>
 					<select
-						className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+						className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
 						value={draft.status}
 						onChange={(e) => {
 							setDraft({ ...draft, status: e.target.value as MisconceptionStatus });
@@ -712,7 +774,7 @@ function MisconceptionRow({ item }: { item: Misconception }) {
 					</select>
 				</label>
 				<label className="block text-xs">
-					<span className="mb-0.5 block text-[var(--inno-text-muted)]">{t("profile.misconceptions.severity")}: {Math.round(draft.severity * 100)}%</span>
+					<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.misconceptions.severity")}: {Math.round(draft.severity * 100)}%</span>
 					<input
 						type="range"
 						min={0}
@@ -727,9 +789,9 @@ function MisconceptionRow({ item }: { item: Misconception }) {
 				</label>
 			</div>
 			<label className="mt-2 block text-xs">
-				<span className="mb-0.5 block text-[var(--inno-text-muted)]">{t("profile.misconceptions.repair")}</span>
+				<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.misconceptions.repair")}</span>
 				<textarea
-					className="h-16 w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+					className="h-16 w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
 					value={draft.repair}
 					onChange={(e) => {
 						setDraft({ ...draft, repair: e.target.value });
@@ -739,10 +801,10 @@ function MisconceptionRow({ item }: { item: Misconception }) {
 			</label>
 			{dirty ? (
 				<div className="mt-2 flex justify-end gap-2">
-					<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1 text-xs text-[var(--inno-text-muted)]" onClick={() => setDirty(false)}>
+					<button className="rounded-lg bg-[var(--inno-surface)] px-3 py-1 text-xs text-[var(--inno-text-muted)]" onClick={() => setDirty(false)}>
 						{t("common.cancel")}
 					</button>
-					<button className="rounded-md inno-primary-button px-3 py-1 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void save()}>
+					<button className="rounded-lg inno-primary-button px-3 py-1 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void save()}>
 						{saving ? t("common.saving") : t("common.save")}
 					</button>
 				</div>
@@ -788,10 +850,10 @@ function PreferencesSection() {
 			</div>
 			{dirty ? (
 				<div className="mt-3 flex justify-end gap-2">
-					<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)]" onClick={() => setDirty(false)}>
+					<button className="rounded-lg bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)]" onClick={() => setDirty(false)}>
 						{t("common.cancel")}
 					</button>
-					<button className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50" disabled={state.isSaving} onClick={() => void save()}>
+					<button className="rounded-lg inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50" disabled={state.isSaving} onClick={() => void save()}>
 						{state.isSaving ? t("common.saving") : t("common.save")}
 					</button>
 				</div>
@@ -818,13 +880,13 @@ function ChipInput({ label, values, onChange, placeholder }: { label: string; va
 				{values.map((v) => (
 					<span key={v} className="inline-flex items-center gap-1 rounded-full bg-[var(--inno-accent-soft)] px-2 py-0.5 text-xs text-[var(--inno-accent)]">
 						{v}
-						<button className="text-[var(--inno-accent)] hover:text-[var(--inno-accent)]" onClick={() => onChange(values.filter((x) => x !== v))}>
+						<button className="text-[var(--inno-accent)]" onClick={() => onChange(values.filter((x) => x !== v))}>
 							×
 						</button>
 					</span>
 				))}
 				<input
-					className="min-w-[120px] flex-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 text-xs focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+					className="min-w-[120px] flex-1 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 text-xs focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
 					placeholder={placeholder}
 					value={input}
 					onChange={(e) => setInput(e.target.value)}
@@ -854,19 +916,20 @@ export function LearnerProfilePanel() {
 	}, []);
 
 	return (
-		<div className="h-full overflow-y-auto p-3">
-			<div className="flex flex-col gap-3">
-				<div className="flex items-center justify-between rounded-lg bg-[var(--inno-surface)] px-4 py-3">
-					<div>
-						<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("profile.title")}</h3>
-						<p className="text-xs text-[var(--inno-text-muted)]">{t("profile.subtitle")}</p>
+		<div className="h-full overflow-y-auto">
+			<div className="mx-auto flex w-full max-w-[860px] flex-col gap-4 px-5 pb-8 pt-2.5">
+				<div className="flex items-start justify-between gap-3 pb-1">
+					<div className="text-[12.5px] leading-relaxed text-[var(--inno-text-subtle)]">
+						<p>{t("profile.subtitle")}</p>
 						{state.profile ? (
-							<p className="mt-1 text-xs text-[var(--inno-text-muted)]">
-								{t("profile.version", { version: state.profile.version, updated: formatDate(state.profile.updated_at) })}
-							</p>
+							<p>{t("profile.version", { version: state.profile.version, updated: formatDate(state.profile.updated_at) })}</p>
 						) : null}
 					</div>
-					<button className="rounded-md px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void learnerStore.load()}>
+					<button
+						className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] inno-primary-button px-4 py-2 text-[13px] text-white"
+						onClick={() => void learnerStore.load()}
+					>
+						<RefreshCw size={14} />
 						{t("profile.refresh")}
 					</button>
 				</div>
@@ -878,7 +941,7 @@ export function LearnerProfilePanel() {
 					</div>
 				) : null}
 
-				{state.error ? <div className="rounded bg-[var(--inno-danger-bg)] p-2 text-sm text-[var(--inno-danger)]">{state.error}</div> : null}
+				{state.error ? <div className="rounded-lg bg-[var(--inno-danger-bg)] p-2 text-sm text-[var(--inno-danger)]">{state.error}</div> : null}
 
 				{state.profile ? (
 					<>

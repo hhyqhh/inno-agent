@@ -41,31 +41,46 @@
 	--text-lg: var(--inno-font-size-body-lg);
 	--text-lg--line-height: var(--inno-line-height-body-lg);
 
-	--inno-background: #f6f8fa;
+	--inno-background: #ffffff;
 	--inno-surface: #ffffff;
-	--inno-surface-muted: #eef2f6;
-	--inno-surface-raised: #fbfcfd;
-	--inno-sidebar-bg: #f0f3f6;
-	--inno-sidebar-active: #e6ebf0;
+	--inno-surface-muted: #f1f4f9;
+	--inno-surface-raised: #fbfcfe;
+	--inno-sidebar-bg: #f8fafd;
+	--inno-sidebar-active: #dde3ea;
 	--inno-chat-bg: #ffffff;
-	--inno-workspace-bg: #f6f8fa;
-	--inno-workspace-chrome: #eef2f6;
-	--inno-border: #d1d9e0;
-	--inno-border-strong: #bdc6cf;
-	--inno-text: #1f2328;
-	--inno-text-muted: #59636e;
-	--inno-text-subtle: #8c959f;
-	--inno-accent: #34363a;
-	--inno-accent-soft: #eaeef2;
-	--inno-tech: #111827;
-	--inno-success: #16a34a;
-	--inno-warning: #d97706;
-	--inno-danger: #dc2626;
+	--inno-workspace-bg: #f8fafd;
+	--inno-workspace-chrome: #f1f4f9;
+	--inno-border: #e5e9f0;
+	--inno-border-strong: #d5dae2;
+	--inno-text: #1f1f1f;
+	--inno-text-muted: #444746;
+	--inno-text-subtle: #5f6368;
+	--inno-accent: #0b57d0;
+	--inno-accent-soft: #e8f0fe;
+	--inno-tech: #0b57d0;
+	--inno-success: #137333;
+	--inno-warning: #b06000;
+	--inno-danger: #c5221f;
 	--inno-workspace-width: 520px;
-	--inno-shadow-soft: 0 1px 2px rgba(31, 35, 40, 0.04), 0 10px 28px rgba(31, 35, 40, 0.04);
-	--inno-ring: 0 0 0 3px rgba(52, 54, 58, 0.14);
-	--inno-selection-bg: rgba(52, 54, 58, 0.12);
+	--inno-shadow-soft: 0 1px 2px rgba(60, 64, 67, 0.06), 0 8px 24px rgba(60, 64, 67, 0.08);
+	--inno-ring: 0 0 0 3px rgba(11, 87, 208, 0.14);
+	--inno-selection-bg: rgba(11, 87, 208, 0.12);
 	--inno-grid-color: rgba(31, 35, 40, 0.025);
+
+	/* Brand & decorative tokens (InnoSpark harness design language) */
+	--inno-brand-1: #6b93ff;
+	--inno-brand-2: #584cff;
+	--inno-glow-1: rgba(168, 199, 250, 0.55);
+	--inno-glow-2: rgba(198, 218, 251, 0.35);
+	--inno-glow-3: rgba(230, 240, 254, 0.18);
+	--inno-user-bubble-bg: #e9eef6;
+	--inno-card-bg: #ffffff;
+	--inno-chip-bg: #f1f4f9;
+	/* Send button: near-black circle in light, inverted in dark. */
+	--inno-send-bg: #1f1f1f;
+	--inno-send-fg: #ffffff;
+	--inno-send-bg-hover: #000000;
+	--inno-shadow-composer: 0 1px 3px rgba(60, 64, 67, 0.18), 0 4px 12px rgba(60, 64, 67, 0.10);
 
 	/* Transition tokens — custom cubic-bezier per Emil's design engineering.
 	   `ease`/`ease-in` feel sluggish; these give punchy, responsive motion. */
@@ -1366,7 +1381,9 @@ inno-app-shell {
 	top: 50%;
 	bottom: -12px;
 	z-index: 0;
-	background: var(--inno-chat-bg);
+	/* Fade the mask's top edge so scrolled text dissolves instead of hard-clipping
+	   at the composer lane (InnoSpark composer-bottom treatment). */
+	background: linear-gradient(to bottom, transparent, var(--inno-chat-bg) 32%);
 	pointer-events: none;
 }
 
@@ -1583,8 +1600,8 @@ inno-workspace-panel textarea {
 	padding: 0 !important;
 }
 
-/* PI process timeline: intentionally containerless so the conversation reads
-   like a sequence of lightweight status rows rather than nested bubbles. */
+/* PI process timeline: process rows group into bordered steps cards while
+   assistant text keeps its normal body position between cards. */
 .inno-trace-timeline {
 	width: 100%;
 	min-width: 0;
@@ -1598,8 +1615,7 @@ inno-workspace-panel textarea {
 	align-items: center;
 	gap: 6px;
 	min-width: 0;
-	padding: 5px 0 10px;
-	border-bottom: 1px solid var(--inno-border);
+	padding: 2px 0 10px;
 	color: var(--inno-text-subtle);
 	font-size: 12px;
 	font-variant-numeric: tabular-nums;
@@ -1638,13 +1654,38 @@ inno-workspace-panel textarea {
 	margin: 8px 0 16px;
 }
 
+/* Steps card (InnoSpark anatomy): consecutive process rows group into one
+   bordered card — the first row in a run rounds the top, the last rounds the
+   bottom and closes the border. Text bodies between rows break the run into
+   separate cards, matching the mockup's steps-card placement between agent
+   paragraphs. */
 .inno-trace-row {
 	min-width: 0;
-	border-bottom: 1px solid color-mix(in srgb, var(--inno-border) 62%, transparent);
+	padding: 0 14px;
+	border: 1px solid var(--inno-border);
+	border-bottom: none;
+	background: var(--inno-card-bg);
+}
+
+.inno-trace-row + .inno-trace-row {
+	border-top: 1px solid color-mix(in srgb, var(--inno-border) 62%, transparent);
+}
+
+.inno-trace-row:not(.inno-trace-row + .inno-trace-row) {
+	border-radius: 14px 14px 0 0;
+}
+
+.inno-trace-row:not(:has(+ .inno-trace-row)) {
+	border-bottom: 1px solid var(--inno-border);
+	border-radius: 0 0 14px 14px;
+	margin-bottom: 4px;
+}
+
+.inno-trace-row:not(.inno-trace-row + .inno-trace-row):not(:has(+ .inno-trace-row)) {
+	border-radius: 14px;
 }
 
 .inno-trace-row.is-system {
-	border-bottom-color: transparent;
 	color: var(--inno-text-subtle);
 	font-size: 12px;
 }
@@ -1660,7 +1701,7 @@ inno-workspace-panel textarea {
 	width: 100%;
 	min-width: 0;
 	min-height: 34px;
-	padding: 8px 0;
+	padding: 10px 0;
 	border: 0;
 	background: transparent;
 	color: inherit;
@@ -2026,18 +2067,84 @@ inno-workspace-panel textarea {
 	box-shadow: var(--inno-ring);
 }
 
+/* The composer root is an unstyled stack: the rounded card plus the sub-pill
+   row beneath it. ChatCenter measures this root for the conversation bottom
+   space, so the pills count toward the covered area. */
 .inno-composer {
 	display: flex;
 	flex-direction: column;
+	gap: 10px;
+}
+
+.inno-composer-card {
+	display: flex;
+	flex-direction: column;
 	border: 1px solid var(--inno-border);
+	border-radius: 28px;
 	background: var(--inno-surface);
-	box-shadow: var(--inno-shadow-soft);
+	box-shadow: var(--inno-shadow-composer);
 	transition: border-color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out);
 }
 
-.inno-composer:focus-within {
+.inno-composer-card:focus-within {
 	border-color: var(--inno-focus-border);
-	box-shadow: var(--inno-ring);
+	box-shadow: var(--inno-shadow-composer), var(--inno-ring);
+}
+
+/* Sub-pill row below the card (InnoSpark composer-sub): workspace, permission,
+   smart input and model selectors as small floating pills. */
+.inno-composer-subrow {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 0 4px;
+}
+
+.inno-composer-subpill {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	border: 1px solid var(--inno-border);
+	border-radius: 15px;
+	background: var(--inno-surface);
+	padding: 5px 13px;
+	font-size: 12.5px;
+	color: var(--inno-text-muted);
+	box-shadow: 0 1px 2px color-mix(in srgb, var(--inno-text) 8%, transparent);
+	cursor: pointer;
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), border-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-composer-subpill:hover:not(:disabled) {
+	background: var(--inno-surface-muted);
+	border-color: var(--inno-border-strong);
+	color: var(--inno-text);
+}
+
+/* Yolo (完全权限) reads as a red "full access" pill in both themes. */
+.inno-composer-subpill.is-perm-full {
+	background: var(--inno-danger-bg);
+	border-color: color-mix(in srgb, var(--inno-danger) 32%, transparent);
+	color: var(--inno-danger);
+}
+
+/* The model trigger joins the subrow as one more pill. */
+.inno-composer-subrow .inno-composer-model-trigger {
+	height: auto;
+	border: 1px solid var(--inno-border);
+	border-radius: 15px;
+	background: var(--inno-surface);
+	padding: 5px 13px;
+	font-size: 12.5px;
+	color: var(--inno-text-muted);
+	box-shadow: 0 1px 2px color-mix(in srgb, var(--inno-text) 8%, transparent);
+}
+
+.inno-composer-subrow .inno-composer-model-trigger:hover:not(:disabled),
+.inno-composer-subrow .inno-composer-model-trigger[aria-expanded="true"] {
+	background: var(--inno-surface-muted);
+	border-color: var(--inno-border-strong);
+	color: var(--inno-text);
 }
 
 .inno-composer-textarea {
@@ -2357,16 +2464,6 @@ inno-workspace-panel textarea {
 	cursor: pointer;
 }
 
-/* Workspace context selector — intentionally sits outside the composer so
-   workspace choice reads as session context, not as another input control. */
-.inno-workspace-context-row {
-	display: flex;
-	flex-wrap: wrap;
-	min-width: 0;
-	align-items: center;
-	gap: 8px;
-	min-height: 36px;
-}
 
 /* Center label text with the Beta badge on one flex line so the badge never
    shifts the button content off the container's vertical center. */
@@ -2593,24 +2690,25 @@ inno-workspace-panel textarea {
 .inno-workspace-switcher-trigger {
 	display: inline-flex;
 	max-width: min(100%, 320px);
-	height: 36px;
 	align-items: center;
-	gap: 7px;
-	padding: 0 10px;
-	border: 0;
-	border-radius: 9px;
-	background: transparent;
+	gap: 6px;
+	padding: 5px 13px;
+	border: 1px solid var(--inno-border);
+	border-radius: 15px;
+	background: var(--inno-surface);
+	box-shadow: 0 1px 2px color-mix(in srgb, var(--inno-text) 8%, transparent);
 	color: var(--inno-text-muted);
-	font-size: 13px;
+	font-size: 12.5px;
 	font-weight: 500;
 	text-align: left;
 	cursor: pointer;
-	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), border-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
 }
 
 .inno-workspace-switcher-trigger:hover:not(:disabled),
 .inno-workspace-switcher-trigger[aria-expanded="true"] {
 	background: var(--inno-surface-muted);
+	border-color: var(--inno-border-strong);
 	color: var(--inno-text);
 }
 
@@ -2944,13 +3042,13 @@ inno-workspace-panel textarea {
 
 .inno-composer-send {
 	border: 0;
-	background: var(--inno-accent);
-	color: #ffffff;
+	background: var(--inno-send-bg);
+	color: var(--inno-send-fg);
 	box-shadow: var(--inno-shadow-soft);
 }
 
 .inno-composer-send:hover:not(:disabled):not(.is-disabled) {
-	background: var(--inno-tech);
+	background: var(--inno-send-bg-hover);
 	box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
 }
 
@@ -3073,10 +3171,6 @@ inno-workspace-panel textarea {
 	white-space: nowrap;
 }
 
-.inno-workspace-tab {
-	font-size: 11px;
-	line-height: 1;
-}
 
 .inno-stream-status-dot {
 	display: inline-block;
@@ -3205,10 +3299,6 @@ inno-workspace-panel textarea {
 	white-space: normal;
 }
 
-.inno-workspace-scope .inno-workspace-tab {
-	font-size: 11px;
-	line-height: 1;
-}
 
 .inno-sidebar-title {
 	font-size: 12px;
@@ -3351,129 +3441,6 @@ inno-workspace-panel textarea {
 	box-shadow: none;
 }
 
-/* InnoSpark theme: inspired by agent.aiecnu.net's public chat UI. */
-:root[data-theme="innospark"] body {
-	background: var(--inno-background);
-}
-
-:root[data-theme="innospark"] .app-layout {
-	background: var(--inno-background);
-	box-shadow: inset 0 2px 0 rgba(85, 90, 255, 0.48);
-}
-
-:root[data-theme="innospark"] .app-layout::before {
-	background:
-		linear-gradient(120deg, transparent 0 30%, rgba(85, 90, 255, 0.025) 30.2% 30.8%, transparent 31% 100%),
-		linear-gradient(155deg, transparent 0 56%, rgba(85, 90, 255, 0.018) 56.2% 56.7%, transparent 57% 100%);
-	background-size: 560px 280px, 760px 360px;
-	mask-image: linear-gradient(to right, rgba(0, 0, 0, 0.38), transparent 42%, transparent 100%);
-}
-
-:root[data-theme="innospark"] .inno-chat-grid {
-	background: var(--inno-chat-bg);
-}
-
-:root[data-theme="innospark"] .inno-chat-grid {
-	background-image: none;
-}
-
-:root[data-theme="innospark"] .inno-sidebar-scope header,
-:root[data-theme="innospark"] .inno-sidebar-scope [class*="border-b"] {
-	border-color: rgba(85, 90, 255, 0.1);
-}
-
-:root[data-theme="innospark"] .inno-sidebar-scope [role="button"],
-:root[data-theme="innospark"] .inno-sidebar-scope button {
-	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), border-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out), transform var(--inno-dur-fast) var(--inno-ease-out);
-}
-
-:root[data-theme="innospark"] .inno-sidebar-scope [role="button"]:hover,
-:root[data-theme="innospark"] .inno-sidebar-scope button:hover:not(:disabled):not(.inno-channel-filter-chip):not(.inno-primary-button):not(.inno-sidebar-workspace-button) {
-	background: rgba(255, 255, 255, 0.86);
-	box-shadow: 0 1px 2px rgba(85, 90, 255, 0.05);
-}
-
-:root[data-theme="innospark"] .inno-sidebar-scope [role="button"]:active,
-:root[data-theme="innospark"] .inno-sidebar-scope button:active:not(:disabled) {
-	transform: scale(0.97);
-}
-
-:root[data-theme="innospark"] .inno-sidebar-title,
-:root[data-theme="innospark"] .inno-workspace-tab,
-:root[data-theme="innospark"] h1,
-:root[data-theme="innospark"] h2 {
-	color: var(--inno-text);
-}
-
-:root[data-theme="innospark"] .inno-chat-grid h1,
-:root[data-theme="innospark"] .inno-chat-grid h2 {
-	color: var(--inno-accent);
-	text-shadow: 0 8px 22px rgba(85, 90, 255, 0.12);
-}
-
-:root[data-theme="innospark"] .inno-composer {
-	border: 2px solid rgba(85, 90, 255, 0.25);
-	border-radius: 22px;
-	background: var(--inno-surface);
-	box-shadow: 0 2px 4px rgba(85, 90, 255, 0.08), 0 10px 28px rgba(85, 90, 255, 0.1);
-	transition: border-color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out);
-}
-
-:root[data-theme="innospark"] .inno-composer:focus-within {
-	border-color: rgba(85, 90, 255, 0.36);
-	box-shadow: 0 3px 8px rgba(85, 90, 255, 0.1), 0 14px 34px rgba(85, 90, 255, 0.14);
-}
-
-:root[data-theme="innospark"] .inno-composer textarea {
-	color: var(--inno-text);
-}
-
-:root[data-theme="innospark"] .inno-icon-button,
-:root[data-theme="innospark"] .inno-composer button:not(.inno-composer-model-trigger):not(.inno-composer-model-option):not(.inno-composer-model-manage) {
-	border-radius: 999px;
-}
-
-:root[data-theme="innospark"] .inno-composer button[title="Send"],
-:root[data-theme="innospark"] .inno-composer button[title="Stop generation"],
-:root[data-theme="innospark"] .inno-composer .inno-composer-send:not(.is-disabled),
-:root[data-theme="innospark"] .inno-composer .inno-composer-stop {
-	background: var(--inno-accent);
-	color: #ffffff;
-	box-shadow: 0 6px 18px rgba(85, 90, 255, 0.22);
-}
-
-:root[data-theme="innospark"] .inno-composer button[title="Send"]:hover:not(:disabled),
-:root[data-theme="innospark"] .inno-composer button[title="Stop generation"]:hover:not(:disabled),
-:root[data-theme="innospark"] .inno-composer .inno-composer-send:hover:not(:disabled):not(.is-disabled),
-:root[data-theme="innospark"] .inno-composer .inno-composer-stop:hover:not(:disabled) {
-	background: #474cf2;
-}
-
-:root[data-theme="innospark"] .inno-composer .inno-composer-send:not(.is-disabled) {
-	background: var(--inno-accent);
-	color: #ffffff;
-	box-shadow: 0 4px 12px rgba(85, 90, 255, 0.2);
-}
-
-:root[data-theme="innospark"] .inno-composer .inno-composer-send:hover:not(:disabled):not(.is-disabled) {
-	background: var(--inno-tech);
-}
-
-:root[data-theme="innospark"] .inno-message {
-	border-radius: 22px;
-	box-shadow: none;
-}
-
-:root[data-theme="innospark"] .justify-end .inno-user-message {
-	border-radius: 16px 16px 0 16px;
-	border-color: transparent;
-	background: var(--inno-accent-soft);
-}
-
-:root[data-theme="innospark"] .justify-start > details.inno-message {
-	border-color: rgba(85, 90, 255, 0.16);
-	background: rgba(255, 255, 255, 0.7);
-}
 
 @media (max-width: 960px) {
 	.app-layout--workspace-half {
@@ -3487,33 +3454,6 @@ inno-workspace-panel textarea {
 	}
 }
 
-/* Settings lives in a resizable workspace panel, so its responsive layout
-   must follow the panel width rather than the browser viewport width. */
-.settings-panel {
-	container: settings-panel / inline-size;
-}
-
-.settings-stats-grid {
-	grid-template-columns: minmax(0, 1fr);
-}
-
-@container settings-panel (min-width: 30rem) {
-	.settings-stats-grid {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-	}
-}
-
-@container settings-panel (min-width: 40rem) {
-	.settings-panel-header {
-		align-items: center;
-		flex-direction: row;
-		justify-content: space-between;
-	}
-
-	.settings-panel-controls {
-		flex-wrap: nowrap;
-	}
-}
 
 /* Sidebar scrollbar */
 .sidebar-scroll {
@@ -3553,22 +3493,6 @@ inno-workspace-panel textarea {
 	}
 }
 
-/* Flip-card 3D — shared by ChatCenter (switch-workspace) and SessionSidebar.
-   Replaces duplicated inline style={{ transformStyle, backfaceVisibility }}. */
-.flip-card-scene {
-	perspective: 600px;
-}
-.flip-card {
-	transform-style: preserve-3d;
-	position: relative;
-}
-.flip-card-face {
-	backface-visibility: hidden;
-}
-.flip-card-back {
-	backface-visibility: hidden;
-	transform: rotateY(180deg);
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Smart input (便捷输入) — keyword bubbles + structured file bindings.
@@ -3768,7 +3692,7 @@ button.inno-smart-ref-chip:hover {
 }
 
 /* ── OS-file drag-over affordance on the composer ── */
-.inno-composer.is-osfile-over {
+.inno-composer-card.is-osfile-over {
 	border-color: color-mix(in srgb, var(--inno-success) 45%, transparent);
 	box-shadow: 0 0 0 3px color-mix(in srgb, var(--inno-success) 12%, transparent);
 }

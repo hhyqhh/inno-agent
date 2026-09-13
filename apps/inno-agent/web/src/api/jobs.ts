@@ -1,5 +1,5 @@
-import { apiFetch } from "./client.js";
-import type { ScheduledJob, CreateJobInput } from "../types/jobs.js";
+import { apiFetch, streamSSE } from "./client.js";
+import type { CreateJobInput, JobRunResult, JobRunStreamEvent, ScheduledJob } from "../types/jobs.js";
 
 export async function listJobs(): Promise<ScheduledJob[]> {
 	return apiFetch<ScheduledJob[]>("/api/jobs");
@@ -23,6 +23,18 @@ export async function deleteJob(id: string): Promise<void> {
 	await apiFetch(`/api/jobs/${id}`, { method: "DELETE" });
 }
 
-export async function runJob(id: string): Promise<{ response: string }> {
-	return apiFetch<{ response: string }>(`/api/jobs/${id}/run`, { method: "POST" });
+export function streamJobRun(id: string, sessionId: string, signal?: AbortSignal, occurrenceId?: string): AsyncGenerator<JobRunStreamEvent> {
+	return streamSSE<JobRunStreamEvent>(
+		`/api/jobs/${encodeURIComponent(id)}/run/stream`,
+		{ sessionId, occurrenceId: occurrenceId || undefined },
+		signal,
+	);
+}
+
+/** Ask the server to abort the in-flight manual job run for a session. */
+export async function stopJobRun(sessionId: string): Promise<void> {
+	await apiFetch(`/api/jobs/run/stop`, {
+		method: "POST",
+		body: JSON.stringify({ sessionId }),
+	});
 }

@@ -30,8 +30,21 @@ export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 	libraryError: string | null = null;
 	/** Names currently being imported (for per-row spinners). */
 	importing = new Set<string>();
+	/** Transient success notice (e.g. library import finished); auto-clears. */
+	notice: string | null = null;
+	private noticeTimer: ReturnType<typeof setTimeout> | null = null;
 	private treeRequestId = 0;
 	private fileRequestId = 0;
+
+	private showNotice(message: string) {
+		this.notice = message;
+		if (this.noticeTimer !== null) clearTimeout(this.noticeTimer);
+		this.noticeTimer = setTimeout(() => {
+			this.notice = null;
+			this.noticeTimer = null;
+			this.emit("change", undefined);
+		}, 3000);
+	}
 
 	async load() {
 		this.isLoading = true;
@@ -128,6 +141,7 @@ export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 			const skill = await importSkillFromLibrary(name);
 			this.skills = [skill, ...this.skills.filter((item) => item.name !== skill.name)].sort((a, b) => a.name.localeCompare(b.name));
 			this.library = this.library.map((item) => (item.name === name ? { ...item, installed: true } : item));
+			this.showNotice(skill.name);
 		} catch (err) {
 			this.libraryError = err instanceof Error ? err.message : "Failed to import skill";
 		} finally {

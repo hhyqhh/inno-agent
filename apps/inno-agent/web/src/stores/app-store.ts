@@ -1,8 +1,14 @@
 import { EventEmitter } from "./event-emitter.js";
 import { fitPanelLayout } from "./app-layout.js";
 
-export type RightPanelTab = "notebook" | "preview" | "profile" | "skills" | "jobs";
-export type SidebarSection = "chat" | "wiki" | "jobs" | "settings";
+/**
+ * The right panel only hosts the artifact/file browser now — notebook,
+ * profile, skills and jobs graduated to full pages in the workbench nav.
+ * The type remains so legacy call sites keep compiling until Phase 11.
+ */
+export type RightPanelTab = "preview";
+/** Top-level main-area pages (new IA): chat plus the workbench feature pages. */
+export type AppPage = "chat" | "notebook" | "skills" | "learner" | "jobs";
 export type WorkspaceMode = "collapsed" | "quarter" | "half" | "full";
 export type SettingsTab = "general" | "lab" | "models" | "memory" | "integrations" | "channels" | "mcp" | "about";
 
@@ -10,21 +16,66 @@ interface AppStoreEvents {
 	change: void;
 }
 
-const VALID_TABS: RightPanelTab[] = ["notebook", "preview", "profile", "skills", "jobs"];
-// Legacy values mapped to current ones.
-const TAB_ALIASES: Record<string, RightPanelTab> = {
+const VALID_PAGES: AppPage[] = ["chat", "notebook", "skills", "learner", "jobs"];
+
+/**
+ * Legacy `?tab=` deep links that now resolve to full pages instead of right
+ * panel tabs (page-based IA). `preview` stays a panel tab, `settings` opens
+ * the settings overlay — both handled separately.
+ */
+const TAB_TO_PAGE: Record<string, AppPage> = {
+	notebook: "notebook",
 	wiki: "notebook",
 	graph: "notebook",
+	skills: "skills",
+	profile: "learner",
+	jobs: "jobs",
 };
 
+/** Pure URL parsing for the initial page — exported for tests. */
+export function pageFromSearch(search: string): AppPage {
+	const params = new URLSearchParams(search);
+	const page = params.get("page");
+	if (page && (VALID_PAGES as string[]).includes(page)) return page as AppPage;
+	const tab = params.get("tab");
+	if (tab && TAB_TO_PAGE[tab]) return TAB_TO_PAGE[tab];
+	return "chat";
+}
+
 class AppStoreImpl extends EventEmitter<AppStoreEvents> {
-	rightPanelTab: RightPanelTab = getInitialRightPanelTab();
-	sidebarSection: SidebarSection = "chat";
+	page: AppPage = getInitialPage();
+	rightPanelTab: RightPanelTab = "preview";
 	sidebarCollapsed = false;
 	workspaceMode: WorkspaceMode = "collapsed";
 	workspaceWidth = getInitialWorkspaceWidth();
 	settingsOpen = getInitialSettingsOpen();
 	activeSettingsTab: SettingsTab = "general";
+
+	/**
+	 * Switch the main-area page. Feature pages own the whole center column, so
+	 * the right workspace panel only makes sense on the chat page — its mode is
+	 * left untouched here and simply not rendered while a feature page is
+	 * active (App.tsx), so returning to chat restores the previous layout.
+	 */
+	setPage(page: AppPage, historyMode: "push" | "replace" | "none" = "push") {
+		if (this.page === page && historyMode === "none") return;
+		this.page = page;
+		this.syncPageUrl(page, historyMode);
+		this.emit("change", undefined);
+	}
+
+	private syncPageUrl(page: AppPage, mode: "push" | "replace" | "none") {
+		if (mode === "none" || typeof window === "undefined") return;
+		const nextUrl = new URL(window.location.href);
+		if (page === "chat") nextUrl.searchParams.delete("page");
+		else nextUrl.searchParams.set("page", page);
+		// The ?tab= form is superseded by ?page= — drop it to keep URLs canonical.
+		if (TAB_TO_PAGE[nextUrl.searchParams.get("tab") ?? ""]) nextUrl.searchParams.delete("tab");
+		const current = new URL(window.location.href);
+		if (nextUrl.href === current.href) return;
+		if (mode === "push") window.history.pushState({}, "", nextUrl);
+		else window.history.replaceState({}, "", nextUrl);
+	}
 
 	openSettings(tab: SettingsTab = "general") {
 		this.settingsOpen = true;
@@ -47,11 +98,6 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 	setRightPanelTab(tab: RightPanelTab) {
 		if (this.rightPanelTab === tab) return;
 		this.rightPanelTab = tab;
-		this.emit("change", undefined);
-	}
-
-	setSidebarSection(section: SidebarSection) {
-		this.sidebarSection = section;
 		this.emit("change", undefined);
 	}
 
@@ -149,12 +195,9 @@ function getInitialWorkspaceWidth(): number {
 	return Number.isFinite(saved) && saved > 0 ? Math.max(320, Math.min(920, Math.round(saved))) : 520;
 }
 
-function getInitialRightPanelTab(): RightPanelTab {
-	if (typeof window === "undefined") return "preview";
-	const tab = new URLSearchParams(window.location.search).get("tab");
-	if (tab && TAB_ALIASES[tab]) return TAB_ALIASES[tab];
-	if (tab && (VALID_TABS as string[]).includes(tab)) return tab as RightPanelTab;
-	return "preview";
+function getInitialPage(): AppPage {
+	if (typeof window === "undefined") return "chat";
+	return pageFromSearch(window.location.search);
 }
 
 function getInitialSettingsOpen(): boolean {

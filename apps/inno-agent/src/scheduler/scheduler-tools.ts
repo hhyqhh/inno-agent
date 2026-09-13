@@ -6,17 +6,18 @@ import type { ScheduledJob } from "./types.js";
 import type { ChannelRegistry } from "../channels/channel.js";
 import { executeJob } from "./job-runner.js";
 import { validateCron } from "./cron-utils.js";
+import type { CheckInStore } from "../checkins/check-in-store.js";
 
 /**
  * Create scheduler tools that allow the agent to manage scheduled jobs.
  * Works in both CLI and server contexts.
  */
-export function createSchedulerTools(jobStore: JobStore, channelRegistry?: ChannelRegistry): ToolDefinition[] {
+export function createSchedulerTools(jobStore: JobStore, channelRegistry?: ChannelRegistry, checkInStore?: CheckInStore): ToolDefinition[] {
 	const createJobTool = defineTool({
 		name: "create_scheduled_job",
 		label: "Create Scheduled Job",
 		description:
-			"创建一个定时任务。用户说「每天晚上9点提醒我复习」或「设置一个每周总结」时调用。cron 表达式示例：'0 21 * * *' 表示每天21:00，'0 9 * * 1' 表示每周一9:00。",
+			"创建一个定时任务。用户说「每天晚上9点提醒我复习」「每天提醒我打卡」或「设置一个每周总结」时调用。check_in_reminder 会在用户当天已完成全部学习计划后自动跳过提醒，学习打卡本身由今日学习任务的成功执行自动完成。cron 表达式示例：'0 21 * * *' 表示每天21:00，'0 9 * * 1' 表示每周一9:00。",
 		parameters: Type.Object({
 			name: Type.String({ description: "任务名称" }),
 			cron: Type.String({ description: "Cron 表达式，如 '0 21 * * *'" }),
@@ -25,6 +26,7 @@ export function createSchedulerTools(jobStore: JobStore, channelRegistry?: Chann
 				"weekly_summary",
 				"learner_profile_reflection",
 				"spaced_review",
+				"check_in_reminder",
 				"push_reminder",
 				"custom_prompt",
 			] as const, { description: "任务类型" }),
@@ -187,7 +189,7 @@ export function createSchedulerTools(jobStore: JobStore, channelRegistry?: Chann
 				};
 			}
 
-			const result = await executeJob(job, jobStore, channelRegistry, "manual");
+			const result = await executeJob(job, jobStore, channelRegistry, "manual", checkInStore);
 			return {
 				content: [{
 					type: "text" as const,

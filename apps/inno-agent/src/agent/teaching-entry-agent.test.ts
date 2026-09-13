@@ -170,6 +170,10 @@ describe("teaching entry gate through a real AgentSession", () => {
 			providers: {},
 			memory: { l1Enabled: true, l2Enabled: true, l3Enabled: false },
 			subagents: { enabled: false },
+			// Scripted mock-provider harness: the permission gate resolves its config
+			// via PI_CODING_AGENT_DIR (unset here), not this tmp configDir, so it
+			// would ask-gate (and headless-deny) every scripted tool call.
+			plugins: { permissionSystem: { enabled: false } },
 		};
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: paths.workspaceDir,

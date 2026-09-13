@@ -26,6 +26,7 @@ import {
 	getWebAccessSettingsView,
 	updateWebAccessSettings,
 } from "../../agent/web-access-config.js";
+import { writePermissionPolicyConfig } from "../../agent/permission-system-config.js";
 import {
 	deleteManagedServer,
 	getMcpOverview,
@@ -415,16 +416,30 @@ export async function handleSettingsRoutes(
 		return true;
 	}
 
-	// --- Simple Mode toggle (streamlined experience: force-locks memory off
-	// at runtime and hides notebook/profile tabs; does not touch memory config) ---
-	if (method === "PUT" && url === "/api/settings/simple-mode") {
+	// --- Permission policy mode (default / auto / yolo). Rewrites the plugin's
+	// config file from the managed template, then triggers a resources reload —
+	// the plugin re-reads its config on resources_discover, so the switch takes
+	// effect without a server restart. ---
+	if (method === "PUT" && url === "/api/settings/permissions") {
 		const body = (await readBody(req)) as Record<string, unknown>;
-		if (typeof body.enabled !== "boolean") {
-			json(res, 400, { error: "enabled must be a boolean" });
+		const mode = body.mode;
+		if (mode !== "default" && mode !== "auto" && mode !== "yolo") {
+			json(res, 400, { error: "mode must be one of: default, auto, yolo" });
 			return true;
 		}
-		config.simpleMode = { enabled: body.enabled };
+		config.plugins = {
+			...config.plugins,
+			permissionSystem: { ...config.plugins?.permissionSystem, mode },
+		};
 		save(saveConfig(paths.configPath, config));
+		try {
+			writePermissionPolicyConfig(paths.configDir, mode);
+		} catch (err) {
+			logger.warn({ err }, "failed to write permission policy config");
+			json(res, 500, { error: "Failed to write permission policy config" });
+			return true;
+		}
+		ctx.scheduleSkillsReload();
 		syncConfig(config);
 		json(res, 200, buildSafeSettings(config));
 		return true;
@@ -634,7 +649,9 @@ export async function handleSettingsRoutes(
 	if (method === "PUT" && url === "/api/settings/theme") {
 		const body = (await readBody(req)) as Record<string, unknown>;
 		const theme = typeof body.theme === "string" ? body.theme.trim() : "";
-		const ALLOWED_THEMES = ["light", "warm", "ocean", "innospark"];
+		// Legacy values (warm/ocean/innospark) stay accepted so older clients do
+		// not break; the web UI normalizes them to "light" on read.
+		const ALLOWED_THEMES = ["light", "dark", "warm", "ocean", "innospark"];
 		if (!ALLOWED_THEMES.includes(theme)) {
 			json(res, 400, { error: `Invalid theme. Allowed: ${ALLOWED_THEMES.join(", ")}` });
 			return true;

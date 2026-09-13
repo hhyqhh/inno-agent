@@ -21,6 +21,23 @@
 			"profile": "学习者画像",
 			"skills": "技能",
 			"jobs": "定时任务"
+		},
+		"panelTitle": "工作区文件",
+		"fileCount": "{{count}} 个文件",
+		"filters": {
+			"all": "全部",
+			"docs": "文档",
+			"sheets": "表格",
+			"images": "图片"
+		},
+		"kind": {
+			"markdown": "Markdown",
+			"html": "HTML",
+			"pdf": "PDF",
+			"image": "图片",
+			"office": "Office",
+			"text": "文本",
+			"binary": "二进制"
 		}
 	},
 	"common": {
@@ -79,6 +96,18 @@
 		"exportShowcaseDone": "已导出回放案例「{{title}}」\n\n案例目录：{{dir}}\n运行 npm run showcase:view 打开回放界面。",
 		"exportShowcaseFailed": "导出回放案例失败：{{message}}"
 	},
+	"nav": {
+		"newChat": "新建会话",
+		"workbench": "工作台",
+		"notebook": "笔记本",
+		"skills": "技能仓库",
+		"learner": "学习者画像",
+		"jobs": "任务",
+		"workspaces": "工作区",
+		"theme": "主题",
+		"language": "语言",
+		"settings": "设置"
+	},
 	"notebook": {
 		"title": "笔记本",
 		"subtitle": "{{nodes}} 个节点 · {{edges}} 条连接",
@@ -95,8 +124,8 @@
 			"analysis": "分析"
 		},
 		"view": {
-			"graph": "图谱",
-			"page": "页面"
+			"graph": "知识图谱",
+			"page": "笔记"
 		},
 		"graph": {
 			"fit": "自适应",
@@ -264,7 +293,12 @@
 			"diagnosis": "诊断",
 			"diagnosisPlaceholder": "对当前掌握程度的诊断…",
 			"nextActions": "下一步动作",
-			"nextActionsPlaceholder": "每行一条…"
+			"nextActionsPlaceholder": "每行一条…",
+			"masteryState": {
+				"mastered": "已掌握",
+				"consolidating": "巩固中",
+				"needsReview": "待复习"
+			}
 		},
 		"misconceptions": {
 			"empty": "暂未发现误解，太棒了。",
@@ -290,6 +324,33 @@
 	"jobs": {
 		"title": "定时任务",
 		"subtitle": "自动复习、推送提醒等周期任务",
+		"todayCompleted": "今日已完成",
+		"todayProgress": "今日完成 {{completed}}/{{total}}",
+		"todayFailed": "今日有失败项",
+		"categories": {
+			"checkInRequired": "需要打卡的任务",
+			"notRequired": "不需要打卡的任务"
+		},
+		"checkIn": {
+			"title": "今日学习打卡",
+			"subtitle": "完成今日计划中的学习任务后自动打卡",
+			"progress": "今日完成 {{completed}}/{{total}} 个计划时段",
+			"noTasks": "今日暂无必做学习任务",
+			"autoCompleted": "今日学习打卡已完成！",
+			"failedCount": "{{count}} 个失败",
+			"slotSuccess": "已完成",
+			"slotPending": "待完成",
+			"slotFailed": "执行失败",
+			"slotSkipped": "已跳过",
+			"runNow": "立即执行",
+			"retry": "重试",
+			"skippedNote": "{{count}} 个已跳过时段不计入打卡要求",
+			"completed": "已完成",
+			"currentStreak": "当前连续",
+			"total": "累计天数",
+			"longestStreak": "最长连续",
+			"error": "操作失败：{{message}}"
+		},
 		"newJob": "新建",
 		"empty": "还没有定时任务。",
 		"lastRun": "上次运行：{{time}}",
@@ -302,6 +363,13 @@
 			"delete": "删除",
 			"enable": "启用",
 			"disable": "停用"
+		},
+		"chat": {
+			"completed": "定时任务「{{name}}」已完成。\n\n{{output}}",
+			"failed": "定时任务「{{name}}」执行失败：{{error}}",
+			"stopped": "任务已手动停止。已完成的部分保留在会话记录中。",
+			"noOutput": "任务已完成，但没有输出。",
+			"unknownError": "未知错误"
 		},
 		"lastResult": "最近运行结果：",
 		"form": {
@@ -349,6 +417,7 @@
 			"graphify_update": "图谱更新",
 			"learner_profile_reflection": "画像反思",
 			"spaced_review": "间隔复习",
+			"check_in_reminder": "打卡提醒",
 			"push_reminder": "推送提醒",
 			"custom_prompt": "自定义提示"
 		},
@@ -359,7 +428,10 @@
 			"timeRequired": "请选择时间",
 			"weekdayRequired": "请至少选择一个星期",
 			"dateRequired": "请选择执行日期",
-			"saveFailed": "保存失败：{{message}}"
+			"saveFailed": "保存失败：{{message}}",
+			"sessionCreateFailed": "无法创建用于显示任务结果的对话",
+			"sessionUnavailable": "当前对话暂时不可用，请稍后重试",
+			"jobNotFound": "未找到该任务的定义，可能已被删除"
 		},
 		"humanCron": {
 			"daily": "每天 {{time}}",
@@ -368,10 +440,17 @@
 			"monthly": "每月{{day}} {{time}}",
 			"monthlyLast": "每月最后一天 {{time}}",
 			"once": "{{date}} {{time}}"
+		},
+		"pending": {
+			"title": "定时任务「{{name}}」已就绪",
+			"countdown": "{{seconds}} 秒后自动开始",
+			"starting": "正在自动开始…",
+			"runNow": "立即执行",
+			"skip": "不执行"
 		}
 	},
 	"skills": {
-		"title": "技能",
+		"title": "技能仓库",
 		"subtitle": "从技能目录中加载",
 		"reload": "重新加载",
 		"upload": "上传",
@@ -389,21 +468,31 @@
 		"libraryEmpty": "技能库中暂无可用技能",
 		"import": "导入",
 		"importing": "导入中…",
+		"importDone": "已下载并安装「{{name}}」",
 		"installed": "已安装",
 		"libraryError": "加载技能库失败",
 		"searchPlaceholder": "按名称、描述或分类搜索…",
 		"uncategorized": "未分类",
-		"noResults": "无匹配技能"
+		"noResults": "无匹配技能",
+		"tabs": {
+			"mine": "我的技能",
+			"library": "技能库"
+		},
+		"filterCategory": "分类",
+		"filterAll": "全部",
+		"mineEmpty": "还没有启用的技能",
+		"mineEmptyDesc": "在「所有技能」中启用技能，或从「技能库」导入新技能"
 	},
 	"presets": {
-		"simpleModeHeader": "开箱即用 · 选一个开始",
+		"sectionTitle": "预设空间",
 		"refresh": "刷新技能",
 		"refreshSucceeded": "刷新成功",
 		"refreshFailed": "刷新技能失败，仍保留旧列表",
 		"searchPlaceholder": "搜索预设…",
 		"uncategorized": "未分类",
 		"noResults": "无匹配预设",
-		"opening": "正在打开…"
+		"opening": "正在打开…",
+		"loaded": "已载入"
 	},
 	"settings": {
 		"title": "设置",
@@ -424,12 +513,6 @@
 		"providers": "服务提供方",
 		"newProvider": "新增提供方",
 		"memorySection": "记忆分层",
-		"simpleMode": {
-			"title": "简单模式",
-			"onDesc": "已开启：精简、开箱即用的体验。记忆与画像已关闭，笔记/画像/定时任务/技能标签页与终端(实验面板)已隐藏，设置页已简化；欢迎页提供预设工作区一键开始。",
-			"offDesc": "已关闭：完整体验，学习者画像、记忆、笔记、定时任务、技能与终端均可用。",
-			"memoryLocked": "简单模式下记忆已统一关闭。如需调整,请先关闭简单模式。"
-		},
 		"l1": {
 			"title": "学习者画像 (L1)",
 			"onDesc": "已开启：每轮注入学习者画像，并允许工具更新画像以实现个性化教学。",
@@ -504,9 +587,7 @@
 		"theme": "主题",
 		"themeOptions": {
 			"light": "浅色",
-			"warm": "暖色",
-			"ocean": "海洋",
-			"innospark": "启创"
+			"dark": "深色"
 		},
 		"closeBehavior": {
 			"title": "关闭行为",
@@ -580,6 +661,27 @@
 		"markdownMath": {
 			"title": "单美元符号行内公式",
 			"description": "允许用 $...$ 表示公式。默认关闭，避免价格和货币金额被误判；\\(...\\) 与 $$...$$ 不受影响。"
+		},
+		"permissions": {
+			"title": "工具权限",
+			"description": "控制 agent 执行命令前的审批粒度。危险命令与敏感文件在任何模式下都会被拒绝；切换后立即生效，无需重启。",
+			"modes": {
+				"default": "默认权限",
+				"auto": "自动审批",
+				"yolo": "完全权限"
+			},
+			"modeDesc": {
+				"default": "白名单外的命令会弹出审批卡片。",
+				"auto": "命令自动放行，不再弹审批卡片。",
+				"yolo": "所有操作免询问。仅建议配合沙箱模式使用。"
+			},
+			"denyFloorNote": "危险命令与敏感文件在任何模式下都会被拒绝。",
+			"risk": {
+				"title": "确认允许完全权限？",
+				"body": "开启完全权限后，AI 将减少确认步骤，并可直接执行更多操作，包括敏感操作、文件修改或外部命令。\n仅建议在您信任当前任务时使用。",
+				"checkbox": "我已了解风险，并愿意继续",
+				"confirm": "允许完全权限"
+			}
 		},
 		"tabs": {
 			"general": "通用",
@@ -797,7 +899,10 @@
 				"requestFailed": "请求失败",
 				"stopped": "已停止",
 				"reply": "回复",
-				"progress": "进度"
+				"progress": "进度",
+				"waitingForPermission": "等待权限审批",
+				"permissionApproved": "已通过审批",
+				"permissionDenied": "权限被拒绝"
 			},
 			"details": {
 				"noThinkingText": "暂无思考文本",
@@ -877,6 +982,7 @@
 		"removeImage": "移除图片",
 		"streamingInWorkspace": "长内容正在右侧文件区生成",
 		"longContentCollapsed": "内容较长，已折叠以保持页面流畅",
+		"yesterday": "昨天",
 		"expandFullContent": "展开完整内容",
 		"collapseFullContent": "收起完整内容",
 		"composerPlaceholder": "输入消息…",
@@ -972,6 +1078,7 @@
 		"deleteWorkspace": "删除工作区",
 		"originChannel": "来源：{{channel}}",
 		"interactedChannel": "交互过：{{channel}}",
+		"channelScheduler": "打卡",
 		"generateTopic": "AI 生成标题",
 		"rename": "重命名",
 		"archive": "归档",
@@ -1002,16 +1109,6 @@
 		"confirmDeleteWorkspace": "删除工作区「{{name}}」？\n{{detail}}",
 		"deleteWsWithSessions": "其中的 {{count}} 个会话将解绑(归入临时工作区),会话记录与文件不会被删除。",
 		"deleteWsEmpty": "该工作区当前没有会话,工作区记录将被移除。"
-	},
-	"mode": {
-		"selectorLabel": "工作模式",
-		"simpleLabel": "简单模式",
-		"normalLabel": "普通模式",
-		"currentSimpleClickNormal": "当前:简单模式 · 点击切换到普通模式",
-		"currentNormalClickSimple": "当前:普通模式 · 点击切换到简单模式",
-		"switchToNormal": "切换到普通模式",
-		"switchToSimple": "切换到简单模式",
-		"simpleTag": "(简单模式)"
 	},
 	"terminal": {
 		"title": "终端",
@@ -1099,6 +1196,7 @@
 		"generating": "生成中",
 		"generatingChart": "正在生成图表…",
 		"loadingPreview": "正在加载预览…",
+		"retryingRender": "正在恢复 Markdown 渲染…",
 		"runCode": "运行代码",
 		"collapseCode": "折叠代码",
 		"expandCode": "展开代码",
@@ -1123,7 +1221,7 @@
 		"graphvizChart": "Graphviz 图表",
 		"plantumlChart": "PlantUML 图表（公共服务渲染）",
 		"echartsChart": "ECharts 图表",
-		"invalidSvg": "SVG 内容无效",
+		"invalidSvg": "SVG 格式有误",
 		"plantumlSyntaxError": "PlantUML 语法有误，无法生成图表。",
 		"plantumlServerError": "PlantUML 服务返回 {{status}}",
 		"unsafeEchartsConfig": "图表配置包含不安全的外部资源地址。",
@@ -1147,5 +1245,29 @@
 		"mermaidRenderError": "图表暂时无法渲染，请切换到代码查看。",
 		"mermaidLabel": "Mermaid 图表",
 		"mermaidFullscreen": "Mermaid 全屏查看"
+	},
+	"permission": {
+		"title": "权限请求",
+		"fromSubagent": "来自子代理 {{name}}",
+		"allowOnce": "允许一次",
+		"allowSession": "本会话允许",
+		"deny": "拒绝"
+	},
+	"btw": {
+		"title": "顺便问问",
+		"subtitle": "不打断当前对话的旁注问答，不会进入会话记录",
+		"close": "收起",
+		"emptyHint": "对当前内容有疑问？在这里顺手一问，不影响主线对话。",
+		"placeholder": "输入你的问题，Enter 发送，Shift+Enter 换行",
+		"send": "发送",
+		"thinking": "思考中…",
+		"error": "请求失败：{{message}}",
+		"retry": "重试",
+		"bringBack": "带回主对话",
+		"bringBackHint": "把这条问答作为旁注追加到主会话，供助教后续参考",
+		"broughtBack": "已带回主对话"
+	},
+	"welcome": {
+		"greeting": "今天想学点什么？"
 	}
 }

@@ -1,14 +1,14 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
-import { ArrowDown, Sparkles } from "lucide-react";
+import { ArrowDown, Folder, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { AttachmentRef, ChatMessage, ChatToolRecord, PendingQuestion } from "../../types/chat.js";
 import { workspaceFileUrl } from "../../api/workspace.js";
 import { workspaceStore } from "../../stores/workspace-store.js";
-import { settingsStore } from "../../stores/settings-store.js";
 import { buildConversationTurns, ConversationMinimap } from "../ConversationMinimap.js";
 import { useStoreSnapshot } from "../hooks.js";
 import { Spinner } from "../ui/Spinner.js";
 import { MessageBubble } from "./MessageBubble.js";
+import { JobStreamBubbles } from "./JobStreamBubbles.js";
 import { StreamingBubbles } from "./StreamingBubbles.js";
 import { TodoWidget, extractTodoTasks } from "./TodoWidget.js";
 import { answeredQuestionnaireFromTool } from "../../utils/questionnaire.js";
@@ -27,10 +27,17 @@ interface ChatConversationProps {
 		messages: ChatMessage[];
 		isSending: boolean;
 		isLoadingHistory: boolean;
+		/** A manual job run is streaming into this conversation — the empty
+		 *  session placeholder must not cover the live job timeline. */
+		jobStreaming: boolean;
 		activeTools: ChatToolRecord[];
 		completedTools: ChatToolRecord[];
 		pendingQuestion: PendingQuestion | null;
 	};
+	/** Collapse user messages to their first line (job-prompt turns). */
+	collapseUserMessages?: boolean;
+	/** Floating notice rendered over the top of the conversation column. */
+	topOverlay?: ReactNode;
 	scrollRef: RefObject<HTMLDivElement | null>;
 	onScroll: () => void;
 	onWheel: () => void;
@@ -43,16 +50,26 @@ interface ChatConversationProps {
 	busyBlocker: ReactNode;
 	smartToast: ReactNode;
 	composer: ReactNode;
+	/** "顺便问问" slide-up panel, rendered above the composer layer. */
+	btwPanel?: ReactNode;
 	onOpenAttachment: (file: AttachmentRef) => void;
 	onOpenSkill: (skillName: string) => void;
 	onEditMessage: (message: ChatMessage) => void;
 	canRetry: boolean;
 	onRetry: () => void;
 	wsError: string;
+	/** Session topic shown in the conversation header. */
+	sessionTitle?: string;
+	/** Bound workspace name rendered as a chip next to the title. */
+	workspaceName?: string | null;
+	/** When the session sidebar is collapsed its floating expand button overlaps the header's left edge. */
+	sidebarCollapsed?: boolean;
 }
 
 export function ChatConversation({
 	chat,
+	collapseUserMessages = false,
+	topOverlay,
 	scrollRef,
 	onScroll,
 	onWheel,
@@ -65,17 +82,18 @@ export function ChatConversation({
 	busyBlocker,
 	smartToast,
 	composer,
+	btwPanel,
 	onOpenAttachment,
 	onOpenSkill,
 	onEditMessage,
 	canRetry,
 	onRetry,
 	wsError,
+	sessionTitle,
+	workspaceName,
+	sidebarCollapsed = false,
 }: ChatConversationProps) {
 	const { t } = useTranslation();
-	// Simple Mode hides the practice terminal entirely; the drawer entry points
-	// (panel toggle, run-code action) are gated the same way.
-	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const [showHistoryLoading, setShowHistoryLoading] = useState(false);
 	useEffect(() => {
 		const shouldShow = chat.isLoadingHistory && chat.messages.length === 0;
@@ -158,6 +176,22 @@ export function ChatConversation({
 		}
 		return { coveredAssistantIndexes, actionOwnerIndexes, questionnairesByOwner };
 	}, [chat.messages, conversationTurns]);
+	// The message that carries "regenerate": the last visible assistant record of
+	// the final turn. A trailing record folded into the trace timeline (e.g. a
+	// scheduler push merged into the previous turn) renders nothing, so anchoring
+	// retry to the raw last index would hide the button entirely.
+	const retryOwnerIndex = useMemo(() => {
+		const lastTurn = conversationTurns.at(-1);
+		if (!lastTurn) return -1;
+		for (let index = lastTurn.endMessageIndex; index >= lastTurn.startMessageIndex; index -= 1) {
+			if (chat.messages[index]?.role !== "assistant") continue;
+			if (traceTurnPresentation.coveredAssistantIndexes.has(index)) continue;
+			return index;
+		}
+		// An unanswered turn (aborted before any assistant reply): retry hangs on
+		// the user message itself.
+		return chat.messages[lastTurn.startMessageIndex]?.role === "user" ? lastTurn.startMessageIndex : -1;
+	}, [chat.messages, conversationTurns, traceTurnPresentation]);
 	const todoTasks = useMemo(
 		() => extractTodoTasks(chat),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -171,7 +205,19 @@ export function ChatConversation({
 
 	return (
 		<section className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-chat-bg)]">
+			{topOverlay}
 			{smartToast}
+			{sessionTitle ? (
+				<header className={`relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] pr-4 backdrop-blur-md ${sidebarCollapsed ? "pl-14" : "pl-4"}`}>
+					<span className="min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]">{sessionTitle}</span>
+					{workspaceName ? (
+						<span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] bg-[var(--inno-chip-bg)] px-2.5 py-[3px] text-[11px] text-[var(--inno-text-subtle)]">
+							<Folder size={11} aria-hidden="true" />
+							<span className="max-w-40 truncate">{workspaceName}</span>
+						</span>
+					) : null}
+				</header>
+			) : null}
 			<div className="conversation-stage relative flex-1 min-h-0">
 				<div
 					ref={scrollRef}
@@ -181,7 +227,7 @@ export function ChatConversation({
 					onPointerDown={onPointerDown}
 					className="chat-scroll inno-chat-grid h-full min-h-0 overflow-y-scroll px-4 py-4"
 				>
-					<div data-conversation-content className="mx-auto flex min-w-0 max-w-3xl flex-col gap-3">
+					<div data-conversation-content className="mx-auto flex min-w-0 max-w-[780px] flex-col gap-3">
 						{showHistoryLoading ? (
 							<div className="flex h-full flex-col items-center justify-center pt-20 text-[var(--inno-text-muted)]">
 								<Spinner size={20} className="mb-3 text-[var(--inno-border-strong)]" />
@@ -189,7 +235,7 @@ export function ChatConversation({
 							</div>
 						) : null}
 
-						{!chat.isLoadingHistory && chat.messages.length === 0 && !chat.isSending ? (
+						{!chat.isLoadingHistory && chat.messages.length === 0 && !chat.isSending && !chat.jobStreaming ? (
 							<div className="flex flex-col items-center justify-center pt-20 text-center text-[var(--inno-text-muted)]">
 								<div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]"><Sparkles size={18} /></div>
 								<p className="text-sm font-medium text-[var(--inno-text)]">{t("chat.emptySessionTitle")}</p>
@@ -216,6 +262,7 @@ export function ChatConversation({
 									<div key={messageKey} data-conversation-turn={turnIndex}>
 										<MessageBubble
 											message={message}
+											collapseUserToFirstLine={collapseUserMessages}
 											animateEntry={!skipFadeKeysRef.current.has(messageKey)}
 											liveBodies={skipFadeKeysRef.current.has(messageKey)}
 											showChannel={multiChannel}
@@ -223,7 +270,7 @@ export function ChatConversation({
 											onOpenAttachment={onOpenAttachment}
 											onOpenSkill={onOpenSkill}
 												onEdit={chat.isSending || chat.pendingQuestion ? undefined : onEditMessage}
-											showRetry={canRetry && index === chat.messages.length - 1}
+											showRetry={canRetry && index === retryOwnerIndex}
 											showActions={showActions}
 											answeredQuestionnaires={traceTurnPresentation.questionnairesByOwner.get(index)}
 											onRetry={onRetry}
@@ -234,6 +281,7 @@ export function ChatConversation({
 						})()}
 
 						<StreamingBubbles onOpenSkill={onOpenSkill} holdCompleted={settledSending} />
+						<JobStreamBubbles />
 					</div>
 				</div>
 				<ConversationMinimap messages={chat.messages} scrollContainerRef={scrollRef} onNavigateStart={onPauseAutoScroll} />
@@ -250,7 +298,7 @@ export function ChatConversation({
 							</button>
 						</div>
 					) : null}
-					<div className="inno-conversation-composer-content mx-auto max-w-3xl">
+					<div className="inno-conversation-composer-content mx-auto max-w-[780px]">
 						{questionHint || busyBlocker ? (
 							<div className="inno-conversation-status-wrap">
 								<div className="inno-conversation-composer-mask" aria-hidden="true" />
@@ -269,8 +317,9 @@ export function ChatConversation({
 						</div>
 					</div>
 				</div>
+				{btwPanel}
 			</div>
-			{simpleMode ? null : <TerminalDrawer />}
+			<TerminalDrawer />
 		</section>
 	);
 }

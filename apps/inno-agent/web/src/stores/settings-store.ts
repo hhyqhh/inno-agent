@@ -1,6 +1,6 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, saveSimpleModeSettings, saveSmartInputSettings, saveMcpSettings, saveCloseBehavior, saveMarkdownSettings, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
-import type { WindowCloseBehavior } from "../types/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, savePermissionMode as savePermissionModeApi, saveSmartInputSettings, saveMcpSettings, saveCloseBehavior, saveMarkdownSettings, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
+import type { WindowCloseBehavior, PermissionPolicyMode } from "../types/settings.js";
 import type { InnoSettings, SmartInputSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
 interface SettingsStoreEvents {
@@ -18,7 +18,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingOcr = false;
 	isSavingTavily = false;
 	isSavingContentHub = false;
-	isSavingSimpleMode = false;
+	isSavingPermissionMode = false;
 	isSavingSmartInput = false;
 	isSavingMcp = false;
 	isSavingCloseBehavior = false;
@@ -145,18 +145,18 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 		}
 	}
 
-	async saveSimpleMode(enabled: boolean): Promise<void> {
-		this.isSavingSimpleMode = true;
+	async savePermissionMode(mode: PermissionPolicyMode): Promise<void> {
+		this.isSavingPermissionMode = true;
 		this.error = null;
 		this.emit("change", undefined);
 		try {
-			this.settings = await saveSimpleModeSettings(enabled);
+			this.settings = await savePermissionModeApi(mode);
 		} catch (err) {
-			this.error = err instanceof Error ? err.message : "Failed to save simple mode setting";
+			this.error = err instanceof Error ? err.message : "Failed to save permission mode";
 			this.emit("change", undefined);
 			throw err;
 		} finally {
-			this.isSavingSimpleMode = false;
+			this.isSavingPermissionMode = false;
 			this.emit("change", undefined);
 		}
 	}

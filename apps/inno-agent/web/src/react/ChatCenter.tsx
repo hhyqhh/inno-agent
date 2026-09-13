@@ -11,9 +11,11 @@ import {
 	type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
-import type { InnoModelInfo, SmartInputSettings } from "../types/settings.js";
+import { MessageCircleQuestion } from "lucide-react";
+import type { InnoModelInfo } from "../types/settings.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
+import { btwStore } from "../stores/btw-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
 import { settingsStore } from "../stores/settings-store.js";
@@ -30,10 +32,10 @@ import { fetchPresetList, readCachedPresets, removeCachedPreset } from "../utils
 import { useStoreSnapshot } from "./hooks.js";
 import { ChatComposer } from "./chat/ChatComposer.js";
 import { ChatConversation } from "./chat/ChatConversation.js";
+import { ScheduledRunBanner } from "./chat/ScheduledRunBanner.js";
 import { BusyBlocker, QuestionHint } from "./chat/ChatStatusBanners.js";
 import { ChatUploadChips } from "./chat/ChatUploadChips.js";
 import { ChatWelcome } from "./chat/ChatWelcome.js";
-import { SmartInputControl } from "./chat/SmartInputControl.js";
 import { SlashCommandPalette } from "./chat/SlashCommandPalette.js";
 import {
 	buildSlashPaletteEntries,
@@ -43,7 +45,9 @@ import {
 } from "./chat/slash-palette-utils.js";
 import { fetchSlashCommands, type SlashCommandItem } from "../api/commands.js";
 import { WorkspaceContext } from "./chat/WorkspaceContext.js";
-import type { WorkspaceChoice } from "./WorkspaceSwitcher.js";
+import { BtwPanel } from "./BtwPanel.js";
+import { PermissionModeControl } from "./chat/PermissionModeControl.js";
+import { WorkspaceSwitcher, type WorkspaceChoice } from "./WorkspaceSwitcher.js";
 import { DEFAULT_UPLOAD_MAX_BYTES, DEFAULT_UPLOAD_MAX_LABEL, getOversizedFiles } from "../utils/upload-limits.js";
 import {
 	flattenWorkspaceFiles,
@@ -77,7 +81,6 @@ const LAST_WS_ID_KEY = "inno.lastWorkspaceId";
 
 interface ChatCenterProps {
 	onOpenPresetPanels: () => void | Promise<void>;
-	onOpenRightPanel: (tab: "notebook" | "profile" | "skills" | "jobs") => void | Promise<void>;
 	onPreviewFile: (minimumWidth: number) => void | Promise<void>;
 }
 
@@ -101,7 +104,7 @@ function rememberWsChoice(mode: WsMode, existingId: string): void {
 const SMART_FILE_PREVIEW_WIDTH = 560;
 const SMART_HOVER_OPEN_MS = 250;
 // Keep the copy/time action row below the last message above the composer mask.
-const CONVERSATION_ACTION_ROW_RESERVE = 40;
+const CONVERSATION_ACTION_ROW_RESERVE = 60;
 
 function pendingUploadsFromRefs(refs: AttachmentRef[]): PendingUpload[] {
 	const seen = new Set<string>();
@@ -114,7 +117,7 @@ function pendingUploadsFromRefs(refs: AttachmentRef[]): PendingUpload[] {
 	});
 }
 
-export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile }: ChatCenterProps) {
+export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProps) {
 	const { t } = useTranslation();
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 	const welcomeLayoutRef = useRef<HTMLDivElement | null>(null);
@@ -175,7 +178,6 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 	const [wsError, setWsError] = useState("");
 	const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
 
-	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const modelState = useStoreSnapshot(settingsStore, () => {
 		const settings = settingsStore.settings;
 		const models = settings?.availableModels ?? settings?.configuredModels ?? [];
@@ -208,7 +210,6 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 	const presetRefreshStatusTimerRef = useRef<number | null>(null);
 	const presetAutoRefreshStartedRef = useRef(false);
 	const [openingPresetId, setOpeningPresetId] = useState<string | null>(null);
-	const [togglingMode, setTogglingMode] = useState(false);
 	const [presetQuery, setPresetQuery] = useState("");
 
 	const cancelPresetRefreshStatusTimer = useCallback(() => {
@@ -235,17 +236,20 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		messages: chatStore.messages,
 		isSending: chatStore.isSending,
 		isLoadingHistory: chatStore.isLoadingHistory,
+		jobStreaming: chatStore.jobStreaming,
 		canReconnect: chatStore.canReconnect,
 		activeTools: chatStore.activeTools,
 		completedTools: chatStore.completedTools,
 		lastUserPrompt: chatStore.lastUserPrompt,
 		pendingQuestion: chatStore.pendingQuestion,
+		pendingPermission: chatStore.pendingPermission,
 	}));
 	const sessions = useStoreSnapshot(sessionsStore, () => ({
 		currentSessionId: sessionsStore.currentSessionId,
 		preselectedWorkspaceId: sessionsStore.preselectedWorkspaceId,
 		busyBlocker: sessionsStore.busyBlocker,
 		isWelcome: sessionsStore.isWelcomeView,
+		list: sessionsStore.sessions,
 	}));
 	const workspaces = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
@@ -268,7 +272,8 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 	const workspaceTreeError = useStoreSnapshot(workspaceStore, () => workspaceStore.error);
 	const workspaceFiles = useMemo(() => workspaceTree ? flattenWorkspaceFiles(workspaceTree) : [], [workspaceTree]);
 	const isWelcome = sessions.isWelcome;
-	const hasConversationStatus = Boolean(chat.pendingQuestion || sessions.busyBlocker);
+	const hasConversationStatus = Boolean(chat.pendingQuestion || chat.pendingPermission || sessions.busyBlocker);
+	const btwPanelOpen = useStoreSnapshot(btwStore, () => btwStore.panelOpen);
 	// Sidebar/workspace layout shifts (e.g. after desktop window expansion) move
 	// the composer by translation without resizing it, so neither window resize
 	// nor ResizeObserver fires. Track the layout values that shift the chat
@@ -286,13 +291,6 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		() => workspaces.list.filter((workspace) => !workspace.isTemp && !workspace.id.startsWith("channel-")),
 		[workspaces.list],
 	);
-
-	const toggleMode = useCallback(() => {
-		if (togglingMode) return;
-		const next = !(settingsStore.settings?.simpleMode?.enabled === true);
-		setTogglingMode(true);
-		void settingsStore.saveSimpleMode(next).finally(() => setTogglingMode(false));
-	}, [togglingMode]);
 
 	const closeModelPicker = useCallback(() => setModelPickerOpen(false), []);
 	const toggleModelPicker = useCallback(() => setModelPickerOpen((open) => !open), []);
@@ -386,7 +384,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 
 	const tempWorkspaceId = workspaces.list.find((workspace) => workspace.isTemp)?.id;
 	const uploadWorkspaceId: string | undefined | null = isWelcome
-		? (simpleMode || wsMode === "temp"
+		? (wsMode === "temp"
 			? tempWorkspaceId
 			: wsMode === "existing" && wsExistingId
 				? wsExistingId
@@ -603,14 +601,9 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 	// ── Smart input engine (便捷输入) ─────────────────────────────────────
 	const smartInputState = useStoreSnapshot(settingsStore, () => ({
 		smartInput: settingsStore.settings?.smartInput,
-		isSavingSmartInput: settingsStore.isSavingSmartInput,
 	}));
 	const smartSettings = smartInputState.smartInput;
 	const smartInputEnabled = smartSettings?.enabled === true;
-
-	const openSmartInputSettings = useCallback(() => {
-		appStore.openSettings("lab");
-	}, []);
 
 	const showSmartToast = useCallback((message: string, error?: boolean) => {
 		setSmartToast({ message, error });
@@ -628,24 +621,6 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		if (oversized.length > 0) notifyUploadLimitExceeded(oversized.length);
 		return files.filter((file) => file.size <= DEFAULT_UPLOAD_MAX_BYTES);
 	}, [notifyUploadLimitExceeded]);
-	const saveSmartInput = useCallback((next: SmartInputSettings) => {
-		void settingsStore.saveSmartInput(next).catch(() => {
-			showSmartToast(t("settings.smartInput.saveFailed", "便捷输入设置保存失败"), true);
-		});
-	}, [showSmartToast, t]);
-	const toggleSmartInput = useCallback(() => {
-		if (!smartSettings || settingsStore.isSavingSmartInput) return;
-		saveSmartInput({ ...smartSettings, enabled: !smartSettings.enabled });
-	}, [saveSmartInput, smartSettings]);
-	const toggleSmartInputRule = useCallback((ruleId: string) => {
-		if (!smartSettings || settingsStore.isSavingSmartInput) return;
-		const rule = smartSettings.rules.find((entry) => entry.id === ruleId);
-		if (!rule) return;
-		const rules = smartSettings.rules.map((entry) =>
-			entry.id === ruleId ? { ...entry, enabled: !entry.enabled } : entry,
-		);
-		saveSmartInput({ ...smartSettings, rules });
-	}, [saveSmartInput, smartSettings]);
 	useEffect(() => () => {
 		if (smartToastTimer.current !== null) window.clearTimeout(smartToastTimer.current);
 	}, []);
@@ -720,8 +695,9 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 
 	const openSkillPanel = useCallback((skillName: string) => {
 		void skillsStore.selectSkill(skillName);
-		void onOpenRightPanel("skills");
-	}, [onOpenRightPanel]);
+		// Skills graduated from a right-panel tab to a full workbench page.
+		appStore.setPage("skills");
+	}, []);
 
 	const cancelSmartHoverTimers = useCallback(() => {
 		if (smartHoverTimer.current !== null) {
@@ -825,7 +801,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 	}, [smartSettings]);
 
 	const buildSessionInput = useCallback((): CreateSessionInput | { __error: string } => {
-		if (simpleMode || wsMode === "temp") return { newWorkspace: { isTemp: true } };
+		if (wsMode === "temp") return { newWorkspace: { isTemp: true } };
 		if (wsMode === "new") {
 			const trimmed = wsName.trim();
 			if (!trimmed) return { __error: t("chat.errWsName") };
@@ -833,7 +809,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		}
 		if (!wsExistingId) return { __error: t("chat.errWsSelect") };
 		return { workspaceId: wsExistingId };
-	}, [simpleMode, wsMode, wsName, wsExistingId, t]);
+	}, [wsMode, wsName, wsExistingId, t]);
 
 	const loadPresets = useCallback(async (forceRefresh = false) => {
 		setPresetsRefreshError(null);
@@ -873,16 +849,16 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		}
 	}, [cancelPresetRefreshStatusTimer, showPresetRefreshStatus, t]);
 
-	// Refresh the preset catalog once when the app first opens in Simple Mode.
-	// ChatCenter stays mounted across session changes, so this also works when
-	// the app restores an existing session instead of showing the welcome view.
-	// Cached cards render immediately; the forced request updates them in the
-	// background and reuses the same success/error indicator as manual refresh.
+	// The welcome screen renders the preset catalog as one-click workspace
+	// cards. Cached cards render immediately; a forced refresh updates them in
+	// the background once per app mount and reuses the same success/error
+	// indicator as manual refresh. ChatCenter stays mounted across session
+	// changes, so this also runs when the app restores an existing session.
 	useEffect(() => {
-		if (!simpleMode || presetAutoRefreshStartedRef.current) return;
+		if (presetAutoRefreshStartedRef.current) return;
 		presetAutoRefreshStartedRef.current = true;
 		void loadPresets(true);
-	}, [simpleMode, loadPresets]);
+	}, [loadPresets]);
 
 	const openPreset = useCallback((presetId: string) => {
 		setWsError("");
@@ -943,7 +919,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 						return;
 					}
 					setWsError("");
-					if (!simpleMode) rememberWsChoice(wsMode, wsExistingId);
+					rememberWsChoice(wsMode, wsExistingId);
 					await sessionsStore.createSessionWith(wsInput);
 					targetSessionId = sessionsStore.currentSessionId;
 				}
@@ -1078,7 +1054,6 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		resizeInput,
 		sessions.currentSessionId,
 		showSmartToast,
-		simpleMode,
 		t,
 		uploadWorkspaceId,
 		uploads,
@@ -1154,15 +1129,12 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		// so "new chat" would be a no-op.
 		if (!isWelcome) actions.push({ action: "new-chat", name: "new", description: t("chat.slashPalette.newChatDesc") });
 		actions.push({ action: "model", name: "model", description: t("chat.slashPalette.modelDesc") });
-		// Simple Mode hides the Notebook/Profile surfaces, so don't offer them.
-		if (!simpleMode) {
-			actions.push({ action: "profile", name: "profile", description: t("chat.slashPalette.profileDesc") });
-		}
+		actions.push({ action: "profile", name: "profile", description: t("chat.slashPalette.profileDesc") });
 		actions.push({ action: "jobs", name: "jobs", description: t("chat.slashPalette.jobsDesc") });
 		actions.push({ action: "skills", name: "skills", description: t("chat.slashPalette.skillsDesc") });
 		actions.push({ action: "settings", name: "settings", description: t("chat.slashPalette.settingsDesc") });
 		return actions;
-	}, [isWelcome, simpleMode, t]);
+	}, [isWelcome, t]);
 
 	const slashEntries = useMemo(() => {
 		if (slashQuery === null) return [];
@@ -1182,10 +1154,6 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 	const handleSlashSelect = useCallback((entry: SlashPaletteEntry) => {
 		if (entry.group === "app") {
 			setComposerText("");
-			const openRightPanelTab = (tab: "notebook" | "profile" | "skills" | "jobs") => {
-				appStore.setRightPanelTab(tab);
-				if (appStore.workspaceMode === "collapsed") appStore.setWorkspaceMode("quarter");
-			};
 			switch (entry.action) {
 				case "new-chat": {
 					const workspaceId = workspaceStore.activeWorkspaceId;
@@ -1196,14 +1164,16 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 				case "model":
 					setModelPickerOpen(true);
 					break;
+				// Feature panels became full pages in the new IA — navigate instead
+				// of opening a right-panel tab.
 				case "profile":
-					openRightPanelTab("profile");
+					appStore.setPage("learner");
 					break;
 				case "jobs":
-					openRightPanelTab("jobs");
+					appStore.setPage("jobs");
 					break;
 				case "skills":
-					openRightPanelTab("skills");
+					appStore.setPage("skills");
 					break;
 				case "settings":
 					appStore.openSettings();
@@ -1254,7 +1224,13 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		}
 	}, [handleSend, slashPaletteOpen, slashEntries, slashActiveIndex, draftValue, handleSlashSelect]);
 
-	const handleStop = useCallback(() => chatStore.cancel(), []);
+	const handleStop = useCallback(() => {
+		if (chatStore.jobStreaming) {
+			chatStore.cancelJobStream();
+			return;
+		}
+		chatStore.cancel();
+	}, []);
 	const handleReconnect = useCallback(() => void chatStore.reconnect(), []);
 	const handleRetry = useCallback(() => {
 		shouldStickToBottomRef.current = true;
@@ -1401,16 +1377,30 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 			modelState={modelState}
 			modelOptions={modelOptions}
 			currentModel={currentModel}
-			smartInputControl={((isWelcome && simpleMode) || (!isWelcome && !simpleMode)) ? (
-				<SmartInputControl
-					smartInputSettings={smartSettings}
-					onToggleSmartInput={toggleSmartInput}
-					onToggleSmartInputRule={toggleSmartInputRule}
-					smartInputSaving={smartInputState.isSavingSmartInput}
-					onOpenSmartInputSettings={openSmartInputSettings}
-					compact
+			btwControl={!isWelcome && sessions.currentSessionId ? (
+				<button
+					type="button"
+					className={`inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50 ${btwPanelOpen ? "text-[var(--inno-accent)]" : ""}`}
+					title={t("btw.title")}
+					aria-label={t("btw.title")}
+					aria-expanded={btwPanelOpen}
+					onClick={() => btwStore.togglePanel()}
+				>
+					<MessageCircleQuestion size={16} />
+				</button>
+			) : undefined}
+			permissionControl={<PermissionModeControl variant="pill" />}
+			workspaceControl={isWelcome ? workspaceContext : (
+				<WorkspaceSwitcher
+					workspaces={workspaces.list}
+					selectedWorkspaceId={activeWorkspaceId}
+					selectedKind="workspace"
+					busy={isSwitchingWorkspace}
+					disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
+					onChange={handleWorkspaceChange}
+					onImport={handleWorkspaceImport}
 				/>
-			) : null}
+			)}
 			modelPickerOpen={modelPickerOpen}
 			attachMenuOpen={attachMenuOpen}
 			workspaceFiles={workspaceFiles}
@@ -1418,6 +1408,7 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 			mirrorRef={mirrorRef}
 			hitRef={hitRef}
 			chatIsSending={chat.isSending}
+			jobStreaming={chat.jobStreaming}
 			canReconnect={chat.canReconnect}
 			isUploading={isUploading}
 			hasSendableContent={hasSendableContent}
@@ -1458,26 +1449,27 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 
 	const selectedWorkspaceId = wsMode === "existing" ? wsExistingId : null;
 	const selectedKind: "workspace" | "temp" | "new" = wsMode === "existing" ? "workspace" : wsMode;
-	const workspaceContext = !simpleMode ? (
+	const workspaceContext = (
 			<WorkspaceContext
 				workspaces={workspaces.list}
 				selectedWorkspaceId={selectedWorkspaceId}
 				selectedKind={selectedKind}
 				newWorkspaceName={wsMode === "new" ? wsName : ""}
 				busy={isSwitchingWorkspace}
-				disabled={isUploading || Boolean(chat.pendingQuestion)}
+				disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
 				onChange={handleWorkspaceChange}
 				onImport={handleWorkspaceImport}
-				smartInputSettings={smartSettings}
-				onToggleSmartInput={toggleSmartInput}
-				onToggleSmartInputRule={toggleSmartInputRule}
-				smartInputSaving={smartInputState.isSavingSmartInput}
-				onOpenSmartInputSettings={openSmartInputSettings}
 			/>
-	) : null;
+	);
 
 	const questionHint = chat.pendingQuestion ? <QuestionHint scrollRef={scrollRef} /> : null;
 	const busyBlocker = sessions.busyBlocker ? <BusyBlocker busyBlocker={sessions.busyBlocker} /> : null;
+
+	// Conversation header (InnoSpark anatomy): session topic + workspace chip +
+	// right-panel toggle. The panel flip mirrors the workspace panel's own
+	// open/close controls.
+	const currentSessionMeta = sessions.list.find((session) => session.id === sessions.currentSessionId);
+	const activeWorkspaceName = workspaces.list.find((workspace) => workspace.id === activeWorkspaceId)?.name ?? null;
 	const smartToastNode = smartToast ? (
 		<div className={`inno-smart-toast ${smartToast.error ? "is-error" : ""}`} role="status">{smartToast.message}</div>
 	) : null;
@@ -1508,20 +1500,19 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		/>
 	) : null;
 
+	const scheduledRunBanner = <ScheduledRunBanner />;
+
 	if (isWelcome) {
 		return (
 			<>
 			{smartOverlayNode}
 			<ChatWelcome
+				topOverlay={scheduledRunBanner}
 				welcomeLayoutRef={welcomeLayoutRef}
-				simpleMode={simpleMode}
-				togglingMode={togglingMode}
-				onToggleMode={toggleMode}
 				questionHint={questionHint}
 				busyBlocker={busyBlocker}
 				smartToast={smartToastNode}
 				composer={renderComposer(t("chat.welcomePlaceholder"))}
-				workspaceContext={workspaceContext}
 				presets={presets}
 				presetsLoaded={presetsLoaded}
 				isLoadingPresets={isLoadingPresets}
@@ -1545,6 +1536,10 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 		{smartOverlayNode}
 		<ChatConversation
 			chat={chat}
+			topOverlay={scheduledRunBanner}
+			// Job-run conversations carry the full job prompt as the user turn —
+			// collapse it to its first line so it doesn't drown the conversation.
+			collapseUserMessages={sessions.list.find((s) => s.id === sessions.currentSessionId)?.origin === "scheduler"}
 			scrollRef={scrollRef}
 			onScroll={handleChatScroll}
 			onWheel={markUserScrollGesture}
@@ -1557,12 +1552,16 @@ export function ChatCenter({ onOpenPresetPanels, onOpenRightPanel, onPreviewFile
 			busyBlocker={busyBlocker}
 			smartToast={smartToastNode}
 			composer={renderComposer(t("chat.composerPlaceholder"))}
+			btwPanel={<BtwPanel />}
 			onOpenAttachment={openChatAttachmentPreview}
 			onOpenSkill={openSkillPanel}
 			onEditMessage={handleEditMessage}
-			canRetry={Boolean(chat.lastUserPrompt) && !chat.isSending && !chat.pendingQuestion && !isUploading}
+			canRetry={Boolean(chat.lastUserPrompt) && !chat.isSending && !chat.pendingQuestion && !chat.pendingPermission && !isUploading}
 			onRetry={handleRetry}
 			wsError={wsError}
+			sessionTitle={currentSessionMeta?.name}
+			workspaceName={activeWorkspaceName}
+			sidebarCollapsed={appLayout.sidebarCollapsed}
 		/>
 		</>
 	);

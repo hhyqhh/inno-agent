@@ -1,16 +1,36 @@
 import { EventEmitter } from "./event-emitter.js";
-import { streamChat, abortChat, getChatStatus, streamSessionEvents, submitChatQuestion, formatQuestionnaireAsPrompt } from "../api/chat.js";
+import { streamChat, abortChat, getChatStatus, streamSessionEvents, submitChatQuestion, submitChatPermission, formatQuestionnaireAsPrompt } from "../api/chat.js";
 import type { InlineImage } from "../api/chat.js";
-import type { ChatAttachments, ChatMessage, ChatStreamEvent, ChatToolRecord, ChatTraceStep, PendingQuestion, QuestionnaireResult, StreamEventEnvelope, StreamSnapshot, WorkspaceFileChange } from "../types/chat.js";
+import type { ChatAttachments, ChatMessage, ChatStreamEvent, ChatToolRecord, ChatTraceStep, PendingPermission, PendingQuestion, PermissionDecisionKind, QuestionnaireResult, StreamEventEnvelope, StreamSnapshot, WorkspaceFileChange } from "../types/chat.js";
 import { notebookStore } from "./notebook-store.js";
 import { appStore } from "./app-store.js";
 import { workspaceStore, type StreamingWorkspacePreview } from "./workspace-store.js";
 import { ensureWindowForPanel } from "./window-expansion.js";
 import { applyChatTraceEvent, finalizeTraceSteps, traceStepsFromEvents, traceTerminalState } from "../utils/chat-trace.js";
+import type { JobRunStreamEvent } from "../types/jobs.js";
 import { skillMessageFromContent } from "../react/chat/skill-message-collapse.js";
 
 function hasAttachmentFiles(attachments?: ChatAttachments): boolean {
 	return Boolean(attachments && (attachments.bindings.some((binding) => binding.files.length > 0) || attachments.loose.length > 0));
+}
+
+/**
+ * The user message "regenerate" would re-send for a cold-loaded session.
+ * Only the most recent user turn qualifies, and only when the history alone
+ * can replay it: channel/scheduler turns, image uploads and file-attachment
+ * turns all carry context that is lost on reload, so they stay non-retryable.
+ */
+function lastRetryableUserMessage(messages: ChatMessage[]): ChatMessage | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message?.role !== "user") continue;
+		if (message.channel && message.channel !== "web") return undefined;
+		if (message.images?.length) return undefined;
+		if (hasAttachmentFiles(message.attachments)) return undefined;
+		if (!message.content.trim()) return undefined;
+		return message;
+	}
+	return undefined;
 }
 
 function createClientRequestId(): string {
@@ -92,6 +112,10 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	 *  (backend may re-push a question event before the answer POST lands) and
 	 *  guards restored cards against reappearing from a stale cache. */
 	private answeredQuestionIds = new Set<string>();
+	/** Pending permission ask from pi-permission-system's gate (web approval card). */
+	pendingPermission: PendingPermission | null = null;
+	/** Permission request IDs the user already decided. Suppresses stale replays. */
+	private answeredPermissionIds = new Set<string>();
 	/** Tool calls swapped to a completed questionnaire card before the answer
 	 *  POST returned. tool_end removes the id; a submit failure may only roll
 	 *  the card back while the id is still here — once tool_end landed, the
@@ -99,6 +123,15 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	 *  would resurrect a resolved question. */
 	private optimisticQuestionToolIds = new Set<string>();
 	canReconnect = false;
+	/** Live manual job run — same trace rendering as a chat turn, but a separate
+	 *  namespace so it never fights (or locks) an active chat stream. */
+	jobStreaming = false;
+	jobStreamSessionId: string | null = null;
+	jobStreamTrace: ChatTraceStep[] = [];
+	jobStreamText = "";
+	jobStreamStartedAt: string | null = null;
+	jobStreamError = "";
+	private jobUserMessageId: string | null = null;
 	private wikiInvalidated = false;
 	private streamChangeTimer: ReturnType<typeof setTimeout> | null = null;
 	private workspacePreviewId: string | null = null;
@@ -174,6 +207,194 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			}
 			await this.reconnectOwner(owner, err);
 		}
+	}
+
+	/** Start the live trace for a manual job run in the given conversation. */
+	beginJobStream(sessionId: string): void {
+		if (!sessionId || this.currentSessionContext !== sessionId) return;
+		this.jobStreaming = true;
+		this.jobStreamSessionId = sessionId;
+		this.jobStreamController = new AbortController();
+		this.jobStreamTrace = [];
+		this.jobStreamText = "";
+		this.jobStreamStartedAt = new Date().toISOString();
+		this.jobStreamError = "";
+		this.emit("change", undefined);
+	}
+
+	/** Abort signal of the live job run, consumed by the SSE reader. */
+	get jobStreamSignal(): AbortSignal | null {
+		return this.jobStreamController?.signal ?? null;
+	}
+
+	/** Stop button for a live job run: close the SSE stream and tell the
+	 *  server to abort the in-flight prompt. */
+	cancelJobStream(): void {
+		const sessionId = this.jobStreamSessionId;
+		this.jobStreamController?.abort();
+		if (sessionId) {
+			void import("../api/jobs.js").then((module) => module.stopJobRun(sessionId).catch(() => {}));
+		}
+	}
+
+	/** Whether the live job run belongs to the conversation being viewed. */
+	get jobStreamInCurrentSession(): boolean {
+		return this.jobStreamSessionId !== null && this.jobStreamSessionId === this.currentSessionContext;
+	}
+
+	private jobStreamController: AbortController | null = null;
+
+	/** Feed one job-run SSE event into the live trace with the same reducer a
+	 *  normal chat turn uses, so the process timeline is identical. */
+	applyJobStreamEvent(event: JobRunStreamEvent): void {
+		if (!this.jobStreaming) return;
+		if (event.type === "job_state" || event.type === "job_result") return;
+		// The shared reducer types tool_end.result/isError and error.persisted as
+		// required — the job SSE keeps them optional, so normalize first.
+		const chatEvent: ChatStreamEvent | null = event.type === "tool_end"
+			? { type: "tool_end", toolCallId: event.toolCallId, toolName: event.toolName, result: event.result, isError: event.isError === true }
+			: event.type === "error"
+				? { type: "error", message: event.message, persisted: false }
+				: event;
+		this.jobStreamTrace = applyChatTraceEvent(this.jobStreamTrace, chatEvent, new Date().toISOString());
+		if (event.type === "text_delta") this.jobStreamText += event.delta;
+		else if (event.type === "error") {
+			this.jobStreamError = this.jobStreamError ? `${this.jobStreamError}\n${event.message}` : event.message;
+		}
+		// ask_user_question parks the run — surface the same dialog card a chat
+		// turn would show, scoped to the run turn so the answer routes back.
+		else if (event.type === "question") {
+			this.pendingQuestion = {
+				questionId: event.questionId,
+				params: event.params,
+				sessionId: this.jobStreamSessionId ?? undefined,
+				turnId: event.turnId,
+			};
+		} else if (event.type === "question_resolved") {
+			if (this.pendingQuestion?.questionId === event.questionId) this.pendingQuestion = null;
+		}
+		// A permission gate parks the run the same way — surface the approval
+		// card, scoped to the run turn so the decision routes back.
+		else if (event.type === "permission_request") {
+			if (!this.answeredPermissionIds.has(event.requestId)) {
+				this.pendingPermission = {
+					requestId: event.requestId,
+					source: event.source ?? "tool_call",
+					surface: event.surface ?? null,
+					value: event.value ?? null,
+					toolName: event.toolName ?? null,
+					command: event.command ?? null,
+					path: event.path ?? null,
+					agentName: event.agentName ?? null,
+					forwardedFrom: event.forwardedFrom ?? null,
+					preview: event.preview ?? null,
+					sessionId: this.jobStreamSessionId ?? undefined,
+					turnId: event.turnId,
+				};
+			}
+		} else if (event.type === "permission_resolved") {
+			if (this.pendingPermission?.requestId === event.requestId) this.pendingPermission = null;
+		}
+		this.scheduleStreamChange();
+	}
+
+	/** Show the job prompt as the user turn of the run conversation right away
+	 *  (the server persists the same turn; history reload converges later).
+	 *  Returns the message id so a raced-out run can roll the bubble back. */
+	appendJobUserMessage(sessionId: string, content: string): string | null {
+		const trimmed = content.trim();
+		if (!sessionId || !trimmed || this.currentSessionContext !== sessionId) return null;
+		const messageId = `job-user:${createClientRequestId()}`;
+		this.messages = [...this.messages, {
+			role: "user",
+			content,
+			timestamp: Date.now(),
+			channel: "scheduler",
+			turnId: messageId,
+			transient: true,
+			complete: false,
+		}];
+		this.jobUserMessageId = messageId;
+		this.emit("change", undefined);
+		return messageId;
+	}
+
+	/** Silent bail-out for a run that lost a race with the server (slot
+	 *  already settled): remove the optimistic user bubble and leave — no
+	 *  result message, no error, nothing. */
+	discardJobStream(): void {
+		this.flushStreamChange();
+		this.jobStreaming = false;
+		const messageId = this.jobUserMessageId;
+		this.jobStreamSessionId = null;
+		this.jobStreamController = null;
+		this.jobStreamTrace = [];
+		this.jobStreamText = "";
+		this.jobStreamError = "";
+		this.jobUserMessageId = null;
+		if (!messageId) return;
+		const index = this.messages.findIndex((message) => message.turnId === messageId && message.transient);
+		if (index < 0) return;
+		this.messages = [...this.messages.slice(0, index), ...this.messages.slice(index + 1)];
+		this.emit("change", undefined);
+	}
+
+	/** Common tail of the job-run paths: clear the live namespace and append
+	 *  the settled assistant record, keeping the finalized process timeline so
+	 *  the run history renders exactly like it did while streaming. */
+	private appendSettledJobMessage(
+		jobId: string,
+		content: string,
+		trace: ChatTraceStep[],
+		piStopReason: "stop" | "aborted",
+	): void {
+		const sessionId = this.jobStreamSessionId;
+		const startedAt = this.jobStreamStartedAt;
+		this.jobStreamSessionId = null;
+		this.jobStreamController = null;
+		this.jobStreamTrace = [];
+		this.jobStreamText = "";
+		this.jobStreamError = "";
+		// The settled record belongs to the run's conversation only — never to
+		// whatever other session the user may be viewing by then.
+		if (!sessionId || sessionId !== this.currentSessionContext) return;
+		this.messages = [...this.messages, {
+			role: "assistant",
+			content,
+			timestamp: Date.now(),
+			channel: "scheduler",
+			turnId: `job:${jobId}:${createClientRequestId()}`,
+			trace,
+			traceStartedAt: startedAt ?? undefined,
+			traceFinishedAt: new Date().toISOString(),
+			stopReason: piStopReason,
+			transient: false,
+			complete: true,
+		}];
+		this.emit("change", undefined);
+	}
+
+	/** Stop path: keep the live process timeline as a settled record (tool
+	 *  rows + partial answer) instead of collapsing it into plain text. */
+	settleJobStreamStopped(jobId: string, stoppedLabel: string): void {
+		this.flushStreamChange();
+		this.jobStreaming = false;
+		const text = this.jobStreamText.trim();
+		const trace = applyChatTraceEvent(
+			this.jobStreamTrace,
+			{ type: "aborted", message: stoppedLabel, persisted: false },
+			new Date().toISOString(),
+		);
+		this.appendSettledJobMessage(jobId, text || stoppedLabel, trace, "aborted");
+	}
+
+	/** Swap the live job trace for the settled result message. The finalized
+	 *  timeline travels with the message so the run stays inspectable. */
+	settleJobStream(jobId: string, content: string): void {
+		this.flushStreamChange();
+		this.jobStreaming = false;
+		const trace = finalizeTraceSteps(this.jobStreamTrace);
+		this.appendSettledJobMessage(jobId, content, trace, "stop");
 	}
 
 	/**
@@ -653,6 +874,31 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 				if (this.pendingQuestion?.questionId === event.questionId) this.pendingQuestion = null;
 				this.emit("change", undefined);
 				break;
+			case "permission_request":
+				// Skip replays of asks the user already decided (the backend may
+				// re-push the event briefly after the decision POST lands).
+				if (this.answeredPermissionIds.has(event.requestId)) break;
+				this.flushStreamChange();
+				this.pendingPermission = {
+					requestId: event.requestId,
+					source: event.source ?? "tool_call",
+					surface: event.surface ?? null,
+					value: event.value ?? null,
+					toolName: event.toolName ?? null,
+					command: event.command ?? null,
+					path: event.path ?? null,
+					agentName: event.agentName ?? null,
+					forwardedFrom: event.forwardedFrom ?? null,
+					preview: event.preview ?? null,
+					sessionId: owner.sessionId,
+					turnId: owner.turnId ?? undefined,
+				};
+				this.emit("change", undefined);
+				break;
+			case "permission_resolved":
+				if (this.pendingPermission?.requestId === event.requestId) this.pendingPermission = null;
+				this.emit("change", undefined);
+				break;
 			case "done":
 				this.flushStreamChange();
 				// Final message set with full content
@@ -709,6 +955,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.completedTools = [];
 		this.optimisticQuestionToolIds.clear();
 		this.pendingQuestion = null;
+		this.pendingPermission = null;
 		if (this.workspacePreviewId) workspaceStore.clearStreamingPreview(this.workspacePreviewId);
 		this.resetWorkspaceStreamState();
 	}
@@ -918,10 +1165,34 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		await this.submitQuestionResponse(questionId, { answers: [], cancelled: true });
 	}
 
+	async submitPermissionResponse(requestId: string, decision: PermissionDecisionKind, reason?: string): Promise<void> {
+		const pending = this.pendingPermission;
+		if (pending?.requestId !== requestId) return;
+		// Live cards take the scope from the active stream owner; job-stream
+		// cards carry their own run scope on the pending record.
+		const sessionId = this.activeOwner?.sessionId ?? pending.sessionId;
+		const turnId = this.activeOwner?.turnId ?? pending.turnId;
+		if (!sessionId || !turnId) return;
+		this.answeredPermissionIds.add(requestId);
+		this.pendingPermission = null;
+		this.emit("change", undefined);
+		try {
+			await submitChatPermission(sessionId, turnId, requestId, decision, reason);
+		} catch (err) {
+			if (!this.activeOwner || this.owns(this.activeOwner)) {
+				this.pendingPermission = pending;
+				this.answeredPermissionIds.delete(requestId);
+				this.streamingError = err instanceof Error ? err.message : "提交审批失败";
+				this.emit("change", undefined);
+			}
+		}
+	}
+
 	clear() {
 		this.detach();
 		this.messages = [];
 		this.answeredQuestionIds.clear();
+		this.answeredPermissionIds.clear();
 		this.optimisticQuestionToolIds.clear();
 		this.emit("change", undefined);
 	}
@@ -933,8 +1204,19 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.canReconnect = false;
 		this.currentSessionContext = sessionId ?? null;
 		const retryInput = sessionId ? this.retryInputBySession.get(sessionId) : undefined;
-		this.lastUserPrompt = retryInput?.prompt ?? null;
-		this.lastImages = retryInput?.images;
+		if (retryInput) {
+			this.lastUserPrompt = retryInput.prompt;
+			this.lastImages = retryInput.images;
+		} else {
+			// A cold-loaded session has no in-memory retry input, so without this
+			// fallback the regenerate button vanished after every page reload.
+			const lastUserMessage = lastRetryableUserMessage(this.messages);
+			this.lastUserPrompt = lastUserMessage?.content ?? null;
+			this.lastImages = undefined;
+			if (sessionId && lastUserMessage) {
+				this.retryInputBySession.set(sessionId, { prompt: lastUserMessage.content });
+			}
+		}
 		this.resetTransientStreamState();
 		this.emit("change", undefined);
 	}

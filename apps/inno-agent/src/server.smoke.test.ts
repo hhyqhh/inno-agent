@@ -214,6 +214,14 @@ describe("server smoke", () => {
 		expect(res.status).toBe(200);
 	});
 
+	it("GET /api/checkins exposes today's derived plan", async () => {
+		const res = await api("/api/checkins/today");
+		expect(res.status).toBe(200);
+		const body = await res.json() as { dayStatus: string; todayCheckedIn: boolean };
+		expect(body.dayStatus).toBe("no_tasks");
+		expect(body.todayCheckedIn).toBe(false);
+	});
+
 	it("POST /api/jobs with an invalid cron returns 400 (route-domain extraction guard)", async () => {
 		const res = await fetch(`http://127.0.0.1:${port}/api/jobs`, {
 			method: "POST",
@@ -234,6 +242,16 @@ describe("server smoke", () => {
 		expect(ok.status).toBe(200);
 		const body = (await ok.json()) as { ui: { theme: string } };
 		expect(body.ui.theme).toBe("ocean");
+
+		// dark is the second supported theme in the redesigned UI
+		const dark = await fetch(`http://127.0.0.1:${port}/api/settings/theme`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ theme: "dark" }),
+		});
+		expect(dark.status).toBe(200);
+		const darkBody = (await dark.json()) as { ui: { theme: string } };
+		expect(darkBody.ui.theme).toBe("dark");
 
 		const bad = await fetch(`http://127.0.0.1:${port}/api/settings/theme`, {
 			method: "PUT",

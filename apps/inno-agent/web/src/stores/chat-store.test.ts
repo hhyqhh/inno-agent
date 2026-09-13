@@ -117,6 +117,44 @@ describe("ChatStore stream ownership", () => {
 		expect(store.messages.at(-1)).toMatchObject({ role: "assistant", transient: true, complete: false });
 	});
 
+	it("streams a manual job run through the live trace namespace", () => {
+		const store = new ChatStoreImpl();
+		store.loadHistory([], "session.jsonl");
+
+		store.beginJobStream("session.jsonl");
+		expect(store.jobStreaming).toBe(true);
+		expect(store.jobStreamStartedAt).toBeTruthy();
+
+		store.applyJobStreamEvent({ type: "tool_start", toolCallId: "t1", toolName: "bash" });
+		store.applyJobStreamEvent({ type: "tool_end", toolCallId: "t1", toolName: "bash", result: "ok", isError: false });
+		store.applyJobStreamEvent({ type: "thinking_delta", delta: "思考" });
+		store.applyJobStreamEvent({ type: "text_delta", delta: "今天复习了 10 个单词。" });
+		store.applyJobStreamEvent({ type: "job_state", status: "running" });
+		expect(store.jobStreamTrace.some((step) => step.kind === "tool" && step.toolName === "bash" && step.status === "completed")).toBe(true);
+		expect(store.jobStreamTrace.some((step) => step.kind === "thinking")).toBe(true);
+		expect(store.jobStreamText).toBe("今天复习了 10 个单词。");
+
+		store.settleJobStream("job-1", "任务完成");
+		expect(store.jobStreaming).toBe(false);
+		expect(store.jobStreamTrace).toEqual([]);
+		expect(store.messages.at(-1)).toMatchObject({
+			role: "assistant",
+			content: "任务完成",
+			channel: "scheduler",
+			transient: false,
+			complete: true,
+		});
+	});
+
+	it("ignores job stream events after the run settles", () => {
+		const store = new ChatStoreImpl();
+		store.loadHistory([], "session.jsonl");
+		store.beginJobStream("session.jsonl");
+		store.settleJobStream("job-1", "完成");
+		store.applyJobStreamEvent({ type: "text_delta", delta: "迟到" });
+		expect(store.jobStreamText).toBe("");
+	});
+
 	it("uses the last cursor for transient reconnect without clearing accumulated text", async () => {
 		mocks.streamChat.mockImplementation(async function* () {
 			yield envelope(1, { type: "stream_state", status: "queued" });
@@ -425,6 +463,26 @@ describe("ChatStore stream ownership", () => {
 			{ role: "assistant", content: "36 / (9 - 3) * 2 = ?", timestamp: 1, entryId: "question" },
 		]);
 		expect(store.pendingQuestion).toBeNull();
+	});
+
+	it("derives the retry prompt from history so regenerate survives a reload", () => {
+		const store = new ChatStoreImpl();
+		store.loadHistory([
+			{ role: "user", content: "讲解一次函数", timestamp: 1 },
+			{ role: "assistant", content: "好的，先看定义。", timestamp: 2 },
+		], "session.jsonl");
+
+		expect(store.lastUserPrompt).toBe("讲解一次函数");
+	});
+
+	it("keeps regenerate unavailable when the last user turn is not replayable", () => {
+		const store = new ChatStoreImpl();
+		store.loadHistory([
+			{ role: "user", content: "来自飞书的问题", timestamp: 1, channel: "feishu" },
+			{ role: "assistant", content: "回答", timestamp: 2 },
+		], "session.jsonl");
+
+		expect(store.lastUserPrompt).toBeNull();
 	});
 
 	it("restores a hidden skill row from expanded cold-start history", () => {

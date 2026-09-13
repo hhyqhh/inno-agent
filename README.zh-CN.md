@@ -12,8 +12,10 @@
 🌐 **[项目主页](https://hhyqhh.github.io/inno-agent-website/)** · 📄 **[技术报告](./docs/inno-agent.pdf)**(arXiv,2026 年 6 月)· 📦 **[资源中心](https://github.com/Chloris-Blaxk/inno-agent-hub)**(技能库 + 工作区预设)
 
 <p align="center">
-  <img src="./docs/assets/l2-wiki.png" alt="Inno Agent — L2 wiki 知识库与知识图谱" width="100%" />
+  <img src="./docs/assets/app-overview-2026-09-13-v2.png" alt="Inno Agent — 重构后的欢迎页与预设工作区" width="100%" />
 </p>
+
+> 🎨 **2026 年 9 月 —— Web UI 基于 InnoSpark 设计语言整体重构**(亮色 + 暗色双主题):一键打开预设工作区的欢迎页、集成权限模式与模型选择的统一输入框、作为 artifact 浏览器的右侧面板,以及对话内的流式富文本渲染(Mermaid / SVG / ECharts / 可运行代码块)。
 
 Inno Agent 是服务于单个学习者的长期学习伙伴。它把长期学习支持组织为三个显式记忆层——**L1 学习者画像**、**L2 原生 wiki 知识库**、**L3 会话记录与跨对话检索**——并围绕它们构建学习闭环:cron 调度器、个人 IM 渠道(飞书 / 微信),以及带浏览器内终端的练习实验室。
 
@@ -207,7 +209,7 @@ npm run server
 扫码加入微信用户群,提问、分享使用场景、关注更新:
 
 <p align="center">
-  <img src="./docs/assets/wechat-community-qr-2026-09-04.png" alt="Inno Agent 微信社区群二维码" width="240" />
+  <img src="./docs/assets/wechat-community-qr-2026-09-13.jpg" alt="Inno Agent 微信社区群二维码" width="240" />
 </p>
 
 ## 许可证

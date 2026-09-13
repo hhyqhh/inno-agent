@@ -142,6 +142,25 @@ export interface PendingQuestion {
 	restored?: boolean;
 }
 
+/** A parked pi-permission-system `ask`, awaiting an approval decision. */
+export interface PendingPermission {
+	requestId: string;
+	source: string;
+	surface: string | null;
+	value: string | null;
+	toolName: string | null;
+	command: string | null;
+	path: string | null;
+	agentName: string | null;
+	/** Set when the ask was forwarded from a subagent. */
+	forwardedFrom: string | null;
+	preview: string | null;
+	sessionId?: string;
+	turnId?: string;
+}
+
+export type PermissionDecisionKind = "allow_once" | "allow_session" | "deny";
+
 export interface QuestionAnswer {
 	questionIndex: number;
 	question: string;
@@ -218,6 +237,8 @@ export type ChatStreamEvent = (
 	| { type: "workspace_change"; changes: WorkspaceFileChange[]; toolCallId?: string; toolName?: string; workspaceId?: string; truncated?: boolean }
 	| { type: "question"; questionId: string; params: { questions: QuestionData[] }; toolCallId?: string }
 	| { type: "question_resolved"; questionId: string; cancelled?: boolean; error?: string }
+	| { type: "permission_request"; requestId: string; source?: string; surface?: string | null; value?: string | null; toolName?: string | null; command?: string | null; path?: string | null; agentName?: string | null; forwardedFrom?: string | null; preview?: string | null; turnId?: string }
+	| { type: "permission_resolved"; requestId: string; decision?: string; allowed?: boolean }
 	| { type: "skill_loaded"; count: number; skills?: Array<{ name: string; description?: string; path?: string; source?: string }> }
 	| { type: "skill_invoked"; skillName: string; args?: string; source?: string; path?: string; description?: string }
 	| { type: "system_event"; eventType: string; phase?: "start" | "update" | "end"; summary?: string; detail?: unknown; attempt?: number; success?: boolean }

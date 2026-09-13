@@ -1,5 +1,5 @@
 import { apiFetch } from "./client.js";
-import type { InnoSettings, SmartInputSettings, UpsertProviderRequest, ChannelsSettingsPayload, WindowCloseBehavior, WebAccessSettings, WebAccessSettingsPayload } from "../types/settings.js";
+import type { InnoSettings, SmartInputSettings, UpsertProviderRequest, ChannelsSettingsPayload, WindowCloseBehavior, WebAccessSettings, WebAccessSettingsPayload, PermissionPolicyMode } from "../types/settings.js";
 
 export async function getSettings(): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings");
@@ -66,10 +66,10 @@ export async function saveMemorySettings(patch: MemorySettingsPatch): Promise<In
 	});
 }
 
-export async function saveSimpleModeSettings(enabled: boolean): Promise<InnoSettings> {
-	return apiFetch<InnoSettings>("/api/settings/simple-mode", {
+export async function savePermissionMode(mode: PermissionPolicyMode): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>("/api/settings/permissions", {
 		method: "PUT",
-		body: JSON.stringify({ enabled }),
+		body: JSON.stringify({ mode }),
 	});
 }
 

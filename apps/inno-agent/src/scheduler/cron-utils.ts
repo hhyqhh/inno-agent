@@ -7,6 +7,9 @@ import { CronExpressionParser } from "cron-parser";
  */
 export const DEFAULT_SCHEDULER_TIMEZONE = "Asia/Shanghai";
 
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_OCCURRENCES_PER_DAY = 10_000;
+
 export function computeNextRunAt(
 	cron: string,
 	timezone: string,
@@ -30,6 +33,21 @@ export function isCronDue(
 	lastRunAt: string | undefined,
 	now: Date = new Date(),
 ): boolean {
+	return getCronDueAt(cron, timezone, lastRunAt, now) !== undefined;
+}
+
+/**
+ * Return the most recent cron occurrence that the scheduler should execute.
+ * The scheduler intentionally keeps its existing two-minute catch-up behavior
+ * for jobs that have never run, while exposing the exact occurrence so daily
+ * check-in progress can be tied to a plan slot instead of a wall-clock run.
+ */
+export function getCronDueAt(
+	cron: string,
+	timezone: string,
+	lastRunAt: string | undefined,
+	now: Date = new Date(),
+): string | undefined {
 	try {
 		const expr = CronExpressionParser.parse(cron, {
 			currentDate: now,
@@ -39,14 +57,99 @@ export function isCronDue(
 
 		if (!lastRunAt) {
 			const diffMs = now.getTime() - prev.getTime();
-			return diffMs >= 0 && diffMs < 120_000;
+			return diffMs >= 0 && diffMs < 120_000 ? prev.toISOString() : undefined;
 		}
 
-		return prev.getTime() > new Date(lastRunAt).getTime();
+		return prev.getTime() > new Date(lastRunAt).getTime() ? prev.toISOString() : undefined;
 	} catch (err) {
 		logger.warn({ err, cron }, "failed to check if cron is due");
-		return false;
+		return undefined;
 	}
+}
+
+/**
+ * Enumerate every occurrence of a cron expression whose instant falls inside
+ * one calendar day in `dayTimezone`. The expression itself is evaluated in
+ * the job timezone, matching the scheduler, while the check-in day boundary
+ * remains the global scheduler timezone.
+ */
+export function getCronOccurrencesForDate(
+	cron: string,
+	timezone: string,
+	dateKey: string,
+	dayTimezone: string = timezone || DEFAULT_SCHEDULER_TIMEZONE,
+): string[] {
+	if (!DATE_KEY_RE.test(dateKey)) return [];
+	try {
+		const start = zonedDateKeyToUtc(dateKey, dayTimezone);
+		const end = zonedDateKeyToUtc(nextDateKey(dateKey), dayTimezone);
+		const expr = CronExpressionParser.parse(cron, {
+			currentDate: new Date(start.getTime() - 1),
+			tz: timezone || DEFAULT_SCHEDULER_TIMEZONE,
+		});
+		const occurrences: string[] = [];
+		for (let i = 0; i < MAX_OCCURRENCES_PER_DAY; i++) {
+			const next = expr.next().toDate();
+			if (next.getTime() >= end.getTime()) break;
+			if (next.getTime() >= start.getTime()) occurrences.push(next.toISOString());
+		}
+		return occurrences;
+	} catch (err) {
+		logger.warn({ err, cron, timezone, dateKey, dayTimezone }, "failed to enumerate cron occurrences");
+		return [];
+	}
+}
+
+/** Calendar date in an IANA timezone, represented as YYYY-MM-DD. */
+export function dateKeyForTimeZone(date: Date, timezone: string): string {
+	const parts = new Intl.DateTimeFormat("en-US", {
+		timeZone: timezone || DEFAULT_SCHEDULER_TIMEZONE,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+	}).formatToParts(date);
+	const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+	return `${values.year}-${values.month}-${values.day}`;
+}
+
+/** Return the next Gregorian calendar date for a validated date key. */
+function nextDateKey(dateKey: string): string {
+	const [year, month, day] = dateKey.split("-").map(Number);
+	const next = new Date(Date.UTC(year, month - 1, day + 1));
+	return [next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate()]
+		.map((part) => String(part).padStart(2, "0"))
+		.join("-");
+}
+
+/** Convert a local midnight date key to its corresponding UTC instant. */
+function zonedDateKeyToUtc(dateKey: string, timezone: string): Date {
+	const [year, month, day] = dateKey.split("-").map(Number);
+	const guess = new Date(Date.UTC(year, month - 1, day));
+	let result = guess;
+	// Re-evaluate twice so DST transitions converge to the correct offset.
+	for (let i = 0; i < 2; i++) {
+		const parts = new Intl.DateTimeFormat("en-US", {
+			timeZone: timezone || DEFAULT_SCHEDULER_TIMEZONE,
+			hourCycle: "h23",
+			year: "numeric",
+			month: "2-digit",
+			day: "2-digit",
+			hour: "2-digit",
+			minute: "2-digit",
+			second: "2-digit",
+		}).formatToParts(result);
+		const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+		const localAsUtc = Date.UTC(
+			Number(values.year),
+			Number(values.month) - 1,
+			Number(values.day),
+			Number(values.hour),
+			Number(values.minute),
+			Number(values.second),
+		);
+		result = new Date(guess.getTime() - (localAsUtc - result.getTime()));
+	}
+	return result;
 }
 
 /**

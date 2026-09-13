@@ -66,6 +66,109 @@ function truncateLabel(label: string, maxLength = 20): string {
 	return label.length <= maxLength ? label : `${label.slice(0, maxLength - 3)}...`;
 }
 
+/**
+ * Chrome colors (labels, outlines, edges, selection) read from the live CSS
+ * variables so the canvas follows the active theme. Categorical node colors
+ * (TYPE_COLORS / COMMUNITY_COLORS) are mid-tone and work on both themes.
+ */
+interface GraphTheme {
+	labelColor: string;
+	textOutline: string;
+	nodeBorder: string;
+	edgeColor: string;
+	tagEdgeColor: string;
+	accent: string;
+	hl: string;
+}
+
+function readGraphTheme(): GraphTheme {
+	const cs = getComputedStyle(document.documentElement);
+	const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
+	return {
+		labelColor: v("--inno-text-muted", "#5f6368"),
+		textOutline: v("--inno-card-bg", "#ffffff"),
+		nodeBorder: v("--inno-card-bg", "#ffffff"),
+		edgeColor: v("--inno-border-strong", "#cbd5e1"),
+		tagEdgeColor: v("--inno-border", "#e2e8f0"),
+		accent: v("--inno-accent", "#2563eb"),
+		hl: v("--inno-warning", "#f59e0b"),
+	};
+}
+
+function cyStyle(theme: GraphTheme): cytoscape.StylesheetJson {
+	return [
+		{
+			selector: "node",
+			style: {
+				"background-color": "data(color)",
+				label: "data(label)",
+				color: theme.labelColor,
+				"font-size": 10,
+				"text-margin-y": 5,
+				"text-valign": "bottom",
+				"text-halign": "center",
+				"text-outline-width": 2,
+				"text-outline-color": theme.textOutline,
+				"text-outline-opacity": 0.9,
+				width: "data(size)" as unknown as number,
+				height: "data(size)" as unknown as number,
+				"border-color": theme.nodeBorder,
+				"border-width": 1,
+				"overlay-opacity": 0,
+				"transition-property": "opacity, border-color, border-width",
+				"transition-duration": 150,
+			},
+		},
+		{
+			selector: "node:selected",
+			style: {
+				"border-color": theme.accent,
+				"border-width": 3,
+				label: "data(fullLabel)",
+			},
+		},
+		{
+			selector: "node.dim",
+			style: { opacity: 0.15 },
+		},
+		{
+			selector: "node.hl",
+			style: {
+				"border-color": theme.hl,
+				"border-width": 3,
+				label: "data(fullLabel)",
+			},
+		},
+		{
+			selector: "node.hidden, edge.hidden",
+			style: { display: "none" },
+		},
+		{
+			selector: "edge",
+			style: {
+				width: "data(edgeWidth)" as unknown as number,
+				"line-color": theme.edgeColor,
+				"curve-style": "straight",
+				opacity: "data(edgeOpacity)" as unknown as number,
+				"transition-property": "opacity, line-color, width",
+				"transition-duration": 150,
+			},
+		},
+		{
+			selector: "edge[edgeType = 'tag']",
+			style: { "line-color": theme.tagEdgeColor, "line-style": "dashed", opacity: 0.16 },
+		},
+		{
+			selector: "edge.dim",
+			style: { opacity: 0.08 },
+		},
+		{
+			selector: "edge.hl",
+			style: { "line-color": theme.accent, width: 2, opacity: 1 },
+		},
+	];
+}
+
 function buildCommunitySeedPositions(nodes: WikiGraphNode[]): Map<string, { x: number; y: number }> {
 	const groups = new Map<number, WikiGraphNode[]>();
 	for (const node of nodes) {
@@ -320,93 +423,17 @@ export function GraphView() {
 			elements,
 			minZoom: 0.2,
 			maxZoom: 2.5,
-			style: [
-				{
-					selector: "node",
-					style: {
-						"background-color": "data(color)",
-						label: "data(label)",
-						color: "#334155",
-						"font-size": 10,
-						"text-margin-y": 5,
-						"text-valign": "bottom",
-						"text-halign": "center",
-						"text-outline-width": 2,
-						"text-outline-color": "#ffffff",
-						"text-outline-opacity": 0.9,
-						width: "data(size)" as unknown as number,
-						height: "data(size)" as unknown as number,
-						"border-color": "#ffffff",
-						"border-width": 1,
-						"overlay-opacity": 0,
-						"transition-property": "opacity, border-color, border-width",
-						"transition-duration": 150,
-					},
-				},
-				{
-					selector: "node:selected",
-					style: {
-						"border-color": "#2563eb",
-						"border-width": 3,
-						label: "data(fullLabel)",
-					},
-				},
-				{
-					selector: "node.dim",
-					style: { opacity: 0.15 },
-				},
-				{
-					selector: "node.hl",
-					style: {
-						"border-color": "#f59e0b",
-						"border-width": 3,
-						label: "data(fullLabel)",
-					},
-				},
-				{
-					selector: "node.co-build-selected",
-					style: {
-						"border-color": "#0f766e",
-						"border-width": 4,
-						label: "data(fullLabel)",
-					},
-				},
-				{
-					selector: "node.hidden, edge.hidden",
-					style: { display: "none" },
-				},
-				{
-					selector: "edge",
-					style: {
-						width: "data(edgeWidth)" as unknown as number,
-						"line-color": "#cbd5e1",
-						"curve-style": "straight",
-						opacity: "data(edgeOpacity)" as unknown as number,
-						"transition-property": "opacity, line-color, width",
-						"transition-duration": 150,
-					},
-				},
-				{
-					selector: "edge[edgeType = 'tag']",
-					style: { "line-color": "#e2e8f0", "line-style": "dashed", opacity: 0.16 },
-				},
-				{
-					selector: "edge[edgeType = 'personal']",
-					style: { "line-color": "#94a3b8", "line-style": "dashed", width: 0.8, opacity: 0.3 },
-				},
-				{
-					selector: "edge[personalStatus = 'rejected']",
-					style: { "line-color": "#94a3b8", opacity: 0.45 },
-				},
-				{
-					selector: "edge.dim",
-					style: { opacity: 0.08 },
-				},
-				{
-					selector: "edge.hl",
-					style: { "line-color": "#2563eb", width: 2, opacity: 1 },
-				},
-			],
+			style: cyStyle(readGraphTheme()),
+		});
+
+		// Re-read CSS variables and restyle when the theme flips (data-theme /
+		// .dark on <html>), without rebuilding the graph or the simulation.
+		const themeObserver = new MutationObserver(() => {
+			cy.style().fromJson(cyStyle(readGraphTheme())).update();
+		});
+		themeObserver.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ["data-theme", "class"],
 		});
 
 		cy.on("tap", "node", (evt) => {
@@ -510,6 +537,7 @@ export function GraphView() {
 		});
 		resizeObserver.observe(containerRef.current);
 		return () => {
+			themeObserver.disconnect();
 			resizeObserver.disconnect();
 			if (rafRef.current !== null) {
 				cancelAnimationFrame(rafRef.current);
@@ -833,7 +861,7 @@ export function GraphView() {
 				) : null}
 			</div>
 			{state.isLoading ? (
-				<div className="absolute inset-0 flex items-center justify-center bg-white/40 text-sm text-[var(--inno-text-muted)]">
+				<div className="absolute inset-0 flex items-center justify-center bg-[color-mix(in_srgb,var(--inno-card-bg)_55%,transparent)] text-sm text-[var(--inno-text-muted)]">
 					<Spinner size={16} className="mr-2" />
 					{t("common.loading")}
 				</div>

@@ -25,7 +25,7 @@ export function SettingsCard({ children, className = "" }: {
 	className?: string;
 }) {
 	return (
-		<div className={`rounded-lg bg-[var(--inno-surface)] p-4 ${className}`}>{children}</div>
+		<div className={`rounded-[14px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-[18px] py-4 ${className}`}>{children}</div>
 	);
 }
 

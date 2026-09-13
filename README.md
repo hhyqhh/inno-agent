@@ -12,8 +12,10 @@
 🌐 **[Homepage](https://hhyqhh.github.io/inno-agent-website/)** · 📄 **[Technical Report](./docs/inno-agent.pdf)** (arXiv, June 2026) · 📦 **[Resource Hub](https://github.com/Chloris-Blaxk/inno-agent-hub)** (skill library + workspace presets)
 
 <p align="center">
-  <img src="./docs/assets/l2-wiki.png" alt="Inno Agent — L2 wiki knowledge base and graph" width="100%" />
+  <img src="./docs/assets/app-overview-2026-09-13-v2.png" alt="Inno Agent — redesigned welcome page with preset workspaces" width="100%" />
 </p>
+
+> 🎨 **September 2026 — the Web UI was rebuilt around the InnoSpark design language** (light + dark themes): a welcome page with one-click preset workspaces, a unified composer with permission-mode and model pills, an artifact-browser right panel, and rich streaming Markdown (Mermaid / SVG / ECharts / runnable code blocks) in the conversation.
 
 Inno Agent is a single-learner companion that organizes long-term learning support into three explicit memory layers — an **L1 learner profile**, an **L2 native wiki knowledge base**, and **L3 session records with cross-conversation retrieval** — and wraps them in a learning loop: a cron scheduler, personal IM channels (Feishu / WeChat), and a Practice Lab with an in-browser terminal.
 
@@ -149,6 +151,10 @@ Both CLI and server resolve paths through `apps/inno-agent/src/runtime.ts`. Prec
 | `--workspace` | `INNO_WORKSPACE_DIR` | invocation CWD |
 | `--port` | `INNO_PORT` | `3000` |
 
+### Permissions & Sandbox
+
+Two independent guardrails control what the agent's tools can do. The **permission layer** (pi-permission-system, on by default) gates tool calls with allow/ask/deny rules — `ask` pops an approval card in the web UI (allow once / allow for session / deny). Three policy modes — `default` (asks on non-allowlisted bash), `auto` (approves bash), `yolo` (approves everything) — switchable from the shield button in the composer toolbar, persisted as `plugins.permissionSystem.mode`, effective immediately without restart. A hard-deny floor (destructive commands, `~/.ssh/*`, `*.env`, …) applies in every mode. The **sandbox layer** (pi-sandbox, opt-in via `--sandbox`) enforces filesystem/network limits at the OS level (sandbox-exec on macOS, bubblewrap on Linux) — a permission approval never overrides it. Full details and configuration: [docs/PERMISSIONS_AND_SANDBOX.md](./docs/PERMISSIONS_AND_SANDBOX.md).
+
 ### Content Hub
 
 The skill library and Simple Mode presets are fetched from a remote **content hub** — by default the public GitHub repo [`Chloris-Blaxk/inno-agent-hub`](https://github.com/Chloris-Blaxk/inno-agent-hub). Point `contentHub` in `config.json` (or **Settings → Content Hub**) at a private GitHub repo (`"type": "github"`) or a self-hosted bundle service (`"type": "bundle"`) — a zero-dependency bundle server lives in [`scripts/content-hub-server/`](./scripts/content-hub-server/). Presets are cached locally; bundled templates serve as an offline fallback.
@@ -235,7 +241,7 @@ Issues and PRs are welcome. Before opening a PR, run `npm run build` locally —
 Join the WeChat user group to ask questions, share use cases, and follow updates:
 
 <p align="center">
-  <img src="./docs/assets/wechat-community-qr-2026-09-04.png" alt="Inno Agent WeChat community group QR code" width="240" />
+  <img src="./docs/assets/wechat-community-qr-2026-09-13.jpg" alt="Inno Agent WeChat community group QR code" width="240" />
 </p>
 
 ## License

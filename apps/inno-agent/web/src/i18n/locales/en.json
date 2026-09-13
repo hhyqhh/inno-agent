@@ -21,6 +21,23 @@
 			"profile": "Profile",
 			"skills": "Skills",
 			"jobs": "Jobs"
+		},
+		"panelTitle": "Workspace files",
+		"fileCount": "{{count}} files",
+		"filters": {
+			"all": "All",
+			"docs": "Docs",
+			"sheets": "Sheets",
+			"images": "Images"
+		},
+		"kind": {
+			"markdown": "Markdown",
+			"html": "HTML",
+			"pdf": "PDF",
+			"image": "Image",
+			"office": "Office",
+			"text": "Text",
+			"binary": "Binary"
 		}
 	},
 	"common": {
@@ -79,6 +96,18 @@
 		"exportShowcaseDone": "Replay case \"{{title}}\" exported.\n\nCases dir: {{dir}}\nRun npm run showcase:view to open the replay.",
 		"exportShowcaseFailed": "Failed to export replay case: {{message}}"
 	},
+	"nav": {
+		"newChat": "New chat",
+		"workbench": "Workbench",
+		"notebook": "Notebook",
+		"skills": "Skill Store",
+		"learner": "Learner Profile",
+		"jobs": "Jobs",
+		"workspaces": "Workspaces",
+		"theme": "Theme",
+		"language": "Language",
+		"settings": "Settings"
+	},
 	"notebook": {
 		"title": "Notebook",
 		"subtitle": "{{nodes}} nodes · {{edges}} edges",
@@ -95,8 +124,8 @@
 			"analysis": "Analysis"
 		},
 		"view": {
-			"graph": "Graph",
-			"page": "Page"
+			"graph": "Knowledge Graph",
+			"page": "Notes"
 		},
 		"graph": {
 			"fit": "Fit",
@@ -264,7 +293,12 @@
 			"diagnosis": "Diagnosis",
 			"diagnosisPlaceholder": "Notes about current understanding…",
 			"nextActions": "Next actions",
-			"nextActionsPlaceholder": "One per line…"
+			"nextActionsPlaceholder": "One per line…",
+			"masteryState": {
+				"mastered": "Mastered",
+				"consolidating": "Consolidating",
+				"needsReview": "Needs review"
+			}
 		},
 		"misconceptions": {
 			"empty": "No misconceptions tracked.",
@@ -290,6 +324,33 @@
 	"jobs": {
 		"title": "Scheduled Jobs",
 		"subtitle": "Recurring automations and reminders",
+		"todayCompleted": "Completed today",
+		"todayProgress": "Today {{completed}}/{{total}}",
+		"todayFailed": "Failed today",
+		"categories": {
+			"checkInRequired": "Check-in required",
+			"notRequired": "No check-in required"
+		},
+		"checkIn": {
+			"title": "Today's learning check-in",
+			"subtitle": "Complete today's planned learning tasks to check in automatically",
+			"progress": "{{completed}}/{{total}} planned slots completed today",
+			"noTasks": "No required learning tasks today",
+			"autoCompleted": "Today's learning check-in is complete!",
+			"failedCount": "{{count}} failed",
+			"slotSuccess": "Completed",
+			"slotPending": "Pending",
+			"slotFailed": "Failed",
+			"slotSkipped": "Skipped",
+			"runNow": "Run now",
+			"retry": "Retry",
+			"skippedNote": "{{count}} skipped slots do not block check-in",
+			"completed": "Completed",
+			"currentStreak": "Current streak",
+			"total": "Total days",
+			"longestStreak": "Longest streak",
+			"error": "Action failed: {{message}}"
+		},
 		"newJob": "New",
 		"empty": "No scheduled jobs.",
 		"lastRun": "Last run: {{time}}",
@@ -302,6 +363,13 @@
 			"delete": "Delete",
 			"enable": "Enable",
 			"disable": "Disable"
+		},
+		"chat": {
+			"completed": "Scheduled job \"{{name}}\" completed.\n\n{{output}}",
+			"failed": "Scheduled job \"{{name}}\" failed: {{error}}",
+			"stopped": "Job stopped manually. Partial output is kept in the conversation.",
+			"noOutput": "The job completed without output.",
+			"unknownError": "Unknown error"
 		},
 		"lastResult": "Last result:",
 		"form": {
@@ -349,6 +417,7 @@
 			"graphify_update": "Graph update",
 			"learner_profile_reflection": "Profile reflection",
 			"spaced_review": "Spaced review",
+			"check_in_reminder": "Check-in reminder",
 			"push_reminder": "Push reminder",
 			"custom_prompt": "Custom prompt"
 		},
@@ -359,7 +428,10 @@
 			"timeRequired": "Pick a time",
 			"weekdayRequired": "Pick at least one weekday",
 			"dateRequired": "Pick a date",
-			"saveFailed": "Failed to save: {{message}}"
+			"saveFailed": "Failed to save: {{message}}",
+			"sessionCreateFailed": "Could not create a conversation to show the job result",
+			"sessionUnavailable": "The conversation is temporarily unavailable; try again later",
+			"jobNotFound": "Job definition not found; it may have been deleted"
 		},
 		"humanCron": {
 			"daily": "Daily at {{time}}",
@@ -368,10 +440,17 @@
 			"monthly": "Monthly on day {{day}} at {{time}}",
 			"monthlyLast": "Last day of month at {{time}}",
 			"once": "Once on {{date}} {{time}}"
+		},
+		"pending": {
+			"title": "Scheduled job \"{{name}}\" is ready",
+			"countdown": "Auto-starts in {{seconds}}s",
+			"starting": "Starting…",
+			"runNow": "Run now",
+			"skip": "Skip"
 		}
 	},
 	"skills": {
-		"title": "Skills",
+		"title": "Skill Store",
 		"subtitle": "Loaded from the configured skills directory",
 		"reload": "Reload",
 		"upload": "Upload",
@@ -389,21 +468,31 @@
 		"libraryEmpty": "No skills available in the library",
 		"import": "Import",
 		"importing": "Importing…",
+		"importDone": "Downloaded and installed \"{{name}}\"",
 		"installed": "Installed",
 		"libraryError": "Failed to load skills library",
 		"searchPlaceholder": "Search by name, description, or category…",
 		"uncategorized": "Uncategorized",
-		"noResults": "No matching skills"
+		"noResults": "No matching skills",
+		"tabs": {
+			"mine": "My Skills",
+			"library": "Library"
+		},
+		"filterCategory": "Category",
+		"filterAll": "All",
+		"mineEmpty": "No skills enabled yet",
+		"mineEmptyDesc": "Enable skills in “All Skills”, or import new ones from the “Library”"
 	},
 	"presets": {
-		"simpleModeHeader": "Ready to go · pick one to start",
+		"sectionTitle": "Preset spaces",
 		"refresh": "Refresh skills",
 		"refreshSucceeded": "Refresh succeeded",
 		"refreshFailed": "Refresh failed; keeping the previous list",
 		"searchPlaceholder": "Search presets…",
 		"uncategorized": "Uncategorized",
 		"noResults": "No matching presets",
-		"opening": "Opening…"
+		"opening": "Opening…",
+		"loaded": "Loaded"
 	},
 	"settings": {
 		"title": "Settings",
@@ -424,12 +513,6 @@
 		"providers": "Providers",
 		"newProvider": "New provider",
 		"memorySection": "Memory layers",
-		"simpleMode": {
-			"title": "Simple Mode",
-			"onDesc": "On: a streamlined, ready-to-use experience. Memory and profile are turned off; the notebook, profile, jobs and skills tabs and the terminal (experiment panel) are hidden and the settings page is simplified; preset workspaces are offered on the welcome screen.",
-			"offDesc": "Off: the full experience with learner profile, memory, notebook, scheduled jobs, skills, and the terminal available.",
-			"memoryLocked": "Memory is turned off while Simple Mode is on. Turn off Simple Mode to change these."
-		},
 		"l1": {
 			"title": "Learner profile (L1)",
 			"onDesc": "On: injects the learner profile each turn and lets tools update it for personalized teaching.",
@@ -504,9 +587,7 @@
 		"theme": "Theme",
 		"themeOptions": {
 			"light": "Light",
-			"warm": "Warm",
-			"ocean": "Ocean",
-			"innospark": "InnoSpark"
+			"dark": "Dark"
 		},
 		"closeBehavior": {
 			"title": "Close behavior",
@@ -580,6 +661,27 @@
 		"markdownMath": {
 			"title": "Single-dollar inline math",
 			"description": "Allow $...$ math. Off by default so prices remain plain text; \\(...\\) and $$...$$ still work."
+		},
+		"permissions": {
+			"title": "Tool permissions",
+			"description": "How strictly tool calls are approved. Dangerous commands and sensitive files are denied in every mode; changes apply immediately, no restart needed.",
+			"modes": {
+				"default": "Default",
+				"auto": "Auto-approve",
+				"yolo": "Full access"
+			},
+			"modeDesc": {
+				"default": "Commands outside the read-only allowlist ask for approval.",
+				"auto": "Commands run without approval cards.",
+				"yolo": "Nothing asks. Best paired with sandbox mode."
+			},
+			"denyFloorNote": "Dangerous commands and sensitive files stay denied in every mode.",
+			"risk": {
+				"title": "Allow full access?",
+				"body": "With full access, the AI skips confirmation steps and can directly perform more operations, including sensitive actions, file modifications, or external commands.\nOnly enable this when you trust the current task.",
+				"checkbox": "I understand the risks and want to continue",
+				"confirm": "Allow full access"
+			}
 		},
 		"tabs": {
 			"general": "General",
@@ -797,7 +899,10 @@
 				"requestFailed": "Request failed",
 				"stopped": "Stopped",
 				"reply": "Reply",
-				"progress": "Progress"
+				"progress": "Progress",
+				"waitingForPermission": "Waiting for permission",
+				"permissionApproved": "Permission approved",
+				"permissionDenied": "Permission denied"
 			},
 			"details": {
 				"noThinkingText": "No thinking text",
@@ -877,6 +982,7 @@
 		"removeImage": "Remove image",
 		"streamingInWorkspace": "Long output is generating in the file panel",
 		"longContentCollapsed": "Long content collapsed to keep the page responsive",
+		"yesterday": "Yesterday",
 		"expandFullContent": "Expand full content",
 		"collapseFullContent": "Collapse full content",
 		"composerPlaceholder": "Type a message…",
@@ -972,6 +1078,7 @@
 		"deleteWorkspace": "Delete workspace",
 		"originChannel": "Origin: {{channel}}",
 		"interactedChannel": "Interacted: {{channel}}",
+		"channelScheduler": "Check-in",
 		"generateTopic": "AI generate topic",
 		"rename": "Rename",
 		"archive": "Archive",
@@ -1002,16 +1109,6 @@
 		"confirmDeleteWorkspace": "Delete workspace \"{{name}}\"?\n{{detail}}",
 		"deleteWsWithSessions": "Its {{count}} conversation(s) will be unbound (moved to the temp workspace); conversation records and files will not be deleted.",
 		"deleteWsEmpty": "This workspace has no conversations; the workspace record will be removed."
-	},
-	"mode": {
-		"selectorLabel": "Work mode",
-		"simpleLabel": "Simple Mode",
-		"normalLabel": "Normal Mode",
-		"currentSimpleClickNormal": "Current: Simple Mode · click to switch to Normal Mode",
-		"currentNormalClickSimple": "Current: Normal Mode · click to switch to Simple Mode",
-		"switchToNormal": "Switch to Normal Mode",
-		"switchToSimple": "Switch to Simple Mode",
-		"simpleTag": "(Simple Mode)"
 	},
 	"terminal": {
 		"title": "Terminal",
@@ -1099,6 +1196,7 @@
 		"generating": "Generating",
 		"generatingChart": "Generating chart…",
 		"loadingPreview": "Loading preview…",
+		"retryingRender": "Restoring Markdown rendering…",
 		"runCode": "Run code",
 		"collapseCode": "Collapse code",
 		"expandCode": "Expand code",
@@ -1123,7 +1221,7 @@
 		"graphvizChart": "Graphviz diagram",
 		"plantumlChart": "PlantUML diagram (rendered by the public service)",
 		"echartsChart": "ECharts chart",
-		"invalidSvg": "Invalid SVG content",
+		"invalidSvg": "SVG format error",
 		"plantumlSyntaxError": "PlantUML syntax error; the diagram could not be generated.",
 		"plantumlServerError": "PlantUML service returned {{status}}",
 		"unsafeEchartsConfig": "The chart config contains an unsafe external resource URL.",
@@ -1147,5 +1245,29 @@
 		"mermaidRenderError": "The chart could not be rendered. Switch to source to inspect it.",
 		"mermaidLabel": "Mermaid diagram",
 		"mermaidFullscreen": "Mermaid fullscreen"
+	},
+	"permission": {
+		"title": "Permission request",
+		"fromSubagent": "from subagent {{name}}",
+		"allowOnce": "Allow once",
+		"allowSession": "Allow for session",
+		"deny": "Deny"
+	},
+	"btw": {
+		"title": "Quick side question",
+		"subtitle": "Ask aside without interrupting the conversation — never enters the transcript",
+		"close": "Collapse",
+		"emptyHint": "Curious about something here? Ask it aside without touching the main conversation.",
+		"placeholder": "Type your question — Enter to send, Shift+Enter for a newline",
+		"send": "Send",
+		"thinking": "Thinking…",
+		"error": "Request failed: {{message}}",
+		"retry": "Retry",
+		"bringBack": "Bring into conversation",
+		"bringBackHint": "Append this Q&A as a side note to the main session for the tutor to build on",
+		"broughtBack": "Brought into the conversation"
+	},
+	"welcome": {
+		"greeting": "What would you like to learn today?"
 	}
 }

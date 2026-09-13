@@ -2,6 +2,7 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { X, AlertTriangle, FileCode2, History, BookmarkPlus, BookOpen, Check, Copy, Pencil, RotateCcw, TerminalSquare } from "lucide-react";
 import type { AttachmentBinding, AttachmentRef, ChatMessage, ChatToolRecord, ChatTraceStep } from "../../types/chat.js";
 import { splitContentByBindings } from "../../utils/attachment-render.js";
@@ -81,21 +82,37 @@ const CHANNEL_LABEL: Record<string, string> = {
 	cli: "CLI",
 	web: "Web",
 	feishu: "Feishu",
-	scheduler: "Job",
 	qq: "QQ",
 	wechat: "WeChat",
 };
 
 export function ChannelBadge({ channel }: { channel: string }) {
+	const { t } = useTranslation();
+	// The scheduler badge is user-facing copy (打卡/Check-in), not a brand name —
+	// resolve it through i18n like the rest of the UI.
+	const label = channel === "scheduler" ? t("sidebar.channelScheduler") : CHANNEL_LABEL[channel] ?? channel;
 	return (
 		<span className={`inline-block rounded px-1.5 py-px text-[9px] font-medium leading-tight ring-1 ring-black/5 ${CHANNEL_BADGE_CLASS[channel] ?? "bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]"}`}>
-			{CHANNEL_LABEL[channel] ?? channel}
+			{label}
 		</span>
 	);
 }
 
-function AgentCommandIcon({ command }: { command: string }) {
-	if (command.startsWith("skill:")) {
+/** 28px brand avatar shown beside every assistant message (live and
+ *  persisted). Unified with the other IA marks: surface background, primary
+ *  text color (white-on-black in light theme). */
+export function AgentAvatar() {
+	return (
+		<div
+			className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)]"
+			aria-hidden="true"
+		>
+			IA
+		</div>
+	);
+}
+
+function AgentCommandIcon({ command }: { command: string }) {	if (command.startsWith("skill:")) {
 		return (
 			<svg className="inno-smart-agent-mark" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 				<path d="m13 2-10 12h9l-1 8 10-12h-9z" />
@@ -395,11 +412,35 @@ function shouldCollapseAssistantContent(content: string): boolean {
 	return content.split(/\r\n|\r|\n/).length > LONG_ASSISTANT_LINES;
 }
 
-function formatMessageTime(timestamp: number): string {
+function formatMessageTime(timestamp: number, t: TFunction, language?: string): string {
 	if (!Number.isFinite(timestamp)) return "";
 	const date = new Date(timestamp);
 	if (Number.isNaN(date.getTime())) return "";
-	return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+	const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+	const now = new Date();
+	const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+	if (date >= startOfToday) return time;
+	const startOfYesterday = new Date(startOfToday);
+	startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+	if (date >= startOfYesterday) return `${t("chat.yesterday")} ${time}`;
+	// Weeks start on Monday; anything from this week shows the weekday name.
+	const startOfWeek = new Date(startOfToday);
+	startOfWeek.setDate(startOfWeek.getDate() - ((startOfToday.getDay() + 6) % 7));
+	if (date >= startOfWeek) return `${formatWeekday(date, language)} ${time}`;
+	const withYear = date.getFullYear() !== now.getFullYear();
+	return `${formatDayLabel(date, language, withYear)} ${time}`;
+}
+
+function formatWeekday(date: Date, language?: string): string {
+	return new Intl.DateTimeFormat(language || undefined, { weekday: "short" }).format(date);
+}
+
+function formatDayLabel(date: Date, language: string | undefined, withYear: boolean): string {
+	return new Intl.DateTimeFormat(language || undefined, {
+		year: withYear ? "numeric" : undefined,
+		month: (language ?? "").toLowerCase().startsWith("zh") ? "long" : "short",
+		day: "numeric",
+	}).format(date);
 }
 
 function AssistantContent({ content }: { content: string }) {
@@ -481,9 +522,12 @@ export function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; c
 	);
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, showChannel, resolveAttachmentUrl, onOpenAttachment, onOpenSkill, onEdit, showRetry, showActions = true, answeredQuestionnaires: suppliedQuestionnaires, animateEntry = true, liveBodies = false, onRetry }: {
+export const MessageBubble = memo(function MessageBubble({ message, showChannel, collapseUserToFirstLine = false, resolveAttachmentUrl, onOpenAttachment, onOpenSkill, onEdit, showRetry, showActions = true, answeredQuestionnaires: suppliedQuestionnaires, animateEntry = true, liveBodies = false, onRetry }: {
 	message: ChatMessage;
 	showChannel?: boolean;
+	/** Render user messages as their first line only (job-prompt turns in
+	 *  scheduler-born conversations). Full text stays on hover. */
+	collapseUserToFirstLine?: boolean;
 	/** Optional URL resolver for attachment chips (workspace raw link). Kept as
 	 *  a prop so this module stays store/api-free for showcase replay. */
 	resolveAttachmentUrl?: AttachmentUrlResolver;
@@ -507,7 +551,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 	liveBodies?: boolean;
 	onRetry?: () => void;
 }) {
-	const { t } = useTranslation();
+	const { t, i18n } = useTranslation();
 	const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
 	const copyResetTimerRef = useRef<number | null>(null);
@@ -534,7 +578,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 	// flow so text stays at its original position among thinking/tool rows.
 	const hasTraceTimeline = hasVisibleTraceSteps(traceSteps.filter((step) => step.kind !== "progress" && step.kind !== "answer"));
 	const hasTraceError = traceSteps.some((step) => step.kind === "error");
-	const messageTime = formatMessageTime(message.timestamp);
+	const messageTime = formatMessageTime(message.timestamp, t, i18n?.language);
 
 	useEffect(() => () => {
 		if (copyResetTimerRef.current !== null) window.clearTimeout(copyResetTimerRef.current);
@@ -561,6 +605,11 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 			? { command: `skill:${skillMessage.skillName}`, args: skillMessage.args }
 			: parseAgentCommandMessage(message.content);
 		const hasAttachments = Boolean(message.attachments && (message.attachments.bindings.length > 0 || message.attachments.loose.length > 0));
+		const fullUserContent = message.content.trim();
+		const collapseContent = (collapseUserToFirstLine || message.channel === "scheduler") && !skillMessage && !agentCommandMessage && !hasAttachments;
+		const displayContent = collapseContent
+			? (fullUserContent.split("\n", 1)[0] ?? fullUserContent)
+			: fullUserContent;
 		const canEdit = Boolean(
 			onEdit
 			&& message.entryId
@@ -576,7 +625,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 				transition={{ duration: 0.25, ease: "easeOut" }}
 			>
 				<div className="inno-message-wrap group relative w-fit max-w-full" style={{ maxWidth: "min(70%, 38rem)" }}>
-					<div className="inno-message inno-user-message whitespace-pre-wrap break-words rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-3.5 py-2.5 text-[13px] leading-relaxed text-[var(--inno-text)]">
+					<div className="inno-message inno-user-message whitespace-pre-wrap break-words rounded-[20px_20px_6px_20px] bg-[var(--inno-user-bubble-bg)] px-[17px] py-[11px] text-[14px] leading-[1.65] text-[var(--inno-text)] shadow-none">
 						{showChannel && message.channel ? (
 							<div className="mb-1 flex justify-end"><ChannelBadge channel={message.channel} /></div>
 						) : null}
@@ -604,7 +653,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 						) : agentCommandMessage ? (
 							<AgentCommandMessageContent {...agentCommandMessage} onOpenSkill={onOpenSkill} />
 						) : (
-							message.content.trim()
+							<span title={displayContent !== fullUserContent ? message.content : undefined}>{displayContent}</span>
 						)}
 					</div>
 					<div className="inno-message-actions">
@@ -650,12 +699,13 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 
 	return (
 		<motion.div
-			className="flex justify-start"
+			className="flex justify-start gap-3"
 			initial={animateEntry ? { opacity: 0 } : false}
 			animate={{ opacity: 1 }}
 			transition={{ duration: 0.25, ease: "easeOut" }}
 		>
-			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : hasAnsweredQuestionnaire ? "w-full max-w-[76%]" : "max-w-[78%]"} ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-3.5 py-2.5 text-[13px] leading-relaxed text-[var(--inno-text)]`}>
+			<AgentAvatar />
+			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : hasAnsweredQuestionnaire ? "w-full max-w-[76%]" : "max-w-[78%]"} ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-0 py-0 text-[14px] leading-[1.75] text-[var(--inno-text)]`}>
 				{showChannel && message.channel ? (
 					<div className="mb-1"><ChannelBadge channel={message.channel} /></div>
 				) : null}

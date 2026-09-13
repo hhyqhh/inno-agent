@@ -1,44 +1,38 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { motion, AnimatePresence } from "motion/react";
 import { DndProvider, useDragDropManager } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import type { DragDropManager } from "dnd-core";
-import { PanelRightOpen, PanelRightClose, Columns2, Maximize2, BookOpen, BriefcaseBusiness, FolderKanban, Settings, Sparkles, Terminal as TerminalIcon, UserRound } from "lucide-react";
-import type { RightPanelTab, WorkspaceMode } from "../stores/app-store.js";
+import { PanelRightOpen, PanelRightClose, Columns2, Maximize2, Terminal as TerminalIcon } from "lucide-react";
+import type { WorkspaceMode } from "../stores/app-store.js";
 import { getMaximumWorkspaceWidth, WORKSPACE_MAX_WIDTH, WORKSPACE_MIN_WIDTH, WORKSPACE_QUARTER_MIN_WIDTH } from "../stores/app-layout.js";
 import { appStore } from "../stores/app-store.js";
-import { settingsStore } from "../stores/settings-store.js";
 import { terminalStore } from "../stores/terminal-store.js";
+import { workspaceStore } from "../stores/workspace-store.js";
+import type { WorkspaceTreeNode } from "../types/workspace.js";
 import { ensureWindowForPanel } from "../stores/window-expansion.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { isDynamicImportError, recoverFromDynamicImportError } from "../utils/dynamic-import-recovery.js";
 
-const Notebook = lazy(() => import("./Notebook.js").then((mod) => ({ default: mod.Notebook })));
-const JobsPanel = lazy(() => import("./JobsPanel.js").then((mod) => ({ default: mod.JobsPanel })));
-const LearnerProfilePanel = lazy(() => import("./LearnerProfilePanel.js").then((mod) => ({ default: mod.LearnerProfilePanel })));
-const SkillsPanel = lazy(() => import("./SkillsPanel.js").then((mod) => ({ default: mod.SkillsPanel })));
-
 interface WorkspacePanelProps {
-	activeTab: RightPanelTab;
 	mode: WorkspaceMode;
 	width: number;
-	onTabChange(tab: RightPanelTab): void;
 	onModeChange(mode: WorkspaceMode): void;
 	onWidthChange(width: number): void;
 	onPreviewFile(width: number): void | Promise<void>;
 }
 
-const TAB_ORDER: RightPanelTab[] = ["preview", "notebook", "profile", "jobs", "skills"];
-
-const TAB_ICONS: Record<RightPanelTab, ReactNode> = {
-	notebook: <BookOpen size={14} />,
-	preview: <FolderKanban size={14} />,
-	profile: <UserRound size={14} />,
-	jobs: <BriefcaseBusiness size={14} />,
-	skills: <Sparkles size={14} />,
-};
+/** Total file (leaf) count in the workspace tree, for the panel header. */
+function countTreeFiles(nodes: WorkspaceTreeNode[] | undefined): number {
+	if (!nodes) return 0;
+	let count = 0;
+	for (const node of nodes) {
+		if (node.type === "file") count += 1;
+		else count += countTreeFiles(node.children);
+	}
+	return count;
+}
 
 interface WorkspaceResizeStart {
 	pointerId: number;
@@ -146,22 +140,7 @@ function WorkspaceContentFallback() {
 	);
 }
 
-function WorkspaceContent({ activeTab, retryKey, onPreviewFile, dndManager }: { activeTab: RightPanelTab; retryKey: number; onPreviewFile: WorkspacePanelProps["onPreviewFile"]; dndManager: DragDropManager }) {
-	switch (activeTab) {
-		case "notebook":
-			return <Notebook />;
-		case "preview":
-			return <WorkspaceBrowserContent retryKey={retryKey} onPreviewFile={onPreviewFile} dndManager={dndManager} />;
-		case "profile":
-			return <LearnerProfilePanel />;
-		case "skills":
-			return <SkillsPanel dndManager={dndManager} />;
-		case "jobs":
-			return <JobsPanel />;
-	}
-}
-
-function WorkspacePanelContent({ activeTab, mode, width, onTabChange, onModeChange, onWidthChange, onPreviewFile }: WorkspacePanelProps) {
+function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPreviewFile }: WorkspacePanelProps) {
 	const { t } = useTranslation();
 	const dndManager = useDragDropManager();
 	const [isResizing, setIsResizing] = useState(false);
@@ -175,21 +154,8 @@ function WorkspacePanelContent({ activeTab, mode, width, onTabChange, onModeChan
 	const [hasOpenedWorkspace, setHasOpenedWorkspace] = useState(mode !== "collapsed");
 	const retryContent = useCallback(() => setContentRetryKey((key) => key + 1), []);
 
-	// In Simple Mode, hide the advanced tabs: notebook (L2 wiki), profile (L1),
-	// jobs (scheduled tasks) and skills — leaving just preview.
-	const simpleMode = useStoreSnapshot(settingsStore, () => settingsStore.settings?.simpleMode?.enabled === true);
 	const terminalOpen = useStoreSnapshot(terminalStore, () => terminalStore.isOpen);
-	const HIDDEN_IN_SIMPLE: RightPanelTab[] = ["notebook", "profile", "jobs", "skills"];
-	const tabs = simpleMode ? TAB_ORDER.filter((tab) => !HIDDEN_IN_SIMPLE.includes(tab)) : TAB_ORDER;
-
-	// If Simple Mode turns on while a now-hidden tab is active, fall back to preview
-	// so the panel never shows a hidden/blank view.
-	useEffect(() => {
-		if (simpleMode && HIDDEN_IN_SIMPLE.includes(activeTab)) {
-			onTabChange("preview");
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-		}, [simpleMode, activeTab, onTabChange]);
+	const fileCount = useStoreSnapshot(workspaceStore, () => countTreeFiles(workspaceStore.tree?.children));
 
 	const commitResize = useCallback(async (nextWidth: number) => {
 		const generation = ++resizeCommitGenerationRef.current;
@@ -335,7 +301,6 @@ function WorkspacePanelContent({ activeTab, mode, width, onTabChange, onModeChan
 		}
 	}, [mode, width]);
 
-	const compact = mode !== "full" && width < 500;
 	const collapsed = mode === "collapsed";
 	const shouldMountContent = hasOpenedWorkspace || !collapsed;
 	const resizePreviewPortal = isResizing && resizePreviewWidth !== null && typeof document !== "undefined"
@@ -348,15 +313,6 @@ function WorkspacePanelContent({ activeTab, mode, width, onTabChange, onModeChan
 			document.body,
 		)
 		: null;
-	const handleTabChange = useCallback((tab: RightPanelTab) => {
-		if (tab !== activeTab && dndManager.getMonitor().isDragging()) {
-			// A file drag can outlive the source tree for a tick after drop. End
-			// it before the tab transition removes that tree from the document.
-			dndManager.getActions().endDrag();
-		}
-		onTabChange(tab);
-	}, [activeTab, dndManager, onTabChange]);
-
 	useEffect(() => () => {
 		if (dndManager.getMonitor().isDragging()) {
 			dndManager.getActions().endDrag();
@@ -368,7 +324,7 @@ function WorkspacePanelContent({ activeTab, mode, width, onTabChange, onModeChan
 			{resizePreviewPortal}
 			{collapsed ? (
 				<button
-					className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--inno-text-subtle)] transition-colors hover:bg-white/90 hover:text-[var(--inno-text)] hover:shadow-sm"
+					className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] shadow-sm transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 					title={t("workspace.openWorkspace") ?? ""}
 					onClick={() => onModeChange("half")}
 				>
@@ -384,43 +340,22 @@ function WorkspacePanelContent({ activeTab, mode, width, onTabChange, onModeChan
 				/>
 			) : null}
 
-			<div className={`flex h-10 items-center gap-1 border-b border-[var(--inno-border)] bg-[var(--inno-workspace-chrome)] px-2 ${collapsed ? "hidden" : ""}`}>
-				<div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
-					{tabs.map((tab) => {
-						const label = t(`workspace.tabs.${tab}`);
-						const isActive = activeTab === tab;
-						return (
-							<button
-								key={tab}
-								className={`inno-workspace-tab flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md transition-colors ${compact ? "w-7 justify-center px-0" : "px-2"} ${isActive ? "bg-[var(--inno-surface)] font-medium text-[var(--inno-accent)] shadow-sm" : "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
-								title={compact ? label : undefined}
-								aria-label={compact ? label : undefined}
-								onClick={() => handleTabChange(tab)}
-							>
-								{TAB_ICONS[tab]}
-								{compact ? null : label}
-							</button>
-						);
-					})}
+			{/* Panel header — mirrors the design mockup's artifact-panel head:
+			    title + file count on the left, chrome actions on the right. */}
+			<div className={`flex h-[52px] shrink-0 items-center justify-between gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-workspace-chrome)] px-4 ${collapsed ? "hidden" : ""}`}>
+				<div className="min-w-0 flex items-baseline gap-1.5">
+					<span className="whitespace-nowrap text-[14.5px] font-semibold text-[var(--inno-text)]">{t("workspace.panelTitle")}</span>
+					<span className="whitespace-nowrap text-[11.5px] text-[var(--inno-text-subtle)]">{t("workspace.fileCount", { count: fileCount })}</span>
 				</div>
-				<div className="ml-1 flex shrink-0 items-center gap-1 border-l border-[var(--inno-border)] pl-1">
+				<div className="flex shrink-0 items-center gap-1">
 					<button
 						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
-						title={t("settings.title") ?? ""}
-						onClick={() => appStore.openSettings()}
+						title={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
+						aria-label={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
+						onClick={() => terminalStore.setOpen(!terminalOpen)}
 					>
-						<Settings size={14} />
+						<TerminalIcon size={14} />
 					</button>
-					{simpleMode ? null : (
-						<button
-							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
-							title={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
-							aria-label={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
-							onClick={() => terminalStore.setOpen(!terminalOpen)}
-						>
-							<TerminalIcon size={14} />
-						</button>
-					)}
 					<button
 						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
 						title={mode === "full" ? (t("workspace.half") ?? "") : (t("workspace.full") ?? "")}
@@ -440,29 +375,13 @@ function WorkspacePanelContent({ activeTab, mode, width, onTabChange, onModeChan
 
 			<div
 				className={`flex-1 min-h-0 overflow-hidden bg-[var(--inno-workspace-bg)] ${collapsed ? "hidden" : ""}`}
-				style={{
-					background:
-						"linear-gradient(90deg, rgba(37, 99, 235, 0.035) 1px, transparent 1px), linear-gradient(rgba(37, 99, 235, 0.035) 1px, transparent 1px), var(--inno-workspace-bg)",
-					backgroundSize: "36px 36px",
-				}}
 			>
 				{shouldMountContent ? (
-					<AnimatePresence mode="wait">
-						<motion.div
-							key={`${activeTab}:${contentRetryKey}`}
-							className="h-full"
-							initial={{ opacity: 0, y: 6 }}
-							animate={{ opacity: 1, y: 0 }}
-							exit={{ opacity: 0, y: -6 }}
-							transition={{ duration: 0.18, ease: "easeOut" }}
-						>
-							<WorkspaceContentErrorBoundary resetKey={`${activeTab}:${contentRetryKey}`} onRetry={retryContent}>
-								<Suspense fallback={<WorkspaceContentFallback />}>
-									<WorkspaceContent activeTab={activeTab} retryKey={contentRetryKey} onPreviewFile={onPreviewFile} dndManager={dndManager} />
-								</Suspense>
-							</WorkspaceContentErrorBoundary>
-						</motion.div>
-					</AnimatePresence>
+					<WorkspaceContentErrorBoundary resetKey={`preview:${contentRetryKey}`} onRetry={retryContent}>
+						<Suspense fallback={<WorkspaceContentFallback />}>
+							<WorkspaceBrowserContent retryKey={contentRetryKey} onPreviewFile={onPreviewFile} dndManager={dndManager} />
+						</Suspense>
+					</WorkspaceContentErrorBoundary>
 				) : null}
 			</div>
 		</aside>

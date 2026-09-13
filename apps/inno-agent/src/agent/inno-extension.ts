@@ -11,6 +11,7 @@ import { createLearnerTools } from "../memory/learner/learner-tools.js";
 import { isProfileEmpty, loadProfile, loadRecentEvents } from "../memory/learner/profile-store.js";
 import { buildContextPack, formatContextPackForPrompt } from "../memory/learner/context-pack.js";
 import { JobStore } from "../scheduler/job-store.js";
+import { CheckInStore } from "../checkins/check-in-store.js";
 import { createSchedulerTools } from "../scheduler/scheduler-tools.js";
 import { createChannelTools } from "../channels/channel-tools.js";
 import { createL2Tools } from "../memory/l2/l2-tools.js";
@@ -21,6 +22,8 @@ import { createDocumentTools } from "./document-tools.js";
 import { createOcrTools } from "./ocr-tools.js";
 import { createTavilyTools } from "./tavily-tools.js";
 import { ensureWebAccessConfig, resolvePiAiJitiAliases } from "./web-access-config.js";
+import { ensurePermissionSystemConfig, INNO_WEB_AUTHORIZER_NAME, resolvePluginFile } from "./permission-system-config.js";
+import { permissionBridge, type PermissionAskDetails } from "./permission-bridge.js";
 import { checkWorkspaceMutationPath } from "./workspace-path-guard.js";
 import { INNO_SYSTEM_PROMPT, ONBOARDING_GUIDE, WEB_ACCESS_PROMPT_HINT } from "./system-prompt.js";
 import { syncProvidersForSubagents } from "./provider-sync.js";
@@ -271,12 +274,8 @@ export function createInnoExtension(
 		// Memory-layer runtime gates. All default ON; only an explicit `false`
 		// in config.memory disables a layer. Read live from configHolder so the
 		// toggles take effect without a restart.
-		// Simple Mode is a global override: when enabled it force-locks all three
-		// memory layers OFF, regardless of config.memory, without mutating those
-		// values — so turning Simple Mode off restores the user's preferences.
-		const isSimpleMode = () => configHolder.current.simpleMode?.enabled === true;
-		const isL1Enabled = () => !isSimpleMode() && configHolder.current.memory?.l1Enabled !== false;
-		const isL2Enabled = () => !isSimpleMode() && configHolder.current.memory?.l2Enabled !== false;
+		const isL1Enabled = () => configHolder.current.memory?.l1Enabled !== false;
+		const isL2Enabled = () => configHolder.current.memory?.l2Enabled !== false;
 
 		// 2. Register L1 learner tools (gated on config.memory.l1Enabled)
 		const learnerTools = createLearnerTools(
@@ -307,7 +306,8 @@ export function createInnoExtension(
 
 		// 3. Register scheduler tools
 		const jobStore = new JobStore(paths.jobsDir, configHolder.current.scheduler?.timezone);
-		const schedulerTools = createSchedulerTools(jobStore, channelRegistry);
+		const checkInStore = new CheckInStore(paths.dataDir, configHolder.current.scheduler?.timezone, jobStore);
+		const schedulerTools = createSchedulerTools(jobStore, channelRegistry, checkInStore);
 		for (const tool of schedulerTools) {
 			pi.registerTool(tool);
 		}
@@ -348,7 +348,7 @@ export function createInnoExtension(
 		// config.memory.l3Enabled (default on); indexing always runs so the
 		// switch can be flipped back on without a backfill gap.
 		const l3Memory = getL3Memory(paths.l3DataDir, paths.sessionDir);
-		const isL3Enabled = () => !isSimpleMode() && configHolder.current.memory?.l3Enabled !== false;
+		const isL3Enabled = () => configHolder.current.memory?.l3Enabled !== false;
 		const l3Tools = createL3Tools(l3Memory, deps?.getCurrentSessionId, isL3Enabled);
 		for (const tool of l3Tools) {
 			pi.registerTool(tool);
@@ -718,6 +718,83 @@ export function createInnoExtension(
 				}
 			} catch (err) {
 				logger.warn({ err }, "Failed to load pi-web-access extension");
+			}
+		}
+
+		// 11. Permission system (@gotgenes/pi-permission-system). TS-only source,
+		// loaded through jiti like the other bundled plugins. Two-part wiring:
+		//
+		// a) The plugin itself: gates tool calls / bash / MCP / skills / paths
+		//    against the allow/ask/deny policy in
+		//    <configDir>/extensions/pi-permission-system/config.json (managed
+		//    default written on first run; user edits are never clobbered).
+		//    In TUI mode its own inline dialog answers `ask`; in server mode
+		//    the terminal authorizer is a headless deny — which is what (b) is for.
+		//
+		// b) The `inno-web` authorizer chain link: registered from a
+		//    `permissions:ready` handler (survives load order and /reload) and
+		//    activated by the managed default's `authorizerChain`. It delegates
+		//    each `ask` to permissionBridge, which parks the verdict until the
+		//    web UI answers. Fail-closed: no bound turn / timeout / abort → deny.
+		//
+		// The service registry lives behind globalThis[Symbol.for(...)], so the
+		// jiti-loaded plugin and this module share it despite separate module
+		// instances. Default ON; `plugins.permissionSystem.enabled: false` opts out.
+		if (configHolder.current.plugins?.permissionSystem?.enabled !== false) {
+			try {
+				// Must run before the import: the plugin reads its config at
+				// extension init from $PI_CODING_AGENT_DIR (= paths.configDir).
+				ensurePermissionSystemConfig(paths.configDir);
+				// The package's exports map only exposes "." (→ src/service.ts)
+				// and blocks every other subpath, so both entry points are
+				// imported by absolute file path — jiti enforces the exports
+				// map for package specifiers but not for file paths.
+				const permExtensionEntry = resolvePluginFile(import.meta.url, "@gotgenes/pi-permission-system", "src/index.ts");
+				const permServiceEntry = resolvePluginFile(import.meta.url, "@gotgenes/pi-permission-system", "src/service.ts");
+				const { createJiti: createJitiPerm } = await import("jiti/static");
+				const jitiPerm = createJitiPerm(import.meta.url, {
+					moduleCache: false,
+					alias: resolvePiAiJitiAliases(import.meta.url),
+				});
+				const mod = (await jitiPerm.import(permExtensionEntry, { default: true })) as unknown;
+				if (typeof mod === "function") {
+					(mod as (pi: ExtensionAPI) => void)(pi);
+				}
+				const serviceMod = (await jitiPerm.import(permServiceEntry)) as Record<string, unknown>;
+				const getPermissionsService = serviceMod.getPermissionsService as
+					| ((sessionId: string | null) => {
+							registerAuthorizer: (
+								name: string,
+								authorize: (details: PermissionAskDetails) => Promise<{ kind: string; reason?: string }>,
+							) => () => void;
+					  })
+					| undefined;
+				if (typeof getPermissionsService !== "function") {
+					throw new Error("getPermissionsService export not found");
+				}
+				// permissions:ready fires at least once per session (and may
+				// repeat); duplicate registration for the same name throws, so
+				// track the sessions we already wired.
+				const wiredSessions = new Set<string | null>();
+				pi.events.on("permissions:ready", (data: unknown) => {
+					try {
+						const sessionId = (data as { sessionId?: string | null } | null)?.sessionId ?? null;
+						if (wiredSessions.has(sessionId)) return;
+						const service = getPermissionsService(sessionId);
+						service.registerAuthorizer(INNO_WEB_AUTHORIZER_NAME, (details: PermissionAskDetails) =>
+							permissionBridge.authorize(details),
+						);
+						wiredSessions.add(sessionId);
+					} catch (err) {
+						logger.warn({ err }, "Failed to register inno-web permission authorizer");
+					}
+				});
+				// Decision audit: forward gate resolutions to the observability log.
+				pi.events.on("permissions:decision", (data: unknown) => {
+					logger.child({ module: "observability" }).debug({ permissionDecision: data }, "permission decision");
+				});
+			} catch (err) {
+				logger.warn({ err }, "Failed to load pi-permission-system extension");
 			}
 		}
 	};

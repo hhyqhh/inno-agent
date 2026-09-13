@@ -1,5 +1,6 @@
 import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
 import { normalizeMarkdownMathForStreamdown } from "../utils/markdown-math.js";
+import { wrapRawSvgBlocks } from "../utils/markdown-svg.js";
 import {
 	getMermaidMarkdownRuntime,
 	hasMermaidFence,
@@ -8,6 +9,8 @@ import {
 import { settingsStore } from "../stores/settings-store.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { MarkdownRuntime, type MarkdownRuntimeProps } from "./MarkdownRuntime.js";
+import { recoverFromDynamicImportError } from "../utils/dynamic-import-recovery.js";
+import { useTranslation } from "react-i18next";
 
 export interface MarkdownArtifactProps {
 	content: string;
@@ -22,11 +25,105 @@ export interface MarkdownArtifactProps {
 
 const MAX_STREAMING_TRANSFORM_LENGTH = 256 * 1024;
 
-/** The chat view has no error boundary above it, so a renderer crash (e.g. a
- * streamdown upgrade that changes plugin internals) must degrade to plain
- * text for this message instead of blanking the whole conversation. */
-class MarkdownErrorBoundary extends Component<{ content: string; className?: string; children: ReactNode }, { failed: boolean }> {
-	state = { failed: false };
+const MARKDOWN_RETRY_DELAYS_MS = [0, 100, 300, 1_000] as const;
+const REDUNDANT_FENCE_LANGUAGES = new Set([
+	"",
+	"text",
+	"txt",
+	"plain",
+	"plaintext",
+	"markdown",
+	"md",
+	"mdx",
+	"ecmarkdown",
+]);
+const NESTED_ECHARTS_LANGUAGES = new Set(["echarts", "echart", "json"]);
+
+interface MarkdownFence {
+	marker: string;
+	info: string;
+}
+
+function parseFenceLine(line: string): MarkdownFence | null {
+	const match = /^ {0,3}([`~]{3,})([^\r\n]*)$/.exec(line);
+	if (!match) return null;
+	return { marker: match[1], info: match[2].trim() };
+}
+
+function isClosingFence(line: string, openingMarker: string): boolean {
+	const trimmed = line.trim();
+	if (!trimmed.startsWith(openingMarker[0])) return false;
+	let markerLength = 0;
+	while (markerLength < trimmed.length && trimmed[markerLength] === openingMarker[0]) markerLength += 1;
+	return markerLength >= openingMarker.length && trimmed.slice(markerLength).trim().length === 0;
+}
+
+/**
+ * Models occasionally return a fenced Markdown block inside another generic
+ * text fence, for example ````text -> ```json -> ... -> ``` -> ````. The
+ * outer fence makes Streamdown treat the inner fence as literal code, so the
+ * ECharts renderer never sees the JSON. Unwrap only this exact, unambiguous
+ * shape and only for chart-capable inner languages; ordinary Markdown/code
+ * examples keep their original semantics.
+ */
+function unwrapRedundantEChartsFence(source: string): string {
+	// A single pass is sufficient: the unwrapped result is itself an
+	// echarts/json fence, which is not in REDUNDANT_FENCE_LANGUAGES, so a
+	// second attempt could never match again.
+	const lines = source.replace(/\r\n?/g, "\n").split("\n");
+	let first = 0;
+	while (first < lines.length && !lines[first]!.trim()) first += 1;
+	let last = lines.length - 1;
+	while (last >= first && !lines[last]!.trim()) last -= 1;
+	if (first >= last) return source;
+
+	const outer = parseFenceLine(lines[first]!);
+	if (!outer || !REDUNDANT_FENCE_LANGUAGES.has(outer.info.toLowerCase()) || !isClosingFence(lines[last]!, outer.marker)) return source;
+
+	let innerFirst = first + 1;
+	while (innerFirst < last && !lines[innerFirst]!.trim()) innerFirst += 1;
+	let innerLast = last - 1;
+	while (innerLast >= innerFirst && !lines[innerLast]!.trim()) innerLast -= 1;
+	if (innerFirst >= innerLast) return source;
+
+	const inner = parseFenceLine(lines[innerFirst]!);
+	if (!inner || !NESTED_ECHARTS_LANGUAGES.has(inner.info.toLowerCase())) return source;
+	if (isClosingFence(lines[innerLast]!, inner.marker)) {
+		return lines.slice(innerFirst, innerLast + 1).join("\n");
+	}
+	// A same-length wrapper can share its closing line with the inner fence:
+	// ```text -> ```json -> ... -> ```. Treat that final line as the inner
+	// close too, but only after the outer fence has otherwise matched fully.
+	if (!isClosingFence(lines[last]!, inner.marker)) return source;
+	return lines.slice(innerFirst, last + 1).join("\n");
+}
+
+interface MarkdownErrorBoundaryProps {
+	content: string;
+	className?: string;
+	children: ReactNode;
+}
+
+/** Class components cannot call useTranslation, so the retry notice is a
+ * small function child — this also keeps it working with test mocks that
+ * replace react-i18next entirely. */
+function MarkdownRetryStatus() {
+	const { t } = useTranslation();
+	return <div className="inno-markdown-retry-status inno-markdown-preview-status" role="status" aria-live="polite">{t("markdown.retryingRender", "正在恢复 Markdown 渲染…")}</div>;
+}
+
+interface MarkdownErrorBoundaryState {
+	failed: boolean;
+	retryCount: number;
+}
+
+/** A markdown failure should be recoverable on a cold start. The first render
+ * can race a lazy chunk or a highlighter initialization; showing the whole
+ * source immediately makes valid Markdown look broken, and a failed boundary
+ * otherwise stays stuck until the message text changes. */
+class MarkdownErrorBoundary extends Component<MarkdownErrorBoundaryProps, MarkdownErrorBoundaryState> {
+	state: MarkdownErrorBoundaryState = { failed: false, retryCount: 0 };
+	private retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 	static getDerivedStateFromError() {
 		return { failed: true };
@@ -34,19 +131,51 @@ class MarkdownErrorBoundary extends Component<{ content: string; className?: str
 
 	componentDidCatch(error: unknown) {
 		console.error("[inno] Markdown rendering failed; falling back to plain text", error);
+		// A stale or unavailable Vite chunk needs a fresh module graph. Reuse the
+		// app-wide guarded recovery so this path does not leave the message in a
+		// permanent source-only state.
+		if (recoverFromDynamicImportError(error)) return;
+
+		const delay = MARKDOWN_RETRY_DELAYS_MS[this.state.retryCount];
+		if (delay === undefined) return;
+		this.clearRetryTimer();
+		this.retryTimer = setTimeout(() => {
+			this.retryTimer = null;
+			this.setState((state) => state.failed
+				? { failed: false, retryCount: state.retryCount + 1 }
+				: null);
+		}, delay);
 	}
 
-	componentDidUpdate(previous: { content: string }) {
-		if (this.state.failed && previous.content !== this.props.content) {
-			this.setState({ failed: false });
+	componentDidUpdate(previous: MarkdownErrorBoundaryProps) {
+		if (previous.content === this.props.content) return;
+		this.clearRetryTimer();
+		if (this.state.failed || this.state.retryCount !== 0) {
+			this.setState({ failed: false, retryCount: 0 });
+		}
+	}
+
+	componentWillUnmount() {
+		this.clearRetryTimer();
+	}
+
+	private clearRetryTimer() {
+		if (this.retryTimer !== null) {
+			clearTimeout(this.retryTimer);
+			this.retryTimer = null;
 		}
 	}
 
 	render() {
 		if (this.state.failed) {
+			const retrying = this.state.retryCount < MARKDOWN_RETRY_DELAYS_MS.length;
 			return (
-				<div className={`inno-markdown ${this.props.className ?? ""}`}>
-					<pre className="whitespace-pre-wrap break-words font-mono text-xs">{this.props.content}</pre>
+				<div className={`inno-markdown ${this.props.className ?? ""}`} aria-busy={retrying || undefined}>
+					{retrying ? (
+						<MarkdownRetryStatus />
+					) : (
+						<pre className="whitespace-pre-wrap break-words font-mono text-xs">{this.props.content}</pre>
+					)}
 				</div>
 			);
 		}
@@ -56,13 +185,14 @@ class MarkdownErrorBoundary extends Component<{ content: string; className?: str
 
 export function MarkdownArtifact({ content, streaming = false, animate, compact = false, className }: MarkdownArtifactProps) {
 	const mathSingleDollar = useStoreSnapshot(settingsStore, () => settingsStore.settings?.ui?.mathSingleDollar === true);
+	const unwrappedContent = useMemo(() => unwrapRedundantEChartsFence(wrapRawSvgBlocks(content)), [content]);
 	// Match Cherry Studio's long-stream guard: once a live answer is very large,
 	// skip whole-document transforms and leave incremental parsing to Streamdown.
 	const normalizedContent = useMemo(
-		() => streaming && content.length > MAX_STREAMING_TRANSFORM_LENGTH
-			? content
-			: normalizeMarkdownMathForStreamdown(content, { singleDollar: mathSingleDollar }),
-		[content, streaming, mathSingleDollar],
+		() => streaming && unwrappedContent.length > MAX_STREAMING_TRANSFORM_LENGTH
+			? unwrappedContent
+			: normalizeMarkdownMathForStreamdown(unwrappedContent, { singleDollar: mathSingleDollar }),
+		[unwrappedContent, streaming, mathSingleDollar],
 	);
 	const hasMermaid = hasMermaidFence(normalizedContent);
 	const [mermaidRuntime, setMermaidRuntime] = useState(getMermaidMarkdownRuntime);
@@ -89,9 +219,14 @@ export function MarkdownArtifact({ content, streaming = false, animate, compact 
 		compact,
 		className,
 	};
+	const resetKey = [
+		streaming ? "streaming" : "static",
+		compact ? "compact" : "full",
+		hasMermaid ? (mermaidRuntime ? "mermaid-ready" : mermaidRuntimeFailed ? "mermaid-failed" : "mermaid-loading") : "plain",
+	].join("\u0000");
 
 	return (
-		<MarkdownErrorBoundary content={normalizedContent} className={className}>
+		<MarkdownErrorBoundary key={resetKey} content={normalizedContent} className={className}>
 			{hasMermaid ? (
 				// Reserve the diagram height only in full mode; compact surfaces
 				// (thinking cards) must stay as short as their content.

@@ -1,5 +1,5 @@
 import { apiFetch, streamSSE, streamSSEGet } from "./client.js";
-import type { ChatAttachments, QuestionnaireResult, StreamEventEnvelope, StreamSnapshot } from "../types/chat.js";
+import type { ChatAttachments, PermissionDecisionKind, QuestionnaireResult, StreamEventEnvelope, StreamSnapshot } from "../types/chat.js";
 
 export interface InlineImage {
 	data: string;
@@ -69,6 +69,21 @@ export async function submitChatQuestion(sessionId: string, turnId: string, ques
 	return apiFetch<SubmitChatQuestionResponse>("/api/chat/question-response", {
 		method: "POST",
 		body: JSON.stringify({ sessionId, turnId, questionId, result }),
+	});
+}
+
+/** Answer a parked permission ask (pi-permission-system). A deny may carry a
+ *  reason the agent sees. */
+export async function submitChatPermission(
+	sessionId: string,
+	turnId: string,
+	requestId: string,
+	decision: PermissionDecisionKind,
+	reason?: string,
+): Promise<{ accepted: boolean }> {
+	return apiFetch<{ accepted: boolean }>("/api/chat/permission-response", {
+		method: "POST",
+		body: JSON.stringify({ sessionId, turnId, requestId, decision, ...(reason ? { reason } : {}) }),
 	});
 }
 

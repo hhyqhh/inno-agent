@@ -19,7 +19,7 @@ PI SDK packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@e
 
 Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (scheduler), `@larksuiteoapi/node-sdk` (Feishu), `typebox` (validation), `undici` (HTTP client), `@juicesharp/rpiv-ask-user-question` (bridges agent `ask_user_question` tool calls to the web UI), `@juicesharp/rpiv-todo` (`todo` task-list tool), `pi-web-access` (`fetch_content`/`get_search_content` URL/GitHub/PDF/YouTube extraction), `pi-subagents` (optional subagent support), `pi-sandbox` (optional OS-level sandboxing), `graphology` + `graphology-communities-louvain` (wiki knowledge graph), `yaml` (YAML parsing), `@llamaindex/liteparse` (document parsing).
 
-Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is 67 files (523 tests), including backend chat-stream/trace persistence coverage and web chat trace/timeline coverage, while remaining skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
+Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is 79 files (615 tests), including backend chat-stream/trace persistence coverage and web chat trace/timeline coverage, while remaining skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
 
 When a PR changes the test count, the size of `server.ts`, or other structural facts stated in this file, update this file in the same PR — AI agents read it as ground truth.
 
@@ -40,6 +40,7 @@ Three tsconfig files, each self-contained (no `extends` chain):
 - **[ELECTRON_BUILD.md](./ELECTRON_BUILD.md)** — Electron packaging notes (Chinese).
 - **[apps/inno-agent/README.md](./apps/inno-agent/README.md)** — backend API route table and project structure (Chinese).
 - **[docs/SYSTEM_DEPENDENCIES.md](./docs/SYSTEM_DEPENDENCIES.md)** — full system-level dependency reference (build-time, runtime, Python environment, native modules). Essential for Docker/deployment work.
+- **[docs/PERMISSIONS_AND_SANDBOX.md](./docs/PERMISSIONS_AND_SANDBOX.md)** — permission layer (three policy modes, approval cards, deny floor) and sandbox layer (`--sandbox`, filesystem/network policy) explained with configuration details.
 
 ## Common Commands
 
@@ -181,6 +182,8 @@ Key files in `apps/inno-agent/src/agent/`:
 - `pi-runner.ts` — server-side facade around PI session APIs (`initSession`, `createNewSession`, `runPromptStreaming`, `completePromptOnce`, `switchModel`, etc.), shared by REST + SSE endpoints. Includes auto-retry on LLM API failures with `auto_retry_start`/`auto_retry_end` SSE events for client awareness.
 - `provider-sync.ts` — syncs providers from config into PI runtime and subagents.
 - `question-bridge.ts` — bridges `ask_user_question` tool calls from agent to web UI via an EventEmitter.
+- `permission-bridge.ts` — bridges pi-permission-system `ask` verdicts to the web UI approval card via the plugin's `inno-web` authorizer chain link; fail-closed (no bound turn / timeout / abort → deny with a teaching reason), with in-process `allow_session` caching. Answered via `POST /api/chat/permission-response`; parked asks block the agent loop exactly like question cards (same queue-release handling).
+- `permission-system-config.ts` — managed default policy for `@gotgenes/pi-permission-system` written to `<configDir>/extensions/pi-permission-system/config.json` on first run (`"*": allow` fallback so inno's own tools stay silent, bash asks with a read-only allowlist and destructive denylist, sensitive-path denies, `authorizerChain: ["inno-web"]`); also `resolvePluginFile` for jiti-loading packages whose exports map blocks the extension entry subpath. Gated by `plugins.permissionSystem.enabled` (default on). Three policy modes (`plugins.permissionSystem.mode`: `default` / `auto` / `yolo`, default `default`) are built by `buildPermissionPolicy` and written on demand by `writePermissionPolicyConfig` from the settings endpoint — `auto` flips bash `"*"` to allow, `yolo` sets `yoloMode`, and every mode keeps the destructive-command and sensitive-path deny floor (yoloMode rewrites only `ask`, never `deny`).
 - `practice-tools.ts` — Practice Lab tools (run commands, read run records).
 - `document-tools.ts` — file uploads, workspace file reading, document preview (CSV, Office formats).
 - `ocr-tools.ts` — OCR via external PaddleOCR-VL API, configured by `ocrApi` in config.json.
@@ -213,16 +216,14 @@ The local bundle server is at `scripts/content-hub-server/server.mjs` (zero-depe
 
 Both item types (skills and presets) share the same abstraction: a directory per item containing a marker file (`SKILL.md` for skills, `preset.json` for presets) plus supporting files. The content hub config lives in `config.json` under `contentHub`.
 
-### Presets / Simple Mode (`src/presets/`)
+### Presets (`src/presets/`)
 
-Preset workspaces are ready-to-use templates surfaced in "Simple Mode." Each preset is a directory with:
+Preset workspaces are ready-to-use templates surfaced as one-click cards on the welcome page. Each preset is a directory with:
 - `preset.json` — metadata (`{ id, name, description, icon? }`)
 - `agent.md` — per-workspace instructions injected each turn
 - `.skills/` — optional per-workspace private skills
 
 Presets are fetched from the remote content hub and cached locally under `<dataDir>/preset-cache/`. Bundled presets ship in `apps/inno-agent/presets/` (lesson-plan, ppt-creation, scenario-explain) and serve as an offline fallback. Opening a preset instantiates it as a fresh editable workspace.
-
-**Simple Mode** (`config.simpleMode.enabled`) is a global toggle that force-locks L1/L2/L3 memory off without overwriting the user's memory preferences, hides Notebook/Profile tabs in the UI, and surfaces preset workspaces for one-click start.
 
 ### Storage layer (`src/storage/`)
 
@@ -238,7 +239,7 @@ Three layers, all file-backed under `dataDir`:
 
 ### Scheduler
 
-`src/scheduler/` implements cron-driven background jobs. `JobStore` persists `jobs.json` and appends `runs.jsonl` per execution. `CronScheduler` (uses `cron-parser`) triggers `job-runner.executeJob`. Jobs can also be invoked manually via `/api/jobs/:id/run` or from the agent itself via the `run_scheduled_job` tool. On boot, `normalizePersistedJobs` backfills `nextRunAt`/`lastStatus`/`runCount` fields, and `migrateReminderChannels` repoints legacy `push_reminder` jobs to the registered default Feishu target.
+`src/scheduler/` implements cron-driven background jobs. `JobStore` persists `jobs.json` and appends `runs.jsonl` per execution. `CronScheduler` (uses `cron-parser`) triggers `job-runner.executeJob`. Manual runs always create their own conversation (scheduler-born session badge) and stream agent events into it. `src/checkins/` adds the learning check-in layer: `CheckInStore` derives today's plan from learning jobs (`checkins.json` + `occurrences.json`), successful learning-job runs automatically fulfill their scheduled slot, and `GET /api/checkins/today` exposes it to the web UI (read-only by design — check-ins derive from job runs) (打卡卡片 in the jobs panel). Scheduled learning runs leave a visible trace for the user: a short completion/failure notice is pushed best-effort through the first registered default channel (feishu → wechat → qq). Jobs can also be invoked manually via `/api/jobs/:id/run` or from the agent itself via the `run_scheduled_job` tool. On boot, `normalizePersistedJobs` backfills `nextRunAt`/`lastStatus`/`runCount` fields, and `migrateReminderChannels` repoints legacy `push_reminder` jobs to the registered default Feishu target.
 
 ### Channels
 
@@ -253,15 +254,16 @@ Three layers, all file-backed under `dataDir`:
 
 ### HTTP server (`src/server.ts`)
 
-Plain Node `http.createServer` (no framework), ~1600 lines plus route domains extracted under `src/server/routes/` (chat, wiki, workspaces, skills, channels, jobs, sessions, settings, learner, practice, presets). Key endpoints:
+Plain Node `http.createServer` (no framework), ~1750 lines plus route domains extracted under `src/server/routes/` (chat, wiki, workspaces, skills, channels, jobs, checkins, sessions, settings, learner, practice, presets, commands, btw). Key endpoints:
 - `POST /api/chat/stream` — SSE streaming chat.
 - `POST /api/chat` — non-streaming chat (full response).
 - `GET /api/chat/events/:id` — SSE event replay for reconnecting to an in-progress chat stream after page navigation (backed by `SessionEventBroadcaster`, an in-memory buffer).
 - `GET/PUT /api/wiki/*` — wiki CRUD, graph, stats.
-- `GET/POST/PATCH/DELETE /api/jobs[/:id]` — job management; `POST /api/jobs/:id/run` for manual execution.
+- `GET/POST/PATCH/DELETE /api/jobs[/:id]` — job management; `POST /api/jobs/:id/run` and `POST /api/jobs/:id/run/stream` (SSE of the agent run: text/thinking/tool events) for manual execution into a chosen conversation; `POST /api/jobs/run/stop` aborts an in-flight manual run.
 - `GET /api/sessions` / `GET /api/sessions/:id` — session listing; `PATCH /api/sessions/:id` for archive/unarchive/topic.
 - `GET /api/skills` — list loaded skills.
 - `GET /api/commands` — slash commands the agent session can dispatch/expand (extension commands, prompt templates, skills), backing the composer's slash palette. PI's builtin commands are TUI-only and deliberately excluded.
+- `POST /api/btw/ask` — "顺便问问" side question: stateless tool-less completion (`completeSideQuestion`) over a read-only digest of the session's recent messages; never enters the transcript or the prompt queue. `POST /api/btw/bring-back` appends a confirmed Q/A pair to the session as an assistant notification.
 - `POST /api/skills/upload` — accepts `<skill-name>.zip`, unpacks into `skillsDir/<name>/` via `spawnSync('unzip', ...)`.
 - `GET/PUT /api/skills/:name/content` — read/write skill file content (skill editor).
 - `GET /api/skills/:name/tree` — directory tree of a skill's files.
@@ -277,7 +279,7 @@ Plain Node `http.createServer` (no framework), ~1600 lines plus route domains ex
 - `GET/POST /api/workspaces[/:id]` — workspace CRUD.
 - `GET /api/settings` — current config (redacted API keys).
 - `GET/PUT /api/settings/web-access` — pi-web-access provider settings (default provider + per-provider credentials, masked on read; backed by `<configDir>/web-search.json`).
-- `PATCH /api/settings/simple-mode` — toggle Simple Mode.
+- `PUT /api/settings/permissions` — switch the pi-permission-system policy mode (`default` / `auto` / `yolo`; stored as `plugins.permissionSystem.mode`). Rewrites `extensions/pi-permission-system/config.json` from the managed template (clobbering hand edits) and triggers a resources reload so the plugin re-reads it without a restart. All modes keep the hard-deny floor; `auto` allows all bash, `yolo` sets `yoloMode`.
 - `PATCH /api/settings/content-hub` — update content hub config.
 - `PATCH /api/settings/memory` — toggle L1/L2/L3 memory.
 - `PATCH /api/settings/theme` — persist UI theme preference.
@@ -374,7 +376,7 @@ Separate Dockerfile for building the custom base image. Based on `node:22-bookwo
 
 ### User-facing config (`<configDir>/config.json`)
 
-Template: `config.example.json` at repo root. Declares `defaultProvider`, `defaultModel`, a `providers` map (each with `baseUrl`, `api` ∈ {`openai-completions`, `anthropic-messages`}, `apiKey`, `models[]`), optional `server.port`, optional `channels.*` blocks, optional `bridge.token`, optional `subagents.enabled`, optional `contentHub`, `memory`, `simpleMode`, and `ui` sections. The server hot-rewrites this file when the user switches model via the UI.
+Template: `config.example.json` at repo root. Declares `defaultProvider`, `defaultModel`, a `providers` map (each with `baseUrl`, `api` ∈ {`openai-completions`, `anthropic-messages`}, `apiKey`, `models[]`), optional `server.port`, optional `channels.*` blocks, optional `bridge.token`, optional `subagents.enabled`, optional `contentHub`, `memory`, and `ui` sections. The server hot-rewrites this file when the user switches model via the UI.
 
 Model config supports `reasoning` (boolean), `input` (modality array, e.g. `["text", "image"]`), `contextWindow`, and `maxTokens` per model entry. Provider config supports `authHeader` (boolean) and `bypassProxy` (boolean) fields.
 
@@ -393,6 +395,7 @@ Full config.json structure (see `config.example.json`):
   "subagents": { "enabled": false },
   "plugins": {
     "todo": { "enabled": true },
+    "permissionSystem": { "enabled": true },
     "webAccess": { "enabled": true }
   },
   "contentHub": {
@@ -418,11 +421,10 @@ Full config.json structure (see `config.example.json`):
 }
 ```
 
-Note: `simpleMode` and parts of `ui` are not in `config.example.json` but are added at runtime by `normalizeConfig` defaults (`simpleMode.enabled: false`, `ui.theme: "light"`, `ui.mathSingleDollar: false`). QQ channel is supported in code via bridge but is not in the template config.
+Note: parts of `ui` are not in `config.example.json` but are added at runtime by `normalizeConfig` defaults (`ui.theme: "light"`, `ui.mathSingleDollar: false`). QQ channel is supported in code via bridge but is not in the template config.
 
 - `contentHub` configures the remote source for skills and presets. `type` is `"github"` or `"bundle"`. For `"bundle"`, set `baseUrl` to the self-hosted server URL. `token` is the GitHub PAT (for `"github"` type) or bundle auth token.
-- `memory.l1Enabled` / `l2Enabled` / `l3Enabled` individually gate each memory layer. Simple Mode force-disables all three without overwriting these preferences.
-- `simpleMode.enabled` toggles Simple Mode (hides advanced features, surfaces preset workspaces).
+- `memory.l1Enabled` / `l2Enabled` / `l3Enabled` individually gate each memory layer.
 - `ui.theme` persists the UI theme preference.
 - `bridge.token` is the shared secret for bridge-mode IM channels (QQ, WeChat). `personalOnly` (p2p-only) and `allowedUserIds` (whitelist) are enforced by Feishu; WeChat iLink enforces `allowedUserIds` only (its `personalOnly` field was removed as inert); bridge-mode channels (QQ, WeChat bridge) enforce neither — filtering there is the sidecar's responsibility.
 - `ocrApi` configures PaddleOCR-VL for image OCR. Agent uses this via `ocr-tools.ts`. Requires a `token` from Baidu PaddleOCR.
@@ -439,7 +441,6 @@ Centralized in `apps/inno-agent/src/config.ts`:
 - `normalizeConfig` — fills missing top-level fields with sensible defaults, handles legacy migration (`openai` → `providers.openai-custom`).
 - `normalizeContentHubConfig` — fills missing hub fields from built-in defaults.
 - `normalizeMemoryConfig` — all three layers default to `true`.
-- `normalizeSimpleModeConfig` — defaults to `false`.
 - `saveConfig`, `setDefaultModel`, `upsertProvider`, `deleteProvider`, `deleteModel` — config mutation helpers. `deleteModel` has a last-model-per-provider safety guard.
 - `getConfiguredPort` — resolves port from override > `INNO_PORT` env > config > 3000.
 

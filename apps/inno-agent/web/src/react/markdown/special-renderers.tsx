@@ -1,8 +1,8 @@
-import { Component, lazy, Suspense, useContext, type ComponentType, type ReactNode } from "react";
+import { Component, lazy, Suspense, useContext, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { StreamdownContext, type CustomRenderer, type CustomRendererProps } from "streamdown";
 import { EnhancedCodeRenderer } from "./EnhancedCodeRenderer.js";
-import { markdownMaxHeight, markdownToolbarEnabled } from "./shared.js";
+import { markdownMaxHeight } from "./shared.js";
 
 export { EnhancedCodeRenderer };
 
@@ -11,12 +11,12 @@ function lazyRenderer(
 	Fallback: ComponentType<CustomRendererProps>,
 	LoadingFallback: ComponentType<CustomRendererProps> = Fallback,
 ): ComponentType<CustomRendererProps> {
-	const Component = lazy(loader);
+	const LazyComponent = lazy(loader);
 	return function DeferredArtifactRenderer(props: CustomRendererProps) {
 		return (
 			<RendererErrorBoundary fallback={<Fallback {...props} />} resetKey={`${props.language}\u0000${props.code}`}>
 				<Suspense fallback={<LoadingFallback {...props} />}>
-					<Component {...props} />
+					<LazyComponent {...props} />
 				</Suspense>
 			</RendererErrorBoundary>
 		);
@@ -68,20 +68,34 @@ function CodeRendererFallback({ code, language }: Pick<CustomRendererProps, "cod
 	);
 }
 
+/** Keep a generic code-renderer failure local to its fenced block. A cold
+ * highlighter or a renderer hook error must not make the outer Markdown tree
+ * fall back to printing the entire message source. */
+export function ResilientCodeRenderer(props: CustomRendererProps) {
+	return (
+		<RendererErrorBoundary
+			fallback={<CodeRendererFallback code={props.code} language={props.language} />}
+			resetKey={`${props.language}\u0000${props.code}\u0000${props.isIncomplete ? "incomplete" : "complete"}`}
+		>
+			<EnhancedCodeRenderer {...props} />
+		</RendererErrorBoundary>
+	);
+}
+
 function extractFallbackHtmlTitle(code: string): string {
 	return /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(code)?.[1]
 		?.replace(/<[^>]+>/g, "")
 		.trim() ?? "";
 }
 
-function ArtifactRendererFallback({ code, language, isIncomplete, showSource = true }: CustomRendererProps & { showSource?: boolean }) {
+const ARTIFACT_LOADING_DELAY_MS = 150;
+
+function ArtifactRendererFallback({ code, language, isIncomplete, showSource = true, loadingVisible = true }: CustomRendererProps & { showSource?: boolean; loadingVisible?: boolean }) {
 	// Hooks must run unconditionally: when the error boundary shows this
 	// fallback, a streaming fence can still flip isIncomplete mid-render, and
 	// an early return would change the hook order between commits.
 	const { t } = useTranslation();
-	const streamdownContext = useContext(StreamdownContext);
 	if (isIncomplete) return <CodeRendererFallback code={code} language={language} />;
-	const toolbarEnabled = markdownToolbarEnabled(streamdownContext.controls, "code");
 	const normalizedLanguage = language?.toLowerCase() ?? "";
 	const title = normalizedLanguage === "html" || normalizedLanguage === "htm"
 		? extractFallbackHtmlTitle(code) || t("markdown.htmlPreview", "HTML 预览")
@@ -98,10 +112,9 @@ function ArtifactRendererFallback({ code, language, isIncomplete, showSource = t
 		<div data-inno-content-block="artifact" className="inno-markdown-content-block inno-markdown-content-block--artifact is-loading">
 			<div className="inno-markdown-content-header">
 				<span className="inno-markdown-content-title">{title}</span>
-				{toolbarEnabled ? <div className="inno-markdown-toolbar" aria-hidden="true"><span className="inno-markdown-toolbar-skeleton" /></div> : null}
 			</div>
 			<div className="inno-markdown-artifact-content">
-				<div className="inno-markdown-preview-status" role="status" aria-live="polite">{t("markdown.loadingPreview", "正在加载预览…")}</div>
+				<div className="inno-markdown-preview-status" role={loadingVisible ? "status" : undefined} aria-live={loadingVisible ? "polite" : undefined} aria-hidden={loadingVisible ? undefined : true}>{loadingVisible ? t("markdown.loadingPreview", "正在加载预览…") : null}</div>
 				{showSource ? <pre className="inno-markdown-artifact-source" data-inno-source-fallback="">{code}</pre> : null}
 			</div>
 		</div>
@@ -112,23 +125,25 @@ function ArtifactRendererFallback({ code, language, isIncomplete, showSource = t
  * actually fails, RendererErrorBoundary uses ArtifactRendererFallback so the
  * user still has a recoverable source view instead of a blank artifact. */
 function ArtifactRendererLoadingFallback(props: CustomRendererProps) {
-	if (props.isIncomplete) return <CodeRendererFallback code={props.code} language={props.language} />;
-	return <ArtifactRendererFallback {...props} showSource={false} />;
+	const [loadingVisible, setLoadingVisible] = useState(false);
+	useEffect(() => {
+		const timer = setTimeout(() => setLoadingVisible(true), ARTIFACT_LOADING_DELAY_MS);
+		return () => clearTimeout(timer);
+	}, []);
+	return <ArtifactRendererFallback {...props} showSource={false} loadingVisible={loadingVisible} />;
 }
 
 function MermaidRendererFallback() {
 	const { t } = useTranslation();
 	const streamdownContext = useContext(StreamdownContext);
-	const toolbarEnabled = markdownToolbarEnabled(streamdownContext.controls, "mermaid");
 	const maxHeight = markdownMaxHeight(streamdownContext.codeBlockMaxHeight);
-		return (
-			<div data-inno-mermaid-preview="" data-inno-content-block="mermaid" className="inno-markdown-content-block inno-markdown-content-block--mermaid is-loading">
-				<div className="inno-markdown-content-header">
-					<span className="inno-markdown-content-title">{t("markdown.mermaidLabel", "Mermaid 图表")}</span>
-					{toolbarEnabled ? <div className="inno-markdown-toolbar" aria-hidden="true"><span className="inno-markdown-toolbar-skeleton" /></div> : null}
-				</div>
-				<div data-inno-mermaid-surface="" className="inno-mermaid-surface inno-markdown-mermaid-surface" style={maxHeight ? { maxHeight } : undefined}><div className="inno-mermaid-status" role="status"><span className="inno-mermaid-spinner" aria-hidden="true" />{t("markdown.mermaidLoading", "正在加载图表…")}</div></div>
+	return (
+		<div data-inno-mermaid-preview="" data-inno-content-block="mermaid" className="inno-markdown-content-block inno-markdown-content-block--mermaid is-loading">
+			<div className="inno-markdown-content-header">
+				<span className="inno-markdown-content-title">{t("markdown.mermaidLabel", "Mermaid 图表")}</span>
 			</div>
+			<div data-inno-mermaid-surface="" className="inno-mermaid-surface inno-markdown-mermaid-surface" style={maxHeight ? { maxHeight } : undefined}><div className="inno-mermaid-status" role="status"><span className="inno-mermaid-spinner" aria-hidden="true" />{t("markdown.mermaidLoading", "正在加载图表…")}</div></div>
+		</div>
 	);
 }
 
@@ -145,6 +160,57 @@ const PlantUmlArtifactRenderer = lazyRenderer(() => import("./ArtifactRenderers.
 const EChartsArtifactRenderer = lazyRenderer(() => import("./ArtifactRenderers.js").then((module) => ({ default: module.EChartsArtifactRenderer })), ArtifactRendererFallback, ArtifactRendererLoadingFallback);
 const MermaidArtifactRenderer = lazyRenderer(() => import("./MermaidArtifactRenderer.js").then((module) => ({ default: module.MermaidArtifactRenderer })), MermaidSourceFallback, MermaidRendererFallback);
 
+const ECHARTS_SERIES_TYPES = new Set([
+	"bar",
+	"boxplot",
+	"candlestick",
+	"custom",
+	"effectscatter",
+	"funnel",
+	"gauge",
+	"graph",
+	"heatmap",
+	"line",
+	"lines",
+	"map",
+	"parallel",
+	"pictorialbar",
+	"pie",
+	"radar",
+	"sankey",
+	"scatter",
+	"sunburst",
+	"themeriver",
+	"treemap",
+	"tree",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Recognize the strict-JSON form commonly emitted for ECharts options. */
+function looksLikeEChartsOption(value: unknown): boolean {
+	if (!isRecord(value)) return false;
+	const series = value.series;
+	const items = Array.isArray(series) ? series : [series];
+	return items.some((item) => isRecord(item)
+		&& typeof item.type === "string"
+		&& ECHARTS_SERIES_TYPES.has(item.type.toLowerCase()));
+}
+
+function JsonCodeRenderer(props: CustomRendererProps) {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(props.code);
+	} catch {
+		return <ResilientCodeRenderer {...props} />;
+	}
+	return looksLikeEChartsOption(parsed)
+		? <EChartsArtifactRenderer {...props} />
+		: <ResilientCodeRenderer {...props} />;
+}
+
 export const SPECIAL_CODE_RENDERERS: CustomRenderer[] = [
 	{ language: "mermaid", component: MermaidArtifactRenderer },
 	{ language: ["html", "htm"], component: HtmlArtifactRenderer },
@@ -152,4 +218,5 @@ export const SPECIAL_CODE_RENDERERS: CustomRenderer[] = [
 	{ language: ["dot", "graphviz"], component: GraphvizArtifactRenderer },
 	{ language: ["plantuml", "puml"], component: PlantUmlArtifactRenderer },
 	{ language: ["echarts", "echart"], component: EChartsArtifactRenderer },
+	{ language: "json", component: JsonCodeRenderer },
 ];

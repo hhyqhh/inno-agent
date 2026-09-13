@@ -11,7 +11,7 @@ import {
 	type PluginConfig,
 	type StreamdownTranslations,
 } from "streamdown";
-import { EnhancedCodeRenderer, SPECIAL_CODE_RENDERERS } from "./markdown/special-renderers.js";
+import { ResilientCodeRenderer, SPECIAL_CODE_RENDERERS } from "./markdown/special-renderers.js";
 import { EnhancedTable } from "./markdown/EnhancedTable.js";
 import { EnhancedLink } from "./markdown/EnhancedLink.js";
 import { STREAMDOWN_ICON_OVERRIDES } from "./markdown/shared.js";
@@ -130,10 +130,10 @@ const ENHANCED_CODE_LANGUAGES = Array.from(new Set<string>([
 	])).filter(isEnhancedCodeLanguage);
 const CODE_RENDERERS = [
 	...SPECIAL_CODE_RENDERERS,
-	{ language: ENHANCED_CODE_LANGUAGES, component: EnhancedCodeRenderer },
+	{ language: ENHANCED_CODE_LANGUAGES, component: ResilientCodeRenderer },
 ];
 const FULL_CONTROLS = {
-	code: { copy: true, download: { filename: "inno-code" } },
+	code: { copy: true, download: { filename: "inno-code" }, panZoom: true },
 	table: { copy: true, download: { filename: "inno-table" }, fullscreen: true },
 	mermaid: { copy: true, download: { filename: "inno-diagram" }, fullscreen: true, panZoom: true },
 	image: { download: true },

@@ -54,17 +54,6 @@ export interface InnoMemoryConfig {
 }
 
 /**
- * Simple Mode. A global, opt-in switch (default OFF) that turns Inno into a
- * streamlined, ready-to-use experience: it force-locks the L1/L2/L3 memory
- * layers OFF at runtime (without overwriting the user's memory preferences, so
- * exiting restores them) and the web UI hides the notebook/profile tabs and
- * surfaces preset workspaces for one-click start.
- */
-export interface InnoSimpleModeConfig {
-	enabled: boolean;
-}
-
-/**
  * Smart Input (便捷输入). Global, enabled by default. When enabled, the web
  * composer recognizes literal keywords (e.g. "pdf", "word") in the typed text
  * and converts them into file-binding bubbles; files bound to a bubble are
@@ -153,6 +142,15 @@ export interface InnoSchedulerConfig {
 
 /** What should happen when the desktop window's close button is clicked. */
 export type InnoCloseBehavior = "ask" | "hide" | "quit";
+
+/**
+ * Permission policy template selected via the settings UI. "default" asks on
+ * bash commands outside the read-only allowlist; "auto" auto-approves all
+ * bash; "yolo" auto-approves every surface (the plugin's yoloMode rewrites
+ * ask → allow). All three keep the hard-deny floor (destructive commands,
+ * credential paths) — yoloMode cannot rewrite a deny.
+ */
+export type PermissionPolicyMode = "default" | "auto" | "yolo";
 
 export interface InnoUiConfig {
 	theme: string;
@@ -250,7 +248,6 @@ export interface InnoConfig {
 	contentHub?: InnoContentHubConfig;
 	subagents?: InnoSubagentsConfig;
 	memory?: InnoMemoryConfig;
-	simpleMode?: InnoSimpleModeConfig;
 	smartInput?: InnoSmartInputConfig;
 	mcp?: InnoMcpConfig;
 	ui?: InnoUiConfig;
@@ -274,7 +271,7 @@ export interface InnoConfig {
 		apiKey: string;
 	};
 	/**
-	 * Third-party PI extensions bundled with inno-agent. Both default to
+	 * Third-party PI extensions bundled with inno-agent. All default to
 	 * enabled; set `enabled: false` to opt out without uninstalling.
 	 *
 	 * - `todo` (@juicesharp/rpiv-todo): registers the `todo` task-list tool.
@@ -284,10 +281,22 @@ export interface InnoConfig {
 	 *   `web_search`/`source_check` tools stay disabled via the managed
 	 *   `<configDir>/web-search.json` default so the built-in Tavily
 	 *   `web_search` remains the single search tool.
+	 * - `permissionSystem` (@gotgenes/pi-permission-system): allow/ask/deny
+	 *   policy gate for tool calls, bash commands, MCP, skills and file paths.
+	 *   Policy lives in `<configDir>/extensions/pi-permission-system/config.json`
+	 *   (managed default on first run). In server mode `ask` verdicts are
+	 *   answered by the web approval card via the `inno-web` authorizer link
+	 *   (permission-bridge.ts); no answer → deny (fail-closed). `mode` selects
+	 *   the managed policy template ("default" asks on non-allowlisted bash,
+	 *   "auto" auto-approves bash, "yolo" auto-approves every surface); the
+	 *   hard-deny floor (destructive commands, credential paths) applies in all
+	 *   three. Switching modes rewrites the plugin config file from the
+	 *   template — hand edits to that file are lost on a mode switch.
 	 */
 	plugins?: {
 		todo?: { enabled?: boolean };
 		webAccess?: { enabled?: boolean };
+		permissionSystem?: { enabled?: boolean; mode?: PermissionPolicyMode };
 	};
 }
 
@@ -362,13 +371,6 @@ export function normalizeMemoryConfig(memory: Partial<InnoMemoryConfig> | undefi
 		l1Enabled: memory?.l1Enabled !== false,
 		l2Enabled: memory?.l2Enabled !== false,
 		l3Enabled: memory?.l3Enabled !== false,
-	};
-}
-
-export function normalizeSimpleModeConfig(simpleMode: Partial<InnoSimpleModeConfig> | undefined): InnoSimpleModeConfig {
-	// Simple Mode defaults OFF; only an explicit `true` enables it.
-	return {
-		enabled: simpleMode?.enabled === true,
 	};
 }
 
@@ -545,7 +547,6 @@ export function normalizeConfig(config: LegacyInnoConfig): InnoConfig {
 		contentHub: normalizeContentHubConfig(config.contentHub, config.github?.token),
 		subagents: config.subagents,
 		memory: normalizeMemoryConfig(config.memory),
-		simpleMode: normalizeSimpleModeConfig(config.simpleMode),
 		smartInput: normalizeSmartInputConfig(config.smartInput),
 		mcp: normalizeMcpConfig(config.mcp),
 		ui: normalizeUiConfig(config.ui),
@@ -657,6 +658,9 @@ export function deleteModel(config: InnoConfig, providerId: string, modelId: str
 	const provider = config.providers[id];
 	if (!provider) throw new Error(`Provider ${id} not found`);
 	if (!provider.models.some((m) => m.id === mid)) throw new Error(`Model ${id}/${mid} not found`);
+	if (id === config.defaultProvider && mid === config.defaultModel) {
+		throw new Error("Cannot delete the default model; switch to another model first");
+	}
 
 	const totalModels = Object.values(config.providers).reduce((sum, p) => sum + p.models.length, 0);
 	if (totalModels <= 1) throw new Error("Cannot delete the last model");

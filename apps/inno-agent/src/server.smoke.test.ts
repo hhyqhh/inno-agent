@@ -62,6 +62,18 @@ beforeAll(async () => {
 		}),
 		"utf-8",
 	);
+	const smokeWikiDir = join(home, "data", "l2", "wiki", "concepts");
+	mkdirSync(smokeWikiDir, { recursive: true });
+	for (const [fileName, title, body] of [
+		["agent.md", "Agent", "面向任务执行的智能系统。"],
+		["retrieval.md", "Retrieval", "从知识库中检索任务所需上下文。"],
+	] as const) {
+		writeFileSync(
+			join(smokeWikiDir, fileName),
+			`---\ntitle: ${title}\ntype: concept\ntags: []\nsources: []\nsource_ids: []\n---\n\n${body}\n`,
+			"utf-8",
+		);
+	}
 
 	port = await getFreePort();
 	child = spawn(
@@ -331,6 +343,50 @@ describe("server smoke", () => {
 			body: JSON.stringify({ status: "active" }),
 		});
 		expect(gone.status).toBe(404);
+	});
+
+	it("learner personal links: create → compare → review → delete round-trip", async () => {
+		const unknownNode = await fetch(`http://127.0.0.1:${port}/api/learner/personal-links`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				source: "../../outside-the-wiki.md",
+				target: "wiki/concepts/retrieval.md",
+				reason: "This path must never be accepted as a graph node.",
+			}),
+		});
+		expect(unknownNode.status).toBe(400);
+
+		const created = await fetch(`http://127.0.0.1:${port}/api/learner/personal-links`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				source: "wiki/concepts/agent.md",
+				target: "wiki/concepts/retrieval.md",
+				reason: "Agent 可以用检索补充完成任务时需要的上下文。",
+			}),
+		});
+		expect(created.status).toBe(201);
+		const link = (await created.json()) as { id: string; status: string; feedback?: { generated_by: string }; chat_feedback?: string; comparison: { alignment: string } };
+		expect(link.status).toBe("proposed");
+		expect(link.feedback).toBeDefined();
+		expect(link.chat_feedback).toContain("本轮知识连接评议");
+		expect(link.comparison.alignment).toBe("learner_only");
+
+		const listed = await api("/api/learner/personal-links");
+		expect(listed.status).toBe(200);
+		expect(((await listed.json()) as { links: Array<{ id: string }> }).links.map((item) => item.id)).toContain(link.id);
+
+		const reviewed = await fetch(`http://127.0.0.1:${port}/api/learner/personal-links/${link.id}`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ status: "accepted" }),
+		});
+		expect(reviewed.status).toBe(200);
+		expect(((await reviewed.json()) as { status: string }).status).toBe("accepted");
+
+		const removed = await fetch(`http://127.0.0.1:${port}/api/learner/personal-links/${link.id}`, { method: "DELETE" });
+		expect(removed.status).toBe(200);
 	});
 
 	it("POST /api/skills/upload validates required fields", async () => {

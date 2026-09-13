@@ -688,7 +688,7 @@ export function GraphView() {
 			return;
 		}
 		workspaceModeBeforeCoBuildRef.current = appStore.workspaceMode;
-		appStore.setRightPanelTab("notebook");
+		appStore.setPage("notebook");
 		appStore.setWorkspaceMode("full");
 		setShowPersonalLinks(true);
 		setIsCoBuilding(true);

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, ipcMain, screen } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
+import { createServer as createNetServer } from "node:net";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -19,7 +20,8 @@ const serverScript = isDev
 const innoHome = join(homedir(), ".inno-agent");
 const configDir = join(innoHome, "config");
 const configPath = join(configDir, "config.json");
-const PORT = 3000;
+const DEFAULT_PORT = 3000;
+let serverPort = DEFAULT_PORT;
 
 // ── 首次启动创建默认配置（不要求 API Key） ────────────────────────────────────
 function ensureConfig() {
@@ -44,7 +46,7 @@ function ensureConfig() {
         ],
       },
     },
-    server: { port: PORT },
+    server: { port: DEFAULT_PORT },
     channels: {
       feishu: { enabled: false },
       qq: { enabled: false, mode: "bridge", sidecarBaseUrl: "http://127.0.0.1:4318" },
@@ -126,7 +128,7 @@ function isWindowExpansionSide(value) {
 function isWindowExpansionRequest(value) {
   return value
     && typeof value === "object"
-    && (value.side === "left" || value.side === "right")
+    && isWindowExpansionSide(value.side)
     && Number.isFinite(value.additionalWidth)
     && value.additionalWidth >= 0;
 }
@@ -209,7 +211,7 @@ function getConfiguredCloseBehavior() {
 
 async function rememberCloseBehavior(closeBehavior) {
   try {
-    const response = await fetch(`http://localhost:${PORT}/api/settings/close-behavior`, {
+    const response = await fetch(`http://localhost:${serverPort}/api/settings/close-behavior`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ closeBehavior }),
@@ -234,6 +236,46 @@ function quitApplication() {
   // If called from the window's `close` event, wait until the current event
   // finishes before asking Electron to close the window again.
   setImmediate(() => app.quit());
+}
+
+/**
+ * Probe a port using the same wildcard bind as the HTTP server. The probe is
+ * closed before returning; the server child receives the selected port and
+ * owns the real listener.
+ */
+function probePort(port) {
+  return new Promise((resolve, reject) => {
+    const probe = createNetServer();
+    probe.once("error", reject);
+    probe.listen(port, () => {
+      const address = probe.address();
+      const selectedPort = address && typeof address === "object" ? address.port : port;
+      probe.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(selectedPort);
+      });
+    });
+  });
+}
+
+/**
+ * Keep the conventional port when possible, but let the desktop app coexist
+ * with a separately started dev server, Docker container, or another Inno
+ * instance. Without this negotiation the child exits with EADDRINUSE while
+ * the renderer may accidentally attach to the other process on port 3000.
+ */
+async function selectServerPort() {
+  try {
+    return await probePort(DEFAULT_PORT);
+  } catch (error) {
+    if (error?.code !== "EADDRINUSE") throw error;
+    const fallbackPort = await probePort(0);
+    console.warn(`[server] port ${DEFAULT_PORT} is busy; using port ${fallbackPort}`);
+    return fallbackPort;
+  }
 }
 
 async function askCloseBehavior() {
@@ -279,6 +321,10 @@ function openMainWindow() {
     minWidth: 800,
     minHeight: 600,
     title: "Inno Agent",
+    // Keep the macOS traffic lights, but let the renderer own the area below
+    // them so the app no longer gets the separate native title-bar strip.
+    titleBarStyle: process.platform === "darwin" ? "hidden" : undefined,
+    trafficLightPosition: process.platform === "darwin" ? { x: 16, y: 18 } : undefined,
     backgroundColor: "#0f1117",
     webPreferences: {
       contextIsolation: true,
@@ -288,7 +334,7 @@ function openMainWindow() {
     },
   });
 
-  mainWindow.loadURL(`http://localhost:${PORT}`);
+  mainWindow.loadURL(`http://localhost:${serverPort}`);
 
   // Chromium remembers per-origin page zoom. Reset it for the local app so a
   // previous Ctrl +/- does not compound Windows display scaling on restart.
@@ -361,44 +407,84 @@ function showMainWindow() {
 }
 
 // ── 启动后端服务器 ────────────────────────────────────────────────────────────
-function startServer(onReady) {
+async function startServer(onReady) {
+  let serverOutput = "";
+  let failureReported = false;
+  let poll = null;
+
+  const appendServerOutput = (chunk) => {
+    serverOutput = `${serverOutput}${chunk.toString()}`.slice(-8000);
+  };
+  const reportFailure = (message) => {
+    if (failureReported || isQuitting) return;
+    failureReported = true;
+    if (poll) clearInterval(poll);
+    const output = serverOutput.trim();
+    const detail = output
+      ? `${message}\n\n后端输出：\n${output}\n\n日志目录：${join(innoHome, "data", "log")}`
+      : `${message}\n\n日志目录：${join(innoHome, "data", "log")}`;
+    dialog.showErrorBox("Inno Agent 服务启动失败", detail);
+  };
+
+  try {
+    serverPort = await selectServerPort();
+  } catch (error) {
+    reportFailure(`无法为后端服务分配端口：${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  if (isQuitting) return;
+
   process.env.INNO_HOME = innoHome;
   process.env.INNO_CONFIG_DIR = configDir;
   process.env.INNO_CONFIG_FILE = configPath;
   process.env.INNO_DATA_DIR = join(innoHome, "data");
   process.env.INNO_SKILLS_DIR = join(innoHome, "skills");
   process.env.INNO_WORKSPACE_DIR = join(homedir(), "Documents");
-  process.env.INNO_PORT = String(PORT);
+  process.env.INNO_PORT = String(serverPort);
 
-  serverProcess = spawn(process.execPath, [serverScript, "--server"], {
+  serverProcess = spawn(process.execPath, [serverScript, "--server", "--port", String(serverPort)], {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  serverProcess.stdout.on("data", (d) => console.log("[server]", d.toString()));
-  serverProcess.stderr.on("data", (d) => console.error("[server]", d.toString()));
+  serverProcess.stdout.on("data", (d) => {
+    appendServerOutput(d);
+    console.log("[server]", d.toString());
+  });
+  serverProcess.stderr.on("data", (d) => {
+    appendServerOutput(d);
+    console.error("[server]", d.toString());
+  });
 
-  serverProcess.on("exit", (code) => {
+  serverProcess.on("error", (error) => {
+    appendServerOutput(error.stack || error.message);
+    reportFailure(`无法启动后端进程：${error.message}`);
+  });
+
+  serverProcess.on("exit", (code, signal) => {
+    if (isQuitting) return;
     if (code !== 0 && code !== null) {
-      dialog.showErrorBox(
-        "Inno Agent 服务异常退出",
-        `服务器进程以代码 ${code} 退出。\n请检查日志或重新启动应用。`
-      );
+      reportFailure(`服务器进程以代码 ${code} 退出。`);
+    } else if (signal) {
+      reportFailure(`服务器进程被信号 ${signal} 终止。`);
     }
   });
 
   // 轮询 /health，最多等待 30s
   let elapsed = 0;
-  const poll = setInterval(async () => {
+  poll = setInterval(async () => {
     try {
-      const r = await fetch(`http://localhost:${PORT}/health`);
+      const r = await fetch(`http://localhost:${serverPort}/health`);
       if (r.ok) {
         clearInterval(poll);
+        poll = null;
         onReady?.();
       }
     } catch { /* 还未就绪 */ }
     elapsed += 500;
-    if (elapsed >= 30000) clearInterval(poll);
+    if (elapsed >= 30000) {
+      reportFailure("后端服务在 30 秒内未能就绪。");
+    }
   }, 500);
 }
 

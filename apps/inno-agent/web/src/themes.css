@@ -45,6 +45,9 @@
 	--inno-user-bubble-bg: #e9eef6;
 	--inno-card-bg: #ffffff;
 	--inno-chip-bg: #f1f4f9;
+	--inno-primary-bg: #1f1f1f;
+	--inno-primary-fg: #ffffff;
+	--inno-primary-bg-hover: #000000;
 	--inno-send-bg: #1f1f1f;
 	--inno-send-fg: #ffffff;
 	--inno-send-bg-hover: #000000;
@@ -90,6 +93,9 @@
 	--inno-user-bubble-bg: #26282d;
 	--inno-card-bg: #1e2023;
 	--inno-chip-bg: #2a2c30;
+	--inno-primary-bg: #ffffff;
+	--inno-primary-fg: #1f1f1f;
+	--inno-primary-bg-hover: #ffffff;
 	--inno-send-bg: #e8eaed;
 	--inno-send-fg: #1f1f1f;
 	--inno-send-bg-hover: #ffffff;

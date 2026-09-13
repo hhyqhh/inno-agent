@@ -17,4 +17,4 @@
 
 - `use-mock-keychain`：未签名 app 避免 macOS 钥匙串弹窗
 - `ELECTRON_RUN_AS_NODE=1` + `spawn(process.execPath, [server.js])`：用 Electron 内置 Node 跑后端，正确解析 asar 内 `node_modules`
-- 轮询 `http://localhost:3000/health`，就绪后关闭 loading 窗口并打开主界面
+- 默认优先使用 3000 端口；若已被其他服务占用，则自动选择空闲端口。轮询实际端口的 `/health`，就绪后关闭 loading 窗口并打开主界面

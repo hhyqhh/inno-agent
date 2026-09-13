@@ -2,9 +2,17 @@ import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { appendAssistantNotificationInSession, completeSideQuestion } from "../../agent/pi-runner.js";
-import { json, readBody } from "../http-helpers.js";
+import { json, matchRoute, readBody } from "../http-helpers.js";
 import { logger } from "../../logger.js";
 import type { SessionMessageSummary } from "../session-model.js";
+import {
+	readBtwState,
+	writeBtwState,
+	type BtwExchangeState,
+	type BtwSessionState,
+	type BtwStateResponse,
+	type BtwTabState,
+} from "../btw-store.js";
 
 /**
  * /api/btw route domain — "顺便问问" side-question channel.
@@ -78,6 +86,102 @@ function formatBtwForSession(question: string, answer: string): string {
 	].join("\n");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function finiteNumber(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value);
+}
+
+function parseExchange(raw: unknown): BtwExchangeState | null {
+	if (!isRecord(raw)) return null;
+	if (
+		typeof raw.id !== "string" || !raw.id ||
+		typeof raw.question !== "string" ||
+		typeof raw.answer !== "string" ||
+		(raw.status !== "pending" && raw.status !== "done" && raw.status !== "error")
+	) return null;
+	return {
+		id: raw.id,
+		question: raw.question,
+		answer: raw.answer,
+		status: raw.status,
+		...(typeof raw.error === "string" && raw.error ? { error: raw.error } : {}),
+		...(raw.broughtBack === true ? { broughtBack: true } : {}),
+	};
+}
+
+function parseTab(raw: unknown): BtwTabState | null {
+	if (!isRecord(raw) || typeof raw.id !== "string" || !raw.id || !finiteNumber(raw.number) || raw.number < 1) return null;
+	if (typeof raw.draft !== "string" || !finiteNumber(raw.scrollTop) || !Array.isArray(raw.exchanges)) return null;
+	const exchanges = raw.exchanges.map(parseExchange);
+	if (exchanges.some((exchange) => exchange === null)) return null;
+	return {
+		id: raw.id,
+		number: Math.floor(raw.number),
+		draft: raw.draft,
+		scrollTop: Math.max(0, raw.scrollTop),
+		exchanges: exchanges as BtwExchangeState[],
+	};
+}
+
+function parseSessionState(raw: unknown): BtwSessionState | null {
+	if (!isRecord(raw) || !finiteNumber(raw.nextTabNumber) || raw.nextTabNumber < 1 || !Array.isArray(raw.tabs)) return null;
+	const tabs = raw.tabs.map(parseTab);
+	if (tabs.some((tab) => tab === null)) return null;
+	if (raw.activeTabId !== null && typeof raw.activeTabId !== "string") return null;
+	return {
+		nextTabNumber: Math.floor(raw.nextTabNumber),
+		activeTabId: raw.activeTabId,
+		tabs: tabs as BtwTabState[],
+	};
+}
+
+function parseStatePayload(raw: unknown): BtwStateResponse | null {
+	if (!isRecord(raw) || !isRecord(raw.window)) return null;
+	const session = parseSessionState(raw.session);
+	if (!session) return null;
+	const window = raw.window;
+	if (!finiteNumber(window.x) || !finiteNumber(window.y) || !finiteNumber(window.width) || !finiteNumber(window.height)) return null;
+	if (window.width < 1 || window.height < 1 || typeof raw.windowInitialized !== "boolean" || typeof raw.minimized !== "boolean") return null;
+	return {
+		session,
+		window: { x: window.x, y: window.y, width: window.width, height: window.height },
+		windowInitialized: raw.windowInitialized,
+		minimized: raw.minimized,
+	};
+}
+
+function sessionPathFor(ctx: BtwRouteContext, sessionId: string): string | null {
+	const sessionPath = ctx.sessionFileFromId(join(ctx.dataDir, "sessions"), sessionId);
+	return sessionPath && existsSync(sessionPath) ? sessionPath : null;
+}
+
+function attachAbortSignal(req: HttpReq, res: ServerResponse): { signal: AbortSignal; cleanup: () => void } {
+	const controller = new AbortController();
+	const abort = () => controller.abort();
+	const onRequestClose = () => {
+		// A normal request can emit close after its body has been read. Only treat
+		// an incomplete request as a client disconnect here.
+		if (req.complete === false) abort();
+	};
+	const onResponseClose = () => {
+		if (!res.writableEnded) abort();
+	};
+	req.once("aborted", abort);
+	req.once("close", onRequestClose);
+	if (typeof res.once === "function") res.once("close", onResponseClose);
+	return {
+		signal: controller.signal,
+		cleanup: () => {
+			req.removeListener("aborted", abort);
+			req.removeListener("close", onRequestClose);
+			if (typeof res.removeListener === "function") res.removeListener("close", onResponseClose);
+		},
+	};
+}
+
 export async function handleBtwRoutes(
 	req: HttpReq,
 	res: ServerResponse,
@@ -85,6 +189,28 @@ export async function handleBtwRoutes(
 	url: string,
 	ctx: BtwRouteContext,
 ): Promise<boolean> {
+	const stateMatch = matchRoute("GET", method, url, "/api/btw/state/:sessionId")
+		?? matchRoute("PUT", method, url, "/api/btw/state/:sessionId");
+	if (stateMatch) {
+		const sessionId = stateMatch.sessionId;
+		if (!sessionPathFor(ctx, sessionId)) {
+			json(res, 404, { error: "Session not found" });
+			return true;
+		}
+		if (method === "GET") {
+			json(res, 200, readBtwState(ctx.dataDir, sessionId));
+			return true;
+		}
+		const body = await readBody(req);
+		const parsed = parseStatePayload(body);
+		if (!parsed) {
+			json(res, 400, { error: "Malformed btw state" });
+			return true;
+		}
+		json(res, 200, writeBtwState(ctx.dataDir, sessionId, parsed));
+		return true;
+	}
+
 	if (method === "POST" && url === "/api/btw/ask") {
 		const body = (await readBody(req)) as Record<string, unknown>;
 		const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
@@ -98,20 +224,26 @@ export async function handleBtwRoutes(
 			json(res, 400, { error: `question too long (max ${MAX_QUESTION_LEN} chars)` });
 			return true;
 		}
-		const sessionPath = ctx.sessionFileFromId(join(ctx.dataDir, "sessions"), sessionId);
-		if (!sessionPath || !existsSync(sessionPath)) {
+		const sessionPath = sessionPathFor(ctx, sessionId);
+		if (!sessionPath) {
 			json(res, 404, { error: "Session not found" });
 			return true;
 		}
 		const parsed = ctx.parseSessionFile(sessionPath);
 		const digest = parsed ? buildBtwContextDigest(parsed.messages) : "";
-		const answer = await completeSideQuestion({ contextDigest: digest, thread, question });
-		if (!answer) {
-			json(res, 502, { error: "Side question completion failed or timed out" });
+		const requestAbort = attachAbortSignal(req, res);
+		try {
+			const answer = await completeSideQuestion({ contextDigest: digest, thread, question, signal: requestAbort.signal });
+			if (requestAbort.signal.aborted) return true;
+			if (!answer) {
+				json(res, 502, { error: "Side question completion failed or timed out" });
+				return true;
+			}
+			json(res, 200, { answer });
 			return true;
+		} finally {
+			requestAbort.cleanup();
 		}
-		json(res, 200, { answer });
-		return true;
 	}
 
 	if (method === "POST" && url === "/api/btw/bring-back") {
@@ -123,8 +255,8 @@ export async function handleBtwRoutes(
 			json(res, 400, { error: "Missing sessionId, question or answer" });
 			return true;
 		}
-		const sessionPath = ctx.sessionFileFromId(join(ctx.dataDir, "sessions"), sessionId);
-		if (!sessionPath || !existsSync(sessionPath)) {
+		const sessionPath = sessionPathFor(ctx, sessionId);
+		if (!sessionPath) {
 			json(res, 404, { error: "Session not found" });
 			return true;
 		}

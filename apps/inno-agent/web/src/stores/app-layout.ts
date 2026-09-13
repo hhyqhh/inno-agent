@@ -5,6 +5,9 @@ export const CHAT_BASELINE_WIDTH = 800;
 export const SIDEBAR_WIDTH = 264;
 export const WORKSPACE_QUARTER_MIN_WIDTH = 240;
 export const WORKSPACE_MIN_WIDTH = 320;
+// Keep the split view close to the reference proportions: a 260px file tree
+// plus a useful preview column without taking over the conversation.
+export const WORKSPACE_DEFAULT_WIDTH = 520;
 export const WORKSPACE_MAX_WIDTH = 920;
 
 export function getEffectiveWorkspaceWidth(width: number, mode: WorkspaceMode = "half"): number {

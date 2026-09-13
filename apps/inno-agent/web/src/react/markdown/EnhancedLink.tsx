@@ -102,7 +102,7 @@ export function EnhancedLink({ href, children, className, node: _node, onClick, 
 					<span className="flex items-start gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-[var(--inno-accent)]" /><span className="min-w-0"><span className="block font-medium">{t("markdown.externalLinkTitle", "即将打开外部网站")}</span><span className="mt-0.5 block truncate text-[11px] text-[var(--inno-text-muted)]">{url.hostname}</span></span></span>
 					<span className="mt-2 flex justify-end gap-1.5">
 						<button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" onClick={() => setConfirming(false)}><X size={12} />{t("common.cancel", "取消")}</button>
-						<button type="button" className="rounded-md bg-[var(--inno-accent)] px-2 py-1 text-white" onClick={openExternal}>{t("markdown.continueOpen", "继续打开")}</button>
+						<button type="button" className="inno-primary-button rounded-md px-2 py-1" onClick={openExternal}>{t("markdown.continueOpen", "继续打开")}</button>
 					</span>
 				</span>
 			) : null}

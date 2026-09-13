@@ -104,7 +104,7 @@ export function ChannelBadge({ channel }: { channel: string }) {
 export function AgentAvatar() {
 	return (
 		<div
-			className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)]"
+			className="mt-0.5 flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)]"
 			aria-hidden="true"
 		>
 			IA

@@ -1,17 +1,23 @@
 import { useCallback, useEffect } from "react";
+import { DndProvider } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
+import { MessageCircleQuestion } from "lucide-react";
 import { appStore, pageFromSearch, type AppPage, type WorkspaceMode } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { themeStore, type ThemeId } from "../stores/theme-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
+import { btwStore } from "../stores/btw-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { ChatCenter } from "./ChatCenter.js";
 import { FeaturePage } from "./FeaturePage.js";
 import { SessionSidebar } from "./SessionSidebar.js";
 import { WorkspacePanel } from "./WorkspacePanel.js";
+import { DesktopWindowChrome } from "./DesktopWindowChrome.js";
 import { SettingsOverlay } from "./settings/SettingsOverlay.js";
 import {
 	fitPanelLayout,
+	WORKSPACE_DEFAULT_WIDTH,
 } from "../stores/app-layout.js";
 import { ensureWindowForPanel } from "../stores/window-expansion.js";
 
@@ -31,12 +37,27 @@ function initializeApp(): Promise<void> {
 }
 
 export function App() {
+	const isDesktopWindow = Boolean(window.innoDesktop);
 	const app = useStoreSnapshot(appStore, () => ({
 		page: appStore.page,
 		sidebarCollapsed: appStore.sidebarCollapsed,
 		workspaceMode: appStore.workspaceMode,
 		workspaceWidth: appStore.workspaceWidth,
 	}));
+	const currentSessionId = useStoreSnapshot(sessionsStore, () => sessionsStore.currentSessionId);
+	const btwPanelVisible = useStoreSnapshot(btwStore, () => btwStore.isVisible && btwStore.activeSessionId === sessionsStore.currentSessionId);
+	const desktopBtwControl = isDesktopWindow && app.workspaceMode === "collapsed" && currentSessionId ? (
+		<button
+			type="button"
+			className={`inno-window-chrome-button inno-window-chrome-btw-button ${btwPanelVisible ? "is-active" : ""}`}
+			title="随便问问"
+			aria-label="随便问问"
+			aria-expanded={btwPanelVisible}
+			onClick={() => void btwStore.openOrRestore(currentSessionId)}
+		>
+			<MessageCircleQuestion size={15} />
+		</button>
+	) : undefined;
 	useEffect(() => {
 		void initializeApp();
 		const onPopState = () => {
@@ -117,7 +138,7 @@ export function App() {
 	}, [app.page]);
 
 	const openPresetPanels = useCallback(async () => {
-		const previewWidth = 560;
+		const previewWidth = WORKSPACE_DEFAULT_WIDTH;
 		if (appStore.workspaceMode === "full") {
 			// Full mode overlays the chat; start from the normal split state before
 			// making room for both optional columns.
@@ -163,6 +184,13 @@ export function App() {
 			appStore.setSidebarCollapsed(false);
 		})();
 	}, [ensureWindowForPanel]);
+	const toggleSidebar = useCallback(() => {
+		if (appStore.sidebarCollapsed) {
+			void openSidebar();
+			return;
+		}
+		appStore.setSidebarCollapsed(true);
+	}, [openSidebar]);
 
 	const setWorkspaceMode = useCallback((mode: WorkspaceMode) => {
 		if (mode === "collapsed" || app.workspaceMode !== "collapsed") {
@@ -170,14 +198,22 @@ export function App() {
 			return;
 		}
 		void (async () => {
-			const result = await ensureWindowForPanel("right");
+			// Opening the file area is a deliberate transition into the split
+			// workspace view. Restore the reference width when an older saved
+			// value is only wide enough for the narrow single-pane fallback.
+			const requestedWidth = Math.max(app.workspaceWidth, WORKSPACE_DEFAULT_WIDTH);
+			const result = await ensureWindowForPanel("right", requestedWidth, "half");
 			if (result === "busy") return;
 			// Do not force the sidebar closed here: setWorkspaceMode below already
 			// collapses it if (and only if) that is what makes the panel fit, and
 			// otherwise leaves the layout untouched instead of collapsing for nothing.
+			if (appStore.workspaceWidth < requestedWidth) appStore.setWorkspaceWidth(requestedWidth);
 			appStore.setWorkspaceMode(mode);
 		})();
 	}, [app.workspaceMode, ensureWindowForPanel]);
+	const toggleWorkspace = useCallback(() => {
+		setWorkspaceMode(app.workspaceMode === "collapsed" ? "half" : "collapsed");
+	}, [app.workspaceMode, setWorkspaceMode]);
 	const setWorkspaceWidth = useCallback((width: number) => appStore.setWorkspaceWidth(width), []);
 
 	// Feature pages occupy the whole center column; the right workspace panel is
@@ -188,26 +224,36 @@ export function App() {
 
 	return (
 		<>
-			<div
-				className={`app-layout app-layout--sidebar-${app.sidebarCollapsed ? "collapsed" : "expanded"} app-layout--workspace-${layoutWorkspaceMode}`}
-				style={{ "--inno-workspace-width": `${app.workspaceWidth}px` } as React.CSSProperties}
-			>
-				<SessionSidebar collapsed={app.sidebarCollapsed} onOpen={openSidebar} />
-				{chatVisible ? (
-					<ChatCenter onOpenPresetPanels={openPresetPanels} onPreviewFile={openFilePreview} />
-				) : (
-					<FeaturePage page={app.page as Exclude<AppPage, "chat">} />
-				)}
-				{chatVisible ? (
-					<WorkspacePanel
-						mode={app.workspaceMode}
-						width={app.workspaceWidth}
-						onModeChange={setWorkspaceMode}
-						onWidthChange={setWorkspaceWidth}
-						onPreviewFile={openFilePreview}
+			<DndProvider backend={HTML5Backend}>
+				<div
+					className={`app-layout app-layout--${isDesktopWindow ? "desktop" : "browser"} app-layout--sidebar-${app.sidebarCollapsed ? "collapsed" : "expanded"} app-layout--workspace-${layoutWorkspaceMode}`}
+					style={{ "--inno-workspace-width": `${app.workspaceWidth}px` } as React.CSSProperties}
+				>
+					<SessionSidebar collapsed={app.sidebarCollapsed} />
+					{chatVisible ? (
+						<ChatCenter onOpenPresetPanels={openPresetPanels} onPreviewFile={openFilePreview} />
+					) : (
+						<FeaturePage page={app.page as Exclude<AppPage, "chat">} />
+					)}
+					{chatVisible ? (
+						<WorkspacePanel
+							mode={app.workspaceMode}
+							width={app.workspaceWidth}
+							onModeChange={setWorkspaceMode}
+							onWidthChange={setWorkspaceWidth}
+							onPreviewFile={openFilePreview}
+						/>
+					) : null}
+					<DesktopWindowChrome
+						showWorkspaceControl={chatVisible}
+						sidebarCollapsed={app.sidebarCollapsed}
+						workspaceCollapsed={app.workspaceMode === "collapsed"}
+						btwControl={desktopBtwControl}
+						onToggleSidebar={toggleSidebar}
+						onToggleWorkspace={toggleWorkspace}
 					/>
-				) : null}
-			</div>
+				</div>
+			</DndProvider>
 			<SettingsOverlay />
 		</>
 	);

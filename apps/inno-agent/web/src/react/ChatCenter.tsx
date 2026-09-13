@@ -47,7 +47,7 @@ import { fetchSlashCommands, type SlashCommandItem } from "../api/commands.js";
 import { WorkspaceContext } from "./chat/WorkspaceContext.js";
 import { BtwPanel } from "./BtwPanel.js";
 import { PermissionModeControl } from "./chat/PermissionModeControl.js";
-import { WorkspaceSwitcher, type WorkspaceChoice } from "./WorkspaceSwitcher.js";
+import type { WorkspaceChoice } from "./WorkspaceSwitcher.js";
 import { DEFAULT_UPLOAD_MAX_BYTES, DEFAULT_UPLOAD_MAX_LABEL, getOversizedFiles } from "../utils/upload-limits.js";
 import {
 	flattenWorkspaceFiles,
@@ -273,7 +273,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	const workspaceFiles = useMemo(() => workspaceTree ? flattenWorkspaceFiles(workspaceTree) : [], [workspaceTree]);
 	const isWelcome = sessions.isWelcome;
 	const hasConversationStatus = Boolean(chat.pendingQuestion || chat.pendingPermission || sessions.busyBlocker);
-	const btwPanelOpen = useStoreSnapshot(btwStore, () => btwStore.panelOpen);
+	const btwPanelOpen = useStoreSnapshot(btwStore, () => btwStore.isVisible);
 	// Sidebar/workspace layout shifts (e.g. after desktop window expansion) move
 	// the composer by translation without resizing it, so neither window resize
 	// nor ResizeObserver fires. Track the layout values that shift the chat
@@ -496,6 +496,10 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		const el = inputRef.current;
 		if (!el) return;
 		const minHeight = resizeComposerTextarea(el);
+		// Switching to a scrollable textarea changes its usable line width by the
+		// native scrollbar gutter. Refresh the smart-input layers after that style
+		// change so their wrapping and caret coordinates stay in the same viewport.
+		engineRef.current?.syncLayout();
 		const composer = el.closest<HTMLElement>(".inno-composer");
 		if (!composer) return;
 		const textareaHeight = el.getBoundingClientRect().height;
@@ -1374,33 +1378,12 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 			inlineImages={inlineImages}
 			pasteBlocks={pasteBlocks}
 			uploadChips={uploadChips}
-			modelState={modelState}
-			modelOptions={modelOptions}
-			currentModel={currentModel}
-			btwControl={!isWelcome && sessions.currentSessionId ? (
-				<button
-					type="button"
-					className={`inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50 ${btwPanelOpen ? "text-[var(--inno-accent)]" : ""}`}
-					title={t("btw.title")}
-					aria-label={t("btw.title")}
-					aria-expanded={btwPanelOpen}
-					onClick={() => btwStore.togglePanel()}
-				>
-					<MessageCircleQuestion size={16} />
-				</button>
-			) : undefined}
-			permissionControl={<PermissionModeControl variant="pill" />}
-			workspaceControl={isWelcome ? workspaceContext : (
-				<WorkspaceSwitcher
-					workspaces={workspaces.list}
-					selectedWorkspaceId={activeWorkspaceId}
-					selectedKind="workspace"
-					busy={isSwitchingWorkspace}
-					disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
-					onChange={handleWorkspaceChange}
-					onImport={handleWorkspaceImport}
-				/>
-			)}
+				modelState={modelState}
+				modelOptions={modelOptions}
+				currentModel={currentModel}
+				conversationMode={!isWelcome}
+				permissionControl={<PermissionModeControl variant={isWelcome ? "pill" : "inline"} />}
+			workspaceControl={isWelcome ? workspaceContext : undefined}
 			modelPickerOpen={modelPickerOpen}
 			attachMenuOpen={attachMenuOpen}
 			workspaceFiles={workspaceFiles}
@@ -1473,6 +1456,18 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	const smartToastNode = smartToast ? (
 		<div className={`inno-smart-toast ${smartToast.error ? "is-error" : ""}`} role="status">{smartToast.message}</div>
 	) : null;
+	const btwControl = !isWelcome && sessions.currentSessionId && (!window.innoDesktop || appLayout.workspaceMode !== "collapsed") ? (
+		<button
+			type="button"
+			className={`inno-conversation-btw-control flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50 ${btwPanelOpen ? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : ""}`}
+			title={t("btw.title")}
+			aria-label={t("btw.title")}
+			aria-expanded={btwPanelOpen}
+			onClick={() => void btwStore.openOrRestore(sessions.currentSessionId)}
+		>
+			<MessageCircleQuestion size={16} />
+		</button>
+	) : undefined;
 	const smartOverlayNode = smartInputEnabled ? (
 		<SmartInputOverlay
 			engine={engineRef.current}
@@ -1552,6 +1547,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 			busyBlocker={busyBlocker}
 			smartToast={smartToastNode}
 			composer={renderComposer(t("chat.composerPlaceholder"))}
+			btwControl={btwControl}
 			btwPanel={<BtwPanel />}
 			onOpenAttachment={openChatAttachmentPreview}
 			onOpenSkill={openSkillPanel}
@@ -1561,6 +1557,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 			wsError={wsError}
 			sessionTitle={currentSessionMeta?.name}
 			workspaceName={activeWorkspaceName}
+			workspaceCollapsed={appLayout.workspaceMode === "collapsed"}
 			sidebarCollapsed={appLayout.sidebarCollapsed}
 		/>
 		</>

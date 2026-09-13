@@ -151,6 +151,7 @@ export class SmartInputEngine {
 	private renderedSlots: Array<{ start: number; end: number; slotId: number }> = [];
 	/** Bumped on every mirror rebuild; invalidates drag hit-test caches. */
 	private mirrorVersion = 0;
+	private lastLayerWidth: number | null = null;
 	private flowAtomsCache: { version: number; value: string; atoms: FlowAtom[] } | null = null;
 	private lastSelection: { start: number; end: number } | null = null;
 	private selectionRenderScheduled = false;
@@ -218,6 +219,17 @@ export class SmartInputEngine {
 		if (this.detached) return;
 		this.cancelPendingSync();
 		this.sync();
+	}
+
+	/**
+	 * Reapply layer geometry after the composer changes the textarea's overflow
+	 * mode. A native scrollbar reduces the textarea's usable line width without
+	 * changing the smart-input wrapper's width, so the mirror and hit layer must
+	 * reserve the same gutter before they measure or paint another line.
+	 */
+	syncLayout(): void {
+		if (this.detached) return;
+		this.syncLayerLayout();
 	}
 
 	private cancelPendingSync(): void {
@@ -467,7 +479,7 @@ export class SmartInputEngine {
 	}
 
 	private handleScroll = (): void => {
-		this.applyScrollOffset();
+		this.syncLayerLayout();
 	};
 
 	/**
@@ -513,19 +525,37 @@ export class SmartInputEngine {
 		else run();
 	}
 
-	private applyScrollOffset(): void {
+	private applyScrollOffset(): boolean {
+		const layerWidth = this.ta.clientWidth;
+		const scrollbarGutter = Math.max(0, this.ta.offsetWidth - this.ta.clientWidth);
+		const layoutChanged = this.lastLayerWidth !== null && this.lastLayerWidth !== layerWidth;
+		this.lastLayerWidth = layerWidth;
 		const transform = `translateY(${-this.ta.scrollTop}px)`;
 		// The mirror and the hit layer share the same coordinate system. Moving
 		// only the mirror makes text scroll while bubbles stay pinned to the old
 		// line; keep both layers on the same scroll offset.
+		// When the textarea reaches its maximum height, its native vertical
+		// scrollbar takes horizontal space from text wrapping. The absolutely
+		// positioned layers do not have that scrollbar, so reserve the measured
+		// gutter on both layers to keep their line breaks and caret coordinates
+		// identical to the textarea's.
+		this.mirror.style.right = `${scrollbarGutter}px`;
+		this.hit.style.right = `${scrollbarGutter}px`;
 		this.mirror.style.transform = transform;
 		this.hit.style.transform = transform;
+		return layoutChanged;
+	}
+
+	private syncLayerLayout(): void {
+		if (!this.applyScrollOffset()) return;
+		if (this.renderedKeywords.length === 0 && this.renderedSlots.length === 0) return;
+		this.renderHitLayer(this.renderedKeywords, this.renderedSlots);
 	}
 
 	private restoreScrollTop(scrollTop: number): void {
 		const restore = () => {
 			this.ta.scrollTop = scrollTop;
-			this.applyScrollOffset();
+			this.syncLayerLayout();
 		};
 		restore();
 		// Focusing and restoring the caret can trigger a browser-native scroll on
@@ -1212,7 +1242,7 @@ export class SmartInputEngine {
 		const nextScroll = Math.max(0, Math.min(maxScroll, this.ta.scrollTop + delta));
 		if (nextScroll === this.ta.scrollTop) return false;
 		this.ta.scrollTop = nextScroll;
-		this.applyScrollOffset();
+		this.syncLayerLayout();
 		return true;
 	}
 

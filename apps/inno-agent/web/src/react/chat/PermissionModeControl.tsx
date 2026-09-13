@@ -22,12 +22,13 @@ const MODE_ICONS: Record<PermissionPolicyMode, typeof Shield> = {
  * the approval cards appear. Global setting, takes effect immediately (the
  * plugin re-reads its config on resources reload).
  *
- * Two trigger variants: the legacy compact `icon` button, and the InnoSpark
- * `pill` for the composer sub-pill row. Switching to yolo from the pill first
- * passes through a risk confirmation modal (mirrors the design mockup's
- * 允许完全访问 dialog); the active yolo pill renders red ("full access").
+ * Three trigger variants: the legacy compact `icon` button, the InnoSpark
+ * `pill` for the welcome composer row, and the frameless `inline` control used
+ * inside an active conversation. Switching to yolo from a labeled trigger
+ * first passes through a risk confirmation modal (mirrors the design mockup's
+ * 允许完全访问 dialog); the active yolo label renders red ("full access").
  */
-export function PermissionModeControl({ variant = "icon" }: { variant?: "icon" | "pill" }) {
+export function PermissionModeControl({ variant = "icon" }: { variant?: "icon" | "pill" | "inline" }) {
 	const { t } = useTranslation();
 	const state = useStoreSnapshot(settingsStore, () => ({
 		mode: settingsStore.settings?.plugins?.permissionSystem?.mode ?? "default",
@@ -109,6 +110,8 @@ export function PermissionModeControl({ variant = "icon" }: { variant?: "icon" |
 				ref={triggerRef}
 				className={variant === "pill"
 					? `inno-composer-subpill shrink-0 disabled:opacity-50 ${state.mode === "yolo" ? "is-perm-full" : ""}`
+					: variant === "inline"
+						? `inno-composer-permission-inline shrink-0 disabled:opacity-50 ${state.mode === "yolo" ? "is-perm-full" : ""}`
 					: `inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50 ${state.mode !== "default" ? "text-[var(--inno-accent)]" : ""}`}
 				title={`${t("settings.permissions.title")} · ${t(`settings.permissions.modes.${state.mode}`)}`}
 				aria-label={t("settings.permissions.title")}
@@ -117,11 +120,11 @@ export function PermissionModeControl({ variant = "icon" }: { variant?: "icon" |
 				disabled={state.isSaving}
 				onClick={() => setOpen((value) => !value)}
 			>
-				<TriggerIcon size={variant === "pill" ? 14 : 16} />
-				{variant === "pill" ? (
+				<TriggerIcon size={variant === "pill" ? 14 : 15} />
+				{variant === "pill" || variant === "inline" ? (
 					<>
 						<span className="whitespace-nowrap">{t(`settings.permissions.modes.${state.mode}`)}</span>
-						<ChevronUp size={13} aria-hidden="true" />
+						{variant === "pill" ? <ChevronUp size={13} aria-hidden="true" /> : null}
 					</>
 				) : null}
 			</button>

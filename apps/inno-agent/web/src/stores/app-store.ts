@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { fitPanelLayout } from "./app-layout.js";
+import { fitPanelLayout, WORKSPACE_DEFAULT_WIDTH } from "./app-layout.js";
 
 /**
  * The right panel only hosts the artifact/file browser now — notebook,
@@ -109,11 +109,9 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 		let nextWorkspaceMode = this.workspaceMode;
 		let nextWorkspaceWidth = this.workspaceWidth;
 		if (!collapsed) {
-			// Full mode intentionally overlays the chat, so opening the sidebar
-			// first returns to a normal two-column layout.
-			if (nextWorkspaceMode === "full") {
-				nextWorkspaceMode = "collapsed";
-			} else if (typeof window !== "undefined") {
+			// Full mode occupies the chat surface but keeps the session sidebar as
+			// the navigation anchor. Only a split layout needs a fit pass here.
+			if (nextWorkspaceMode !== "full" && typeof window !== "undefined") {
 				const fitted = fitPanelLayout(window.innerWidth, false, nextWorkspaceMode, this.workspaceWidth);
 				if (fitted?.sidebarCollapsed === false) {
 					nextWorkspaceMode = fitted.workspaceMode;
@@ -190,9 +188,9 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 }
 
 function getInitialWorkspaceWidth(): number {
-	if (typeof window === "undefined") return 520;
+	if (typeof window === "undefined") return WORKSPACE_DEFAULT_WIDTH;
 	const saved = Number(window.localStorage.getItem("inno.workspaceWidth"));
-	return Number.isFinite(saved) && saved > 0 ? Math.max(320, Math.min(920, Math.round(saved))) : 520;
+	return Number.isFinite(saved) && saved > 0 ? Math.max(320, Math.min(920, Math.round(saved))) : WORKSPACE_DEFAULT_WIDTH;
 }
 
 function getInitialPage(): AppPage {

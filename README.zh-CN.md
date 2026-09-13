@@ -12,7 +12,7 @@
 🌐 **[项目主页](https://hhyqhh.github.io/inno-agent-website/)** · 📄 **[技术报告](./docs/inno-agent.pdf)**(arXiv,2026 年 6 月)· 📦 **[资源中心](https://github.com/Chloris-Blaxk/inno-agent-hub)**(技能库 + 工作区预设)
 
 <p align="center">
-  <img src="./docs/assets/welcome-redesign-2026-09-13-v2.png" alt="Inno Agent — 重构后的欢迎页与预设工作区" width="100%" />
+  <img src="./docs/assets/app-overview-2026-09-13.png" alt="Inno Agent — 重构后的欢迎页与预设工作区" width="100%" />
 </p>
 
 > 🎨 **2026 年 9 月 —— Web UI 基于 InnoSpark 设计语言整体重构**(亮色 + 暗色双主题):一键打开预设工作区的欢迎页、集成权限模式与模型选择的统一输入框、作为 artifact 浏览器的右侧面板,以及对话内的流式富文本渲染(Mermaid / SVG / ECharts / 可运行代码块)。

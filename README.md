@@ -12,7 +12,7 @@
 🌐 **[Homepage](https://hhyqhh.github.io/inno-agent-website/)** · 📄 **[Technical Report](./docs/inno-agent.pdf)** (arXiv, June 2026) · 📦 **[Resource Hub](https://github.com/Chloris-Blaxk/inno-agent-hub)** (skill library + workspace presets)
 
 <p align="center">
-  <img src="./docs/assets/welcome-redesign-2026-09-13-v2.png" alt="Inno Agent — redesigned welcome page with preset workspaces" width="100%" />
+  <img src="./docs/assets/app-overview-2026-09-13.png" alt="Inno Agent — redesigned welcome page with preset workspaces" width="100%" />
 </p>
 
 > 🎨 **September 2026 — the Web UI was rebuilt around the InnoSpark design language** (light + dark themes): a welcome page with one-click preset workspaces, a unified composer with permission-mode and model pills, an artifact-browser right panel, and rich streaming Markdown (Mermaid / SVG / ECharts / runnable code blocks) in the conversation.

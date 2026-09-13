@@ -10,7 +10,7 @@ interface PersonalLinksPanelProps {
 	selectedIds: string[];
 	onResetSelection: () => void;
 	onClose: () => void;
-	onReviewComplete: (feedback: string) => void;
+	onReviewComplete: (feedback: string, persisted: boolean) => void;
 	onLinksChange: (links: PersonalLink[]) => void;
 }
 
@@ -19,8 +19,6 @@ export function PersonalLinksPanel({ nodes, selectedIds, onResetSelection, onClo
 	const [reason, setReason] = useState("");
 	const [isSaving, setIsSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const [roundId] = useState(() => `link-round-${crypto.randomUUID()}`);
-	const [isReviewingRound, setIsReviewingRound] = useState(false);
 
 	const selectedNodes = useMemo(
 		() => selectedIds.map((id) => nodes.find((node) => node.id === id)).filter((node): node is WikiGraphNode => Boolean(node)),
@@ -47,19 +45,17 @@ export function PersonalLinksPanel({ nodes, selectedIds, onResetSelection, onClo
 	async function save(): Promise<void> {
 		if (selectedIds.length !== 2 || !reason.trim()) return;
 		setIsSaving(true);
-		setIsReviewingRound(true);
 		try {
-			const link = await createPersonalLink({ source: selectedIds[0]!, target: selectedIds[1]!, reason, batch_id: roundId, session_id: sessionsStore.currentSessionId });
+			const link = await createPersonalLink({ source: selectedIds[0]!, target: selectedIds[1]!, reason, session_id: sessionsStore.currentSessionId });
 			setLinks((current) => [link, ...current]);
 			setReason("");
 			onResetSelection();
 			setError(null);
-			onReviewComplete(link.chat_feedback);
+			onReviewComplete(link.chat_feedback, link.chat_feedback_persisted);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "保存或评议连接失败。");
 		} finally {
 			setIsSaving(false);
-			setIsReviewingRound(false);
 		}
 	}
 

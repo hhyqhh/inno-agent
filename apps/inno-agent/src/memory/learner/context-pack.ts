@@ -105,7 +105,10 @@ export function buildContextPack(
 	for (const avoid of profile.preferences.avoid) {
 		teachingHints.push(`避免：${avoid}`);
 	}
-	for (const pattern of profile.cognitive_patterns) {
+	for (const pattern of profile.cognitive_patterns
+		.filter((pattern) => pattern.confidence >= 0.5)
+		.sort((a, b) => b.confidence - a.confidence)
+		.slice(0, 3)) {
 		teachingHints.push(pattern.teaching_implication);
 	}
 
@@ -147,10 +150,14 @@ export function buildContextPack(
 		relevant_concepts: relevantConcepts,
 		active_misconceptions: activeMisconceptions,
 		teaching_hints: teachingHints,
-		cognitive_patterns: profile.cognitive_patterns.map((pattern) => ({
-			label: pattern.label,
-			teaching_implication: pattern.teaching_implication,
-		})),
+		cognitive_patterns: profile.cognitive_patterns
+			.filter((pattern) => pattern.confidence >= 0.5)
+			.sort((a, b) => b.confidence - a.confidence)
+			.slice(0, 3)
+			.map((pattern) => ({
+				label: pattern.label,
+				teaching_implication: pattern.teaching_implication,
+			})),
 		recent_events: recentEventSummaries,
 		review_due_concepts: reviewDueConcepts,
 	};

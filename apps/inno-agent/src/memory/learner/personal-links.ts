@@ -48,8 +48,6 @@ export interface PersonalLinkFeedback {
  */
 export interface PersonalLink {
 	id: string;
-	/** Links created before one "finish this round" action share a batch. */
-	batch_id?: string;
 	source: string;
 	target: string;
 	reason: string;
@@ -63,7 +61,6 @@ export interface CreatePersonalLinkInput {
 	source: string;
 	target: string;
 	reason: string;
-	batch_id?: string;
 }
 
 export interface PersonalLinkComparison {
@@ -88,7 +85,7 @@ function normalizedInput(input: CreatePersonalLinkInput): CreatePersonalLinkInpu
 	if (source === target) throw new Error("一条个人连接必须连接两个不同的知识节点。");
 	if (!reason) throw new Error("请说明你认为这两个节点相关的原因。");
 	if (reason.length > MAX_REASON_LENGTH) throw new Error(`连接理由不能超过 ${MAX_REASON_LENGTH} 个字符。`);
-	return { source, target, reason, batch_id: input.batch_id?.trim() || undefined };
+	return { source, target, reason };
 }
 
 function isPersonalLink(value: unknown): value is PersonalLink {
@@ -98,7 +95,6 @@ function isPersonalLink(value: unknown): value is PersonalLink {
 		&& typeof link.source === "string"
 		&& typeof link.target === "string"
 		&& typeof link.reason === "string"
-		&& (link.batch_id === undefined || typeof link.batch_id === "string")
 		&& (link.status === "proposed" || link.status === "accepted" || link.status === "rejected")
 		&& typeof link.created_at === "string"
 		&& typeof link.updated_at === "string";
@@ -131,7 +127,6 @@ export function createPersonalLink(dataDir: string, input: CreatePersonalLinkInp
 	const now = new Date().toISOString();
 	const link: PersonalLink = {
 		id: `plink_${randomUUID()}`,
-		batch_id: normalized.batch_id?.trim() || undefined,
 		source,
 		target,
 		reason: normalized.reason,
@@ -162,9 +157,13 @@ export function setPersonalLinkFeedback(dataDir: string, id: string, feedback: P
 	const updated: PersonalLink = {
 		...links[index]!,
 		feedback,
-		// Only a supported connection is promoted to an accepted learner model.
-		// Exploration and missing-bridge cases remain hypotheses for discussion.
-		status: feedback.verdict === "supported" ? "accepted" : "proposed",
+		// A recommendation to remove always wins over a positive verdict.
+		// Other reviews remain hypotheses until the learner acts on them.
+		status: feedback.recommended_action === "remove"
+			? "rejected"
+			: feedback.verdict === "supported" && feedback.recommended_action === "keep"
+				? "accepted"
+				: "proposed",
 		updated_at: new Date().toISOString(),
 	};
 	links[index] = updated;

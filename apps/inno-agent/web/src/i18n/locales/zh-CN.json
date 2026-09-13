@@ -138,7 +138,12 @@
 			"refresh": "刷新图谱",
 			"relayout": "重新布局",
 			"show": "显示：",
-			"empty": "暂无图数据，先去聊天里收集一些资料吧。"
+			"empty": "暂无图数据，先去聊天里收集一些资料吧。",
+			"coBuild": "共建连接",
+			"coBuildTitle": "共建个人连接",
+			"personalLinks": "我的连接",
+			"togglePersonalLinks": "显示或隐藏我建立的虚线连接",
+			"noPersonalLinks": "你还没有建立个人连接"
 		},
 		"editor": {
 			"preview": "实时预览",

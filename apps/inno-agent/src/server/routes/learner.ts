@@ -159,7 +159,6 @@ export async function handleLearnerRoutes(
 				source,
 				target,
 				reason: typeof body.reason === "string" ? body.reason : "",
-				batch_id: typeof body.batch_id === "string" ? body.batch_id : undefined,
 			});
 			const comparison = comparePersonalLinkToWiki(created, graph);
 			const feedback = await reviewPersonalLink(created, graph, comparison, l2DataDir, completePromptOnce);
@@ -175,39 +174,6 @@ export async function handleLearnerRoutes(
 		} catch (err) {
 			json(res, 400, { error: err instanceof Error ? err.message : "Failed to create personal link" });
 		}
-		return true;
-	}
-
-	if (method === "POST" && url === "/api/learner/personal-links/review-batch") {
-		const body = await readBody(req) as { ids?: unknown; session_id?: unknown };
-		const ids = Array.isArray(body.ids) ? body.ids.filter((id): id is string => typeof id === "string") : [];
-		if (ids.length === 0) {
-			json(res, 400, { error: "Select at least one new personal link to review" });
-			return true;
-		}
-		const graph = buildWikiGraph(l2DataDir);
-		const byId = new Map(loadPersonalLinks(paths.learnerDataDir).map((link) => [link.id, link]));
-		const reviewed = [] as PersonalLink[];
-		for (const id of ids) {
-			const link = byId.get(id);
-			if (!link || link.feedback) continue;
-			const comparison = comparePersonalLinkToWiki(link, graph);
-			const feedback = await reviewPersonalLink(link, graph, comparison, l2DataDir, completePromptOnce);
-			reviewed.push(setPersonalLinkFeedback(paths.learnerDataDir, id, feedback));
-		}
-		const patterns = updateCognitivePatternsFromLinks(paths.learnerDataDir, reviewed);
-		const reviewedResponses = reviewed.map((link) => ({ ...link, comparison: comparePersonalLinkToWiki(link, graph) }));
-		const chatFeedback = formatPersonalLinkReviewForChat(reviewedResponses, graph);
-		const sessionId = typeof body.session_id === "string" ? body.session_id : "";
-		const chatFeedbackPersisted = sessionId
-			? appendAssistantLearningFeedback(chatFeedback, sessionId)
-			: false;
-		json(res, 200, {
-			links: reviewedResponses,
-			patterns,
-			chat_feedback: chatFeedback,
-			chat_feedback_persisted: chatFeedbackPersisted,
-		});
 		return true;
 	}
 

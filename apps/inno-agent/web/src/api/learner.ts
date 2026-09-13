@@ -9,7 +9,6 @@ import type {
 	PersonalLinkCreateResponse,
 	PersonalLinksResponse,
 	PersonalLinkStatus,
-	PersonalLinksBatchReviewResponse,
 } from "../types/learner.js";
 
 export async function getLearnerProfile(): Promise<LearnerProfile> {
@@ -59,7 +58,7 @@ export async function listPersonalLinks(): Promise<PersonalLinksResponse> {
 	return apiFetch<PersonalLinksResponse>("/api/learner/personal-links");
 }
 
-export async function createPersonalLink(input: { source: string; target: string; reason: string; batch_id?: string; session_id?: string | null }): Promise<PersonalLinkCreateResponse> {
+export async function createPersonalLink(input: { source: string; target: string; reason: string; session_id?: string | null }): Promise<PersonalLinkCreateResponse> {
 	return apiFetch<PersonalLinkCreateResponse>("/api/learner/personal-links", {
 		method: "POST",
 		body: JSON.stringify(input),
@@ -75,11 +74,4 @@ export async function updatePersonalLinkStatus(id: string, status: PersonalLinkS
 
 export async function deletePersonalLink(id: string): Promise<void> {
 	await apiFetch(`/api/learner/personal-links/${encodeURIComponent(id)}`, { method: "DELETE" });
-}
-
-export async function reviewPersonalLinksBatch(ids: string[], sessionId?: string | null): Promise<PersonalLinksBatchReviewResponse> {
-	return apiFetch<PersonalLinksBatchReviewResponse>("/api/learner/personal-links/review-batch", {
-		method: "POST",
-		body: JSON.stringify({ ids, session_id: sessionId ?? undefined }),
-	});
 }

@@ -79,8 +79,28 @@ describe("personal learner links", () => {
 		const supported = setPersonalLinkFeedback(dataDir, link.id, {
 			...exploratory.feedback!,
 			verdict: "supported",
+			recommended_action: "keep",
 		});
 		expect(supported.status).toBe("accepted");
+	});
+
+	it("rejects a link when the review recommends removal, even if the verdict is supported", () => {
+		const link = createPersonalLink(dataDir, { source: "a", target: "b", reason: "我的解释" });
+		const reviewed = setPersonalLinkFeedback(dataDir, link.id, {
+			verdict: "supported",
+			relation_type: "learner_hypothesis",
+			concept_clarification: "概念已澄清。",
+			misconception_check: "理由仍然把两个不同层次混在一起。",
+			summary: "当前不应保留这条连接。",
+			evidence: "现有材料不足以支持该连接。",
+			bridge_node_ids: [],
+			recommended_action: "remove",
+			recommended_node_ids: [],
+			recommendation: "删除这条个人连接。",
+			generated_by: "model",
+			reviewed_at: new Date().toISOString(),
+		});
+		expect(reviewed.status).toBe("rejected");
 	});
 
 	it("distinguishes direct, two-hop, and learner-only connections", () => {

@@ -111,13 +111,6 @@ export interface PersonalLinksResponse {
 	links: PersonalLink[];
 }
 
-export interface PersonalLinksBatchReviewResponse {
-	links: PersonalLink[];
-	patterns: CognitivePattern[];
-	chat_feedback: string;
-	chat_feedback_persisted: boolean;
-}
-
 export interface CognitivePattern {
 	pattern_id: string;
 	label: string;

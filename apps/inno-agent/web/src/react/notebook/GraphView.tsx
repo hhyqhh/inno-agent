@@ -701,11 +701,20 @@ export function GraphView() {
 		if (previousMode && appStore.workspaceMode === "full") appStore.setWorkspaceMode(previousMode);
 	}
 
-	function returnToChatWithReview(feedback: string): void {
+	function returnToChatWithReview(feedback: string, persisted: boolean): void {
 		setIsCoBuilding(false);
 		workspaceModeBeforeCoBuildRef.current = null;
 		appStore.setWorkspaceMode("collapsed");
-		if (feedback && sessionsStore.currentSessionId) chatStore.appendAssistantMessage(feedback);
+		if (!feedback || !sessionsStore.currentSessionId) return;
+		if (persisted) {
+			void sessionsStore.reloadCurrentSessionMessages().catch(() => {
+				// The server already saved the message; keep the current view useful
+				// when the history refresh is temporarily unavailable.
+				chatStore.appendAssistantMessage(feedback);
+			});
+		} else {
+			chatStore.appendAssistantMessage(feedback);
+		}
 	}
 
 	function togglePersonalLinks(): void {
@@ -755,10 +764,10 @@ export function GraphView() {
 					onClick={openCoBuilding}
 					className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${isCoBuilding ? "border-teal-700 bg-teal-700 text-white" : "border-[var(--inno-border)] bg-[var(--inno-surface)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"}`}
 					aria-pressed={isCoBuilding}
-					title="共建个人连接"
+					title={t("notebook.graph.coBuildTitle")}
 				>
 					<Link2 size={14} />
-					<span>共建连接</span>
+					<span>{t("notebook.graph.coBuild")}</span>
 				</button>
 				<div className="mx-1 h-4 w-px bg-[var(--inno-surface-muted)]" />
 				<div className="inline-flex rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-0.5">
@@ -818,10 +827,10 @@ export function GraphView() {
 							: "border-[var(--inno-border)] bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
 					}`}
 					aria-pressed={showPersonalLinks}
-					title={personalLinks.length > 0 ? "显示或隐藏我建立的虚线连接" : "你还没有建立个人连接"}
+					title={personalLinks.length > 0 ? t("notebook.graph.togglePersonalLinks") : t("notebook.graph.noPersonalLinks")}
 				>
 					<span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full border border-slate-400" />
-					<span>我的连接{personalLinks.length > 0 ? ` (${personalLinks.length})` : ""}</span>
+					<span>{t("notebook.graph.personalLinks")}{personalLinks.length > 0 ? ` (${personalLinks.length})` : ""}</span>
 				</button>
 				<div className="ml-auto hidden shrink-0 text-right @[900px]:block">
 					<div>{t("notebook.subtitle", { nodes: visibleNodeCount, edges: visibleEdgeCount })}</div>

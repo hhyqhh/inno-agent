@@ -232,7 +232,6 @@ export class BtwStoreImpl extends EventEmitter<BtwStoreEvents> {
 
 	setScrollTop(sessionId: string, tabId: string, scrollTop: number): void {
 		this.updateTab(sessionId, tabId, (tab) => ({ ...tab, scrollTop: Math.max(0, scrollTop) }), false);
-		this.schedulePersist(sessionId);
 	}
 
 	setWindowGeometry(geometry: BtwWindowGeometry): void {

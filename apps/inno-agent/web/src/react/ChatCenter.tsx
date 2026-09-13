@@ -47,7 +47,7 @@ import { fetchSlashCommands, type SlashCommandItem } from "../api/commands.js";
 import { WorkspaceContext } from "./chat/WorkspaceContext.js";
 import { BtwPanel } from "./BtwPanel.js";
 import { PermissionModeControl } from "./chat/PermissionModeControl.js";
-import { WorkspaceSwitcher, type WorkspaceChoice } from "./WorkspaceSwitcher.js";
+import type { WorkspaceChoice } from "./WorkspaceSwitcher.js";
 import { DEFAULT_UPLOAD_MAX_BYTES, DEFAULT_UPLOAD_MAX_LABEL, getOversizedFiles } from "../utils/upload-limits.js";
 import {
 	flattenWorkspaceFiles,

@@ -1420,14 +1420,10 @@ inno-app-shell {
 	z-index: 1;
 	/* It is the collapsed-state counterpart of the header actions. Keep the
 	   hit area, but let the icon sit directly on the header without a frame. */
-	border: 0;
-	background: transparent;
-	box-shadow: none;
 	transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 100ms ease;
 }
 
 .inno-window-chrome-workspace-button:hover {
-	border-color: transparent;
 	background: var(--inno-surface-muted);
 }
 
@@ -1452,14 +1448,10 @@ inno-app-shell {
 }
 
 .inno-window-chrome-btw-button {
-	border: 0;
-	background: transparent;
-	box-shadow: none;
 	transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 100ms ease;
 }
 
 .inno-window-chrome-btw-button:hover {
-	border-color: transparent;
 	background: var(--inno-surface-muted);
 }
 
@@ -1468,7 +1460,6 @@ inno-app-shell {
 }
 
 .inno-window-chrome-btw-button.is-active {
-	border-color: transparent;
 	background: var(--inno-accent-soft);
 	color: var(--inno-accent);
 }

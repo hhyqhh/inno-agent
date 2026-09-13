@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 
 interface DesktopWindowChromeProps {
-	showSidebarControl: boolean;
 	showWorkspaceControl: boolean;
 	sidebarCollapsed: boolean;
 	workspaceCollapsed: boolean;
@@ -17,7 +16,6 @@ interface DesktopWindowChromeProps {
  * so the page headers below remain reliable drag surfaces and click targets.
  */
 export function DesktopWindowChrome({
-	showSidebarControl,
 	showWorkspaceControl,
 	sidebarCollapsed,
 	workspaceCollapsed,
@@ -27,19 +25,17 @@ export function DesktopWindowChrome({
 }: DesktopWindowChromeProps) {
 	return (
 		<div className="inno-window-chrome" aria-label="窗口工具栏">
-			{showSidebarControl ? (
-				<div className="inno-window-chrome-bar">
-					<button
-						type="button"
-						className="inno-window-chrome-button"
-						title={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-						aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-						onClick={onToggleSidebar}
-					>
-						{sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
-					</button>
-				</div>
-			) : null}
+			<div className="inno-window-chrome-bar">
+				<button
+					type="button"
+					className="inno-window-chrome-button"
+					title={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+					aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+					onClick={onToggleSidebar}
+				>
+					{sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+				</button>
+			</div>
 			{btwControl ? (
 				<div className="inno-window-chrome-right-actions">
 					{btwControl}

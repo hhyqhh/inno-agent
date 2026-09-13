@@ -78,7 +78,7 @@ describe("BtwStore", () => {
 
 	it("creates independent numbered tabs without reusing closed numbers", () => {
 		const first = store.createTab("s1")!;
-		const second = store.createTab("s1")!;
+		store.createTab("s1");
 		expect(store.tabsFor("s1").map((tab) => tab.number)).toEqual([1, 2]);
 
 		store.closeTab("s1", first);

@@ -128,7 +128,7 @@ function isWindowExpansionSide(value) {
 function isWindowExpansionRequest(value) {
   return value
     && typeof value === "object"
-    && (value.side === "left" || value.side === "right")
+    && isWindowExpansionSide(value.side)
     && Number.isFinite(value.additionalWidth)
     && value.additionalWidth >= 0;
 }

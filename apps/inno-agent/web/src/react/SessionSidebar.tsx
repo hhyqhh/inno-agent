@@ -33,7 +33,7 @@ import {
 	Moon,
 	Languages,
 } from "lucide-react";
-import { appStore, type AppPage } from "../stores/app-store.js";
+import { appStore } from "../stores/app-store.js";
 import { canOpenWorkspaceBesideSidebar, WORKSPACE_DEFAULT_WIDTH } from "../stores/app-layout.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";

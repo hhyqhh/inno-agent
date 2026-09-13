@@ -368,7 +368,7 @@ function SkillCard({ skill, category, onClick }: { skill: SkillInfo; category: s
 	const tone = tileToneFor(category);
 	return (
 		<button
-			className="flex items-center gap-3 rounded-[14px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-3.5 text-left transition-shadow hover:shadow-[var(--inno-shadow-soft)]"
+			className="flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[14px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-3.5 text-left transition-shadow hover:shadow-[var(--inno-shadow-soft)]"
 			onClick={onClick}
 		>
 			<span
@@ -492,8 +492,8 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 							</button>
 						))}
 					</div>
-					<div className="flex items-center gap-2">
-						<div className="flex w-[220px] items-center gap-2 rounded-[18px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-3.5 py-[7px] max-md:w-full">
+					<div className="flex min-w-0 items-center gap-2 max-md:w-full">
+						<div className="flex min-w-0 w-[220px] items-center gap-2 rounded-[18px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-3.5 py-[7px] max-md:flex-1">
 							<Search size={15} className="shrink-0 text-[var(--inno-text-subtle)]" />
 							<input
 								type="text"
@@ -513,7 +513,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 							) : null}
 						</div>
 						<button
-							className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 							title={isLibraryTab ? t("skills.reload") : t("preview.refresh", "Refresh")}
 							onClick={() => void (isLibraryTab ? skillsStore.loadLibrary(true) : skillsStore.reload())}
 						>
@@ -521,7 +521,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 						</button>
 						<input ref={uploadRef} type="file" className="hidden" accept=".zip,application/zip,.md,text/markdown,text/plain" onChange={handleUpload} />
 						<button
-							className="flex h-8 items-center gap-1.5 rounded-[10px] inno-primary-button px-3.5 text-[13px] text-white disabled:opacity-50"
+							className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] inno-primary-button px-3.5 text-[13px] text-white disabled:opacity-50"
 							disabled={state.isUploading}
 							title={state.isUploading ? t("skills.uploading") : t("skills.upload")}
 							onClick={() => uploadRef.current?.click()}
@@ -601,7 +601,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 								</span>
 								<span className="text-[12.5px] text-[var(--inno-text-subtle)]">· {items.length}</span>
 							</div>
-							<div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
+							<div className="grid min-w-0 grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
 								{isLibraryTab
 									? (items as SkillLibraryItem[]).map((item) => {
 											const isImporting = state.importing.has(item.name);
@@ -609,7 +609,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 											return (
 												<div
 													key={item.name}
-													className="flex items-center gap-3 rounded-[14px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-3.5"
+													className="flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[14px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-3.5"
 												>
 													<span
 														className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px]"

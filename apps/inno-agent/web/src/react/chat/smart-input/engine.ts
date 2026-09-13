@@ -473,7 +473,7 @@ export class SmartInputEngine {
 		inserted += payload.text.slice(cursor);
 		this.ta.value = value.slice(0, selectionStart) + inserted + value.slice(selectionEnd);
 		const caret = selectionStart + inserted.length;
-		this.ta.focus();
+		this.ta.focus({ preventScroll: true });
 		this.ta.setSelectionRange(caret, caret);
 		this.sync();
 	}
@@ -1780,12 +1780,12 @@ export class SmartInputEngine {
 			const selectionStart = this.ta.selectionStart ?? removalEnd;
 			const selectionEnd = this.ta.selectionEnd ?? selectionStart;
 			this.ta.value = nextValue;
-			this.ta.focus();
+			this.ta.focus({ preventScroll: true });
 			this.ta.setSelectionRange(mapPosition(selectionStart), mapPosition(selectionEnd));
 		}
 		this.returnFilesToAttachments(slot);
 		this.slots = this.slots.filter((entry) => entry.id !== slot.id);
-		this.ta.focus();
+		this.ta.focus({ preventScroll: true });
 		this.sync();
 	}
 
@@ -1823,7 +1823,7 @@ export class SmartInputEngine {
 		};
 		this.ta.value = value.slice(0, start) + value.slice(end);
 		this.slots = this.slots.filter((slot) => slot.id !== source.id);
-		this.ta.focus();
+		this.ta.focus({ preventScroll: true });
 		this.ta.setSelectionRange(
 			Math.max(0, Math.min(this.ta.value.length, mapPosition(selectionStart))),
 			Math.max(0, Math.min(this.ta.value.length, mapPosition(selectionEnd))),
@@ -1961,7 +1961,7 @@ export class SmartInputEngine {
 		const caret = this.ta.selectionStart ?? this.ta.value.length;
 		const { token } = this.buildToken(slot);
 		this.ta.value = this.ta.value.slice(0, caret) + token + this.ta.value.slice(caret);
-		this.ta.focus();
+		this.ta.focus({ preventScroll: true });
 		this.ta.setSelectionRange(caret + token.length, caret + token.length);
 		this.sync();
 	}
@@ -2095,7 +2095,7 @@ export class SmartInputEngine {
 		}
 		this.slots = this.slots.filter((slot) => !removedIds.has(slot.id));
 		this.ta.value = nextValue;
-		this.ta.focus();
+		this.ta.focus({ preventScroll: true });
 		const caret = merged[0]?.[0] ?? selectionStart;
 		this.ta.setSelectionRange(Math.min(caret, nextValue.length), Math.min(caret, nextValue.length));
 		this.sync();

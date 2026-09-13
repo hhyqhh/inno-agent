@@ -1071,7 +1071,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		const el = inputRef.current;
 		if (el) {
 			el.value = text;
-			el.focus();
+			el.focus({ preventScroll: true });
 			// Programmatic value assignment fires no input event, and while smart
 			// input is enabled the textarea's own text is transparent — without an
 			// explicit sync the mirror stays stale and the draft renders invisible
@@ -1260,7 +1260,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		if (!block || !el) return;
 		const start = Math.min(el.selectionStart, el.value.length);
 		const end = Math.min(el.selectionEnd, el.value.length);
-		el.focus();
+		el.focus({ preventScroll: true });
 		el.setRangeText(block.text, start, end, "end");
 		draftRef.current = el.value;
 		setDraftValue(el.value);

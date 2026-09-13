@@ -1652,6 +1652,11 @@ inno-app-shell {
  *    safe-area-aware placement.
  */
 @media (max-width: 960px) {
+	.inno-feature-header,
+	.inno-workspace-panel-header {
+		padding-left: 64px;
+	}
+
 	input,
 	textarea,
 	select {
@@ -2007,8 +2012,19 @@ inno-workspace-panel textarea {
 	height: 100%;
 }
 
-/* docx: docx-preview lays out fixed-width A4 pages. Let the wrapper shrink to
-   the panel and scale each page down proportionally on narrow previews. */
+/* Reflow DOCX pages to the panel width. On narrow panels, also reduce the
+   original print margins; retaining e.g. 120px on each side leaves only a
+   few characters of usable text on a phone. */
+.docx-host {
+	container-type: inline-size;
+}
+
+@container (max-width: 640px) {
+	.docx-host .docx-wrapper > section.docx {
+		padding-inline: 24px !important;
+	}
+}
+
 .docx-host .docx-wrapper {
 	width: 100%;
 	max-width: 100%;
@@ -4375,7 +4391,19 @@ button.inno-smart-ref-chip:hover {
 	--inno-smart-font-size: 14px;
 	--inno-smart-line-height: 20px;
 }
+/* Keep the editable source, painted mirror and measurement probes on the
+   same mobile metrics. A generic textarea rule is not enough: the active
+   smart-input selector below has higher specificity and used to restore
+   14px, triggering focus zoom on iOS. Keep pinch-to-zoom available. */
+@media (max-width: 960px), (pointer: coarse) {
+	.inno-smart-wrap {
+		--inno-smart-font-size: 16px;
+		--inno-smart-line-height: 24px;
+	}
+}
 .inno-smart-wrap .inno-composer-textarea {
+	font-size: var(--inno-smart-font-size);
+	line-height: var(--inno-smart-line-height);
 	position: relative;
 	z-index: 2;
 	background: transparent;
@@ -4387,8 +4415,6 @@ button.inno-smart-ref-chip:hover {
 .inno-smart-wrap.is-active textarea.inno-composer-textarea {
 	color: transparent;
 	caret-color: var(--inno-accent);
-	font-size: var(--inno-smart-font-size);
-	line-height: var(--inno-smart-line-height);
 }
 /* The textarea is only the editable source layer. Let the mirror paint the
    selection, otherwise the browser highlights hidden token markers instead of

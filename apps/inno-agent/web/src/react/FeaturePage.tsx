@@ -51,7 +51,7 @@ export function FeaturePage({ page }: { page: FeaturePageId }) {
 	const { t } = useTranslation();
 	return (
 		<div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-[var(--inno-background)]">
-		<header className="inno-feature-header flex shrink-0 items-center justify-between gap-2 border-b border-[var(--inno-border)] px-5 py-3">
+			<header className="inno-feature-header flex shrink-0 items-center justify-between gap-2 border-b border-[var(--inno-border)] px-5 py-3">
 				<h1 className="text-[15px] font-medium text-[var(--inno-text)]">{t(PAGE_TITLE_KEYS[page])}</h1>
 			</header>
 			<div className="min-h-0 flex-1 overflow-y-auto">

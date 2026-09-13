@@ -231,6 +231,7 @@ export function SmartInputSettings() {
 							type="button"
 							className="inno-smart-set-ext-x"
 							title={t("settings.smartInput.removeExt", "移除格式")}
+							aria-label={`${t("settings.smartInput.removeExt", "移除格式")} ${ext}`}
 							onClick={() => onRemove(ext)}
 						>
 							×

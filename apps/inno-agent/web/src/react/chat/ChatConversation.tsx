@@ -50,7 +50,9 @@ interface ChatConversationProps {
 	busyBlocker: ReactNode;
 	smartToast: ReactNode;
 	composer: ReactNode;
-	/** "顺便问问" slide-up panel, rendered above the composer layer. */
+	/** "随便问问" entry icon, rendered in the conversation header. */
+	btwControl?: ReactNode;
+	/** "随便问问" floating panel, rendered above the composer layer. */
 	btwPanel?: ReactNode;
 	onOpenAttachment: (file: AttachmentRef) => void;
 	onOpenSkill: (skillName: string) => void;
@@ -62,6 +64,8 @@ interface ChatConversationProps {
 	sessionTitle?: string;
 	/** Bound workspace name rendered as a chip next to the title. */
 	workspaceName?: string | null;
+	/** Reserve room for the desktop chrome's workspace button when collapsed. */
+	workspaceCollapsed?: boolean;
 	/** When the session sidebar is collapsed its floating expand button overlaps the header's left edge. */
 	sidebarCollapsed?: boolean;
 }
@@ -82,6 +86,7 @@ export function ChatConversation({
 	busyBlocker,
 	smartToast,
 	composer,
+	btwControl,
 	btwPanel,
 	onOpenAttachment,
 	onOpenSkill,
@@ -91,6 +96,7 @@ export function ChatConversation({
 	wsError,
 	sessionTitle,
 	workspaceName,
+	workspaceCollapsed = false,
 	sidebarCollapsed = false,
 }: ChatConversationProps) {
 	const { t } = useTranslation();
@@ -208,14 +214,17 @@ export function ChatConversation({
 			{topOverlay}
 			{smartToast}
 			{sessionTitle ? (
-				<header className={`relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] pr-4 backdrop-blur-md ${sidebarCollapsed ? "pl-14" : "pl-4"}`}>
-					<span className="min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]">{sessionTitle}</span>
+				<header className={`inno-conversation-header relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] pr-4 backdrop-blur-md ${workspaceCollapsed ? "pr-14" : ""} ${sidebarCollapsed ? "inno-conversation-header--sidebar-collapsed" : "pl-4"}`}>
+					<div className="inno-conversation-heading flex min-w-0 items-center gap-2.5">
+						<span className="inno-conversation-title min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]" title={sessionTitle}>{sessionTitle}</span>
 					{workspaceName ? (
-						<span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] bg-[var(--inno-chip-bg)] px-2.5 py-[3px] text-[11px] text-[var(--inno-text-subtle)]">
+						<span className="inno-conversation-workspace-chip inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] bg-[var(--inno-chip-bg)] px-2.5 py-[3px] text-[11px] text-[var(--inno-text-subtle)]">
 							<Folder size={11} aria-hidden="true" />
-							<span className="max-w-40 truncate">{workspaceName}</span>
+							<span className="max-w-[220px] truncate">{workspaceName}</span>
 						</span>
-					) : null}
+						) : null}
+					</div>
+					{btwControl ? <div className="ml-auto flex shrink-0 items-center">{btwControl}</div> : null}
 				</header>
 			) : null}
 			<div className="conversation-stage relative flex-1 min-h-0">
@@ -317,7 +326,7 @@ export function ChatConversation({
 						</div>
 					</div>
 				</div>
-				{btwPanel}
+				{btwPanel ? <div className="inno-conversation-btw-layer">{btwPanel}</div> : null}
 			</div>
 			<TerminalDrawer />
 		</section>

@@ -30,12 +30,13 @@ export interface ChatComposerProps {
 	modelState: ChatComposerModelState;
 	modelOptions: InnoModelInfo[];
 	currentModel?: InnoModelInfo;
-	/** "顺便问问" entry button, rendered in the toolbar's left group (conversation view only). */
-	btwControl?: ReactNode;
-	/** Permission policy mode switcher, rendered as a pill in the sub-pill row. */
+	/** Permission switcher; welcome uses a pill, conversation uses a frameless labeled control. */
 	permissionControl?: ReactNode;
-	/** Workspace selector pill for the sub-pill row (conversation view). */
+	/** Workspace selector shown on the welcome composer sub-pill row. */
 	workspaceControl?: ReactNode;
+	/** Move conversation-only controls into the input card; welcome keeps the
+	 *  existing sub-pill row layout. */
+	conversationMode?: boolean;
 	modelPickerOpen: boolean;
 	attachMenuOpen: boolean;
 	workspaceFiles: Array<{ name: string; path: string }>;
@@ -87,9 +88,9 @@ export function ChatComposer({
 	modelState,
 	modelOptions,
 	currentModel,
-	btwControl,
 	permissionControl,
 	workspaceControl,
+	conversationMode = false,
 	modelPickerOpen,
 	attachMenuOpen,
 	workspaceFiles,
@@ -499,7 +500,7 @@ export function ChatComposer({
 					{smartInputEnabled ? <div ref={hitRef} className="inno-smart-hit" /> : null}
 				</div>
 				<div className="inno-composer-toolbar flex shrink-0 items-center justify-between gap-2">
-					<div className="flex min-w-0 items-center gap-1">
+					<div className="flex min-w-0 items-center gap-2">
 						{renderAttachMenu()}
 						<button
 							type="button"
@@ -510,9 +511,10 @@ export function ChatComposer({
 						>
 							<Image size={16} />
 						</button>
-						{btwControl}
+						{conversationMode ? permissionControl : null}
 					</div>
 					<div className="flex shrink-0 items-center gap-1">
+						{conversationMode ? renderModelPicker() : null}
 						{(chatIsSending || jobStreaming) ? (
 							<>
 								{canReconnect && !jobStreaming ? (
@@ -548,12 +550,14 @@ export function ChatComposer({
 					</div>
 				</div>
 			</div>
-			<div className="inno-composer-subrow">
-				{workspaceControl}
-				{permissionControl}
-				<span className="flex-1" aria-hidden="true" />
-				{renderModelPicker()}
-			</div>
+			{conversationMode ? null : (
+				<div className="inno-composer-subrow">
+					{workspaceControl}
+					{permissionControl}
+					<span className="flex-1" aria-hidden="true" />
+					{renderModelPicker()}
+				</div>
+			)}
 		</div>
 	);
 }

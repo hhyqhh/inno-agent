@@ -76,11 +76,20 @@
 	--inno-user-bubble-bg: #e9eef6;
 	--inno-card-bg: #ffffff;
 	--inno-chip-bg: #f1f4f9;
+	/* Solid action buttons use a neutral contrast instead of the accent blue. */
+	--inno-primary-bg: #1f1f1f;
+	--inno-primary-fg: #ffffff;
+	--inno-primary-bg-hover: #000000;
 	/* Send button: near-black circle in light, inverted in dark. */
 	--inno-send-bg: #1f1f1f;
 	--inno-send-fg: #ffffff;
 	--inno-send-bg-hover: #000000;
 	--inno-shadow-composer: 0 1px 3px rgba(60, 64, 67, 0.18), 0 4px 12px rgba(60, 64, 67, 0.10);
+	--inno-window-chrome-height: 40px;
+	--inno-window-chrome-control-left: 96px;
+	--inno-window-chrome-control-size: 30px;
+	--inno-window-chrome-control-top: calc((var(--inno-window-chrome-height) - var(--inno-window-chrome-control-size)) / 2 + 5px);
+	--inno-window-chrome-title-inset: 136px;
 
 	/* Transition tokens — custom cubic-bezier per Emil's design engineering.
 	   `ease`/`ease-in` feel sluggish; these give punchy, responsive motion. */
@@ -920,17 +929,17 @@ summary:focus-visible {
 .inno-markdown-interaction-notice button {
 	flex: 0 0 auto;
 	padding: 0.25rem 0.5rem;
-	border: 1px solid var(--inno-accent);
+	border: 1px solid var(--inno-primary-bg);
 	border-radius: 0.375rem;
-	background: var(--inno-accent);
-	color: var(--inno-surface);
+	background: var(--inno-primary-bg);
+	color: var(--inno-primary-fg);
 	font: inherit;
 	font-weight: 650;
 	cursor: pointer;
 }
 
 .inno-markdown-interaction-notice button:hover {
-	background: color-mix(in srgb, var(--inno-accent) 86%, var(--inno-text));
+	background: var(--inno-primary-bg-hover);
 }
 
 .inno-markdown-interaction-notice button:focus-visible {
@@ -1268,7 +1277,7 @@ inno-app-shell {
 	right: 0;
 	width: var(--workspace-w);
 	overflow: hidden;
-	z-index: 2; /* overlay sidebar/chat in full mode */
+	z-index: 2; /* sit above the chat while keeping the session rail visible */
 	transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -1294,7 +1303,323 @@ inno-app-shell {
 }
 
 .app-layout--workspace-full {
-	--workspace-w: 100%;
+	/* Full file view takes over the chat column, but keeps the session sidebar
+	   in place so the window still has the same navigation anchor as the
+	   reference layout. When the sidebar is already collapsed this naturally
+	   becomes a true edge-to-edge view. */
+	--workspace-w: calc(100% - var(--sidebar-w));
+}
+
+.app-layout--workspace-full.app-layout--sidebar-expanded {
+	/* Keep the navigation column's width explicit while the full workspace
+	   changes its positioning model. */
+	--sidebar-w: 264px;
+}
+
+.app-layout--workspace-full > .workspace-panel {
+	/* Pin the full view between the session sidebar and the window edge. Using
+	   both insets avoids the static-position edge case of an absolutely
+	   positioned panel whose width is a calc(). */
+	left: var(--sidebar-w);
+	right: 0;
+	width: auto;
+}
+
+/* A full workspace can start at the window's left edge when the session rail
+   is collapsed. Keep its title clear of the native traffic lights instead of
+   letting the renderer header slide underneath them. */
+.app-layout--workspace-full.app-layout--sidebar-collapsed > .workspace-panel .inno-workspace-panel-header {
+	padding-left: var(--inno-window-chrome-title-inset);
+}
+
+/* Give the workspace title a little more breathing room from the panel edge.
+   Full mode with the session rail collapsed keeps its larger traffic-light
+   safe area above. */
+.inno-workspace-panel-header {
+	padding-left: 20px;
+	padding-right: 16px;
+}
+
+/* Keep the title's traffic-light safe area on the same timeline as the
+   horizontal column transition. Otherwise it jumps left before the column
+   itself starts moving when the sidebar is opened. */
+.inno-conversation-header,
+.inno-workspace-panel-header,
+.inno-feature-header {
+	transition: padding-left 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Electron's macOS window uses a hidden title bar so the application surface
+   reaches the top edge. The renderer owns the same compact toolbar shape as
+   the reference app while the native traffic lights remain above it. */
+.app-layout > .inno-window-chrome {
+	position: absolute;
+	inset: 0;
+	width: auto;
+	max-height: none;
+	overflow: visible;
+	z-index: 50;
+	pointer-events: none;
+}
+
+.inno-window-chrome-bar {
+	position: absolute;
+	inset: 0 auto auto var(--inno-window-chrome-control-left);
+	display: flex;
+	width: var(--inno-window-chrome-control-size);
+	height: var(--inno-window-chrome-height);
+	align-items: flex-start;
+	gap: 0;
+	padding: var(--inno-window-chrome-control-top) 0 0;
+	background: transparent;
+	border-bottom: 0;
+	/* Keep the overlay limited to the renderer-owned control. A full-width
+	   app-region drag surface can swallow clicks on the workspace header in
+	   Electron; the underlying headers already provide their own drag regions. */
+	pointer-events: none;
+	-webkit-app-region: no-drag;
+	user-select: none;
+}
+
+.inno-window-chrome-button {
+	display: inline-flex;
+	height: var(--inno-window-chrome-control-size);
+	width: var(--inno-window-chrome-control-size);
+	flex: 0 0 var(--inno-window-chrome-control-size);
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--inno-text-subtle);
+	line-height: 0;
+	pointer-events: auto;
+	-webkit-app-region: no-drag;
+	touch-action: manipulation;
+	cursor: pointer;
+	transition: background-color 140ms ease, color 140ms ease;
+}
+
+.inno-window-chrome-button svg,
+.inno-workspace-header-button svg {
+	display: block;
+}
+
+.inno-window-chrome-button:hover {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+
+.inno-window-chrome-workspace-button {
+	position: absolute;
+	/* Match the workspace-header action buttons by aligning the shared 30px
+	   control centers while keeping the button anchored to the same right edge. */
+	top: calc(var(--inno-window-chrome-control-top) - 1px);
+	right: 16px;
+	z-index: 1;
+	/* It is the collapsed-state counterpart of the header actions. Keep the
+	   hit area, but let the icon sit directly on the header without a frame. */
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 100ms ease;
+}
+
+.inno-window-chrome-workspace-button:hover {
+	border-color: transparent;
+	background: var(--inno-surface-muted);
+}
+
+.inno-window-chrome-workspace-button:active {
+	transform: scale(0.97);
+}
+
+.inno-window-chrome-workspace-button:focus-visible {
+	outline: none;
+	box-shadow: var(--inno-ring);
+}
+
+.inno-window-chrome-right-actions {
+	position: absolute;
+	top: var(--inno-window-chrome-control-top);
+	right: calc(16px + var(--inno-window-chrome-control-size) + 8px);
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	pointer-events: auto;
+}
+
+.inno-window-chrome-btw-button {
+	border: 1px solid var(--inno-border);
+	background: color-mix(in srgb, var(--inno-surface) 86%, transparent);
+	box-shadow: none;
+	transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 100ms ease;
+}
+
+.inno-window-chrome-btw-button:hover {
+	border-color: var(--inno-border-strong);
+	background: var(--inno-surface-muted);
+}
+
+.inno-window-chrome-btw-button:active {
+	transform: scale(0.97);
+}
+
+.inno-window-chrome-btw-button.is-active {
+	border-color: color-mix(in srgb, var(--inno-accent) 42%, var(--inno-border));
+	background: var(--inno-accent-soft);
+	color: var(--inno-accent);
+}
+
+/* Keep the sidebar brand row below the traffic lights. The conversation and
+   workbench headers intentionally occupy the same top row as the compact
+   window chrome, matching the reference layout's title hierarchy. */
+.app-layout--desktop .inno-sidebar-header {
+	padding-top: var(--inno-window-chrome-height);
+	-webkit-app-region: drag;
+}
+
+/* The welcome view has no title header of its own. Keep its top strip as a
+   real drag surface so the browser-like landing state is draggable too. */
+.app-layout--desktop .inno-chat-top-drag-region {
+	position: absolute;
+	inset: 0 0 auto;
+	height: var(--inno-window-chrome-height);
+	z-index: 2;
+	-webkit-app-region: drag;
+}
+
+.app-layout--desktop .inno-conversation-header,
+.app-layout--desktop .inno-workspace-header,
+.app-layout--desktop .inno-feature-header {
+	-webkit-app-region: drag;
+}
+
+.app-layout--desktop .inno-conversation-header,
+.app-layout--desktop .inno-workspace-header,
+.app-layout--desktop .inno-feature-header {
+	margin-top: 0;
+}
+
+/* Feature pages also start at the window edge when the session rail is
+   collapsed. Keep their titles clear of macOS traffic lights just like the
+   conversation and workspace headers. */
+.app-layout--desktop.app-layout--sidebar-collapsed .inno-feature-header {
+	padding-left: var(--inno-window-chrome-title-inset);
+}
+
+.app-layout--desktop .inno-conversation-header {
+	background: var(--inno-chat-bg);
+	backdrop-filter: none;
+}
+
+.inno-conversation-heading {
+	max-width: 100%;
+}
+
+.inno-conversation-header--sidebar-collapsed {
+	padding-left: var(--inno-window-chrome-title-inset);
+}
+
+.inno-conversation-workspace-chip {
+	border: 1px solid color-mix(in srgb, var(--inno-border) 78%, transparent);
+	background: var(--inno-chip-bg);
+}
+
+.app-layout--desktop .inno-sidebar-header button,
+.app-layout--desktop .inno-conversation-header button,
+.app-layout--desktop .inno-workspace-header button,
+.app-layout--desktop .inno-feature-header button,
+.app-layout--desktop .inno-sidebar-header input,
+.app-layout--desktop .inno-conversation-header input,
+.app-layout--desktop .inno-workspace-header input,
+.app-layout--desktop .inno-feature-header input,
+.app-layout--desktop .inno-sidebar-header a,
+.app-layout--desktop .inno-conversation-header a,
+.app-layout--desktop .inno-workspace-header a,
+.app-layout--desktop .inno-feature-header a {
+	-webkit-app-region: no-drag;
+}
+
+.inno-workspace-header-button {
+	display: inline-flex;
+	height: 30px;
+	width: 30px;
+	flex: 0 0 30px;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--inno-text-subtle);
+	line-height: 0;
+	touch-action: manipulation;
+	cursor: pointer;
+	transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.inno-workspace-header-button:hover {
+	border-color: var(--inno-border);
+	background: var(--inno-surface);
+	color: var(--inno-text);
+}
+
+.inno-workspace-header-button:focus-visible {
+	outline: none;
+	box-shadow: var(--inno-ring);
+}
+
+.inno-workspace-header-actions {
+	display: flex;
+	flex: 0 0 auto;
+	height: 30px;
+	align-items: center;
+	gap: 6px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	position: relative;
+	z-index: 1;
+}
+
+.inno-workspace-header-toggle-slot {
+	display: block;
+	height: 30px;
+	width: 30px;
+	flex: 0 0 30px;
+}
+
+/* With only the tree visible, let it share the panel's edge and background.
+   The split view keeps the two quiet cards; the narrow view should read as a
+   single file drawer rather than a card floating inside another card. */
+.inno-workspace-browser--single-pane {
+	gap: 0;
+	padding: 0;
+}
+
+.inno-workspace-browser--single-pane > .inno-workspace-pane {
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+}
+
+.inno-workspace-browser--single-pane .inno-workspace-subheader {
+	padding-right: 12px;
+	padding-left: 12px;
+	background: var(--inno-workspace-bg);
+}
+
+.inno-workspace-browser--single-pane .inno-workspace-filter-bar {
+	background: var(--inno-workspace-bg);
+}
+
+.inno-workspace-header-button.is-active {
+	border-color: var(--inno-border);
+	background: var(--inno-surface);
+	color: var(--inno-text);
 }
 
 /* Disable transitions while the user is dragging the resize handle */
@@ -1329,6 +1654,133 @@ inno-app-shell {
 	bottom: 12px;
 	z-index: 10;
 	pointer-events: none;
+}
+
+/* Keep the side-question panel in an isolated overlay layer. Its entrance
+   animation and focus target must never become layout inputs for the main
+   composer or the conversation scroll lane. */
+.inno-conversation-btw-layer {
+	position: absolute;
+	inset: 0;
+	z-index: 30;
+	pointer-events: none;
+}
+
+.inno-conversation-btw-layer > * {
+	pointer-events: auto;
+}
+
+.inno-btw-window {
+	box-sizing: border-box;
+	contain: layout paint;
+}
+
+.inno-btw-titlebar {
+	cursor: grab;
+	touch-action: none;
+	user-select: none;
+}
+
+.inno-btw-titlebar:active {
+	cursor: grabbing;
+}
+
+.inno-btw-tab-strip {
+	overflow-x: auto;
+	overflow-y: hidden;
+	scrollbar-width: thin;
+	overscroll-behavior-x: contain;
+}
+
+.inno-btw-tab {
+	background: transparent;
+	transition: background-color 120ms ease, color 120ms ease;
+}
+
+.inno-btw-tab:hover {
+	background: var(--inno-surface-muted);
+}
+
+.inno-btw-tab-active {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+
+.inno-btw-thread-list {
+	scrollbar-gutter: stable;
+	overscroll-behavior: contain;
+}
+
+.inno-btw-resize-handle {
+	position: absolute;
+	z-index: 10;
+	touch-action: none;
+}
+
+.inno-btw-resize-handle-n,
+.inno-btw-resize-handle-s {
+	left: 16px;
+	right: 16px;
+	height: 10px;
+}
+
+.inno-btw-resize-handle-n {
+	top: 0;
+	cursor: n-resize;
+}
+
+.inno-btw-resize-handle-s {
+	bottom: 0;
+	cursor: s-resize;
+}
+
+.inno-btw-resize-handle-e,
+.inno-btw-resize-handle-w {
+	top: 16px;
+	bottom: 16px;
+	width: 10px;
+}
+
+.inno-btw-resize-handle-e {
+	right: 0;
+	cursor: e-resize;
+}
+
+.inno-btw-resize-handle-w {
+	left: 0;
+	cursor: w-resize;
+}
+
+.inno-btw-resize-handle-ne,
+.inno-btw-resize-handle-nw,
+.inno-btw-resize-handle-se,
+.inno-btw-resize-handle-sw {
+	width: 16px;
+	height: 16px;
+}
+
+.inno-btw-resize-handle-ne {
+	top: 0;
+	right: 0;
+	cursor: nesw-resize;
+}
+
+.inno-btw-resize-handle-nw {
+	top: 0;
+	left: 0;
+	cursor: nwse-resize;
+}
+
+.inno-btw-resize-handle-se {
+	right: 0;
+	bottom: 0;
+	cursor: nwse-resize;
+}
+
+.inno-btw-resize-handle-sw {
+	left: 0;
+	bottom: 0;
+	cursor: nesw-resize;
 }
 
 .inno-conversation-composer-content {
@@ -1427,22 +1879,34 @@ inno-workspace-panel textarea {
 	padding-bottom: calc(1rem + var(--inno-conversation-scroll-bottom-space, 0px));
 }
 
+/* Keep centered skill cards on the same x-coordinate before and after a tab
+   introduces enough content to need a vertical scrollbar. Both-edge guttering
+   keeps the available inline space symmetric across that transition. */
+.skills-panel-scroll {
+	scrollbar-width: thin;
+	scrollbar-color: var(--inno-scrollbar-thumb) transparent;
+	scrollbar-gutter: stable both-edges;
+}
+
 .chat-scroll::-webkit-scrollbar,
 .workspace-scroll::-webkit-scrollbar,
-.sidebar-scroll::-webkit-scrollbar {
+.sidebar-scroll::-webkit-scrollbar,
+.skills-panel-scroll::-webkit-scrollbar {
 	width: 8px;
 	height: 8px;
 }
 
 .chat-scroll::-webkit-scrollbar-track,
 .workspace-scroll::-webkit-scrollbar-track,
-.sidebar-scroll::-webkit-scrollbar-track {
+.sidebar-scroll::-webkit-scrollbar-track,
+.skills-panel-scroll::-webkit-scrollbar-track {
 	background: transparent;
 }
 
 .chat-scroll::-webkit-scrollbar-thumb,
 .workspace-scroll::-webkit-scrollbar-thumb,
-.sidebar-scroll::-webkit-scrollbar-thumb {
+.sidebar-scroll::-webkit-scrollbar-thumb,
+.skills-panel-scroll::-webkit-scrollbar-thumb {
 	border: 2px solid transparent;
 	border-radius: 999px;
 	background: var(--inno-scrollbar-thumb);
@@ -1451,7 +1915,8 @@ inno-workspace-panel textarea {
 
 .chat-scroll:hover::-webkit-scrollbar-thumb,
 .workspace-scroll:hover::-webkit-scrollbar-thumb,
-.sidebar-scroll:hover::-webkit-scrollbar-thumb {
+.sidebar-scroll:hover::-webkit-scrollbar-thumb,
+.skills-panel-scroll:hover::-webkit-scrollbar-thumb {
 	background: var(--inno-scrollbar-thumb-hover);
 	background-clip: padding-box;
 }
@@ -1512,15 +1977,15 @@ inno-workspace-panel textarea {
 
 .inno-primary-button {
 	border-color: transparent;
-	background: var(--inno-accent);
-	color: #ffffff;
+	background: var(--inno-primary-bg);
+	color: var(--inno-primary-fg);
 	box-shadow: var(--inno-shadow-soft);
 	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), border-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out), box-shadow var(--inno-dur-ui) var(--inno-ease-out), transform var(--inno-dur-fast) var(--inno-ease-out);
 }
 
 .inno-primary-button:hover:not(:disabled) {
-	background: var(--inno-tech);
-	color: #ffffff;
+	background: var(--inno-primary-bg-hover);
+	color: var(--inno-primary-fg);
 	box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
 }
 
@@ -2123,8 +2588,49 @@ inno-workspace-panel textarea {
 
 /* Yolo (完全权限) reads as a red "full access" pill in both themes. */
 .inno-composer-subpill.is-perm-full {
+	background: var(--inno-surface);
+	border-color: var(--inno-border);
+	color: var(--inno-danger);
+}
+
+.inno-composer-subpill.is-perm-full:hover:not(:disabled) {
+	border-color: var(--inno-border-strong);
+	background: var(--inno-surface-muted);
+	color: var(--inno-danger);
+}
+
+/* Conversation mode keeps the permission label visible without adding a
+   second framed control inside the composer toolbar. */
+.inno-composer-permission-inline {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: 6px;
+	min-height: 32px;
+	padding: 4px 8px;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--inno-text-muted);
+	font-size: 12.5px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-composer-permission-inline:hover:not(:disabled),
+.inno-composer-permission-inline[aria-expanded="true"] {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+
+.inno-composer-permission-inline.is-perm-full {
+	color: var(--inno-danger);
+}
+
+.inno-composer-permission-inline.is-perm-full:hover:not(:disabled),
+.inno-composer-permission-inline.is-perm-full[aria-expanded="true"] {
 	background: var(--inno-danger-bg);
-	border-color: color-mix(in srgb, var(--inno-danger) 32%, transparent);
 	color: var(--inno-danger);
 }
 
@@ -2340,8 +2846,8 @@ inno-workspace-panel textarea {
 }
 
 .inno-mode-segmented-control__option.is-active {
-	background: var(--inno-accent);
-	color: #fff;
+	background: var(--inno-primary-bg);
+	color: var(--inno-primary-fg);
 	box-shadow: 0 1px 2px rgba(31, 35, 40, 0.18);
 }
 
@@ -2570,9 +3076,9 @@ inno-workspace-panel textarea {
 }
 
 .inno-workspace-smart-input-rule.is-active {
-	border-color: var(--inno-accent);
-	background: var(--inno-accent);
-	color: var(--inno-surface);
+	border-color: var(--inno-primary-bg);
+	background: var(--inno-primary-bg);
+	color: var(--inno-primary-fg);
 }
 
 .inno-workspace-smart-input-rule.is-off {
@@ -2587,7 +3093,7 @@ inno-workspace-panel textarea {
 }
 
 .inno-workspace-smart-input-rule.is-active:hover:not(:disabled) {
-	background: color-mix(in srgb, var(--inno-accent) 86%, var(--inno-text));
+	background: var(--inno-primary-bg-hover);
 }
 
 .inno-workspace-smart-input-rule:disabled {
@@ -2990,8 +3496,8 @@ inno-workspace-panel textarea {
 	padding: 0;
 	border: 0;
 	border-radius: 8px;
-	background: var(--inno-accent);
-	color: #fff;
+	background: var(--inno-primary-bg);
+	color: var(--inno-primary-fg);
 	cursor: pointer;
 }
 
@@ -3151,6 +3657,41 @@ inno-workspace-panel textarea {
 	border: 1px solid var(--inno-border);
 	background: var(--inno-surface);
 	box-shadow: none;
+}
+
+/* The browser owns two panes inside the workspace panel. Give both panes the
+   same quiet surface and radius so the tree and preview read as one file area
+   instead of unrelated floating cards. */
+.inno-workspace-pane {
+	border-radius: 10px;
+	box-shadow: 0 1px 2px rgba(31, 35, 40, 0.035);
+}
+
+.inno-workspace-subheader,
+.inno-workspace-content-toolbar {
+	flex-shrink: 0;
+}
+
+.inno-workspace-tree-toolbar button,
+.inno-workspace-content-toolbar button {
+	line-height: 0;
+}
+
+.inno-workspace-selection-card {
+	box-shadow: none;
+}
+
+.inno-workspace-selection-action {
+	border: 1px solid transparent;
+	background: transparent;
+	color: var(--inno-text-subtle);
+	transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.inno-workspace-selection-action:hover {
+	border-color: var(--inno-border);
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
 }
 
 /* Keep file extensions visible when the filename stem needs to truncate. */
@@ -4387,9 +4928,9 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 	cursor: not-allowed;
 }
 .inno-smart-fill-btn.is-primary {
-	background: var(--inno-accent);
+	background: var(--inno-primary-bg);
 	border-color: transparent;
-	color: var(--inno-surface);
+	color: var(--inno-primary-fg);
 }
 .inno-smart-fill-btn.is-primary:hover:not(:disabled) {
 	opacity: 0.9;
@@ -4796,9 +5337,9 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 	color: var(--inno-text-muted);
 }
 .inno-smart-set-action.is-primary {
-	background: var(--inno-accent);
+	background: var(--inno-primary-bg);
 	border-color: transparent;
-	color: var(--inno-surface);
+	color: var(--inno-primary-fg);
 }
 .inno-smart-set-action:disabled {
 	opacity: 0.5;

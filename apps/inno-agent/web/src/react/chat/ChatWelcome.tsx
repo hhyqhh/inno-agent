@@ -86,6 +86,7 @@ export function ChatWelcome({
 		: presets;
 	return (
 		<section className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-chat-bg)]">
+			<div className="inno-chat-top-drag-region" aria-hidden="true" />
 			{topOverlay}
 			{smartToast}
 			{/* Soft radial glow behind the welcome column */}
@@ -100,7 +101,7 @@ export function ChatWelcome({
 			<div className="relative z-[1] flex min-h-0 flex-1 justify-center overflow-y-auto px-4">
 				<div ref={welcomeLayoutRef} className="inno-welcome-layout flex w-full max-w-[760px] flex-col items-center pb-12 pt-[14vh]">
 					<div className="inno-welcome-upper flex w-full flex-col items-center text-center">
-						<div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] text-base font-semibold text-[var(--inno-text)] shadow-sm">IA</div>
+						<div className="mb-4 flex h-12 w-12 select-none items-center justify-center rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] text-base font-semibold text-[var(--inno-text)] shadow-sm">IA</div>
 						<h1 className="text-[28px] font-normal tracking-wide text-[var(--inno-text)]">{t("welcome.greeting")}</h1>
 
 						{questionHint}

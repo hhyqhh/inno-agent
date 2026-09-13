@@ -423,6 +423,22 @@ describe("SmartInputEngine token editing", () => {
 		expect(hitLayer.style.transform).toBe("translateY(-36px)");
 	});
 
+	it("reserves the native scrollbar gutter for the mirror and hit layer", () => {
+		const { engine, textarea, mirror, hitLayer } = makeEngine("");
+		Object.defineProperty(textarea, "offsetWidth", { configurable: true, value: 640 });
+		Object.defineProperty(textarea, "clientWidth", { configurable: true, value: 625 });
+		engine.attach();
+
+		expect(mirror.style.right).toBe("15px");
+		expect(hitLayer.style.right).toBe("15px");
+
+		Object.defineProperty(textarea, "clientWidth", { configurable: true, value: 640 });
+		engine.syncLayout();
+
+		expect(mirror.style.right).toBe("0px");
+		expect(hitLayer.style.right).toBe("0px");
+	});
+
 	it("auto-scrolls the textarea when a bubble is dragged to the lower edge", () => {
 		const currentSlot = slot();
 		const token = `{${slotChar(currentSlot.id)}}\u00A0\u00A0`;

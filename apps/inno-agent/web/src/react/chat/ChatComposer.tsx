@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CompositionEvent as ReactCompositionEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { X, ArrowUp, Square, RotateCcw, Image, ScrollText, Check, ChevronDown, ChevronUp, Plus, Settings2, HardDriveUpload } from "lucide-react";
+import { X, ArrowUp, Square, RotateCcw, Image, ScrollText, Check, ChevronDown, ChevronUp, CornerDownLeft, Plus, Settings2, HardDriveUpload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "../ui/Spinner.js";
 import { FileName } from "../FileName.js";
@@ -427,7 +427,7 @@ export function ChatComposer({
 				onClick={onToggleModelPicker}
 			>
 				{modelState.defaultProvider ? <ModelProviderIcon provider={currentModel?.provider ?? modelState.defaultProvider} /> : null}
-				<span className="whitespace-nowrap">{currentModelLabel}</span>
+				<span className="max-w-[32vw] truncate whitespace-nowrap md:max-w-none" title={currentModelLabel}>{currentModelLabel}</span>
 				{modelPickerOpen ? <ChevronUp size={13} className="shrink-0" /> : <ChevronDown size={13} className="shrink-0" />}
 			</button>
 			{modelPickerOpen && modelOptions.length > 0 ? (
@@ -465,6 +465,19 @@ export function ChatComposer({
 	);
 
 	const sendDisabled = !hasSendableContent || isUploading;
+	// Soft keyboards have no Shift+Enter, so touch users get an explicit
+	// newline button (hidden on fine-pointer devices via pointer: coarse CSS).
+	const insertNewline = () => {
+		const el = inputRef.current;
+		if (!el) return;
+		const start = el.selectionStart ?? el.value.length;
+		const end = el.selectionEnd ?? el.value.length;
+		el.setRangeText("\n", start, end, "end");
+		// The textarea is uncontrolled; notify React's onInput chain (smart-input
+		// mirror, autosize) about the programmatic edit.
+		el.dispatchEvent(new Event("input", { bubbles: true }));
+		el.focus();
+	};
 	return (
 		<div
 			className="inno-composer relative"
@@ -515,6 +528,16 @@ export function ChatComposer({
 					{conversationMode ? workspaceControl : null}
 					</div>
 					<div className="flex shrink-0 items-center gap-1">
+						<button
+							type="button"
+							className="inno-composer-newline inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full"
+							title={t("chat.insertNewline")}
+							aria-label={t("chat.insertNewline")}
+							disabled={chatIsSending || isUploading || hasPendingQuestion}
+							onClick={insertNewline}
+						>
+							<CornerDownLeft size={16} />
+						</button>
 						{conversationMode ? renderModelPicker() : null}
 						{(chatIsSending || jobStreaming) ? (
 							<>

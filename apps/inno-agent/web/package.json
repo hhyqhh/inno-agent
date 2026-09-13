@@ -53,6 +53,7 @@
 		"react-arborist": "^3.7.0",
 		"react-dnd": "^14.0.5",
 		"react-dnd-html5-backend": "^14.1.0",
+		"react-dnd-touch-backend": "^14.1.1",
 		"react-dom": "19.2.5",
 		"react-i18next": "^17.0.3",
 		"remark-github-blockquote-alert": "^2.1.0",

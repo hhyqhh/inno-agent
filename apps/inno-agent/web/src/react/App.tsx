@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DndProvider } from "react-dnd";
-import { HTML5Backend } from "react-dnd-html5-backend";
 import { MessageCircleQuestion } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { appStore, pageFromSearch, type AppPage, type WorkspaceMode } from "../stores/app-store.js";
@@ -12,6 +10,7 @@ import { workspacesStore } from "../stores/workspaces-store.js";
 import { chatStore } from "../stores/chat-store.js";
 import { terminalStore } from "../stores/terminal-store.js";
 import { useStoreSnapshot } from "./hooks.js";
+import { InnoDndProvider } from "./ui/dnd-backend.js";
 import { ChatCenter } from "./ChatCenter.js";
 import { FeaturePage } from "./FeaturePage.js";
 import { SessionSidebar } from "./SessionSidebar.js";
@@ -308,7 +307,7 @@ export function App() {
 
 	return (
 		<>
-			<DndProvider backend={HTML5Backend}>
+			<InnoDndProvider>
 				<div
 					className={`app-layout app-layout--${isDesktopWindow ? "desktop" : "browser"} app-layout--sidebar-${app.sidebarCollapsed ? "collapsed" : "expanded"} app-layout--workspace-${layoutWorkspaceMode}`}
 					style={{ "--inno-workspace-width": `${app.workspaceWidth}px` } as React.CSSProperties}
@@ -346,7 +345,7 @@ export function App() {
 						/>
 					) : null}
 				</div>
-			</DndProvider>
+			</InnoDndProvider>
 			{workspaceNarrowHint ? (
 				<div
 					role="status"

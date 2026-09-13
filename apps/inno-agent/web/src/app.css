@@ -5429,3 +5429,15 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 		flex-basis: 100%;
 	}
 }
+
+/* Soft keyboards have no Shift+Enter; the composer's newline button only
+   makes sense on touch devices. */
+.inno-composer-newline {
+	display: none;
+}
+
+@media (pointer: coarse) {
+	.inno-composer-newline {
+		display: inline-flex;
+	}
+}

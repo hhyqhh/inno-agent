@@ -349,7 +349,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 					</button>
 					<button
 						type="button"
-						className={`inno-workspace-header-button ${mode === "full" ? "is-active" : ""}`}
+						className={`inno-workspace-header-button ${mode === "full" ? "is-active" : ""} max-[960px]:hidden`}
 						title={mode === "full" ? (t("workspace.half") ?? "") : (t("workspace.full") ?? "")}
 						aria-label={mode === "full" ? (t("workspace.half") ?? "") : (t("workspace.full") ?? "")}
 						aria-pressed={mode === "full"}

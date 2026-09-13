@@ -245,7 +245,7 @@ export function App() {
 						/>
 					) : null}
 					<DesktopWindowChrome
-						showSidebarControl={isDesktopWindow}
+						showSidebarControl
 						showWorkspaceControl={chatVisible}
 						sidebarCollapsed={app.sidebarCollapsed}
 						workspaceCollapsed={app.workspaceMode === "collapsed"}

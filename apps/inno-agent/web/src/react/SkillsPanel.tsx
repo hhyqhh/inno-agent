@@ -456,7 +456,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 	const isEmptySource = isLibraryTab ? state.library.length === 0 : state.skills.length === 0;
 
 	return (
-		<div className="h-full overflow-y-auto">
+		<div className="skills-panel-scroll h-full overflow-y-scroll">
 			<div className="mx-auto flex w-full max-w-[1160px] flex-col px-5 pb-10 pt-2">
 				{/* Tabs + search + actions */}
 				<div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">

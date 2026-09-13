@@ -1,10 +1,9 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { DndProvider, useDragDropManager } from "react-dnd";
-import { HTML5Backend } from "react-dnd-html5-backend";
+import { useDragDropManager } from "react-dnd";
 import type { DragDropManager } from "dnd-core";
-import { PanelRightOpen, PanelRightClose, Columns2, Maximize2, Terminal as TerminalIcon } from "lucide-react";
+import { Maximize2, Minimize2, Terminal as TerminalIcon } from "lucide-react";
 import type { WorkspaceMode } from "../stores/app-store.js";
 import { getMaximumWorkspaceWidth, WORKSPACE_MAX_WIDTH, WORKSPACE_MIN_WIDTH, WORKSPACE_QUARTER_MIN_WIDTH } from "../stores/app-layout.js";
 import { appStore } from "../stores/app-store.js";
@@ -322,15 +321,6 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	return (
 		<aside className={`workspace-panel inno-workspace-scope relative flex h-full min-h-0 min-w-0 flex-col ${resizePreviewWidth !== null ? "workspace-resize-preview-active" : ""} ${collapsed ? "overflow-visible border-l-0 bg-transparent" : "overflow-hidden border-l border-[var(--inno-border)] bg-[var(--inno-workspace-bg)]"}`}>
 			{resizePreviewPortal}
-			{collapsed ? (
-				<button
-					className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] shadow-sm transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-					title={t("workspace.openWorkspace") ?? ""}
-					onClick={() => onModeChange("half")}
-				>
-					<PanelRightOpen size={16} />
-				</button>
-			) : null}
 			{mode === "half" || mode === "quarter" ? (
 				<button
 					className="workspace-resize-handle"
@@ -342,34 +332,32 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 
 			{/* Panel header — mirrors the design mockup's artifact-panel head:
 			    title + file count on the left, chrome actions on the right. */}
-			<div className={`flex h-[52px] shrink-0 items-center justify-between gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-workspace-chrome)] px-4 ${collapsed ? "hidden" : ""}`}>
+			<div className={`inno-workspace-header inno-workspace-panel-header flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-workspace-bg)] px-3.5 ${collapsed ? "hidden" : ""}`}>
 				<div className="min-w-0 flex items-baseline gap-1.5">
 					<span className="whitespace-nowrap text-[14.5px] font-semibold text-[var(--inno-text)]">{t("workspace.panelTitle")}</span>
 					<span className="whitespace-nowrap text-[11.5px] text-[var(--inno-text-subtle)]">{t("workspace.fileCount", { count: fileCount })}</span>
 				</div>
-				<div className="flex shrink-0 items-center gap-1">
+				<div className="inno-workspace-header-actions">
 					<button
-						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
+						type="button"
+						className={`inno-workspace-header-button ${terminalOpen ? "is-active" : ""}`}
 						title={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
 						aria-label={(terminalOpen ? t("terminal.collapse") : t("terminal.expand")) ?? ""}
 						onClick={() => terminalStore.setOpen(!terminalOpen)}
 					>
-						<TerminalIcon size={14} />
+						<TerminalIcon size={15} strokeWidth={1.8} />
 					</button>
 					<button
-						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
+						type="button"
+						className={`inno-workspace-header-button ${mode === "full" ? "is-active" : ""}`}
 						title={mode === "full" ? (t("workspace.half") ?? "") : (t("workspace.full") ?? "")}
+						aria-label={mode === "full" ? (t("workspace.half") ?? "") : (t("workspace.full") ?? "")}
+						aria-pressed={mode === "full"}
 						onClick={() => onModeChange(mode === "full" ? "half" : "full")}
 					>
-						{mode === "full" ? <Columns2 size={14} /> : <Maximize2 size={14} />}
+						{mode === "full" ? <Minimize2 size={15} strokeWidth={1.8} /> : <Maximize2 size={15} strokeWidth={1.8} />}
 					</button>
-					<button
-						className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
-						title={t("workspace.collapse") ?? ""}
-						onClick={() => onModeChange("collapsed")}
-					>
-						<PanelRightClose size={14} />
-					</button>
+					<span className="inno-workspace-header-toggle-slot" aria-hidden="true" />
 				</div>
 			</div>
 
@@ -389,15 +377,10 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 }
 
 /**
- * react-arborist creates an HTML5 backend for every Tree unless a manager is
- * supplied. The workspace and skills tabs can overlap briefly during a tab
- * transition, so keep one manager for the whole panel and hand it to both
- * trees instead of letting each tab register a backend on document.
+ * The application owns one HTML5 drag-drop provider around the whole layout.
+ * Keeping the manager above both the workspace panel and workbench prevents a
+ * page transition from briefly registering two HTML5 backends on document.
  */
 export function WorkspacePanel(props: WorkspacePanelProps) {
-	return (
-		<DndProvider backend={HTML5Backend}>
-			<WorkspacePanelContent {...props} />
-		</DndProvider>
-	);
+	return <WorkspacePanelContent {...props} />;
 }

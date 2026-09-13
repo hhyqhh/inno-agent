@@ -2,7 +2,7 @@ import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect
 import { useTranslation } from "react-i18next";
 import type { DragDropManager } from "dnd-core";
 import { Tree, type NodeRendererProps, type TreeApi, type CreateHandler, type RenameHandler, type DeleteHandler, type MoveHandler } from "react-arborist";
-import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, FileCode2, Presentation, FileSpreadsheet, Copy, Check, ListChecks, Trash2 } from "lucide-react";
+import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, ExternalLink, FileCode2, Presentation, FileSpreadsheet, Copy, Check, ListChecks, Trash2 } from "lucide-react";
 import { workspaceStore, type StreamingWorkspacePreview } from "../stores/workspace-store.js";
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
@@ -31,7 +31,17 @@ const XlsxPreview = lazy(() => import("./office/XlsxPreview.js"));
 const MAX_STREAMING_MARKDOWN_FORMAT_CHARS = 160_000;
 type PreviewFileHandler = (minimumWidth: number) => void | Promise<void>;
 const TREE_PANE_WIDTH = 260;
-const CONTENT_REVEAL_WIDTH = TREE_PANE_WIDTH + 150;
+const PREVIEW_MIN_WIDTH = 150;
+const WORKSPACE_BROWSER_GAP = 12;
+const WORKSPACE_BROWSER_PADDING = 12;
+// The browser uses `p-3` and `gap-3` in split mode. Include those tracks in
+// the threshold so the preview is only mounted when it can actually keep its
+// minimum width. This also prevents a split/single-pane feedback loop while
+// the panel is being resized.
+const CONTENT_REVEAL_WIDTH = TREE_PANE_WIDTH
+	+ PREVIEW_MIN_WIDTH
+	+ WORKSPACE_BROWSER_GAP
+	+ WORKSPACE_BROWSER_PADDING * 2;
 const DEFAULT_PREVIEW_PANEL_WIDTH = 560;
 
 function streamingMarkdownInterval(contentLength: number): number {
@@ -502,12 +512,14 @@ function StreamingPreviewPane({ preview, onToggleSidebar, sidebarOpen }: { previ
 
 	return (
 		<div className="flex h-full flex-col">
-			<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
+			<div className="inno-workspace-content-toolbar flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
 				<div className="flex min-w-0 flex-1 items-center gap-2">
 					<button
-						className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+						type="button"
+						className="inno-workspace-pane-toggle flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 						onClick={onToggleSidebar}
 						title={sidebarOpen ? t("common.collapseSidebar", "收起侧栏") : t("common.expandSidebar", "展开侧栏")}
+						aria-label={sidebarOpen ? t("common.collapseSidebar", "收起侧栏") : t("common.expandSidebar", "展开侧栏")}
 					>
 						{sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
 					</button>
@@ -532,8 +544,10 @@ function StreamingPreviewPane({ preview, onToggleSidebar, sidebarOpen }: { previ
 					</button>
 					{isStreaming ? null : (
 						<button
+							type="button"
 							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 							title={t("preview.streamingClose", "关闭生成预览")}
+							aria-label={t("preview.streamingClose", "关闭生成预览")}
 							onClick={() => workspaceStore.clearStreamingPreview(preview.id)}
 						>
 							<X size={14} />
@@ -595,13 +609,14 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 		return (
 			<div className="flex h-full flex-col">
 				{/* Editor toolbar */}
-				<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
+				<div className="inno-workspace-content-toolbar flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
 					<div className="min-w-0">
 						<FileName name={state.file.name} className="text-sm font-medium" />
 						<div className="truncate text-[10px] text-[var(--inno-text-muted)]">{t("files.editing", "Editing")} · {state.file.path}</div>
 					</div>
 					<div className="flex items-center gap-1.5">
 						<button
+							type="button"
 							disabled={state.isSaving}
 							className="flex h-7 items-center gap-1 rounded-md inno-primary-button px-2.5 text-xs text-white disabled:opacity-50"
 							onClick={() => void workspaceStore.saveFile()}
@@ -610,6 +625,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 							{t("common.save", "Save")}
 						</button>
 						<button
+							type="button"
 							disabled={state.isSaving}
 							className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50"
 							onClick={() => workspaceStore.cancelEditing()}
@@ -634,12 +650,14 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 	// Read-only view
 	return (
 		<div className="flex h-full flex-col">
-			<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
+			<div className="inno-workspace-content-toolbar flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
 				<div className="flex min-w-0 flex-1 items-center gap-2">
 					<button
-						className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+						type="button"
+						className="inno-workspace-pane-toggle flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 						onClick={onToggleSidebar}
 						title={sidebarOpen ? t("common.collapseSidebar", "Collapse sidebar") : t("common.expandSidebar", "Expand sidebar")}
+						aria-label={sidebarOpen ? t("common.collapseSidebar", "Collapse sidebar") : t("common.expandSidebar", "Expand sidebar")}
 					>
 						{sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
 					</button>
@@ -654,6 +672,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen }: { onToggleSidebar: ()
 					{state.file ? <RunButton filePath={state.file.path} /> : null}
 					{canEdit && (
 						<button
+							type="button"
 							className="flex h-7 items-center gap-1 rounded-md border border-[var(--inno-border)] px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 							onClick={() => workspaceStore.startEditing()}
 						>
@@ -706,6 +725,24 @@ function collectSelectedWorkspaceFiles(nodes: ArboristNode[], selectedIds: Reado
 		if (node.children) collectSelectedWorkspaceFiles(node.children, selectedIds, out);
 	}
 	return out;
+}
+
+/** Reveal a file nested below closed folders before applying arborist selection. */
+function revealAndSelectTreeFile(tree: TreeApi<ArboristNode> | null, path: string): void {
+	if (!tree || !path) return;
+	tree.openParents(path);
+
+	const selectVisibleNode = () => {
+		const node = tree.get(path);
+		if (!node) return false;
+		if (!node.isSelected) node.select();
+		tree.scrollTo(path);
+		return true;
+	};
+
+	// openParents updates the visible virtualized rows on the next render. Try
+	// immediately for an already-visible file, then once more after that render.
+	if (!selectVisibleNode()) window.requestAnimationFrame(selectVisibleNode);
 }
 
 function createWorkspaceDragImage(items: ReadonlyArray<WorkspaceDragItem>): HTMLElement {
@@ -928,36 +965,58 @@ function ArtifactPreviewCard({ file, workspaceId, onOpen }: { file: WorkspaceFil
 	const { t } = useTranslation();
 	const tone = artifactTone(file);
 	const kindLabel = file.kind === "office" && file.format ? file.format.toUpperCase() : t(`workspace.kind.${file.kind}`, file.kind);
+	const selectedLabel = t("files.selectedFile", "已选中{{name}}", { name: file.name });
 	const updated = file.updatedAt
 		? new Date(file.updatedAt).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
 		: "";
 	return (
-		<div className="mx-3 mt-3 shrink-0 rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] p-3.5">
+			<div className="inno-workspace-selection-card relative flex shrink-0 items-start gap-2.5 border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2.5">
+				<span
+					className="absolute right-2 top-2 rounded bg-[var(--inno-accent-soft)] px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--inno-accent)]"
+					title={selectedLabel}
+				>
+				{t("files.selected", "已选中")}
+			</span>
 			<div
-				className="mb-3 flex aspect-[16/8] items-center justify-center rounded-[10px] border border-[var(--inno-border)]"
+				className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--inno-border)]"
 				style={{ background: tone.bg, color: tone.fg }}
 				aria-hidden="true"
 			>
 				{artifactIcon(file.name, file.kind)}
 			</div>
-			<div className="truncate text-[13.5px] font-semibold text-[var(--inno-text)]" title={file.name}>{file.name}</div>
-			<div className="mb-3 mt-1 truncate text-[11.5px] text-[var(--inno-text-subtle)]">
-				{[kindLabel, formatSize(file.size), updated].filter(Boolean).join(" · ")}
+			<div className="min-w-0 flex-1 pr-1">
+				<div className="truncate text-[12.5px] font-semibold text-[var(--inno-text)]" title={file.name}>{file.name}</div>
+				<div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 text-[10.5px] text-[var(--inno-text-subtle)]">
+					<span className="shrink-0 whitespace-nowrap">{kindLabel}</span>
+					{file.size !== undefined ? <span aria-hidden="true">·</span> : null}
+					<span className="shrink-0 whitespace-nowrap">{formatSize(file.size)}</span>
+					{updated ? (
+						<>
+							<span aria-hidden="true">·</span>
+							<time className="shrink-0 whitespace-nowrap" dateTime={file.updatedAt} title={file.updatedAt}>{updated}</time>
+						</>
+					) : null}
+				</div>
 			</div>
-			<div className="flex gap-2">
+			<div className="mt-4 flex shrink-0 items-center gap-1">
 				<button
 					type="button"
-					className="flex-1 rounded-[15px] border border-[var(--inno-send-bg)] bg-[var(--inno-send-bg)] py-[7px] text-[12.5px] text-[var(--inno-send-fg)] transition-opacity hover:opacity-90"
+					className="inno-workspace-selection-action flex h-7 items-center gap-1 rounded-md px-2 text-[11px]"
+					title={t("common.open", "打开")}
+					aria-label={t("common.open", "打开")}
 					onClick={onOpen}
 				>
+					<ExternalLink size={12} />
 					{t("common.open", "打开")}
 				</button>
 				<button
 					type="button"
-					className="flex-1 rounded-[15px] border border-[var(--inno-border)] bg-[var(--inno-surface)] py-[7px] text-[12.5px] text-[var(--inno-text)] transition-colors hover:bg-[var(--inno-surface-muted)]"
+					className="inno-workspace-selection-action flex h-7 w-7 items-center justify-center rounded-md"
+					title={t("common.download", "下载")}
+					aria-label={t("common.download", "下载")}
 					onClick={() => triggerDownload(workspaceFileUrl(file.path, workspaceId, true))}
 				>
-					{t("common.download", "下载")}
+					<Download size={13} />
 				</button>
 			</div>
 		</div>
@@ -1006,9 +1065,14 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 		const el = rootRef.current;
 		if (!el) return;
 		const ro = new ResizeObserver(([entry]) => {
-			if (entry) setPanelWidth(Math.floor(entry.contentRect.width));
+			if (!entry) return;
+			// `contentRect.width` changes when the single-pane class removes the
+			// root padding. Read the border box instead so this measurement stays
+			// independent of the layout branch it controls.
+			setPanelWidth(Math.floor(el.getBoundingClientRect().width));
 		});
 		ro.observe(el);
+		setPanelWidth(Math.floor(el.getBoundingClientRect().width));
 		return () => ro.disconnect();
 	}, []);
 
@@ -1084,7 +1148,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 		const id = state.activeWorkspaceId ?? boundWorkspaceId;
 		if (!id) return "";
 		const ws = wsState.list.find((w) => w.id === id);
-		return ws ? `${ws.isTemp ? "🗒 " : ""}${ws.name}` : id;
+		return ws?.name ?? id;
 	}, [state.activeWorkspaceId, boundWorkspaceId, wsState.list]);
 
 	// Listen for custom context-menu events from node renderer
@@ -1112,7 +1176,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 	/** Open a file from the flat filtered list (mirrors the tree row click). */
 	const openArtifactFile = useCallback((path: string) => {
 		treeRef.current?.deselectAll();
-		treeRef.current?.get(path)?.select();
+		revealAndSelectTreeFile(treeRef.current, path);
 		workspaceStore.clearStreamingPreview();
 		if (onPreviewFile) void onPreviewFile(DEFAULT_PREVIEW_PANEL_WIDTH);
 		else {
@@ -1131,8 +1195,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 	// sync with the store so both entry points identify the same file.
 	useEffect(() => {
 		if (multiSelectMode || !state.currentFilePath) return;
-		const node = treeRef.current?.get(state.currentFilePath);
-		if (node && !node.isSelected) node.select();
+		revealAndSelectTreeFile(treeRef.current, state.currentFilePath);
 	}, [multiSelectMode, state.currentFilePath, arboristData]);
 
 	// One Set shared by the file collection and the context value; collecting
@@ -1324,18 +1387,19 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 	const busy = state.isMutating || state.isLoadingTree;
 
 	return (
-		<div ref={rootRef} className={`grid h-full min-h-0 gap-3 bg-transparent p-3 transition-[grid-template-columns] duration-200 ${showContent ? (sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]") : "grid-cols-[minmax(0,1fr)]"}`}>
+		<div ref={rootRef} className={`inno-workspace-browser grid h-full min-h-0 gap-3 bg-transparent p-3 transition-[grid-template-columns] duration-200 ${showContent ? "inno-workspace-browser--split" : "inno-workspace-browser--single-pane"} ${showContent ? (sidebarOpen ? "grid-cols-[260px_minmax(150px,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]") : "grid-cols-[minmax(0,1fr)]"}`}>
 			{/* --- Tree pane --- */}
 			<aside
-				className={`inno-workspace-card relative flex min-h-0 flex-col overflow-hidden rounded-lg transition-opacity duration-200 ${isDragOver ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+				className={`inno-workspace-card inno-workspace-pane inno-workspace-tree-pane relative flex min-h-0 flex-col overflow-hidden rounded-xl transition-opacity duration-200 ${isDragOver ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
 				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
 				onDropCapture={handleDrop}
 			>
 				{/* Toolbar */}
-				<div className="flex h-10 items-center gap-1 border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-2">
+				<div className="inno-workspace-subheader inno-workspace-tree-toolbar flex h-10 items-center gap-1 border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5">
 					<div className="min-w-0 flex-1">
-						<span className="block max-w-[220px] truncate px-1 text-xs font-medium text-[var(--inno-text)]" title={activeWorkspaceName}>
+						<span className="flex max-w-[220px] items-center gap-1.5 truncate px-1 text-xs font-medium text-[var(--inno-text)]" title={activeWorkspaceName}>
+							<FolderOpen size={14} className="shrink-0 text-[var(--inno-text-subtle)]" aria-hidden="true" />
 							{activeWorkspaceName || t("workspace.title")}
 						</span>
 					</div>
@@ -1363,7 +1427,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 				</div>
 
 				{/* Type filter tabs (design mockup ap-tabs). */}
-				<div className="flex shrink-0 flex-wrap gap-1.5 border-b border-[var(--inno-border)] px-3 py-2.5">
+				<div className="inno-workspace-filter-bar flex shrink-0 flex-wrap gap-1.5 border-b border-[var(--inno-border)] px-2.5 py-2">
 					{FILTER_ORDER.map((filter) => {
 						const active = typeFilter === filter;
 						return (
@@ -1421,7 +1485,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 
 				{/* Tree (unfiltered) or flat type-filtered file list */}
 				{typeFilter !== "all" ? (
-					<div className="workspace-scroll min-h-0 flex-1 overflow-y-auto px-2 py-2">
+					<div className="workspace-scroll min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5">
 						{filteredFiles.length === 0 ? (
 							<div className="p-3 text-xs text-[var(--inno-text-muted)]">{t("preview.empty", "Empty workspace")}</div>
 						) : (
@@ -1434,11 +1498,11 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 										type="button"
 										data-ws-path={node.path}
 										onClick={() => openArtifactFile(node.path)}
-										className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-[9px] text-left transition-colors ${
+										className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
 											selected ? "bg-[var(--inno-accent-soft)]" : "hover:bg-[var(--inno-surface-muted)]"
 										}`}
 									>
-										<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: tone.bg, color: tone.fg }}>
+										<span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: tone.bg, color: tone.fg }}>
 											{artifactIcon(node.name)}
 										</span>
 										<span className="min-w-0 flex-1">
@@ -1499,7 +1563,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 
 				{/* Drag overlay */}
 				{isDragOver && (
-					<div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-[var(--inno-accent-soft)]">
+					<div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-[var(--inno-accent-soft)]">
 						<div className={`rounded-lg bg-[var(--inno-surface)] px-4 py-2 text-xs font-medium shadow-sm ${uploadError ? "text-[var(--inno-danger)]" : "text-[var(--inno-accent)]"}`}>
 							{uploadError || t("files.dropToUpload", "Drop files to upload")}
 						</div>
@@ -1509,7 +1573,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 
 			{/* --- Preview / Edit pane --- */}
 			{showContent ? (
-				<section className="inno-workspace-card flex min-w-0 min-h-0 flex-col overflow-hidden rounded-lg">
+				<section className="inno-workspace-card inno-workspace-pane inno-workspace-preview-pane flex min-w-0 min-h-0 flex-col overflow-hidden rounded-xl">
 					<div className="flex min-h-0 flex-1 flex-col">
 						<FileContentPane onToggleSidebar={() => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} />
 					</div>

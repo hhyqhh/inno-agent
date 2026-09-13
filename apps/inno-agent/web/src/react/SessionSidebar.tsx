@@ -3,8 +3,6 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import {
-	PanelLeftOpen,
-	PanelLeftClose,
 	Plus,
 	RefreshCw,
 	Sparkles,
@@ -36,7 +34,7 @@ import {
 	Languages,
 } from "lucide-react";
 import { appStore, type AppPage } from "../stores/app-store.js";
-import { canOpenWorkspaceBesideSidebar } from "../stores/app-layout.js";
+import { canOpenWorkspaceBesideSidebar, WORKSPACE_DEFAULT_WIDTH } from "../stores/app-layout.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
@@ -53,7 +51,6 @@ import { ContextMenu, type ContextMenuItem } from "./ui/ContextMenu.js";
 
 interface SessionSidebarProps {
 	collapsed: boolean;
-	onOpen(): void;
 }
 
 const CHANNEL_FILTER_ORDER = ["web", "feishu", "wechat", "cli", "scheduler"] as const;
@@ -136,16 +133,16 @@ function channelClass(channel: SessionChannel): string {
 
 function channelFilterClass(channel: SessionChannel | null, active: boolean): string {
 	if (!active) return "bg-[var(--inno-surface)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] hover:ring-[var(--inno-border-strong)]";
-	if (!channel) return "inno-primary-button ring-1 ring-[var(--inno-accent)]";
+	if (!channel) return "inno-primary-button ring-1 ring-[var(--inno-primary-bg)]";
 	const map: Record<string, string> = {
-		cli: "bg-[var(--inno-accent)] text-white ring-1 ring-[var(--inno-accent)] hover:bg-[var(--inno-accent)] hover:text-white",
-		web: "inno-primary-button ring-1 ring-[var(--inno-accent)]",
+		cli: "inno-primary-button ring-1 ring-[var(--inno-primary-bg)]",
+		web: "inno-primary-button ring-1 ring-[var(--inno-primary-bg)]",
 		feishu: "bg-[var(--inno-success)] text-white ring-1 ring-[var(--inno-success)] hover:bg-[var(--inno-success)] hover:text-white",
 		scheduler: "bg-[var(--inno-warning)] text-white ring-1 ring-[var(--inno-warning)] hover:bg-[var(--inno-warning)] hover:text-white",
 		qq: "bg-cyan-600 text-white ring-1 ring-cyan-600 hover:bg-cyan-600 hover:text-white",
 		wechat: "bg-lime-600 text-white ring-1 ring-lime-600 hover:bg-lime-600 hover:text-white",
 	};
-	return map[channel] ?? "inno-primary-button ring-1 ring-[var(--inno-accent)]";
+	return map[channel] ?? "inno-primary-button ring-1 ring-[var(--inno-primary-bg)]";
 }
 
 function menuLabel(icon: ReactNode, label: string) {
@@ -579,7 +576,7 @@ function NavItem({
 	return (
 		<button
 			type="button"
-			className={`flex w-full items-center gap-3 rounded-full px-3.5 py-2 text-left text-[13.5px] transition-colors ${
+			className={`flex w-full items-center gap-3 rounded-[10px] px-3.5 py-2 text-left text-[13.5px] transition-colors ${
 				active
 					? "bg-[var(--inno-sidebar-active)] font-medium text-[var(--inno-text)]"
 					: "text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]"
@@ -617,7 +614,7 @@ function SidebarUserMenu() {
 				className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors ${open ? "bg-[var(--inno-surface-muted)]" : "hover:bg-[var(--inno-surface-muted)]"}`}
 				onClick={() => setOpen((v) => !v)}
 			>
-				<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)]">
+				<span className="flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)]">
 					IA
 				</span>
 				<span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--inno-text)]">Inno Agent</span>
@@ -675,7 +672,7 @@ function SidebarUserMenu() {
 
 /* ── Main sidebar ── */
 
-export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
+export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 	const { t } = useTranslation();
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [editingName, setEditingName] = useState("");
@@ -908,7 +905,7 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 		appStore.setPage("chat");
 		void workspaceStore.setActiveWorkspace(group.id);
 		appStore.setRightPanelTab("preview");
-		appStore.setWorkspaceWidth(560);
+		appStore.setWorkspaceWidth(WORKSPACE_DEFAULT_WIDTH);
 		appStore.setWorkspaceMode("half");
 	}, []);
 
@@ -1035,19 +1032,12 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 		})();
 	}, [t]);
 
-	/* ── Collapsed sidebar: floating expand circle (harness style) ── */
+	/* The desktop window chrome owns the collapsed-state toggle. Keeping the
+	   sidebar itself empty here avoids a duplicate floating expand button. */
 
 	if (collapsed) {
 		return (
-			<aside className="relative h-full w-0 overflow-visible">
-				<button
-					className="absolute left-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] shadow-sm transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-					title={t("sidebar.expand")}
-					onClick={onOpen}
-				>
-					<PanelLeftOpen size={16} />
-				</button>
-			</aside>
+			<aside className="relative h-full w-0 overflow-visible" />
 		);
 	}
 
@@ -1059,10 +1049,10 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 	return (
 		<aside className="inno-sidebar-scope flex h-full min-h-0 flex-col overflow-hidden border-r border-[var(--inno-border)] bg-[var(--inno-sidebar-bg)]">
 			{/* Header */}
-			<div className="border-b border-[var(--inno-border)] px-3 py-2.5">
+			<div className="inno-sidebar-header border-b border-[var(--inno-border)] px-3 py-2.5">
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex items-center gap-2 min-w-0">
-						<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)] shadow-sm">
+						<div className="flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)] shadow-sm">
 							IA
 						</div>
 						<div className="min-w-0">
@@ -1082,13 +1072,6 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 						>
 							<RefreshCw size={14} />
 						</button>
-						<button
-							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
-							title={t("sidebar.collapse")}
-							onClick={() => appStore.setSidebarCollapsed(true)}
-						>
-							<PanelLeftClose size={14} />
-						</button>
 					</div>
 				</div>
 			</div>
@@ -1098,7 +1081,9 @@ export function SessionSidebar({ collapsed, onOpen }: SessionSidebarProps) {
 				<NavItem
 					icon={<SquarePen size={16} />}
 					label={t("nav.newChat")}
-					active={page === "chat" && !state.currentSessionId}
+					// New chat is an action, not a persistent destination. The chat
+					// page remains the active destination for real sessions below.
+					active={false}
 					onClick={newChat}
 				/>
 				<div className="px-3.5 pb-1 pt-3 text-[11px] text-[var(--inno-text-subtle)]">{t("nav.workbench")}</div>

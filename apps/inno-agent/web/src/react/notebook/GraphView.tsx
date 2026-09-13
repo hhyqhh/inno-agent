@@ -140,6 +140,14 @@ function cyStyle(theme: GraphTheme): cytoscape.StylesheetJson {
 			},
 		},
 		{
+			selector: "node.co-build-selected",
+			style: {
+				"border-color": theme.accent,
+				"border-width": 4,
+				label: "data(fullLabel)",
+			},
+		},
+		{
 			selector: "node.hidden, edge.hidden",
 			style: { display: "none" },
 		},
@@ -157,6 +165,14 @@ function cyStyle(theme: GraphTheme): cytoscape.StylesheetJson {
 		{
 			selector: "edge[edgeType = 'tag']",
 			style: { "line-color": theme.tagEdgeColor, "line-style": "dashed", opacity: 0.16 },
+		},
+		{
+			selector: "edge[edgeType = 'personal']",
+			style: { "line-color": theme.edgeColor, "line-style": "dashed", width: 0.8, opacity: 0.3 },
+		},
+		{
+			selector: "edge[personalStatus = 'rejected']",
+			style: { "line-color": theme.edgeColor, opacity: 0.45 },
 		},
 		{
 			selector: "edge.dim",
@@ -819,7 +835,7 @@ export function GraphView() {
 					) : null}
 				</div>
 			</div>
-			<div className="relative min-h-0 flex-1 overflow-hidden bg-[var(--inno-workspace-bg,#fafafa)]">
+			<div className="relative min-h-0 flex-1 overflow-hidden bg-[var(--inno-card-bg)]">
 				{/* Cytoscape owns this subtree; React overlays remain sibling layers. */}
 				<div ref={containerRef} className="h-full w-full" />
 				{displayNode ? (

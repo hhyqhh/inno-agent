@@ -54,15 +54,17 @@ export function SettingsOverlay() {
 
 	return (
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(32,33,36,0.45)] p-4"
+			className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(32,33,36,0.45)] p-4 max-md:p-0"
 			onClick={() => appStore.closeSettings()}
 		>
-			{/* 980x680 card with a 208px left nav, mirroring the design mockup. */}
+			{/* 980x680 card with a 208px left nav, mirroring the design mockup.
+				Phones go full-screen with a horizontal tab strip; narrow desktops
+				(<=820px, e.g. split screen) collapse the nav to an icon rail. */}
 			<div
 				role="dialog"
 				aria-modal="true"
 				aria-label={t("settings.title")}
-				className="relative flex h-[min(680px,88vh)] w-[min(980px,92vw)] overflow-hidden rounded-[20px] bg-[var(--inno-card-bg)] shadow-[0_16px_48px_rgba(0,0,0,0.22)]"
+				className="relative flex h-[min(680px,88vh)] w-[min(980px,92vw)] overflow-hidden rounded-[20px] bg-[var(--inno-card-bg)] shadow-[0_16px_48px_rgba(0,0,0,0.22)] max-md:h-dvh max-md:w-full max-md:flex-col max-md:rounded-none"
 				onClick={(event) => event.stopPropagation()}
 			>
 				<button
@@ -75,31 +77,32 @@ export function SettingsOverlay() {
 					<X size={17} />
 				</button>
 
-				{/* Left nav */}
-				<aside className="flex w-[208px] shrink-0 flex-col gap-0.5 overflow-y-auto bg-[var(--inno-sidebar-bg)] px-3 py-5">
-					<div className="px-3 pb-3 text-sm font-semibold text-[var(--inno-text)]">{t("settings.title")}</div>
+				{/* Left nav — horizontal tab strip on phones, icon rail on narrow desktop */}
+				<aside className="flex w-[208px] shrink-0 flex-col gap-0.5 overflow-y-auto bg-[var(--inno-sidebar-bg)] px-3 py-5 md:max-[820px]:w-[64px] md:max-[820px]:px-2 max-md:w-full max-md:flex-row max-md:items-center max-md:overflow-x-auto max-md:overflow-y-hidden max-md:py-2 max-md:pr-12">
+					<div className="px-3 pb-3 text-sm font-semibold text-[var(--inno-text)] md:max-[820px]:hidden max-md:hidden">{t("settings.title")}</div>
 					{TABS.map(({ id, icon }) => {
 						const active = activeSettingsTab === id;
 						return (
 							<button
 								key={id}
 								onClick={() => appStore.setSettingsTab(id)}
-								className={`flex items-center gap-2.5 rounded-xl px-3 py-[9px] text-[13.5px] transition-colors ${
+								title={t(`settings.tabs.${id}`)}
+								className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-[9px] text-[13.5px] transition-colors md:max-[820px]:justify-center ${
 									active
 										? "bg-[var(--inno-sidebar-active)] font-medium text-[var(--inno-text)]"
 										: "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
 								}`}
 							>
 								{icon}
-								<span>{t(`settings.tabs.${id}`)}</span>
-								{id === "lab" ? <span className="inno-smart-beta">Beta</span> : null}
+								<span className="md:max-[820px]:hidden">{t(`settings.tabs.${id}`)}</span>
+								{id === "lab" ? <span className="inno-smart-beta md:max-[820px]:hidden">Beta</span> : null}
 							</button>
 						);
 					})}
 				</aside>
 
 				{/* Content */}
-				<div className="min-w-0 flex-1 overflow-y-auto px-[26px] pb-8 pt-[22px]">
+				<div className="min-w-0 flex-1 overflow-y-auto px-[26px] pb-8 pt-[22px] max-md:px-4">
 					{!settings && isLoading ? (
 						<div className="text-sm text-[var(--inno-text-muted)]">{t("settings.loading")}</div>
 					) : (

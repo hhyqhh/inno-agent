@@ -227,7 +227,21 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 	const { t } = useTranslation();
 	const treeContainerRef = useRef<HTMLDivElement>(null);
 	const [treeHeight, setTreeHeight] = useState(400);
-	const [sidebarOpen, setSidebarOpen] = useState(true);
+	const [treeWidth, setTreeWidth] = useState(240);
+	const [sidebarOpen, setSidebarOpen] = useState(
+		() => typeof window === "undefined" || !window.matchMedia("(max-width: 767px)").matches,
+	);
+
+	// Phones get the file tree as an overlay (below) — keep it closed when the
+	// viewport crosses into narrow so it never squeezes the editor column.
+	useEffect(() => {
+		const mq = window.matchMedia("(max-width: 767px)");
+		const onChange = (e: MediaQueryListEvent) => {
+			if (e.matches) setSidebarOpen(false);
+		};
+		mq.addEventListener("change", onChange);
+		return () => mq.removeEventListener("change", onChange);
+	}, []);
 
 	const state = useStoreSnapshot(skillsStore, () => ({
 		skillTree: skillsStore.skillTree,
@@ -238,7 +252,10 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 		const el = treeContainerRef.current;
 		if (!el) return;
 		const ro = new ResizeObserver(([entry]) => {
-			if (entry) setTreeHeight(Math.max(1, Math.floor(entry.contentRect.height)));
+			if (entry) {
+				setTreeHeight(Math.max(1, Math.floor(entry.contentRect.height)));
+				setTreeWidth(Math.max(1, Math.floor(entry.contentRect.width)));
+			}
 		});
 		ro.observe(el);
 		return () => ro.disconnect();
@@ -262,9 +279,9 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 	}, [state.skillTree]);
 
 	return (
-		<div className={`grid h-full min-h-0 gap-3 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[240px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
-			{/* File tree sidebar */}
-			<aside className={`flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+		<div className={`relative grid h-full min-h-0 gap-3 transition-[grid-template-columns] duration-200 max-md:grid-cols-[minmax(0,1fr)] ${sidebarOpen ? "grid-cols-[240px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
+			{/* File tree sidebar — absolute overlay on phones */}
+			<aside className={`flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] transition-opacity duration-200 max-md:absolute max-md:inset-3 max-md:z-20 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0 max-md:hidden"}`}>
 				{/* Skill header */}
 				<div className="flex items-center gap-2 border-b border-[var(--inno-border)] px-2 py-2">
 					<button className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onBack}>
@@ -306,7 +323,7 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 					) : (
 						<Tree<ArboristNode>
 							data={arboristData}
-							width={240}
+							width={treeWidth}
 							height={treeHeight}
 							dndManager={dndManager}
 							indent={16}
@@ -476,7 +493,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 						))}
 					</div>
 					<div className="flex items-center gap-2">
-						<div className="flex w-[220px] items-center gap-2 rounded-[18px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-3.5 py-[7px]">
+						<div className="flex w-[220px] items-center gap-2 rounded-[18px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-3.5 py-[7px] max-md:w-full">
 							<Search size={15} className="shrink-0 text-[var(--inno-text-subtle)]" />
 							<input
 								type="text"

@@ -220,7 +220,7 @@ export function ChatConversation({
 					{workspaceName ? (
 						<span className="inno-conversation-workspace-chip inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] bg-[var(--inno-chip-bg)] px-2.5 py-[3px] text-[11px] text-[var(--inno-text-subtle)]">
 							<Folder size={11} aria-hidden="true" />
-							<span className="max-w-[220px] truncate">{workspaceName}</span>
+							<span className="max-w-[220px] truncate max-md:max-w-24">{workspaceName}</span>
 						</span>
 						) : null}
 					</div>

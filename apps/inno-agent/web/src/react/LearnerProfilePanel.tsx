@@ -256,14 +256,14 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 
 	return (
 		<motion.div
-			className="fixed inset-0 z-50 flex items-center justify-center"
+			className="fixed inset-0 z-50 flex items-center justify-center px-4"
 			initial={{ backgroundColor: "rgba(0,0,0,0)" }}
 			animate={{ backgroundColor: "rgba(0,0,0,0.45)" }}
 			transition={{ duration: 0.2 }}
 			onClick={onClose}
 		>
 			<motion.div
-				className="max-h-[85vh] w-[460px] overflow-y-auto rounded-2xl bg-[var(--inno-surface)] p-5 shadow-xl"
+				className="max-h-[85vh] w-full max-w-[460px] overflow-y-auto rounded-2xl bg-[var(--inno-surface)] p-5 shadow-xl"
 				initial={{ opacity: 0, scale: 0.95 }}
 				animate={{ opacity: 1, scale: 1 }}
 				transition={{ duration: 0.2, ease: "easeOut" }}

@@ -1667,6 +1667,22 @@ inno-app-shell {
 		box-shadow: var(--inno-shadow-soft);
 		color: var(--inno-text-muted);
 	}
+
+	/* Three subrow pills (workspace / permission / model) can exceed a phone's
+	   width — let the row scroll horizontally instead of overflowing. */
+	.inno-composer-subrow {
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	/* Pills must not squash their labels to fit; the row scrolls instead. */
+	.inno-composer-subrow > * {
+		flex-shrink: 0;
+	}
+
+	.inno-composer-subrow::-webkit-scrollbar {
+		display: none;
+	}
 }
 
 /* Disable transitions while the user is dragging the resize handle */

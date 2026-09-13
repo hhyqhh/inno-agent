@@ -624,7 +624,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 				animate={{ opacity: 1 }}
 				transition={{ duration: 0.25, ease: "easeOut" }}
 			>
-				<div className="inno-message-wrap group relative w-fit max-w-full" style={{ maxWidth: "min(70%, 38rem)" }}>
+				<div className="inno-message-wrap group relative w-fit max-w-[min(70%,38rem)] max-md:max-w-[88%]">
 					<div className="inno-message inno-user-message whitespace-pre-wrap break-words rounded-[20px_20px_6px_20px] bg-[var(--inno-user-bubble-bg)] px-[17px] py-[11px] text-[14px] leading-[1.65] text-[var(--inno-text)] shadow-none">
 						{showChannel && message.channel ? (
 							<div className="mb-1 flex justify-end"><ChannelBadge channel={message.channel} /></div>
@@ -705,7 +705,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 			transition={{ duration: 0.25, ease: "easeOut" }}
 		>
 			<AgentAvatar />
-			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : hasAnsweredQuestionnaire ? "w-full max-w-[76%]" : "max-w-[78%]"} ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-0 py-0 text-[14px] leading-[1.75] text-[var(--inno-text)]`}>
+			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : hasAnsweredQuestionnaire ? "w-full max-w-[76%]" : "max-w-[78%]"} max-md:max-w-full ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-0 py-0 text-[14px] leading-[1.75] text-[var(--inno-text)]`}>
 				{showChannel && message.channel ? (
 					<div className="mb-1"><ChannelBadge channel={message.channel} /></div>
 				) : null}

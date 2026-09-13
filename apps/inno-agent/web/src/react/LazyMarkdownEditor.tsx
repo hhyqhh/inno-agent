@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 interface LazyMarkdownEditorProps {
 	value: string;
@@ -23,6 +23,17 @@ function MarkdownEditorFallback() {
 }
 
 export function LazyMarkdownEditor({ value, onChange }: LazyMarkdownEditorProps) {
+	// The side-by-side "live" preview is unusable at phone widths; narrow
+	// screens default to the edit-only view (the toolbar can still toggle it).
+	const [narrow, setNarrow] = useState(
+		() => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+	);
+	useEffect(() => {
+		const mql = window.matchMedia("(max-width: 767px)");
+		const onChangeMql = (event: MediaQueryListEvent) => setNarrow(event.matches);
+		mql.addEventListener("change", onChangeMql);
+		return () => mql.removeEventListener("change", onChangeMql);
+	}, []);
 	return (
 		<div className="h-full overflow-hidden" data-color-mode="light">
 			<Suspense fallback={<MarkdownEditorFallback />}>
@@ -30,7 +41,7 @@ export function LazyMarkdownEditor({ value, onChange }: LazyMarkdownEditorProps)
 					value={value}
 					onChange={(next) => onChange(next ?? "")}
 					height="100%"
-					preview="live"
+					preview={narrow ? "edit" : "live"}
 					visibleDragbar={false}
 					style={{ height: "100%" }}
 				/>

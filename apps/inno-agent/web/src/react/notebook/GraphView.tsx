@@ -394,12 +394,28 @@ export function GraphView() {
 			attributeFilter: ["data-theme", "class"],
 		});
 
+		// Touch devices have no hover; tap becomes the neighborhood-highlight
+		// gesture (used below for tag nodes, which stay in graph view).
+		const coarsePointer = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+		const highlightNeighborhood = (node: cytoscape.NodeSingular) => {
+			cy.elements(":visible").addClass("dim");
+			node.removeClass("dim").addClass("hl");
+			const neighborhood = node.openNeighborhood().filter(":visible");
+			neighborhood.removeClass("dim").addClass("hl");
+		};
+		const clearHighlight = () => {
+			cy.elements().removeClass("dim").removeClass("hl");
+		};
+
 		cy.on("tap", "node", (evt) => {
 			const id = evt.target.id() as string;
 			const node = state.nodes.find((n) => n.id === id);
 			if (!node) return;
 			if (node.type === "tag") {
 				notebookStore.selectNode(id);
+				// Touch has no hover: let the tap also light up the neighborhood
+				// (tag selection stays in graph view, so the highlight is visible).
+				if (coarsePointer) highlightNeighborhood(evt.target as cytoscape.NodeSingular);
 				return;
 			}
 			void notebookStore.selectPage(id);
@@ -407,19 +423,17 @@ export function GraphView() {
 		cy.on("tap", (evt) => {
 			if (evt.target === cy) {
 				notebookStore.selectNode(null);
+				clearHighlight();
 			}
 		});
 		cy.on("mouseover", "node", (evt) => {
 			const node = evt.target;
 			setHoveredNodeId(node.id());
-			cy.elements(":visible").addClass("dim");
-			node.removeClass("dim").addClass("hl");
-			const neighborhood = node.openNeighborhood().filter(":visible");
-			neighborhood.removeClass("dim").addClass("hl");
+			highlightNeighborhood(node);
 		});
 		cy.on("mouseout", "node", () => {
 			setHoveredNodeId(null);
-			cy.elements().removeClass("dim").removeClass("hl");
+			clearHighlight();
 		});
 
 		const sim = simRef.current!;

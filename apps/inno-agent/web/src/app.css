@@ -2580,6 +2580,41 @@ inno-workspace-panel textarea {
 	}
 }
 
+/* Touch accessory key bar for the Practice Lab terminal: soft keyboards lack
+   Esc/Tab/arrows/Ctrl, so coarse pointers get explicit keys. */
+.inno-terminal-keybar {
+	display: none;
+}
+
+@media (pointer: coarse) {
+	.inno-terminal-keybar {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		overflow-x: auto;
+		padding-bottom: 6px;
+	}
+
+	.inno-terminal-key {
+		flex: 0 0 auto;
+		min-width: 36px;
+		height: 32px;
+		padding: 0 8px;
+		border: 1px solid var(--inno-border);
+		border-radius: 6px;
+		background: var(--inno-surface);
+		color: var(--inno-text-muted);
+		font-size: 13px;
+		font-family: inherit;
+		touch-action: manipulation;
+	}
+
+	.inno-terminal-key:active {
+		background: var(--inno-surface-muted);
+		color: var(--inno-text);
+	}
+}
+
 .inno-message-action:hover {
 	background: var(--inno-surface-muted);
 	color: var(--inno-text);

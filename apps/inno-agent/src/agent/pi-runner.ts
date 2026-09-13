@@ -1424,8 +1424,10 @@ export async function completeSideQuestion(input: {
 	question: string;
 	maxTokens?: number;
 	timeoutMs?: number;
+	signal?: AbortSignal;
 }): Promise<string> {
 	if (!_runtime) return "";
+	if (input.signal?.aborted) return "";
 	const session = _runtime.session;
 	const model = session.model;
 	if (!model) return "";
@@ -1436,6 +1438,9 @@ export async function completeSideQuestion(input: {
 	const timeoutMs = input.timeoutMs ?? 60_000;
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	const abortFromCaller = () => controller.abort(input.signal?.reason);
+	input.signal?.addEventListener("abort", abortFromCaller, { once: true });
+	if (input.signal?.aborted) controller.abort(input.signal.reason);
 	const promptStartTime = Date.now();
 	try {
 		const messages: Array<UserMessage | AssistantMessage> = [];
@@ -1487,7 +1492,7 @@ export async function completeSideQuestion(input: {
 			},
 		);
 
-		if (response.stopReason === "error") {
+		if (response.stopReason === "error" || response.stopReason === "aborted") {
 			logger.warn({ errorMessage: response.errorMessage, stopReason: response.stopReason }, "completeSideQuestion received error stopReason");
 			return "";
 		}
@@ -1497,10 +1502,13 @@ export async function completeSideQuestion(input: {
 			.join("\n")
 			.trim();
 	} catch (err) {
-		logger.warn({ err, elapsedMs: Date.now() - promptStartTime }, "completeSideQuestion failed (non-fatal)");
+		if (!controller.signal.aborted) {
+			logger.warn({ err, elapsedMs: Date.now() - promptStartTime }, "completeSideQuestion failed (non-fatal)");
+		}
 		return "";
 	} finally {
 		clearTimeout(timer);
+		input.signal?.removeEventListener("abort", abortFromCaller);
 	}
 }
 

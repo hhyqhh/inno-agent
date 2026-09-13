@@ -103,6 +103,38 @@ describe("buildBtwContextDigest", () => {
 });
 
 describe("handleBtwRoutes /api/btw/ask", () => {
+	it("loads and saves per-session side-question state", async () => {
+		const initial = fakeRes();
+		await handleBtwRoutes(fakeReq({}), initial as ServerResponse, "GET", "/api/btw/state/sess-1", ctx);
+		expect(initial.statusCode).toBe(200);
+		expect(initial.body()).toMatchObject({ session: { tabs: [] } });
+
+		const state = {
+			session: {
+				nextTabNumber: 2,
+				activeTabId: "tab-1",
+				tabs: [{ id: "tab-1", number: 1, draft: "草稿", scrollTop: 3, exchanges: [] }],
+			},
+			window: { x: 12, y: 16, width: 520, height: 420 },
+			windowInitialized: true,
+			minimized: false,
+		};
+		const saved = fakeRes();
+		await handleBtwRoutes(fakeReq(state), saved as ServerResponse, "PUT", "/api/btw/state/sess-1", ctx);
+		expect(saved.statusCode).toBe(200);
+		expect(saved.body()).toEqual(state);
+
+		const loaded = fakeRes();
+		await handleBtwRoutes(fakeReq({}), loaded as ServerResponse, "GET", "/api/btw/state/sess-1", ctx);
+		expect(loaded.body()).toEqual(state);
+	});
+
+	it("rejects malformed state payloads", async () => {
+		const res = fakeRes();
+		await handleBtwRoutes(fakeReq({ session: {}, window: {} }), res as ServerResponse, "PUT", "/api/btw/state/sess-1", ctx);
+		expect(res.statusCode).toBe(400);
+	});
+
 	it("answers a side question with the digest and thread", async () => {
 		mockedComplete.mockResolvedValue("词法作用域决定的。");
 		const res = fakeRes();
@@ -118,6 +150,20 @@ describe("handleBtwRoutes /api/btw/ask", () => {
 		expect(input.question).toBe("那自由变量呢？");
 		expect(input.thread).toEqual([{ question: "什么是闭包？", answer: "闭包是…" }]);
 		expect(input.contextDigest).toContain("什么是闭包？");
+		expect(input.signal).toBeInstanceOf(AbortSignal);
+	});
+
+	it("does not write a response after the client aborts", async () => {
+		mockedComplete.mockImplementation(({ signal }) => new Promise<string>((resolve) => {
+			signal?.addEventListener("abort", () => resolve(""), { once: true });
+		}));
+		const req = fakeReq({ sessionId: "sess-1", question: "q" });
+		const res = fakeRes();
+		const handled = handleBtwRoutes(req, res as ServerResponse, "POST", "/api/btw/ask", ctx);
+		await vi.waitFor(() => expect(mockedComplete).toHaveBeenCalled());
+		req.emit("aborted");
+		await expect(handled).resolves.toBe(true);
+		expect(res.statusCode).toBe(0);
 	});
 
 	it("rejects malformed bodies with 400", async () => {

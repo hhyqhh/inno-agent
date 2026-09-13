@@ -12,8 +12,10 @@
 🌐 **[Homepage](https://hhyqhh.github.io/inno-agent-website/)** · 📄 **[Technical Report](./docs/inno-agent.pdf)** (arXiv, June 2026) · 📦 **[Resource Hub](https://github.com/Chloris-Blaxk/inno-agent-hub)** (skill library + workspace presets)
 
 <p align="center">
-  <img src="./docs/assets/l2-wiki.png" alt="Inno Agent — L2 wiki knowledge base and graph" width="100%" />
+  <img src="./docs/assets/welcome-redesign-2026-09-13.png" alt="Inno Agent — redesigned welcome page with preset workspaces" width="100%" />
 </p>
+
+> 🎨 **September 2026 — the Web UI was rebuilt around the InnoSpark design language** (light + dark themes): a welcome page with one-click preset workspaces, a unified composer with permission-mode and model pills, an artifact-browser right panel, and rich streaming Markdown (Mermaid / SVG / ECharts / runnable code blocks) in the conversation.
 
 Inno Agent is a single-learner companion that organizes long-term learning support into three explicit memory layers — an **L1 learner profile**, an **L2 native wiki knowledge base**, and **L3 session records with cross-conversation retrieval** — and wraps them in a learning loop: a cron scheduler, personal IM channels (Feishu / WeChat), and a Practice Lab with an in-browser terminal.
 
@@ -239,7 +241,7 @@ Issues and PRs are welcome. Before opening a PR, run `npm run build` locally —
 Join the WeChat user group to ask questions, share use cases, and follow updates:
 
 <p align="center">
-  <img src="./docs/assets/wechat-community-qr-2026-09-04.png" alt="Inno Agent WeChat community group QR code" width="240" />
+  <img src="./docs/assets/wechat-community-qr-2026-09-13.jpg" alt="Inno Agent WeChat community group QR code" width="240" />
 </p>
 
 ## License

@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { fitPanelLayout, WORKSPACE_DEFAULT_WIDTH } from "./app-layout.js";
+import { fitPanelLayout, resolveWorkspaceModeForViewport, WORKSPACE_DEFAULT_WIDTH } from "./app-layout.js";
 
 /**
  * The right panel only hosts the artifact/file browser now — notebook,
@@ -137,6 +137,9 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 		let nextWorkspaceMode = mode;
 		let nextWorkspaceWidth = this.workspaceWidth;
 		if (typeof window !== "undefined") {
+			// Narrow viewports have no room for a side-by-side panel: every call
+			// site gets the full-width overlay instead of a refused/squeezed split.
+			nextWorkspaceMode = resolveWorkspaceModeForViewport(nextWorkspaceMode, window.innerWidth);
 			const fitted = fitPanelLayout(window.innerWidth, nextSidebarCollapsed, nextWorkspaceMode, nextWorkspaceWidth);
 			if (!fitted) return;
 			nextSidebarCollapsed = fitted.sidebarCollapsed;

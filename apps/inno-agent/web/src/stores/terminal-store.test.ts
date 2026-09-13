@@ -172,3 +172,41 @@ describe("terminalStore code-block runs", () => {
 		expect(sent.map((value) => JSON.parse(value).command)).toEqual(["python -c \"print(9)\""]);
 	});
 });
+
+describe("terminalStore app resume", () => {
+	// Mobile browsers kill sockets while suspended without firing close; the
+	// store still believes it is connected. Resume must reconnect the drawer.
+	it("reconnects a silently killed socket when the drawer is open", async () => {
+		terminalStore.setOpen(true);
+		await terminalStore.connect("session-1", "workspace-1");
+		currentSocket.onmessage?.({ data: JSON.stringify({ type: "ready", cwd: "/workspace" }) });
+		const dead = currentSocket;
+		dead.close(); // no onclose event — the page was suspended
+		expect(terminalStore.status).toBe("connected");
+
+		terminalStore.handleAppResume();
+		await vi.waitFor(() => expect(currentSocket).not.toBe(dead));
+		currentSocket.onmessage?.({ data: JSON.stringify({ type: "ready", cwd: "/workspace" }) });
+		expect(terminalStore.status).toBe("connected");
+	});
+
+	it("leaves a healthy open socket alone on resume", async () => {
+		terminalStore.setOpen(true);
+		await terminalStore.connect("session-1", "workspace-1");
+		currentSocket.onmessage?.({ data: JSON.stringify({ type: "ready", cwd: "/workspace" }) });
+		const live = currentSocket;
+
+		terminalStore.handleAppResume();
+		expect(currentSocket).toBe(live);
+		expect(terminalStore.status).toBe("connected");
+	});
+
+	it("does nothing on resume while the drawer is closed", async () => {
+		await terminalStore.connect("session-1", "workspace-1");
+		currentSocket.close();
+		const socketCount = sockets.length;
+
+		terminalStore.handleAppResume();
+		expect(sockets.length).toBe(socketCount);
+	});
+});

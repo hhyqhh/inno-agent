@@ -83,6 +83,9 @@ type TerminalChatStreamEvent = Extract<ChatStreamEvent, { type: "done" | "error"
 
 const RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000] as const;
 
+/** A stream with no events for this long after a page resume is presumed dead. */
+const STREAM_STALE_AFTER_RESUME_MS = 10_000;
+
 export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	messages: ChatMessage[] = [];
 	isSending = false;
@@ -143,6 +146,9 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	private activeOwner: ActiveStreamOwner | null = null;
 	private ownerGeneration = 0;
 	private currentSessionContext: string | null = null;
+	/** Last time any stream envelope was applied; a stale value after a page
+	 *  resume means the in-flight stream likely died while suspended. */
+	private lastStreamActivityAt = 0;
 	private retryInputBySession = new Map<string, { prompt: string; images?: InlineImage[]; attachments?: ChatAttachments }>();
 
 	async send(prompt: string, images?: InlineImage[], sessionIdOverride?: string | null, attachments?: ChatAttachments): Promise<void> {
@@ -186,6 +192,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 			phase: "submitting",
 		};
 		this.activeOwner = owner;
+		this.lastStreamActivityAt = Date.now();
 		this.emit("change", undefined);
 
 		try {
@@ -529,6 +536,27 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		}
 	}
 
+	/**
+	 * Re-arm stream recovery when a backgrounded page returns to the foreground.
+	 * Mobile browsers suspend timers and kill in-flight fetch streams while
+	 * hidden, and the short reconnect backoff is usually exhausted before the OS
+	 * wakes the network stack — leaving recovery to a manual tap. On resume we
+	 * either retry an already-failed recovery, or proactively restart a stream
+	 * that has gone stale. Event application is idempotent (eventId dedupe in
+	 * _handleStreamEnvelope), so racing a still-alive stream cannot double-apply.
+	 */
+	async handleAppResume(): Promise<void> {
+		const owner = this.activeOwner;
+		if (!owner) return;
+		if (this.canReconnect) {
+			await this.reconnect();
+			return;
+		}
+		if (owner.terminalEvent) return;
+		if (Date.now() - this.lastStreamActivityAt < STREAM_STALE_AFTER_RESUME_MS) return;
+		await this.reconnectOwner(owner, new Error("页面回到前台，主动恢复连接"));
+	}
+
 	private owns(owner: ActiveStreamOwner): boolean {
 		return this.activeOwner === owner && this.activeOwner.generation === owner.generation;
 	}
@@ -583,6 +611,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 
 	private async _handleStreamEnvelope(owner: ActiveStreamOwner, envelope: StreamEventEnvelope): Promise<void> {
 		if (!this.owns(owner) || envelope.sessionId !== owner.sessionId || envelope.clientRequestId !== owner.clientRequestId) return;
+		this.lastStreamActivityAt = Date.now();
 		if (owner.turnId === null) owner.turnId = envelope.turnId;
 		if (owner.turnId !== envelope.turnId || envelope.eventId <= owner.lastAppliedEventId) return;
 		owner.lastAppliedEventId = envelope.eventId;

@@ -173,6 +173,71 @@ describe("ChatStore stream ownership", () => {
 		expect(store.messages.at(-1)).toMatchObject({ role: "assistant", content: "AB", transient: true });
 	});
 
+	// Mobile browsers kill in-flight streams while the page is suspended; the
+	// short reconnect backoff is usually exhausted before the network stack
+	// wakes. handleAppResume re-arms recovery without a manual tap.
+	it("re-arms an exhausted recovery when the page resumes", async () => {
+		mocks.streamChat.mockImplementation(async function* () {
+			yield envelope(1, { type: "stream_state", status: "running" });
+			throw new Error("network lost");
+		});
+		let attempts = 0;
+		mocks.streamSessionEvents.mockImplementation(async function* () {
+			attempts += 1;
+			if (attempts < 5) throw new Error("still offline");
+			yield envelope(2, { type: "text_delta", delta: "B" });
+			yield envelope(3, { type: "aborted", message: "Stopped", persisted: false });
+		});
+
+		const store = new ChatStoreImpl();
+		await store.send("hello");
+		expect(attempts).toBe(4); // the automatic backoff budget is exhausted
+		expect(store.canReconnect).toBe(true);
+
+		await store.handleAppResume();
+		expect(attempts).toBe(5);
+		expect(store.canReconnect).toBe(false);
+		expect(store.messages.at(-1)).toMatchObject({ role: "assistant", content: "B", transient: true });
+	});
+
+	// A suspended page can leave the original fetch hanging forever without an
+	// error. A stream with no events for long enough is proactively restarted.
+	it("proactively restarts a stream that went stale while suspended", async () => {
+		mocks.streamChat.mockImplementation(async function* () {
+			yield envelope(1, { type: "stream_state", status: "running" });
+			yield envelope(2, { type: "text_delta", delta: "A" });
+			await new Promise(() => {}); // suspended tab: never resolves, never errors
+		});
+		mocks.streamSessionEvents.mockImplementation(async function* () {
+			yield envelope(3, { type: "text_delta", delta: "B" });
+			yield envelope(4, { type: "aborted", message: "Stopped", persisted: false });
+		});
+
+		const store = new ChatStoreImpl();
+		void store.send("hello");
+		await vi.waitFor(() => expect(store.streamingText).toBe("A"));
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 11_000);
+		await store.handleAppResume();
+		nowSpy.mockRestore();
+
+		expect(mocks.streamSessionEvents).toHaveBeenCalledWith("session.jsonl", "turn-1", 2, expect.any(AbortSignal));
+		expect(store.messages.at(-1)).toMatchObject({ role: "assistant", content: "AB", transient: true });
+	});
+
+	it("leaves a healthy, actively streaming owner alone on resume", async () => {
+		mocks.streamChat.mockImplementation(async function* () {
+			yield envelope(1, { type: "stream_state", status: "running" });
+			yield envelope(2, { type: "text_delta", delta: "A" });
+			await new Promise(() => {});
+		});
+
+		const store = new ChatStoreImpl();
+		void store.send("hello");
+		await vi.waitFor(() => expect(store.streamingText).toBe("A"));
+		await store.handleAppResume();
+		expect(mocks.streamSessionEvents).not.toHaveBeenCalled();
+	});
+
 	it("records where a tool call interrupted the assistant text", async () => {
 		mocks.streamChat.mockImplementation(async function* () {
 			yield envelope(1, { type: "stream_state", status: "running" });

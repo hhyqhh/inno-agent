@@ -1210,6 +1210,7 @@ summary:focus-visible {
 /* Three-column layout */
 inno-app-shell {
 	height: 100vh;
+	height: var(--inno-viewport-height, 100dvh);
 	min-height: 0;
 	overflow: hidden;
 	display: block;
@@ -1220,6 +1221,7 @@ inno-app-shell {
 	--workspace-w: clamp(320px, var(--inno-workspace-width), 920px);
 	position: relative;
 	height: 100vh;
+	height: var(--inno-viewport-height, 100dvh);
 	min-height: 0;
 	overflow: hidden;
 	background: var(--inno-background);
@@ -1249,6 +1251,7 @@ inno-app-shell {
 	bottom: 0;
 	min-height: 0;
 	max-height: 100vh;
+	max-height: var(--inno-viewport-height, 100dvh);
 	min-width: 0;
 	z-index: 1;
 }
@@ -1613,6 +1616,59 @@ inno-app-shell {
 	color: var(--inno-text);
 }
 
+@media (max-width: 960px) {
+	/* Keep the chat full-width regardless of sidebar/workspace state so an
+	   open drawer never squeezes the conversation into a sliver. */
+	.app-layout > :nth-child(2) {
+		left: 0;
+		right: 0;
+	}
+
+	.app-layout--sidebar-expanded > :nth-child(1) {
+		width: min(300px, 85vw);
+		z-index: 30;
+		box-shadow: 0 8px 32px rgba(15, 23, 42, 0.18);
+	}
+
+	.app-layout-scrim {
+		position: absolute;
+		inset: 0;
+		z-index: 20;
+		background: rgba(15, 23, 42, 0.35);
+		backdrop-filter: blur(1px);
+	}
+}
+
+/*
+ * Phones get two mobile chrome fixes:
+ *
+ * 1. iOS Safari auto-zooms the page when an editable field under 16px is
+ *    focused, which reads as the screen "jumping" larger on every composer
+ *    tap. Floor all form fields at 16px at narrow widths (larger sizes are
+ *    untouched via max()).
+ * 2. The floating panel-expand buttons overlay message text with no
+ *    background and look like stray artifacts (their hover background never
+ *    applies on touch). Give them a solid chip, a bigger hit area, and
+ *    safe-area-aware placement.
+ */
+@media (max-width: 960px) {
+	input,
+	textarea,
+	select {
+		font-size: max(16px, 1em);
+	}
+
+	.inno-panel-fab {
+		top: calc(8px + env(safe-area-inset-top, 0px));
+		width: 40px;
+		height: 40px;
+		background: var(--inno-surface);
+		border: 1px solid var(--inno-border);
+		box-shadow: var(--inno-shadow-soft);
+		color: var(--inno-text-muted);
+	}
+}
+
 /* Disable transitions while the user is dragging the resize handle */
 .workspace-resizing .app-layout > :nth-child(2),
 .workspace-resizing .app-layout > :nth-child(3) {
@@ -1642,7 +1698,7 @@ inno-app-shell {
 .inno-conversation-composer-layer {
 	position: absolute;
 	inset-inline: 0;
-	bottom: 12px;
+	bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 	z-index: 10;
 	pointer-events: none;
 }
@@ -2511,6 +2567,11 @@ inno-workspace-panel textarea {
 
 	.inno-message-actions {
 		min-height: 32px;
+		/* No hover on touch: keep the actions visible instead of relying on
+		   the first-tap-fires-hover quirk. */
+		opacity: 1;
+		transform: none;
+		transition-delay: 0s;
 	}
 
 	.inno-message-action {

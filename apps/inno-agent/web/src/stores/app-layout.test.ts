@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
 	canOpenWorkspaceBesideSidebar,
 	CHAT_BASELINE_WIDTH,
+	CHAT_ONLY_BP,
 	fitPanelLayout,
 	getMaximumWorkspaceWidth,
+	resolveWorkspaceModeForViewport,
 	SIDEBAR_WIDTH,
 	WORKSPACE_QUARTER_MIN_WIDTH,
 } from "./app-layout.js";
@@ -60,5 +62,26 @@ describe("fitPanelLayout", () => {
 	it("only opens a session preview when it can keep the sidebar visible", () => {
 		expect(canOpenWorkspaceBesideSidebar(CHAT_BASELINE_WIDTH + SIDEBAR_WIDTH, 300)).toBe(false);
 		expect(canOpenWorkspaceBesideSidebar(CHAT_BASELINE_WIDTH + SIDEBAR_WIDTH + WORKSPACE_QUARTER_MIN_WIDTH, 300)).toBe(true);
+	});
+});
+
+describe("resolveWorkspaceModeForViewport", () => {
+	it("maps side-by-side modes to the full overlay at and below the chat-only breakpoint", () => {
+		expect(resolveWorkspaceModeForViewport("half", CHAT_ONLY_BP)).toBe("full");
+		expect(resolveWorkspaceModeForViewport("quarter", CHAT_ONLY_BP)).toBe("full");
+		expect(resolveWorkspaceModeForViewport("half", 375)).toBe("full");
+		expect(resolveWorkspaceModeForViewport("quarter", 375)).toBe("full");
+	});
+
+	it("leaves overlay and collapsed modes untouched at narrow widths", () => {
+		expect(resolveWorkspaceModeForViewport("full", 375)).toBe("full");
+		expect(resolveWorkspaceModeForViewport("collapsed", 375)).toBe("collapsed");
+	});
+
+	it("returns every mode unchanged above the breakpoint", () => {
+		expect(resolveWorkspaceModeForViewport("half", CHAT_ONLY_BP + 1)).toBe("half");
+		expect(resolveWorkspaceModeForViewport("quarter", CHAT_ONLY_BP + 1)).toBe("quarter");
+		expect(resolveWorkspaceModeForViewport("full", CHAT_ONLY_BP + 1)).toBe("full");
+		expect(resolveWorkspaceModeForViewport("collapsed", CHAT_ONLY_BP + 1)).toBe("collapsed");
 	});
 });

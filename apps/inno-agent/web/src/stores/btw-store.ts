@@ -79,6 +79,7 @@ export class BtwStoreImpl extends EventEmitter<BtwStoreEvents> {
 	private sessions = new Map<string, BtwSessionState>();
 	private hydratedSessions = new Set<string>();
 	private hydrationRequests = new Map<string, Promise<void>>();
+	private hydrationFailures = new Map<string, string>();
 	private persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
 	private persistQueue: Promise<void> = Promise.resolve();
 	private requestControllers = new Map<string, AbortController>();
@@ -118,6 +119,16 @@ export class BtwStoreImpl extends EventEmitter<BtwStoreEvents> {
 		return this.sessionFor(sessionId).tabs.find((tab) => tab.id === tabId) ?? null;
 	}
 
+	/** Non-null when the initial state fetch failed for this session. A failed
+	 *  load must never be treated as "no history": the panel shows a recovery
+	 *  card instead of tabs, and persistence stays blocked until a retry
+	 *  succeeds, so a transient network error cannot overwrite the persisted
+	 *  tabs/drafts/exchanges with a fresh empty state. */
+	hydrationErrorFor(sessionId: string | null | undefined): string | null {
+		if (!sessionId) return null;
+		return this.hydrationFailures.get(sessionId) ?? null;
+	}
+
 	/** Backwards-compatible view of the active tab's exchange list. */
 	threadFor(sessionId: string | null | undefined): BtwExchange[] {
 		return this.activeTabFor(sessionId)?.exchanges ?? [];
@@ -151,12 +162,16 @@ export class BtwStoreImpl extends EventEmitter<BtwStoreEvents> {
 					this.windowGeometry = { ...remote.window };
 					this.windowInitialized = true;
 				}
-			} catch {
-				// The state endpoint is best-effort: an unavailable sidecar must not
-				// prevent the learner from opening a fresh side-question tab.
-				this.sessions.set(sessionId, cloneSession(EMPTY_SESSION));
+				this.hydrationFailures.delete(sessionId);
+				this.hydratedSessions.add(sessionId);
+			} catch (err) {
+				// A failed GET says nothing about whether the server holds history.
+				// Record the failure and leave the session unloaded (retryable via
+				// hydrateSession/openOrRestore) instead of fabricating an empty
+				// state that a later full-session PUT would persist over the real
+				// tabs, drafts and exchanges.
+				this.hydrationFailures.set(sessionId, err instanceof Error ? err.message : "Failed to load");
 			}
-			this.hydratedSessions.add(sessionId);
 			this.hydrationRequests.delete(sessionId);
 			this.emit("change", undefined);
 		})().catch((err) => {
@@ -172,6 +187,15 @@ export class BtwStoreImpl extends EventEmitter<BtwStoreEvents> {
 		this.activeSessionId = sessionId;
 		await this.hydrateSession(sessionId);
 		if (this.activeSessionId !== sessionId) return;
+		if (this.hydrationFailures.has(sessionId)) {
+			// Surface the recovery card (the panel opens without any tab) and wait
+			// for an explicit retry — creating a fresh tab here would eventually
+			// overwrite the persisted history we failed to load.
+			this.panelOpen = true;
+			this.minimized = false;
+			this.emit("change", undefined);
+			return;
+		}
 		if (this.tabsFor(sessionId).length === 0) this.createTab(sessionId);
 		this.panelOpen = true;
 		this.minimized = false;
@@ -389,7 +413,10 @@ export class BtwStoreImpl extends EventEmitter<BtwStoreEvents> {
 	}
 
 	private schedulePersist(sessionId: string | null, delay = 180): void {
-		if (!sessionId || !this.sessions.has(sessionId)) return;
+		// Never write a session whose remote state we failed to load: any local
+		// state would be fabricated and the full-session PUT would clobber the
+		// persisted history.
+		if (!sessionId || !this.sessions.has(sessionId) || this.hydrationFailures.has(sessionId)) return;
 		const previous = this.persistTimers.get(sessionId);
 		if (previous) clearTimeout(previous);
 		const timer = setTimeout(() => {
@@ -408,6 +435,7 @@ export class BtwStoreImpl extends EventEmitter<BtwStoreEvents> {
 	}
 
 	private persistNow(sessionId: string): void {
+		if (this.hydrationFailures.has(sessionId)) return;
 		const payload: BtwStateResponse = {
 			session: cloneSession(this.sessionFor(sessionId)),
 			window: { ...this.windowGeometry },

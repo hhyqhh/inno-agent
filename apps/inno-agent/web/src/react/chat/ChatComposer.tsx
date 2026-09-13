@@ -512,6 +512,7 @@ export function ChatComposer({
 							<Image size={16} />
 						</button>
 						{conversationMode ? permissionControl : null}
+					{conversationMode ? workspaceControl : null}
 					</div>
 					<div className="flex shrink-0 items-center gap-1">
 						{conversationMode ? renderModelPicker() : null}

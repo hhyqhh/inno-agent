@@ -1677,6 +1677,12 @@ inno-app-shell {
 }
 
 .inno-btw-tab-strip {
+	overflow: hidden;
+}
+
+/* The scroll region sits inside the strip so the pinned "+" button never
+   scrolls away; the active tab is scrolled into view programmatically. */
+.inno-btw-tab-strip [role="tablist"] {
 	overflow-x: auto;
 	overflow-y: hidden;
 	scrollbar-width: thin;

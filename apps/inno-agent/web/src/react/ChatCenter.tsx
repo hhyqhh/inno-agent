@@ -1383,7 +1383,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 				currentModel={currentModel}
 				conversationMode={!isWelcome}
 				permissionControl={<PermissionModeControl variant={isWelcome ? "pill" : "inline"} />}
-			workspaceControl={isWelcome ? workspaceContext : undefined}
+			workspaceControl={workspaceContext}
 			modelPickerOpen={modelPickerOpen}
 			attachMenuOpen={attachMenuOpen}
 			workspaceFiles={workspaceFiles}
@@ -1430,8 +1430,8 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		);
 	};
 
-	const selectedWorkspaceId = wsMode === "existing" ? wsExistingId : null;
-	const selectedKind: "workspace" | "temp" | "new" = wsMode === "existing" ? "workspace" : wsMode;
+	const selectedWorkspaceId = isWelcome ? (wsMode === "existing" ? wsExistingId : null) : activeWorkspaceId;
+	const selectedKind: "workspace" | "temp" | "new" = isWelcome ? (wsMode === "existing" ? "workspace" : wsMode) : "workspace";
 	const workspaceContext = (
 			<WorkspaceContext
 				workspaces={workspaces.list}

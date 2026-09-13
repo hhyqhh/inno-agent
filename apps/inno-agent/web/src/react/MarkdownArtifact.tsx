@@ -1,5 +1,6 @@
 import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
 import { normalizeMarkdownMathForStreamdown } from "../utils/markdown-math.js";
+import { wrapRawSvgBlocks } from "../utils/markdown-svg.js";
 import {
 	getMermaidMarkdownRuntime,
 	hasMermaidFence,
@@ -184,7 +185,7 @@ class MarkdownErrorBoundary extends Component<MarkdownErrorBoundaryProps, Markdo
 
 export function MarkdownArtifact({ content, streaming = false, animate, compact = false, className }: MarkdownArtifactProps) {
 	const mathSingleDollar = useStoreSnapshot(settingsStore, () => settingsStore.settings?.ui?.mathSingleDollar === true);
-	const unwrappedContent = useMemo(() => unwrapRedundantEChartsFence(content), [content]);
+	const unwrappedContent = useMemo(() => unwrapRedundantEChartsFence(wrapRawSvgBlocks(content)), [content]);
 	// Match Cherry Studio's long-stream guard: once a live answer is very large,
 	// skip whole-document transforms and leave incremental parsing to Streamdown.
 	const normalizedContent = useMemo(

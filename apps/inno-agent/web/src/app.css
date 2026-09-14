@@ -1663,14 +1663,46 @@ inno-app-shell {
 		font-size: max(16px, 1em);
 	}
 
-	.inno-panel-fab {
-		top: calc(8px + env(safe-area-inset-top, 0px));
-		width: 40px;
-		height: 40px;
+	/* The shared toolbar also renders in browsers. Do not reserve macOS
+	   traffic-light space on phones, or the toggle covers the page title. */
+	.app-layout--browser {
+		--inno-window-chrome-height: 48px;
+		--inno-window-chrome-control-left: calc(8px + env(safe-area-inset-left, 0px));
+		--inno-window-chrome-control-size: 44px;
+		--inno-window-chrome-control-top: calc(2px + env(safe-area-inset-top, 0px));
+		--inno-window-chrome-title-inset: calc(64px + env(safe-area-inset-left, 0px));
+	}
+
+	.app-layout--browser .inno-window-chrome-button {
 		background: var(--inno-surface);
 		border: 1px solid var(--inno-border);
 		box-shadow: var(--inno-shadow-soft);
 		color: var(--inno-text-muted);
+	}
+
+	.app-layout--browser .inno-window-chrome-workspace-button {
+		top: var(--inno-window-chrome-control-top);
+		right: calc(8px + env(safe-area-inset-right, 0px));
+	}
+
+	.app-layout--browser .inno-sidebar-header,
+	.app-layout--browser .inno-feature-header,
+	.app-layout--browser .inno-conversation-header,
+	.app-layout--browser .inno-workspace-panel-header {
+		min-height: calc(48px + env(safe-area-inset-top, 0px));
+		padding-top: env(safe-area-inset-top, 0px);
+		padding-bottom: 0;
+		padding-left: var(--inno-window-chrome-title-inset);
+	}
+
+	/* Component display rules override Tailwind's layered hidden utility. */
+	.inno-workspace-header-button[aria-pressed] {
+		display: none;
+	}
+
+	/* Navigation remains an overlay even if the full workspace is open. */
+	.app-layout--browser.app-layout--workspace-full > .workspace-panel {
+		left: 0;
 	}
 
 	/* Three subrow pills (workspace / permission / model) can exceed a phone's
@@ -1687,6 +1719,35 @@ inno-app-shell {
 
 	.inno-composer-subrow::-webkit-scrollbar {
 		display: none;
+	}
+}
+
+/* Keep conversation controls in two legible rows instead of letting the
+   non-shrinking model picker paint over permissions and attachments. */
+@media (max-width: 640px) {
+	.inno-composer--conversation .inno-composer-toolbar {
+		flex-wrap: wrap;
+	}
+
+	.inno-composer--conversation .inno-composer-toolbar > div {
+		width: 100%;
+		justify-content: space-between;
+		gap: 4px;
+	}
+}
+
+/* In phone landscape, the vertical navigation otherwise consumes almost
+   all the drawer height, leaving session cards under sticky headers. */
+@media (max-width: 960px) and (max-height: 500px) {
+	.inno-sidebar-scope > nav {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 2px;
+		padding-block: 4px;
+	}
+
+	.inno-sidebar-scope > nav > * {
+		margin-block: 0;
 	}
 }
 

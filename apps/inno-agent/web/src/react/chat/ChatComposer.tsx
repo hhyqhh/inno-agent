@@ -529,7 +529,7 @@ export function ChatComposer({
 	};
 	return (
 		<div
-			className="inno-composer relative"
+			className={`inno-composer relative ${conversationMode ? "inno-composer--conversation" : ""}`}
 			onDragOverCapture={handleComposerDragOver}
 			onDragOver={handleComposerDragOver}
 			onDragLeave={(event) => {

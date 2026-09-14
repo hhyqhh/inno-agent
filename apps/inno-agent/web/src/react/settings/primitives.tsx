@@ -36,12 +36,12 @@ export function SettingsRow({ label, description, control, disabled }: {
 	disabled?: boolean;
 }) {
 	return (
-		<div className={`flex items-start justify-between gap-3 ${disabled ? "opacity-60" : ""}`}>
-			<div className="min-w-0">
+		<div className={`flex flex-wrap items-start justify-between gap-3 ${disabled ? "opacity-60" : ""}`}>
+			<div className="min-w-0 flex-[1_1_160px]">
 				<h4 className="text-sm font-medium text-[var(--inno-text)]">{label}</h4>
 				{description ? <p className="mt-1 text-sm text-[var(--inno-text-muted)]">{description}</p> : null}
 			</div>
-			{control}
+			<div className="max-w-full shrink-0">{control}</div>
 		</div>
 	);
 }

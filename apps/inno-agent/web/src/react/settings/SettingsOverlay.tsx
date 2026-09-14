@@ -64,7 +64,7 @@ export function SettingsOverlay() {
 				role="dialog"
 				aria-modal="true"
 				aria-label={t("settings.title")}
-				className="relative flex h-[min(680px,88vh)] w-[min(980px,92vw)] overflow-hidden rounded-[20px] bg-[var(--inno-card-bg)] shadow-[0_16px_48px_rgba(0,0,0,0.22)] max-md:h-dvh max-md:w-full max-md:flex-col max-md:rounded-none"
+				className="relative flex h-[min(680px,88vh)] w-[min(980px,92vw)] overflow-hidden rounded-[20px] bg-[var(--inno-card-bg)] shadow-[0_16px_48px_rgba(0,0,0,0.22)] max-md:h-[var(--inno-viewport-height,100dvh)] max-md:w-full max-md:flex-col max-md:rounded-none"
 				onClick={(event) => event.stopPropagation()}
 			>
 				<button
@@ -72,13 +72,13 @@ export function SettingsOverlay() {
 					onClick={() => appStore.closeSettings()}
 					title={t("common.close")}
 					aria-label={t("common.close")}
-					className="absolute right-3.5 top-3.5 z-[5] flex h-[30px] w-[30px] items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+					className="absolute right-3.5 top-3.5 z-[5] max-md:right-2 max-md:top-[calc(7px+env(safe-area-inset-top,0px))] max-md:h-11 max-md:w-11 max-md:bg-[var(--inno-sidebar-bg)] flex h-[30px] w-[30px] items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 				>
 					<X size={17} />
 				</button>
 
 				{/* Left nav — horizontal tab strip on phones, icon rail on narrow desktop */}
-				<aside className="flex w-[208px] shrink-0 flex-col gap-0.5 overflow-y-auto bg-[var(--inno-sidebar-bg)] px-3 py-5 md:max-[820px]:w-[64px] md:max-[820px]:px-2 max-md:w-full max-md:flex-row max-md:items-center max-md:overflow-x-auto max-md:overflow-y-hidden max-md:py-2 max-md:pr-12">
+				<aside className="flex w-[208px] shrink-0 flex-col gap-0.5 overflow-y-auto bg-[var(--inno-sidebar-bg)] px-3 py-5 md:max-[820px]:w-[64px] md:max-[820px]:px-2 max-md:w-full max-md:flex-row max-md:items-center max-md:overflow-x-auto max-md:overflow-y-hidden max-md:pb-2 max-md:pt-[calc(8px+env(safe-area-inset-top,0px))] max-md:pr-16">
 					<div className="px-3 pb-3 text-sm font-semibold text-[var(--inno-text)] md:max-[820px]:hidden max-md:hidden">{t("settings.title")}</div>
 					{TABS.map(({ id, icon }) => {
 						const active = activeSettingsTab === id;
@@ -102,7 +102,7 @@ export function SettingsOverlay() {
 				</aside>
 
 				{/* Content */}
-				<div className="min-w-0 flex-1 overflow-y-auto px-[26px] pb-8 pt-[22px] max-md:px-4">
+				<div className="min-w-0 flex-1 overflow-y-auto px-[26px] pb-8 pt-[22px] max-md:px-4 max-md:pb-[calc(32px+env(safe-area-inset-bottom,0px))]">
 					{!settings && isLoading ? (
 						<div className="text-sm text-[var(--inno-text-muted)]">{t("settings.loading")}</div>
 					) : (

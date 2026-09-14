@@ -31,6 +31,7 @@ import type { AttachmentRef, ChatMessage } from "../types/chat.js";
 import { fetchPresetList, readCachedPresets, removeCachedPreset } from "../utils/preset-cache.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { ChatComposer } from "./chat/ChatComposer.js";
+import { ContextUsage } from "./chat/ContextUsage.js";
 import { ChatConversation } from "./chat/ChatConversation.js";
 import { ScheduledRunBanner } from "./chat/ScheduledRunBanner.js";
 import { BusyBlocker, QuestionHint } from "./chat/ChatStatusBanners.js";
@@ -1382,6 +1383,12 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 				modelOptions={modelOptions}
 				currentModel={currentModel}
 				conversationMode={!isWelcome}
+				contextUsageControl={!isWelcome && sessions.currentSessionId ? <ContextUsage
+					key={`${sessions.currentSessionId}:${currentModel?.provider}:${currentModel?.id}`}
+					sessionId={sessions.currentSessionId}
+					streaming={chat.isSending || chat.jobStreaming}
+					revision={`${chat.messages.length}:${chat.isLoadingHistory}`}
+				/> : null}
 				permissionControl={<PermissionModeControl variant={isWelcome ? "pill" : "inline"} />}
 			workspaceControl={workspaceContext}
 			modelPickerOpen={modelPickerOpen}

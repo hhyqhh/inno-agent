@@ -1,4 +1,25 @@
 {
+	"contextUsage": {
+		"title": "上下文用量",
+		"close": "关闭上下文用量",
+		"summary": "{{percent}} · {{amount}} 上下文已使用",
+		"used": "已使用 {{amount}}",
+		"loading": "正在读取用量…",
+		"failed": "用量读取失败",
+		"pending": "压缩后等待更新",
+		"inactive": "此会话暂无实时用量",
+		"unavailable": "用量暂不可用",
+		"note": "总量由 Pi SDK 根据模型用量及后续消息估算。分类为按总量校准的估算值，占比以完整上下文窗口为分母；工具返回内容计入对话消息。",
+		"estimatedNote": "尚无模型用量回报，总量和分类均为估算，包含系统提示词、工具定义与消息。占比以完整上下文窗口为分母。",
+		"unknownNote": "未知用量不会显示为 0%。会话激活、模型响应或连接恢复后自动更新。",
+		"categories": {
+			"system": "系统提示词",
+			"tools": "工具及子智能体",
+			"messages": "对话消息",
+			"mcp": "连接器及 MCP",
+			"skills": "技能目录"
+		}
+	},
 	"workspace": {
 		"title": "工作区",
 		"switch": "切换工作区",

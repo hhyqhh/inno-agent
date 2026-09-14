@@ -1,11 +1,13 @@
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { buildContextUsage, unavailableContextUsage } from "../../agent/context-usage.js";
 import {
 	applyWorkspaceCwd,
 	branchSessionBeforeUserMessage,
 	createNewSession,
 	getCurrentSessionId,
+	getSession,
 	SessionEditError,
 	switchSessionFile,
 } from "../../agent/pi-runner.js";
@@ -271,6 +273,24 @@ export async function handleSessionsRoutes(
 		releaseQueueFromQuestionBlockedTurn,
 		runQueueOpWithTimeout,
 	} = ctx;
+
+	// Read-only: never switch the singleton runtime to inspect a different session.
+	const contextMatch = matchRoute("GET", method, url, "/api/sessions/:id/context-usage");
+	if (contextMatch) {
+		const id = contextMatch.id;
+		res.setHeader("Cache-Control", "no-store");
+		const sessionPath = sessionFileFromId(join(dataDir, "sessions"), id);
+		if (!sessionPath || !existsSync(sessionPath)) {
+			json(res, 404, { error: "Session not found" });
+			return true;
+		}
+		if (getCurrentSessionId() !== id) {
+			json(res, 200, unavailableContextUsage(id, "inactive"));
+			return true;
+		}
+		json(res, 200, buildContextUsage(id, getSession()));
+		return true;
+	}
 
 	// --- Sessions API ---
 	if (method === "GET" && url === "/api/sessions") {

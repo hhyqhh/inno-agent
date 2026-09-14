@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 
 interface DesktopWindowChromeProps {
 	showWorkspaceControl: boolean;
@@ -14,6 +14,10 @@ interface DesktopWindowChromeProps {
  * Renderer-owned macOS window chrome. Electron keeps the traffic lights in
  * the hidden title-bar area; the overlay is limited to the renderer control
  * so the page headers below remain reliable drag surfaces and click targets.
+ *
+ * The sidebar toggle only renders while the sidebar is collapsed — the
+ * expanded sidebar carries its own collapse button inside its header, so no
+ * floating control ever overlaps the brand row (reference-app pattern).
  */
 export function DesktopWindowChrome({
 	showWorkspaceControl,
@@ -25,17 +29,19 @@ export function DesktopWindowChrome({
 }: DesktopWindowChromeProps) {
 	return (
 		<div className="inno-window-chrome" aria-label="窗口工具栏">
-			<div className="inno-window-chrome-bar">
-				<button
-					type="button"
-					className="inno-window-chrome-button"
-					title={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-					aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-					onClick={onToggleSidebar}
-				>
-					{sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
-				</button>
-			</div>
+			{sidebarCollapsed ? (
+				<div className="inno-window-chrome-bar">
+					<button
+						type="button"
+						className="inno-window-chrome-button"
+						title="展开侧栏"
+						aria-label="展开侧栏"
+						onClick={onToggleSidebar}
+					>
+						<PanelLeftOpen size={15} />
+					</button>
+				</div>
+			) : null}
 			{btwControl ? (
 				<div className="inno-window-chrome-right-actions">
 					{btwControl}

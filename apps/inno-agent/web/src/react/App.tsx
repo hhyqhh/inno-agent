@@ -1,7 +1,8 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { MessageCircleQuestion } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { appStore, pageFromSearch, type AppPage, type WorkspaceMode } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
 import { themeStore, type ThemeId } from "../stores/theme-store.js";
@@ -37,7 +38,18 @@ function initializeApp(): Promise<void> {
 }
 
 export function App() {
+	const { t } = useTranslation();
 	const isDesktopWindow = Boolean(window.innoDesktop);
+	const [workspaceNarrowHint, setWorkspaceNarrowHint] = useState(false);
+	const workspaceHintTimerRef = useRef<number | null>(null);
+	const showWorkspaceNarrowHint = useCallback(() => {
+		setWorkspaceNarrowHint(true);
+		if (workspaceHintTimerRef.current !== null) window.clearTimeout(workspaceHintTimerRef.current);
+		workspaceHintTimerRef.current = window.setTimeout(() => setWorkspaceNarrowHint(false), 2600);
+	}, []);
+	useEffect(() => () => {
+		if (workspaceHintTimerRef.current !== null) window.clearTimeout(workspaceHintTimerRef.current);
+	}, []);
 	const app = useStoreSnapshot(appStore, () => ({
 		page: appStore.page,
 		sidebarCollapsed: appStore.sidebarCollapsed,
@@ -46,7 +58,9 @@ export function App() {
 	}));
 	const currentSessionId = useStoreSnapshot(sessionsStore, () => sessionsStore.currentSessionId);
 	const btwPanelVisible = useStoreSnapshot(btwStore, () => btwStore.isVisible && btwStore.activeSessionId === sessionsStore.currentSessionId);
-	const desktopBtwControl = isDesktopWindow && app.workspaceMode === "collapsed" && currentSessionId ? (
+	// The BtwPanel only mounts inside ChatCenter, so the desktop chrome button
+	// must hide on feature pages — clicking it there would open nothing.
+	const desktopBtwControl = isDesktopWindow && app.page === "chat" && app.workspaceMode === "collapsed" && currentSessionId ? (
 		<button
 			type="button"
 			className={`inno-window-chrome-button inno-window-chrome-btw-button ${btwPanelVisible ? "is-active" : ""}`}
@@ -209,8 +223,12 @@ export function App() {
 			// otherwise leaves the layout untouched instead of collapsing for nothing.
 			if (appStore.workspaceWidth < requestedWidth) appStore.setWorkspaceWidth(requestedWidth);
 			appStore.setWorkspaceMode(mode);
+			// The layout fitter can refuse the split when the viewport is too
+			// narrow; a clickable button that silently does nothing is worse than
+			// an explicit hint.
+			if (appStore.workspaceMode === "collapsed") showWorkspaceNarrowHint();
 		})();
-	}, [app.workspaceMode, ensureWindowForPanel]);
+	}, [app.workspaceMode, ensureWindowForPanel, showWorkspaceNarrowHint]);
 	const toggleWorkspace = useCallback(() => {
 		setWorkspaceMode(app.workspaceMode === "collapsed" ? "half" : "collapsed");
 	}, [app.workspaceMode, setWorkspaceMode]);
@@ -254,6 +272,14 @@ export function App() {
 					/>
 				</div>
 			</DndProvider>
+			{workspaceNarrowHint ? (
+				<div
+					role="status"
+					className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] px-4 py-2 text-xs text-[var(--inno-text-muted)] shadow-[var(--inno-shadow-soft)]"
+				>
+					{t("workspace.windowTooNarrow")}
+				</div>
+			) : null}
 			<SettingsOverlay />
 		</>
 	);

@@ -38,7 +38,8 @@
 			"office": "Office",
 			"text": "文本",
 			"binary": "二进制"
-		}
+		},
+		"windowTooNarrow": "窗口宽度不足，无法展开工作区，请扩大窗口后重试"
 	},
 	"common": {
 		"save": "保存",
@@ -1276,7 +1277,9 @@
 		"retry": "重试",
 		"bringBack": "带回主对话",
 		"bringBackHint": "把这条问答作为旁注追加到主会话，供助教后续参考",
-		"broughtBack": "已带回主对话"
+		"broughtBack": "已带回主对话",
+		"loadErrorTitle": "历史加载失败",
+		"loadErrorDetail": "无法读取此前的随便问问记录。为避免覆盖已保存的内容，请重试加载成功后再使用。"
 	},
 	"welcome": {
 		"greeting": "今天想学点什么？"

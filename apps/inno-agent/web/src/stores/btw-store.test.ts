@@ -130,6 +130,50 @@ describe("BtwStore", () => {
 		expect(store.isVisible).toBe(true);
 	});
 
+	it("keeps the session unloaded and retryable when the first fetch fails", async () => {
+		mocks.getBtwState.mockRejectedValueOnce(new Error("network down"));
+		await store.hydrateSession("s1");
+		expect(store.hydrationErrorFor("s1")).toBe("network down");
+		// No fabricated empty session, and the failure does not count as loaded.
+		expect(store.tabsFor("s1")).toEqual([]);
+
+		mocks.getBtwState.mockResolvedValueOnce({
+			session: {
+				nextTabNumber: 2,
+				activeTabId: "tab-1",
+				tabs: [{ id: "tab-1", number: 1, draft: "旧草稿", scrollTop: 0, exchanges: [] }],
+			},
+			window: { x: 0, y: 0, width: 520, height: 420 },
+			windowInitialized: false,
+			minimized: false,
+		});
+		await store.hydrateSession("s1");
+		expect(store.hydrationErrorFor("s1")).toBeNull();
+		expect(store.tabFor("s1", "tab-1")?.draft).toBe("旧草稿");
+	});
+
+	it("opens a recovery card instead of a fresh tab when hydration failed, and never persists", async () => {
+		vi.useFakeTimers();
+		try {
+			mocks.getBtwState.mockRejectedValue(new Error("network down"));
+			await store.openOrRestore("s1");
+			// The panel opens to show the recovery state, but no tab is created.
+			expect(store.panelOpen).toBe(true);
+			expect(store.minimized).toBe(false);
+			expect(store.hydrationErrorFor("s1")).toBe("network down");
+			expect(store.tabsFor("s1")).toEqual([]);
+
+			// Any stray local mutation must not reach the server: persistence is
+			// blocked until a retry successfully loads the real history.
+			store.createTab("s1");
+			store.flushPersistence("s1");
+			await vi.advanceTimersByTimeAsync(500);
+			expect(mocks.saveBtwState).not.toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("turns persisted pending exchanges into retryable errors on hydration", async () => {
 		mocks.getBtwState.mockResolvedValueOnce({
 			session: {

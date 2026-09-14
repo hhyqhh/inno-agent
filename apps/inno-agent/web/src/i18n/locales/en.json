@@ -38,7 +38,8 @@
 			"office": "Office",
 			"text": "Text",
 			"binary": "Binary"
-		}
+		},
+		"windowTooNarrow": "Not enough window width to open the workspace — widen the window and try again"
 	},
 	"common": {
 		"save": "Save",
@@ -1276,7 +1277,9 @@
 		"retry": "Retry",
 		"bringBack": "Bring into conversation",
 		"bringBackHint": "Append this Q&A as a side note to the main session for the tutor to build on",
-		"broughtBack": "Brought into the conversation"
+		"broughtBack": "Brought into the conversation",
+		"loadErrorTitle": "Couldn't load your side questions",
+		"loadErrorDetail": "Your previous side questions couldn't be read. To avoid overwriting saved content, retry loading before continuing."
 	},
 	"welcome": {
 		"greeting": "What would you like to learn today?"

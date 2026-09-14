@@ -1,3 +1,4 @@
+import type { SessionContextUsage } from "../../../src/shared/context-usage.js";
 import { apiFetch } from "./client.js";
 import type { ChatMessage } from "../types/chat.js";
 
@@ -140,4 +141,12 @@ export async function unarchiveSession(id: string): Promise<{ id: string; archiv
 	return apiFetch<{ id: string; archived: boolean }>(`/api/sessions/${encodeURIComponent(id)}/unarchive`, {
 		method: "POST",
 	});
+}
+
+export type { SessionContextUsage } from "../../../src/shared/context-usage.js";
+
+export async function fetchSessionContextUsage(id: string, signal?: AbortSignal) {
+	return apiFetch<SessionContextUsage>(
+		`/api/sessions/${encodeURIComponent(id)}/context-usage`, { signal },
+	);
 }

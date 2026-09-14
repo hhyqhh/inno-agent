@@ -1,4 +1,25 @@
 {
+	"contextUsage": {
+		"title": "Context usage",
+		"close": "Close context usage",
+		"summary": "{{percent}} · {{amount}} context used",
+		"used": "Used {{amount}}",
+		"loading": "Loading usage…",
+		"failed": "Could not load usage",
+		"pending": "Awaiting usage after compaction",
+		"inactive": "No live usage for this session",
+		"unavailable": "Usage unavailable",
+		"note": "Pi SDK estimates the total from model usage and subsequent messages. Categories are estimates scaled to that total; percentages use the full context window. Tool results count as messages.",
+		"estimatedNote": "No model usage reported yet. Total and categories are estimates including the system prompt, tool definitions and messages. Percentages use the full context window.",
+		"unknownNote": "Unknown usage is not shown as 0%. Updates automatically after session activation, a model response or reconnection.",
+		"categories": {
+			"system": "System prompt",
+			"tools": "Tools & subagents",
+			"messages": "Messages",
+			"mcp": "Connectors & MCP",
+			"skills": "Skill catalog"
+		}
+	},
 	"workspace": {
 		"title": "Workspace",
 		"switch": "Switch workspace",

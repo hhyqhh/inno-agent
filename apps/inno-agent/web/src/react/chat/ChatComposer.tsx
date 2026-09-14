@@ -33,6 +33,8 @@ export interface ChatComposerProps {
 	currentModel?: InnoModelInfo;
 	/** Permission switcher; welcome uses a pill, conversation uses a frameless labeled control. */
 	permissionControl?: ReactNode;
+	/** Read-only context meter, shown next to the model picker in conversations. */
+	contextUsageControl?: ReactNode;
 	/** Workspace selector shown on the welcome composer sub-pill row. */
 	workspaceControl?: ReactNode;
 	/** Move conversation-only controls into the input card; welcome keeps the
@@ -90,6 +92,7 @@ export function ChatComposer({
 	modelOptions,
 	currentModel,
 	permissionControl,
+	contextUsageControl,
 	workspaceControl,
 	conversationMode = false,
 	modelPickerOpen,
@@ -587,6 +590,7 @@ export function ChatComposer({
 						>
 							<CornerDownLeft size={16} />
 						</button>
+						{conversationMode ? contextUsageControl : null}
 						{conversationMode ? renderModelPicker() : null}
 						{(chatIsSending || jobStreaming) ? (
 							<>

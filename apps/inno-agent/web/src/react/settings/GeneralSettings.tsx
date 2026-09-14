@@ -11,7 +11,7 @@ function ThemePicker() {
 	const { t } = useTranslation();
 	const state = useStoreSnapshot(themeStore, () => ({ current: themeStore.current }));
 	return (
-		<div className="flex gap-2">
+		<div className="flex flex-wrap gap-2">
 			{THEME_IDS.map((id) => {
 				const active = state.current === id;
 				return (
@@ -22,7 +22,7 @@ function ThemePicker() {
 						aria-pressed={active}
 						title={t(`settings.themeOptions.${id}`)}
 						onClick={() => void themeStore.save(id)}
-						className={`flex items-center gap-2 rounded-full border py-1.5 pl-2 pr-3.5 text-xs transition-colors ${
+						className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border py-1.5 pl-2 pr-3.5 text-xs transition-colors ${
 							active
 								? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] font-medium text-[var(--inno-accent)]"
 								: "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:border-[var(--inno-border-strong)] hover:text-[var(--inno-text)]"

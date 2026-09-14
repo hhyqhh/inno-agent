@@ -10,6 +10,9 @@ export const WORKSPACE_MIN_WIDTH = 320;
 export const WORKSPACE_DEFAULT_WIDTH = 520;
 export const WORKSPACE_MAX_WIDTH = 920;
 
+/** At and below this viewport width the chat is the only column; other panels become overlays. */
+export const CHAT_ONLY_BP = 960;
+
 export function getEffectiveWorkspaceWidth(width: number, mode: WorkspaceMode = "half"): number {
 	const minWidth = mode === "quarter" ? WORKSPACE_QUARTER_MIN_WIDTH : WORKSPACE_MIN_WIDTH;
 	return Math.max(minWidth, Math.min(WORKSPACE_MAX_WIDTH, Math.round(width)));
@@ -91,4 +94,15 @@ export function fitPanelLayout(
 export function canOpenWorkspaceBesideSidebar(viewportWidth: number, workspaceWidth: number): boolean {
 	const fitted = fitPanelLayout(viewportWidth, false, "quarter", workspaceWidth);
 	return fitted?.sidebarCollapsed === false;
+}
+
+/**
+ * Map a requested workspace mode to one that works at the current viewport.
+ * At narrow widths there is no room for a side-by-side panel, so half/quarter
+ * requests become the full-width overlay instead of being refused.
+ */
+export function resolveWorkspaceModeForViewport(mode: WorkspaceMode, viewportWidth: number): WorkspaceMode {
+	if (viewportWidth > CHAT_ONLY_BP) return mode;
+	if (mode === "half" || mode === "quarter") return "full";
+	return mode;
 }

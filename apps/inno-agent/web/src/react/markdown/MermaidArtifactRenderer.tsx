@@ -31,6 +31,10 @@ const MIN_MERMAID_ZOOM = 0.25;
 const MAX_MERMAID_ZOOM = 4;
 const MERMAID_ZOOM_STEP = 0.25;
 
+function clampMermaidZoom(value: number): number {
+	return Math.min(MAX_MERMAID_ZOOM, Math.max(MIN_MERMAID_ZOOM, Math.round(value * 100) / 100));
+}
+
 function getMermaidAspectRatio(svg: string): number | null {
 	const viewBox = /\bviewBox\s*=\s*["']([^"']+)["']/i.exec(svg)?.[1]
 		?.trim()
@@ -136,6 +140,7 @@ function MermaidSurface({
 	errorLabel,
 	chartLabel,
 	onPanChange,
+	onZoomSet,
 }: {
 	view: MermaidView;
 	code: string;
@@ -150,24 +155,69 @@ function MermaidSurface({
 	errorLabel: string;
 	chartLabel: string;
 	onPanChange: (pan: MermaidPan) => void;
+	onZoomSet: (zoom: number) => void;
 }) {
 	const dragRef = useRef<{ pointerId: number; startX: number; startY: number; pan: MermaidPan } | null>(null);
+	// Multi-touch tracking: two active pointers switch from pan to pinch zoom.
+	const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
+	const pinchRef = useRef<{ startDist: number; startZoom: number; startPan: MermaidPan; midX: number; midY: number } | null>(null);
 	const [dragging, setDragging] = useState(false);
 	const canDrag = view === "chart" && Boolean(svg) && !loading && !error;
 
 	const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-		if (!canDrag || !event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
-		dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, pan };
-		setDragging(true);
+		if (!canDrag || (event.pointerType === "mouse" && event.button !== 0)) return;
 		event.currentTarget.setPointerCapture?.(event.pointerId);
+		activePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+		if (activePointersRef.current.size === 2) {
+			const [a, b] = [...activePointersRef.current.values()];
+			// Zoom toward the pinch midpoint (container-relative) so the chart
+			// stays anchored between the fingers instead of scaling from origin.
+			const rect = event.currentTarget.getBoundingClientRect();
+			pinchRef.current = {
+				startDist: Math.hypot(a.x - b.x, a.y - b.y),
+				startZoom: zoom,
+				startPan: pan,
+				midX: (a.x + b.x) / 2 - rect.left,
+				midY: (a.y + b.y) / 2 - rect.top,
+			};
+			// A second finger ends the pan gesture so the chart does not jump.
+			dragRef.current = null;
+			setDragging(false);
+		} else if (event.isPrimary) {
+			dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, pan };
+			setDragging(true);
+		}
 		event.preventDefault();
 	};
 	const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+		if (activePointersRef.current.has(event.pointerId)) {
+			activePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+		}
+		const pinch = pinchRef.current;
+		if (pinch && activePointersRef.current.size >= 2) {
+			const [a, b] = [...activePointersRef.current.values()];
+			const dist = Math.hypot(a.x - b.x, a.y - b.y);
+			if (pinch.startDist > 0 && dist > 0) {
+				// Keep the pinch midpoint stationary on screen: with the transform
+				// translate(pan) scale(zoom), a screen point maps to content as
+				// (point - pan) / zoom, so pan must scale by the zoom ratio.
+				const nextZoom = clampMermaidZoom(pinch.startZoom * (dist / pinch.startDist));
+				const ratio = nextZoom / pinch.startZoom;
+				onPanChange({
+					x: pinch.midX - (pinch.midX - pinch.startPan.x) * ratio,
+					y: pinch.midY - (pinch.midY - pinch.startPan.y) * ratio,
+				});
+				onZoomSet(nextZoom);
+			}
+			return;
+		}
 		const drag = dragRef.current;
 		if (!drag || drag.pointerId !== event.pointerId) return;
 		onPanChange({ x: drag.pan.x + event.clientX - drag.startX, y: drag.pan.y + event.clientY - drag.startY });
 	};
 	const stopDragging = (event: ReactPointerEvent<HTMLDivElement>) => {
+		activePointersRef.current.delete(event.pointerId);
+		if (activePointersRef.current.size < 2) pinchRef.current = null;
 		if (dragRef.current?.pointerId !== event.pointerId) return;
 		dragRef.current = null;
 		setDragging(false);
@@ -316,7 +366,7 @@ export function MermaidArtifactRenderer({ code, isIncomplete }: CustomRendererPr
 			moreOpen={moreOpen}
 			moreId={id}
 			onViewChange={setView}
-			onZoomChange={(delta) => setZoom((value) => Math.min(MAX_MERMAID_ZOOM, Math.max(MIN_MERMAID_ZOOM, Math.round((value + delta) * 100) / 100)))}
+			onZoomChange={(delta) => setZoom((value) => clampMermaidZoom(value + delta))}
 			onReset={handleReset}
 			onCopy={() => void handleCopy()}
 			onDownload={handleDownload}
@@ -349,6 +399,7 @@ export function MermaidArtifactRenderer({ code, isIncomplete }: CustomRendererPr
 			errorLabel={t("markdown.mermaidRenderError", "图表暂时无法渲染，请切换到代码查看。")}
 			chartLabel={t("markdown.mermaidChart", "图表")}
 			onPanChange={setPan}
+			onZoomSet={setZoom}
 		/>
 	);
 

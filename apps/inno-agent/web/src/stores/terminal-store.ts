@@ -44,6 +44,27 @@ class TerminalStoreImpl extends EventEmitter<TerminalStoreEvents> {
 		this.emit("change", undefined);
 	}
 
+	/**
+	 * Reconnect when a backgrounded page returns to the foreground. Mobile
+	 * browsers kill WebSockets while suspended and the close event may never
+	 * fire, so a socket that is not provably open is treated as dead and
+	 * re-established for the same session (queued runs ride along).
+	 */
+	handleAppResume(): void {
+		if (!this.isOpen || !this.innoSessionId) return;
+		if (this.status === "connecting") return;
+		if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
+		if (this.ws) {
+			// Stale socket (killed while suspended without a close event): drop it
+			// first so connect() does not mistake this for a healthy session and
+			// short-circuit on the "already connected" guard.
+			try { this.ws.close(); } catch { /* ignore */ }
+			this.ws = null;
+			if (this.status === "connected" || this.status === "running") this.status = "disconnected";
+		}
+		void this.connect(this.innoSessionId, this.workspaceId ?? undefined);
+	}
+
 	async connect(innoSessionId: string, workspaceId?: string, cols = 100, rows = 24): Promise<void> {
 		// If already connected to same session, no-op.
 		if (this.innoSessionId === innoSessionId && this.status === "connected" && this.ws) return;

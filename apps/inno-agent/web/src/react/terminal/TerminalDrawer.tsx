@@ -10,6 +10,24 @@ import { useStoreSnapshot } from "../hooks.js";
 
 const TerminalView = lazy(() => import("./TerminalView.js").then((module) => ({ default: module.TerminalView })));
 
+/**
+ * Touch accessory keys. Soft keyboards have no Esc/Tab/arrows/Ctrl, so coarse
+ * pointers get a key bar (display gated by pointer: coarse CSS). Values are
+ * the raw escape/control bytes sent straight to the PTY.
+ */
+const TOUCH_KEY_BAR: { label: string; data: string; title: string }[] = [
+	{ label: "Esc", data: "\x1b", title: "Escape" },
+	{ label: "Tab", data: "\t", title: "Tab" },
+	{ label: "↑", data: "\x1b[A", title: "Arrow up" },
+	{ label: "↓", data: "\x1b[B", title: "Arrow down" },
+	{ label: "←", data: "\x1b[D", title: "Arrow left" },
+	{ label: "→", data: "\x1b[C", title: "Arrow right" },
+	{ label: "⌃C", data: "\x03", title: "Ctrl+C" },
+	{ label: "⌃D", data: "\x04", title: "Ctrl+D" },
+	{ label: "⌃L", data: "\x0c", title: "Ctrl+L" },
+	{ label: "⌃Z", data: "\x1a", title: "Ctrl+Z" },
+];
+
 const STATUS_DOT: Record<TerminalStatus, string> = {
 	idle: "bg-[var(--inno-border-strong)]",
 	connecting: "bg-[var(--inno-warning)] animate-pulse",
@@ -121,12 +139,25 @@ export function TerminalDrawer() {
 							</div>
 						) : (
 							<div className="flex-1 min-h-0 p-2">
+								<div className="inno-terminal-keybar" role="toolbar" aria-label={t("terminal.title")}>
+									{TOUCH_KEY_BAR.map((key) => (
+										<button
+											key={key.label}
+											type="button"
+											className="inno-terminal-key"
+											title={key.title}
+											onClick={() => terminalStore.input(key.data)}
+										>
+											{key.label}
+										</button>
+									))}
+								</div>
 								<Suspense fallback={<div className="h-[200px] w-full" aria-busy="true" />}>
 									<TerminalView
 										key={`${sess.currentSessionId}:${ws.activeWorkspaceId ?? "default"}`}
 										innoSessionId={sess.currentSessionId}
 										workspaceId={ws.activeWorkspaceId ?? undefined}
-										className="h-[200px] w-full"
+										className="h-[200px] w-full max-md:h-[38dvh]"
 									/>
 								</Suspense>
 							</div>

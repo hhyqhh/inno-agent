@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SmartInputRule } from "../../../types/settings.js";
 import { SmartInputEngine, type EngineAttachmentItem, type Slot } from "./engine.js";
 import { slotChar, type KwRange } from "./rules.js";
@@ -70,6 +70,23 @@ function clipboardEvent(type: "copy" | "paste", values: Map<string, string>): Ev
 }
 
 describe("SmartInputEngine token editing", () => {
+	it("refocuses after bubble insertion without scrolling the page", () => {
+		const { engine, textarea, mirror, hitLayer } = makeEngine("", undefined, undefined, true, [makeRule()], undefined, undefined, true);
+		const focus = vi.spyOn(textarea, "focus");
+		try {
+			engine.attach();
+			engine.insertAgentCommandAsBubble("recall");
+			expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+			expect(focus.mock.calls.every(([options]) => options?.preventScroll === true)).toBe(true);
+		} finally {
+			engine.detach();
+			focus.mockRestore();
+			textarea.remove();
+			mirror.remove();
+			hitLayer.remove();
+		}
+	});
+
 	it("repairs a token whose closing syntax was deleted", () => {
 		const currentSlot = slot();
 		const broken = `阅读{${slotChar(currentSlot.id)}`;

@@ -958,6 +958,7 @@
 		"modelUnavailable": "No models available",
 		"manageModels": "Manage models",
 		"stopGeneration": "Stop generation",
+		"insertNewline": "New line",
 		"retryLast": "Retry last message",
 		"editAndResend": "Edit and resend",
 		"editLoaded": "Editing this question; sending will regenerate the conversation from this point",

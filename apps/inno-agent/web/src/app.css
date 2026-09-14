@@ -1210,6 +1210,7 @@ summary:focus-visible {
 /* Three-column layout */
 inno-app-shell {
 	height: 100vh;
+	height: var(--inno-viewport-height, 100dvh);
 	min-height: 0;
 	overflow: hidden;
 	display: block;
@@ -1220,6 +1221,7 @@ inno-app-shell {
 	--workspace-w: clamp(320px, var(--inno-workspace-width), 920px);
 	position: relative;
 	height: 100vh;
+	height: var(--inno-viewport-height, 100dvh);
 	min-height: 0;
 	overflow: hidden;
 	background: var(--inno-background);
@@ -1249,6 +1251,7 @@ inno-app-shell {
 	bottom: 0;
 	min-height: 0;
 	max-height: 100vh;
+	max-height: var(--inno-viewport-height, 100dvh);
 	min-width: 0;
 	z-index: 1;
 }
@@ -1613,6 +1616,141 @@ inno-app-shell {
 	color: var(--inno-text);
 }
 
+@media (max-width: 960px) {
+	/* Keep the chat full-width regardless of sidebar/workspace state so an
+	   open drawer never squeezes the conversation into a sliver. */
+	.app-layout > :nth-child(2) {
+		left: 0;
+		right: 0;
+	}
+
+	.app-layout--sidebar-expanded > :nth-child(1) {
+		width: min(300px, 85vw);
+		z-index: 30;
+		box-shadow: 0 8px 32px rgba(15, 23, 42, 0.18);
+	}
+
+	.app-layout-scrim {
+		position: absolute;
+		inset: 0;
+		z-index: 20;
+		background: rgba(15, 23, 42, 0.35);
+		backdrop-filter: blur(1px);
+	}
+}
+
+/*
+ * Phones get two mobile chrome fixes:
+ *
+ * 1. iOS Safari auto-zooms the page when an editable field under 16px is
+ *    focused, which reads as the screen "jumping" larger on every composer
+ *    tap. Floor all form fields at 16px at narrow widths (larger sizes are
+ *    untouched via max()).
+ * 2. The floating panel-expand buttons overlay message text with no
+ *    background and look like stray artifacts (their hover background never
+ *    applies on touch). Give them a solid chip, a bigger hit area, and
+ *    safe-area-aware placement.
+ */
+@media (max-width: 960px) {
+	.inno-feature-header,
+	.inno-workspace-panel-header {
+		padding-left: 64px;
+	}
+
+	input,
+	textarea,
+	select {
+		font-size: max(16px, 1em);
+	}
+
+	/* The shared toolbar also renders in browsers. Do not reserve macOS
+	   traffic-light space on phones, or the toggle covers the page title. */
+	.app-layout--browser {
+		--inno-window-chrome-height: 48px;
+		--inno-window-chrome-control-left: calc(8px + env(safe-area-inset-left, 0px));
+		--inno-window-chrome-control-size: 44px;
+		--inno-window-chrome-control-top: calc(2px + env(safe-area-inset-top, 0px));
+		--inno-window-chrome-title-inset: calc(64px + env(safe-area-inset-left, 0px));
+	}
+
+	.app-layout--browser .inno-window-chrome-button {
+		background: var(--inno-surface);
+		border: 1px solid var(--inno-border);
+		box-shadow: var(--inno-shadow-soft);
+		color: var(--inno-text-muted);
+	}
+
+	.app-layout--browser .inno-window-chrome-workspace-button {
+		top: var(--inno-window-chrome-control-top);
+		right: calc(8px + env(safe-area-inset-right, 0px));
+	}
+
+	.app-layout--browser .inno-sidebar-header,
+	.app-layout--browser .inno-feature-header,
+	.app-layout--browser .inno-conversation-header,
+	.app-layout--browser .inno-workspace-panel-header {
+		min-height: calc(48px + env(safe-area-inset-top, 0px));
+		padding-top: env(safe-area-inset-top, 0px);
+		padding-bottom: 0;
+		padding-left: var(--inno-window-chrome-title-inset);
+	}
+
+	/* Component display rules override Tailwind's layered hidden utility. */
+	.inno-workspace-header-button[aria-pressed] {
+		display: none;
+	}
+
+	/* Navigation remains an overlay even if the full workspace is open. */
+	.app-layout--browser.app-layout--workspace-full > .workspace-panel {
+		left: 0;
+	}
+
+	/* Three subrow pills (workspace / permission / model) can exceed a phone's
+	   width — let the row scroll horizontally instead of overflowing. */
+	.inno-composer-subrow {
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	/* Pills must not squash their labels to fit; the row scrolls instead. */
+	.inno-composer-subrow > * {
+		flex-shrink: 0;
+	}
+
+	.inno-composer-subrow::-webkit-scrollbar {
+		display: none;
+	}
+}
+
+/* Keep conversation controls in two legible rows instead of letting the
+   non-shrinking model picker paint over permissions and attachments. */
+@media (max-width: 640px) {
+	.inno-composer--conversation .inno-composer-toolbar {
+		flex-wrap: wrap;
+	}
+
+	.inno-composer--conversation .inno-composer-toolbar > div {
+		width: 100%;
+		justify-content: space-between;
+		gap: 4px;
+	}
+}
+
+/* In phone landscape, the vertical navigation otherwise consumes almost
+   all the drawer height, leaving session cards under sticky headers. */
+@media (max-width: 960px) and (max-height: 500px) {
+	.inno-sidebar-scope > nav {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 2px;
+		padding-block: 4px;
+	}
+
+	.inno-sidebar-scope > nav > * {
+		margin-block: 0;
+	}
+}
+
 /* Disable transitions while the user is dragging the resize handle */
 .workspace-resizing .app-layout > :nth-child(2),
 .workspace-resizing .app-layout > :nth-child(3) {
@@ -1642,7 +1780,7 @@ inno-app-shell {
 .inno-conversation-composer-layer {
 	position: absolute;
 	inset-inline: 0;
-	bottom: 12px;
+	bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 	z-index: 10;
 	pointer-events: none;
 }
@@ -1935,8 +2073,19 @@ inno-workspace-panel textarea {
 	height: 100%;
 }
 
-/* docx: docx-preview lays out fixed-width A4 pages. Let the wrapper shrink to
-   the panel and scale each page down proportionally on narrow previews. */
+/* Reflow DOCX pages to the panel width. On narrow panels, also reduce the
+   original print margins; retaining e.g. 120px on each side leaves only a
+   few characters of usable text on a phone. */
+.docx-host {
+	container-type: inline-size;
+}
+
+@container (max-width: 640px) {
+	.docx-host .docx-wrapper > section.docx {
+		padding-inline: 24px !important;
+	}
+}
+
 .docx-host .docx-wrapper {
 	width: 100%;
 	max-width: 100%;
@@ -2511,11 +2660,51 @@ inno-workspace-panel textarea {
 
 	.inno-message-actions {
 		min-height: 32px;
+		/* No hover on touch: keep the actions visible instead of relying on
+		   the first-tap-fires-hover quirk. */
+		opacity: 1;
+		transform: none;
+		transition-delay: 0s;
 	}
 
 	.inno-message-action {
 		width: 32px;
 		height: 32px;
+	}
+}
+
+/* Touch accessory key bar for the Practice Lab terminal: soft keyboards lack
+   Esc/Tab/arrows/Ctrl, so coarse pointers get explicit keys. */
+.inno-terminal-keybar {
+	display: none;
+}
+
+@media (pointer: coarse) {
+	.inno-terminal-keybar {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		overflow-x: auto;
+		padding-bottom: 6px;
+	}
+
+	.inno-terminal-key {
+		flex: 0 0 auto;
+		min-width: 36px;
+		height: 32px;
+		padding: 0 8px;
+		border: 1px solid var(--inno-border);
+		border-radius: 6px;
+		background: var(--inno-surface);
+		color: var(--inno-text-muted);
+		font-size: 13px;
+		font-family: inherit;
+		touch-action: manipulation;
+	}
+
+	.inno-terminal-key:active {
+		background: var(--inno-surface-muted);
+		color: var(--inno-text);
 	}
 }
 
@@ -4263,7 +4452,19 @@ button.inno-smart-ref-chip:hover {
 	--inno-smart-font-size: 14px;
 	--inno-smart-line-height: 20px;
 }
+/* Keep the editable source, painted mirror and measurement probes on the
+   same mobile metrics. A generic textarea rule is not enough: the active
+   smart-input selector below has higher specificity and used to restore
+   14px, triggering focus zoom on iOS. Keep pinch-to-zoom available. */
+@media (max-width: 960px), (pointer: coarse) {
+	.inno-smart-wrap {
+		--inno-smart-font-size: 16px;
+		--inno-smart-line-height: 24px;
+	}
+}
 .inno-smart-wrap .inno-composer-textarea {
+	font-size: var(--inno-smart-font-size);
+	line-height: var(--inno-smart-line-height);
 	position: relative;
 	z-index: 2;
 	background: transparent;
@@ -4275,8 +4476,6 @@ button.inno-smart-ref-chip:hover {
 .inno-smart-wrap.is-active textarea.inno-composer-textarea {
 	color: transparent;
 	caret-color: var(--inno-accent);
-	font-size: var(--inno-smart-font-size);
-	line-height: var(--inno-smart-line-height);
 }
 /* The textarea is only the editable source layer. Let the mirror paint the
    selection, otherwise the browser highlights hidden token markers instead of
@@ -5366,5 +5565,17 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 	.inno-smart-set-new-hint {
 		order: 3;
 		flex-basis: 100%;
+	}
+}
+
+/* Soft keyboards have no Shift+Enter; the composer's newline button only
+   makes sense on touch devices. */
+.inno-composer-newline {
+	display: none;
+}
+
+@media (pointer: coarse) {
+	.inno-composer-newline {
+		display: inline-flex;
 	}
 }

@@ -227,7 +227,21 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 	const { t } = useTranslation();
 	const treeContainerRef = useRef<HTMLDivElement>(null);
 	const [treeHeight, setTreeHeight] = useState(400);
-	const [sidebarOpen, setSidebarOpen] = useState(true);
+	const [treeWidth, setTreeWidth] = useState(240);
+	const [sidebarOpen, setSidebarOpen] = useState(
+		() => typeof window === "undefined" || !window.matchMedia("(max-width: 767px)").matches,
+	);
+
+	// Phones get the file tree as an overlay (below) — keep it closed when the
+	// viewport crosses into narrow so it never squeezes the editor column.
+	useEffect(() => {
+		const mq = window.matchMedia("(max-width: 767px)");
+		const onChange = (e: MediaQueryListEvent) => {
+			if (e.matches) setSidebarOpen(false);
+		};
+		mq.addEventListener("change", onChange);
+		return () => mq.removeEventListener("change", onChange);
+	}, []);
 
 	const state = useStoreSnapshot(skillsStore, () => ({
 		skillTree: skillsStore.skillTree,
@@ -238,7 +252,10 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 		const el = treeContainerRef.current;
 		if (!el) return;
 		const ro = new ResizeObserver(([entry]) => {
-			if (entry) setTreeHeight(Math.max(1, Math.floor(entry.contentRect.height)));
+			if (entry) {
+				setTreeHeight(Math.max(1, Math.floor(entry.contentRect.height)));
+				setTreeWidth(Math.max(1, Math.floor(entry.contentRect.width)));
+			}
 		});
 		ro.observe(el);
 		return () => ro.disconnect();
@@ -262,9 +279,9 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 	}, [state.skillTree]);
 
 	return (
-		<div className={`grid h-full min-h-0 gap-3 transition-[grid-template-columns] duration-200 ${sidebarOpen ? "grid-cols-[240px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
-			{/* File tree sidebar */}
-			<aside className={`flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] transition-opacity duration-200 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+		<div className={`relative grid h-full min-h-0 gap-3 transition-[grid-template-columns] duration-200 max-md:grid-cols-[minmax(0,1fr)] ${sidebarOpen ? "grid-cols-[240px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
+			{/* File tree sidebar — absolute overlay on phones */}
+			<aside className={`flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] transition-opacity duration-200 max-md:absolute max-md:inset-3 max-md:z-20 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0 max-md:hidden"}`}>
 				{/* Skill header */}
 				<div className="flex items-center gap-2 border-b border-[var(--inno-border)] px-2 py-2">
 					<button className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onBack}>
@@ -306,7 +323,7 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 					) : (
 						<Tree<ArboristNode>
 							data={arboristData}
-							width={240}
+							width={treeWidth}
 							height={treeHeight}
 							dndManager={dndManager}
 							indent={16}
@@ -351,7 +368,7 @@ function SkillCard({ skill, category, onClick }: { skill: SkillInfo; category: s
 	const tone = tileToneFor(category);
 	return (
 		<button
-			className="flex items-center gap-3 rounded-[14px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-3.5 text-left transition-shadow hover:shadow-[var(--inno-shadow-soft)]"
+			className="flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[14px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-3.5 text-left transition-shadow hover:shadow-[var(--inno-shadow-soft)]"
 			onClick={onClick}
 		>
 			<span
@@ -475,8 +492,8 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 							</button>
 						))}
 					</div>
-					<div className="flex items-center gap-2">
-						<div className="flex w-[220px] items-center gap-2 rounded-[18px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-3.5 py-[7px]">
+					<div className="flex min-w-0 items-center gap-2 max-md:w-full">
+						<div className="flex min-w-0 w-[220px] items-center gap-2 rounded-[18px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-3.5 py-[7px] max-md:flex-1">
 							<Search size={15} className="shrink-0 text-[var(--inno-text-subtle)]" />
 							<input
 								type="text"
@@ -496,7 +513,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 							) : null}
 						</div>
 						<button
-							className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+							className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
 							title={isLibraryTab ? t("skills.reload") : t("preview.refresh", "Refresh")}
 							onClick={() => void (isLibraryTab ? skillsStore.loadLibrary(true) : skillsStore.reload())}
 						>
@@ -504,7 +521,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 						</button>
 						<input ref={uploadRef} type="file" className="hidden" accept=".zip,application/zip,.md,text/markdown,text/plain" onChange={handleUpload} />
 						<button
-							className="flex h-8 items-center gap-1.5 rounded-[10px] inno-primary-button px-3.5 text-[13px] text-white disabled:opacity-50"
+							className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] inno-primary-button px-3.5 text-[13px] text-white disabled:opacity-50"
 							disabled={state.isUploading}
 							title={state.isUploading ? t("skills.uploading") : t("skills.upload")}
 							onClick={() => uploadRef.current?.click()}
@@ -584,7 +601,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 								</span>
 								<span className="text-[12.5px] text-[var(--inno-text-subtle)]">· {items.length}</span>
 							</div>
-							<div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
+							<div className="grid min-w-0 grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
 								{isLibraryTab
 									? (items as SkillLibraryItem[]).map((item) => {
 											const isImporting = state.importing.has(item.name);
@@ -592,7 +609,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 											return (
 												<div
 													key={item.name}
-													className="flex items-center gap-3 rounded-[14px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-3.5"
+													className="flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[14px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-3.5"
 												>
 													<span
 														className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px]"

@@ -33,8 +33,8 @@ import {
 	Moon,
 	Languages,
 } from "lucide-react";
-import { appStore } from "../stores/app-store.js";
-import { canOpenWorkspaceBesideSidebar, WORKSPACE_DEFAULT_WIDTH } from "../stores/app-layout.js";
+import { appStore, type AppPage } from "../stores/app-store.js";
+import { CHAT_ONLY_BP, canOpenWorkspaceBesideSidebar, WORKSPACE_DEFAULT_WIDTH } from "../stores/app-layout.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
@@ -48,6 +48,7 @@ import type { SessionChannel, SessionMeta } from "../api/sessions.js";
 import { useStoreSnapshot, useTitleMarquee } from "./hooks.js";
 import { Spinner } from "./ui/Spinner.js";
 import { ContextMenu, type ContextMenuItem } from "./ui/ContextMenu.js";
+import { getLongPressHandlers } from "./ui/long-press.js";
 
 interface SessionSidebarProps {
 	collapsed: boolean;
@@ -487,7 +488,7 @@ function SessionCard({
 	];
 	return (
 		<div
-			className={`group/card relative mb-1 w-full cursor-pointer rounded-lg border px-2.5 py-2 text-left transition-all duration-150 ${
+			className={`group/card relative mb-1 w-full cursor-pointer select-none rounded-lg border px-2.5 py-2 text-left transition-all duration-150 ${
 				active
 					? "border-[var(--inno-border)] bg-[var(--inno-surface-muted)] shadow-sm"
 					: "border-transparent hover:border-[var(--inno-border)] hover:bg-[var(--inno-surface)]"
@@ -507,6 +508,7 @@ function SessionCard({
 				e.preventDefault();
 				setMenu({ x: e.clientX, y: e.clientY });
 			}}
+			{...getLongPressHandlers((x, y) => setMenu({ x, y }))}
 		>
 			<SessionTitleRow
 				session={session}
@@ -882,7 +884,19 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 			appStore.setPage("chat");
 			appStore.setRightPanelTab("preview");
 			appStore.setWorkspaceMode("collapsed");
+			if (typeof window !== "undefined" && window.matchMedia(`(max-width: ${CHAT_ONLY_BP}px)`).matches) {
+				appStore.setSidebarCollapsed(true);
+			}
 		})();
+	}, []);
+
+	// Page navigation at narrow widths: the sidebar is an overlay drawer there,
+	// so dismiss it once the destination page is shown.
+	const navigateTo = useCallback((page: AppPage) => {
+		appStore.setPage(page);
+		if (typeof window !== "undefined" && window.matchMedia(`(max-width: ${CHAT_ONLY_BP}px)`).matches) {
+			appStore.setSidebarCollapsed(true);
+		}
 	}, []);
 
 	const togglePinned = useCallback((id: string) => {
@@ -914,6 +928,12 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 		appStore.setPage("chat");
 		sessionsStore.beginNewSessionIn(group.id);
 		void workspaceStore.setActiveWorkspace(group.id);
+		// At narrow widths the composer for the fresh chat matters more than a
+		// file preview; leave the workspace panel closed (chat-first).
+		if (typeof window !== "undefined" && window.matchMedia(`(max-width: ${CHAT_ONLY_BP}px)`).matches) {
+			appStore.setSidebarCollapsed(true);
+			return;
+		}
 		appStore.setRightPanelTab("preview");
 		appStore.setWorkspaceWidth(300);
 		appStore.setWorkspaceMode("quarter");
@@ -922,6 +942,14 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 	// Open a session → preview its workspace files (quarter, tree only).
 	const openSession = useCallback((session: SessionMeta) => {
 		appStore.setPage("chat");
+		// Drawer navigation at narrow widths: close the drawer and show the
+		// conversation. The workspace preview stays closed — at this width it
+		// only exists as an explicit full-screen overlay.
+		if (typeof window !== "undefined" && window.matchMedia(`(max-width: ${CHAT_ONLY_BP}px)`).matches) {
+			appStore.setSidebarCollapsed(true);
+			void sessionsStore.openSession(session.id);
+			return;
+		}
 		const workspaceWasCollapsed = appStore.workspaceMode === "collapsed";
 		// At the narrowest split layout, opening the preview would make the
 		// layout hide the session sidebar to reclaim its width. Keep both the
@@ -1091,25 +1119,25 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 					icon={<BookOpen size={16} />}
 					label={t("nav.notebook")}
 					active={page === "notebook"}
-					onClick={() => appStore.setPage("notebook")}
+					onClick={() => navigateTo("notebook")}
 				/>
 				<NavItem
 					icon={<Puzzle size={16} />}
 					label={t("nav.skills")}
 					active={page === "skills"}
-					onClick={() => appStore.setPage("skills")}
+					onClick={() => navigateTo("skills")}
 				/>
 				<NavItem
 					icon={<UserRound size={16} />}
 					label={t("nav.learner")}
 					active={page === "learner"}
-					onClick={() => appStore.setPage("learner")}
+					onClick={() => navigateTo("learner")}
 				/>
 				<NavItem
 					icon={<CalendarClock size={16} />}
 					label={t("nav.jobs")}
 					active={page === "jobs"}
-					onClick={() => appStore.setPage("jobs")}
+					onClick={() => navigateTo("jobs")}
 				/>
 			</nav>
 

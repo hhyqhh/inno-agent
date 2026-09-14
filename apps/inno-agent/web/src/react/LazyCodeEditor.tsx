@@ -76,6 +76,9 @@ export function LazyCodeEditor({ value, lang, readOnly = false, onChange }: Lazy
 		lineNumbers: true,
 		highlightActiveLine: !readOnly,
 	}), [readOnly]);
+	// 12px strains touch users (and iOS auto-zooms inputs under 16px); coarse
+	// pointers get a larger editing font.
+	const coarsePointer = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
 
 	useEffect(() => {
 		let cancelled = false;
@@ -98,7 +101,7 @@ export function LazyCodeEditor({ value, lang, readOnly = false, onChange }: Lazy
 					extensions={extensions}
 					onChange={(next) => onChange?.(next)}
 					basicSetup={basicSetup}
-					style={{ height: "100%", fontSize: "12px" }}
+					style={{ height: "100%", fontSize: coarsePointer ? "14px" : "12px" }}
 				/>
 			</Suspense>
 		</div>

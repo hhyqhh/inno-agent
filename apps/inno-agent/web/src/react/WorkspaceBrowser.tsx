@@ -17,6 +17,7 @@ import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { ContextMenu, type ContextMenuItem } from "./ui/ContextMenu.js";
+import { getLongPressHandlers } from "./ui/long-press.js";
 import { FileName } from "./FileName.js";
 import { buildDragFilePanel, hiddenDragImage } from "./chat/smart-input/drag-utils.js";
 import { DEFAULT_UPLOAD_MAX_LABEL, getOversizedFiles } from "../utils/upload-limits.js";
@@ -849,6 +850,15 @@ function Node({ node, style, dragHandle, onPreviewFile }: NodeRendererProps<Arbo
 				const ev = new CustomEvent("workspace-ctx", { detail: { x: e.clientX, y: e.clientY, node: node.data }, bubbles: true });
 				e.currentTarget.dispatchEvent(ev);
 			}}
+			{...getLongPressHandlers((x, y) => {
+				if (!isDir && !selected) {
+					if (multiSelect.enabled) multiSelect.addFile(node.data.path);
+					else node.select();
+				}
+				// The workspace-ctx listener lives on document, so the long-press
+				// path can dispatch directly instead of bubbling from the row.
+				document.dispatchEvent(new CustomEvent("workspace-ctx", { detail: { x, y, node: node.data } }));
+			})}
 		>
 			{multiSelect.enabled && !isDir ? (
 				<span
@@ -1032,7 +1042,9 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 	const [treeHeight, setTreeHeight] = useState(400);
 	const [treeWidth, setTreeWidth] = useState(260);
 	const [panelWidth, setPanelWidth] = useState(600);
-	const [sidebarOpen, setSidebarOpen] = useState(true);
+	const [sidebarOpen, setSidebarOpen] = useState(
+		() => typeof window === "undefined" || !window.matchMedia("(max-width: 767px)").matches,
+	);
 	const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
 	const [deleteConfirm, setDeleteConfirm] = useState<{ ids: string[] } | null>(null);
 	const [isDragOver, setIsDragOver] = useState(false);
@@ -1074,6 +1086,17 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 		ro.observe(el);
 		setPanelWidth(Math.floor(el.getBoundingClientRect().width));
 		return () => ro.disconnect();
+	}, []);
+
+	// On narrow screens the tree becomes an overlay; collapse it when crossing
+	// into the narrow breakpoint so it never squeezes the content pane.
+	useEffect(() => {
+		const narrowScreen = window.matchMedia("(max-width: 767px)");
+		const closeSidebarOnNarrowScreen = (event: MediaQueryListEvent) => {
+			if (event.matches) setSidebarOpen(false);
+		};
+		narrowScreen.addEventListener("change", closeSidebarOnNarrowScreen);
+		return () => narrowScreen.removeEventListener("change", closeSidebarOnNarrowScreen);
 	}, []);
 
 	// Measure tree container size for react-window (required by react-arborist)
@@ -1387,10 +1410,10 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 	const busy = state.isMutating || state.isLoadingTree;
 
 	return (
-		<div ref={rootRef} className={`inno-workspace-browser grid h-full min-h-0 gap-3 bg-transparent p-3 transition-[grid-template-columns] duration-200 ${showContent ? "inno-workspace-browser--split" : "inno-workspace-browser--single-pane"} ${showContent ? (sidebarOpen ? "grid-cols-[260px_minmax(150px,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]") : "grid-cols-[minmax(0,1fr)]"}`}>
-			{/* --- Tree pane --- */}
+		<div ref={rootRef} className={`inno-workspace-browser relative grid h-full min-h-0 gap-3 bg-transparent p-3 transition-[grid-template-columns] duration-200 max-md:grid-cols-[minmax(0,1fr)] ${showContent ? "inno-workspace-browser--split" : "inno-workspace-browser--single-pane"} ${showContent ? (sidebarOpen ? "grid-cols-[260px_minmax(150px,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]") : "grid-cols-[minmax(0,1fr)]"}`}>
+			{/* --- Tree pane — absolute overlay on phones --- */}
 			<aside
-				className={`inno-workspace-card inno-workspace-pane inno-workspace-tree-pane relative flex min-h-0 flex-col overflow-hidden rounded-xl transition-opacity duration-200 ${isDragOver ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+				className={`inno-workspace-card inno-workspace-pane inno-workspace-tree-pane relative flex min-h-0 flex-col overflow-hidden rounded-xl transition-opacity duration-200 max-md:absolute max-md:inset-3 max-md:z-20 max-md:bg-[var(--inno-surface)] ${isDragOver ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)]" : ""} ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0 max-md:hidden"}`}
 				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
 				onDropCapture={handleDrop}
@@ -1523,6 +1546,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager }: { onPreviewFile?
 						e.preventDefault();
 						setCtxMenu({ x: e.clientX, y: e.clientY, nodePath: "", nodeName: "", isDir: true, isRoot: true });
 					}}
+					{...getLongPressHandlers((x, y) => setCtxMenu({ x, y, nodePath: "", nodeName: "", isDir: true, isRoot: true }))}
 				>
 					{state.isLoadingTree && !arboristData.length ? (
 						<div className="p-3 text-xs text-[var(--inno-text-muted)]">{t("preview.loading", "Loading...")}</div>

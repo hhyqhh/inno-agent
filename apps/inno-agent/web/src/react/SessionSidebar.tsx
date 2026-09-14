@@ -21,6 +21,7 @@ import {
 	ArrowUpDown,
 	Check,
 	GripVertical,
+	PanelLeftClose,
 	ChevronUp,
 	ChevronDown,
 	SquarePen,
@@ -1099,6 +1100,17 @@ export function SessionSidebar({ collapsed }: SessionSidebarProps) {
 							onClick={() => void sessionsStore.load()}
 						>
 							<RefreshCw size={14} />
+						</button>
+						{/* Collapse lives inside the sidebar header (reference-app
+							pattern); the floating chrome toggle only reappears as the
+							expand button once the rail is hidden. */}
+						<button
+							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text-muted)]"
+							title={t("sidebar.collapse")}
+							aria-label={t("sidebar.collapse")}
+							onClick={() => appStore.setSidebarCollapsed(true)}
+						>
+							<PanelLeftClose size={14} />
 						</button>
 					</div>
 				</div>

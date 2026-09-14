@@ -1414,6 +1414,27 @@ inno-app-shell {
 	color: var(--inno-text);
 }
 
+/* Browsers have no traffic lights beside the toggle, which only renders as
+   the collapsed-state expand button: pull it to the window edge and give it
+   a card chip at every width — the <=960px block merely restyles it for
+   touch. */
+.app-layout--browser {
+	--inno-window-chrome-control-left: 12px;
+	--inno-window-chrome-title-inset: 54px;
+}
+
+.app-layout--browser .inno-window-chrome-button {
+	background: var(--inno-surface);
+	border: 1px solid var(--inno-border);
+	box-shadow: var(--inno-shadow-soft);
+	color: var(--inno-text-muted);
+}
+
+.app-layout--browser .inno-window-chrome-button:hover {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+
 .inno-window-chrome-workspace-button {
 	position: absolute;
 	/* Match the workspace-header action buttons by aligning the shared 30px
@@ -1469,7 +1490,9 @@ inno-app-shell {
 
 /* Keep the sidebar brand row below the traffic lights. The conversation and
    workbench headers intentionally occupy the same top row as the compact
-   window chrome, matching the reference layout's title hierarchy. */
+   window chrome, matching the reference layout's title hierarchy. Browsers
+   need no such offset — their only chrome control is the collapsed-state
+   expand button, which never overlaps the expanded header. */
 .app-layout--desktop .inno-sidebar-header {
 	padding-top: var(--inno-window-chrome-height);
 	-webkit-app-region: drag;
@@ -1498,9 +1521,10 @@ inno-app-shell {
 }
 
 /* Feature pages also start at the window edge when the session rail is
-   collapsed. Keep their titles clear of macOS traffic lights just like the
-   conversation and workspace headers. */
-.app-layout--desktop.app-layout--sidebar-collapsed .inno-feature-header {
+   collapsed. Keep their titles clear of macOS traffic lights — and of the
+   chrome toggle, which also renders in browsers — just like the conversation
+   and workspace headers. */
+.app-layout--sidebar-collapsed .inno-feature-header {
 	padding-left: var(--inno-window-chrome-title-inset);
 }
 
@@ -1673,19 +1697,11 @@ inno-app-shell {
 		--inno-window-chrome-title-inset: calc(64px + env(safe-area-inset-left, 0px));
 	}
 
-	.app-layout--browser .inno-window-chrome-button {
-		background: var(--inno-surface);
-		border: 1px solid var(--inno-border);
-		box-shadow: var(--inno-shadow-soft);
-		color: var(--inno-text-muted);
-	}
-
 	.app-layout--browser .inno-window-chrome-workspace-button {
 		top: var(--inno-window-chrome-control-top);
 		right: calc(8px + env(safe-area-inset-right, 0px));
 	}
 
-	.app-layout--browser .inno-sidebar-header,
 	.app-layout--browser .inno-feature-header,
 	.app-layout--browser .inno-conversation-header,
 	.app-layout--browser .inno-workspace-panel-header {
@@ -1693,6 +1709,14 @@ inno-app-shell {
 		padding-top: env(safe-area-inset-top, 0px);
 		padding-bottom: 0;
 		padding-left: var(--inno-window-chrome-title-inset);
+	}
+
+	/* The drawer header shares the safe-area top but needs no toggle inset —
+	   the chrome toggle only renders while the sidebar is collapsed. */
+	.app-layout--browser .inno-sidebar-header {
+		min-height: calc(48px + env(safe-area-inset-top, 0px));
+		padding-top: env(safe-area-inset-top, 0px);
+		padding-bottom: 0;
 	}
 
 	/* Component display rules override Tailwind's layered hidden utility. */

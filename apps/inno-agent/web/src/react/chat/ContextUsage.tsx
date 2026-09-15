@@ -11,15 +11,26 @@ export function formatContextTokens(value: number): string {
 	return String(Math.round(value));
 }
 
+function formatSummaryTokens(value: number): string {
+	if (value >= 1_000_000) return `${Math.round(value / 1_000_000)}M`;
+	if (value >= 1_000) return `${Math.round(value / 1_000)}k`;
+	return String(Math.round(value));
+}
+
+function formatSummaryPercent(value: number): string {
+	return `${Number(value.toFixed(1))}%`;
+}
+
 /** Mount with a session/model key so an old session's numbers can never flash. */
-export function ContextUsage({ sessionId, streaming, revision }: { sessionId: string; streaming: boolean; revision: string }) {
+export function ContextUsage({ sessionId, streaming, revision, modelKey, activating = false }: { sessionId: string; streaming: boolean; revision: string; modelKey?: string; activating?: boolean }) {
 	const { t } = useTranslation();
-	const { data, loading, failed } = useContextUsage(sessionId, streaming, revision);
+	const { data, loading, failed, detailsLoaded, refresh } = useContextUsage(sessionId, streaming, revision, modelKey, activating);
 	const [open, setOpen] = useState(false);
 	const [hint, setHint] = useState(false);
 	const trigger = useRef<HTMLButtonElement>(null);
 	const panel = useRef<HTMLDivElement>(null);
 	const closeButton = useRef<HTMLButtonElement>(null);
+	const skipNextFocusHint = useRef(false);
 	const id = useId();
 	const [position, setPosition] = useState({ left: 8, top: 8, maxHeight: 480, width: 336 });
 	const percent = data?.status === "ready" ? data.percent : null;
@@ -27,9 +38,33 @@ export function ContextUsage({ sessionId, streaming, revision }: { sessionId: st
 	const percentage = known ? `${percent.toFixed(1)}%` : "—";
 	const amount = data?.tokens != null && data.contextWindow != null
 		? `${formatContextTokens(data.tokens)} / ${formatContextTokens(data.contextWindow)}` : "—";
+	const summaryAmount = data?.tokens != null && data.contextWindow != null
+		? `${formatSummaryTokens(data.tokens)} / ${formatSummaryTokens(data.contextWindow)}` : "—";
 	const status = loading ? "loading" : failed ? "failed" : data?.status === "pending" ? "pending" : data?.status === "inactive" ? "inactive" : "unavailable";
-	const summary = known ? t("contextUsage.summary", { percent: percentage, amount }) : t(`contextUsage.${status}`);
-	const close = () => { setOpen(false); setHint(false); trigger.current?.focus({ preventScroll: true }); };
+	const summary = known ? t("contextUsage.summary", {
+		percent: formatSummaryPercent(percent),
+		remaining: formatSummaryPercent(Math.max(0, 100 - percent)),
+		amount: summaryAmount,
+	}) : t(`contextUsage.${status}`);
+	const close = () => {
+		setOpen(false);
+		setHint(false);
+		if (trigger.current) {
+			skipNextFocusHint.current = true;
+			trigger.current.focus({ preventScroll: true });
+		}
+	};
+	const handleClick = () => {
+		if (!known) return;
+		setHint(false);
+		if (!detailsLoaded) {
+			void refresh().then((latest) => {
+				if (latest?.status === "ready" && latest.sessionId === sessionId) setOpen(true);
+			});
+			return;
+		}
+		setOpen(!open);
+	};
 
 	useLayoutEffect(() => {
 		if (!open && !hint) return;
@@ -37,16 +72,19 @@ export function ContextUsage({ sessionId, streaming, revision }: { sessionId: st
 			if (!trigger.current) return;
 			const rect = trigger.current.getBoundingClientRect();
 			const view = window.visualViewport;
-			const left = view?.offsetLeft ?? 0;
-			const top = view?.offsetTop ?? 0;
-			const width = Math.min(open ? 336 : 380, (view?.width ?? window.innerWidth) - 16);
+			const viewportLeft = view?.offsetLeft ?? 0;
+			const viewportTop = view?.offsetTop ?? 0;
+			const viewportWidth = view?.width ?? window.innerWidth;
+			const width = Math.min(open ? 336 : known ? 240 : 180, viewportWidth - 16);
 			const maxHeight = Math.max(0, (view?.height ?? window.innerHeight) - 16);
 			const height = Math.min(panel.current?.offsetHeight || (open ? 380 : 40), maxHeight);
-			const maxTop = top + maxHeight + 8 - height;
+			const maxTop = viewportTop + maxHeight + 8 - height;
 			const above = rect.top - height - 10;
+			const maxLeft = viewportLeft + viewportWidth - width - 8;
+			const left = open ? rect.right - width : rect.left + (rect.width - width) / 2;
 			setPosition({
-				left: Math.max(left + 8, Math.min(rect.right - width, left + (view?.width ?? window.innerWidth) - width - 8)),
-				top: Math.max(top + 8, Math.min(above >= top + 8 ? above : rect.bottom + 10, maxTop)),
+				left: Math.max(viewportLeft + 8, Math.min(left, maxLeft)),
+				top: Math.max(viewportTop + 8, Math.min(above >= viewportTop + 8 ? above : rect.bottom + 10, maxTop)),
 				width, maxHeight,
 			});
 		};
@@ -64,7 +102,7 @@ export function ContextUsage({ sessionId, streaming, revision }: { sessionId: st
 			window.visualViewport?.removeEventListener("resize", update);
 			window.visualViewport?.removeEventListener("scroll", update);
 		};
-	}, [open, hint]);
+	}, [open, hint, known]);
 
 	useEffect(() => {
 		if (!open) return;
@@ -88,14 +126,19 @@ export function ContextUsage({ sessionId, streaming, revision }: { sessionId: st
 	const fill = known ? Math.max(0, Math.min(100, percent)) : 0;
 	return <>
 		<button ref={trigger} type="button" className="inno-context-trigger" aria-label={`${t("contextUsage.title")} · ${summary}`}
-			aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
-			onClick={() => { setOpen(!open); setHint(false); }} onMouseEnter={() => setHint(true)} onMouseLeave={() => setHint(false)}
-			onFocus={() => setHint(true)} onBlur={() => setHint(false)} onKeyDown={(event) => { if (event.key === "Escape") setHint(false); }}>
-			<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+			aria-haspopup={known ? "dialog" : undefined} aria-expanded={known ? open : undefined} aria-controls={open ? id : undefined}
+			onClick={handleClick} onMouseEnter={() => setHint(true)} onMouseLeave={() => setHint(false)}
+			onFocus={() => {
+				if (skipNextFocusHint.current) {
+					skipNextFocusHint.current = false;
+					return;
+				}
+				setHint(true);
+			}} onBlur={() => setHint(false)} onKeyDown={(event) => { if (event.key === "Escape") setHint(false); }}>
+			<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
 				<circle cx="12" cy="12" r="9" fill="none" stroke="var(--inno-border)" strokeWidth="2.5" />
 				<circle cx="12" cy="12" r="9" fill="none" stroke={fill >= 95 ? "#dc6464" : fill >= 80 ? "#d99a35" : "currentColor"}
 					strokeWidth="2.5" strokeLinecap="round" pathLength="100" strokeDasharray={`${fill} 100`} transform="rotate(-90 12 12)" opacity={fill ? 1 : 0} />
-				{!known && <circle cx="12" cy="12" r="1.5" fill="currentColor" />}
 			</svg>
 		</button>
 		{(open || hint) && createPortal(open ? <div ref={panel} id={id} role="dialog" aria-labelledby={`${id}-title`} className="inno-context-panel" style={position}>

@@ -54,6 +54,9 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	currentSessionId: string | null = null;
 	isLoading = false;
 	openingSessionId: string | null = null;
+	/** Incremented after the backend runtime finishes activating a session so
+	 * context-usage can make one definitive refresh after navigation. */
+	contextUsageRevision = 0;
 	channelFilter: SessionChannel | null = null;
 	searchQuery = "";
 	/** When true, ChatCenter shows the workspace chooser instead of opening a session. */
@@ -252,9 +255,19 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 			this._messageCache.set(id, session.messages);
 			chatStore.loadHistory(session.messages, id);
 
-			void activateSession(id).catch((err) => {
+			// The context-usage endpoint reads the active runtime, so let the
+			// activation finish before publishing the completed session view. This
+			// prevents the first usage request after a switch from being mistaken
+			// for a session with no usage.
+			try {
+				await withTimeout(activateSession(id), 15_000, "激活会话超时");
+				if (requestId === this._openRequestId && this.currentSessionId === id) {
+					this.contextUsageRevision += 1;
+					this.emit("change", undefined);
+				}
+			} catch (err) {
 				console.warn(`[sessions] failed to activate ${id}: ${err instanceof Error ? err.message : String(err)}`);
-			});
+			}
 
 			this._backgroundRunningSessions.delete(id);
 			if (chatStatus.stream && ["queued", "running"].includes(chatStatus.stream.status)) {

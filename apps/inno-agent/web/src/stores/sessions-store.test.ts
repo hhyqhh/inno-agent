@@ -95,6 +95,13 @@ describe("SessionsStore navigation", () => {
 		expect(window.history.replaceState).toHaveBeenCalled();
 	});
 
+	it("signals context usage after the session runtime is activated", async () => {
+		mocks.getSession.mockResolvedValue(session("active.jsonl"));
+		const store = new SessionsStoreImpl();
+		await store.openSession("active.jsonl", { historyMode: "none" });
+		expect(store.contextUsageRevision).toBe(1);
+	});
+
 	it("returns to the welcome page on a popstate URL without a session", () => {
 		const store = new SessionsStoreImpl();
 		store.currentSessionId = "a.jsonl";

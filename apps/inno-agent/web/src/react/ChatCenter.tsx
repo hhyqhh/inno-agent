@@ -248,6 +248,8 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	}));
 	const sessions = useStoreSnapshot(sessionsStore, () => ({
 		currentSessionId: sessionsStore.currentSessionId,
+		openingSessionId: sessionsStore.openingSessionId,
+		contextUsageRevision: sessionsStore.contextUsageRevision,
 		preselectedWorkspaceId: sessionsStore.preselectedWorkspaceId,
 		busyBlocker: sessionsStore.busyBlocker,
 		isWelcome: sessionsStore.isWelcomeView,
@@ -1387,8 +1389,10 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 				contextUsageControl={!isWelcome && sessions.currentSessionId ? <ContextUsage
 					key={`${sessions.currentSessionId}:${currentModel?.provider}:${currentModel?.id}`}
 					sessionId={sessions.currentSessionId}
+					modelKey={`${currentModel?.provider ?? ""}:${currentModel?.id ?? ""}`}
+					activating={sessions.openingSessionId === sessions.currentSessionId}
 					streaming={chat.isSending || chat.jobStreaming}
-					revision={`${chat.messages.length}:${chat.isLoadingHistory}`}
+					revision={`${chat.messages.length}:${chat.isLoadingHistory}:${sessions.contextUsageRevision}`}
 				/> : null}
 				permissionControl={<PermissionModeControl variant={isWelcome ? "pill" : "inline"} />}
 			workspaceControl={workspaceContext}

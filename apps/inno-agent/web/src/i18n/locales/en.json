@@ -2,7 +2,7 @@
 	"contextUsage": {
 		"title": "Context usage",
 		"close": "Close context usage",
-		"summary": "{{percent}} · {{amount}} context used",
+		"summary": "Context window:\n{{percent}} used ({{remaining}} left)\n{{amount}} tokens used",
 		"used": "Used {{amount}}",
 		"loading": "Loading usage…",
 		"failed": "Could not load usage",

@@ -17,6 +17,8 @@ export interface SessionMeta {
 	archived?: boolean;
 	/** True once a topic (manual or auto-generated) has been recorded server-side. */
 	hasTopic?: boolean;
+	/** True while an auto-generated preview is waiting for its richer summary. */
+	topicPendingUpgrade?: boolean;
 }
 
 export interface PendingQuestionData {

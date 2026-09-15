@@ -263,6 +263,13 @@ export class CheckInStore {
 			?.occurrences.find((occurrence) => occurrence.occurrenceId === occurrenceId);
 	}
 
+	/** Find a live occurrence by its stable id, including settled slots. */
+	getOccurrenceById(occurrenceId: string, now: Date = new Date()): CheckInOccurrence | undefined {
+		return this.getTodayPlan(now).jobs
+			.flatMap((job) => job.occurrences)
+			.find((occurrence) => occurrence.occurrenceId === occurrenceId);
+	}
+
 	/**
 	 * Persist the result for one planned slot and reconcile today's check-in.
 	 * A successful attempt is sticky: a later failed retry cannot undo a slot

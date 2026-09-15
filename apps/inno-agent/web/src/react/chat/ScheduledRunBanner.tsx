@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BellRing, Play } from "lucide-react";
 import { claimOccurrence, getPendingRuns, skipOccurrence, type PendingRun } from "../../api/checkins.js";
+import { ApiError } from "../../api/client.js";
 import { chatStore } from "../../stores/chat-store.js";
 import { sessionsStore } from "../../stores/sessions-store.js";
 import { findJobById, runJobInConversation } from "../jobs/runJobInConversation.js";
@@ -31,7 +32,10 @@ export function ScheduledRunBanner() {
 		let disposed = false;
 		const poll = async (): Promise<void> => {
 			try {
-				const next = await getPendingRuns();
+				// Keep a slot hidden while a user action is in flight (and after it
+				// succeeds), otherwise the 2s poll can re-add the same banner before
+				// the skip response arrives.
+				const next = (await getPendingRuns()).filter((run) => !handledRef.current.has(run.occurrenceId));
 				if (disposed) return;
 				// A run that vanished without our doing means the server settled
 				// it (auto-exec) — pull the new conversation into the sidebar.
@@ -102,11 +106,28 @@ export function ScheduledRunBanner() {
 	}
 
 	async function handleSkip(run: PendingRun): Promise<void> {
+		if (busyId) return;
 		handledRef.current.add(run.occurrenceId);
+		setBusyId(run.occurrenceId);
 		try {
 			await skipOccurrence(run.occurrenceId);
-		} finally {
 			setRuns((prev) => prev.filter((candidate) => candidate.occurrenceId !== run.occurrenceId));
+		} catch (error) {
+			// A 409 means the server has already taken the slot out of the
+			// pending queue (usually because auto-execution won the race), so it
+			// cannot produce this banner again. Other failures must remain
+			// retryable instead of silently allowing the server to execute it.
+			if (error instanceof ApiError && error.status === 409) {
+				setRuns((prev) => prev.filter((candidate) => candidate.occurrenceId !== run.occurrenceId));
+				void sessionsStore.refresh();
+			} else {
+				handledRef.current.delete(run.occurrenceId);
+				setRuns((prev) => prev.some((candidate) => candidate.occurrenceId === run.occurrenceId)
+					? prev
+					: [...prev, run]);
+			}
+		} finally {
+			setBusyId(null);
 		}
 	}
 

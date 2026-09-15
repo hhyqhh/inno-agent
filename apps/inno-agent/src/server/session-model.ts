@@ -46,6 +46,8 @@ export interface SessionTraceEvent {
 
 export type SessionChannel = "cli" | "web" | "feishu" | "qq" | "wechat" | "scheduler" | "unknown";
 
+export const TOPIC_UPGRADE_MESSAGE_THRESHOLD = 6;
+
 export interface SessionSummary {
 	id: string;
 	name: string;
@@ -58,6 +60,8 @@ export interface SessionSummary {
 	origin?: SessionChannel;
 	/** True once a topic (manual or auto-generated) has been recorded. */
 	hasTopic?: boolean;
+	/** True while an auto-generated preview is waiting for its richer summary. */
+	topicPendingUpgrade?: boolean;
 }
 
 export type SessionTopicMetadata = Record<string, { topic: string; updatedAt: string; generated?: boolean; upgraded?: boolean }>;

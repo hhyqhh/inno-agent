@@ -1,3 +1,4 @@
+import { appStore } from "../../stores/app-store.js";
 import { chatStore } from "../../stores/chat-store.js";
 import { jobsStore } from "../../stores/jobs-store.js";
 import { sessionsStore } from "../../stores/sessions-store.js";
@@ -46,6 +47,10 @@ export async function runJobInConversation(job: ScheduledJob, t: Translate, occu
 		await sessionsStore.createSessionWith(workspaceId ? { workspaceId } : { newWorkspace: { isTemp: true } });
 		const targetSessionId = sessionsStore.currentSessionId;
 		if (!targetSessionId) throw new Error(t("jobs.errors.sessionCreateFailed"));
+		// The jobs page is a separate app route. Selecting the new session is
+		// not enough to render its conversation, so return to ChatCenter before
+		// starting the stream.
+		appStore.setPage("chat");
 		// createSessionWith clears the chat but does not load an empty history,
 		// so bind the new session before starting the streaming job view.
 		chatStore.loadHistory([], targetSessionId);

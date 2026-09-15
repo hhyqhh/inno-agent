@@ -95,6 +95,35 @@ describe("SessionsStore navigation", () => {
 		expect(window.history.replaceState).toHaveBeenCalled();
 	});
 
+	it("signals context usage after the session runtime is activated", async () => {
+		mocks.getSession.mockResolvedValue(session("active.jsonl"));
+		const store = new SessionsStoreImpl();
+		await store.openSession("active.jsonl", { historyMode: "none" });
+		expect(store.contextUsageRevision).toBe(1);
+	});
+
+	it("keeps refreshing while a preview topic waits for its upgrade", async () => {
+		vi.useFakeTimers();
+		try {
+			const preview = { ...session("topic.jsonl"), hasTopic: true, topicPendingUpgrade: true };
+			mocks.listSessions
+				.mockResolvedValueOnce([preview])
+				.mockResolvedValueOnce([{ ...preview, topicPendingUpgrade: false }]);
+			const store = new SessionsStoreImpl();
+			const refreshing = store.refreshUntilTopic("topic.jsonl");
+
+			await Promise.resolve();
+			await Promise.resolve();
+			expect(mocks.listSessions).toHaveBeenCalledTimes(1);
+			await vi.advanceTimersByTimeAsync(2_000);
+			await refreshing;
+
+			expect(mocks.listSessions).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("returns to the welcome page on a popstate URL without a session", () => {
 		const store = new SessionsStoreImpl();
 		store.currentSessionId = "a.jsonl";

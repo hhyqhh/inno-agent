@@ -2,7 +2,7 @@
 	"contextUsage": {
 		"title": "上下文用量",
 		"close": "关闭上下文用量",
-		"summary": "{{percent}} · {{amount}} 上下文已使用",
+		"summary": "上下文窗口：\n{{percent}} 已使用（{{remaining}} 剩余）\n{{amount}} tokens 已使用",
 		"used": "已使用 {{amount}}",
 		"loading": "正在读取用量…",
 		"failed": "用量读取失败",

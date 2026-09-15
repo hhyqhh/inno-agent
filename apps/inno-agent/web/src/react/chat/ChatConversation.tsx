@@ -22,6 +22,15 @@ function traceContainsAssistantText(message: ChatMessage): boolean {
 	)));
 }
 
+function firstMessageTitle(messages: ChatMessage[]): string | undefined {
+	const content = messages.find((message) => message.role === "user")?.content
+		.replace(/^\[用户本轮上传了 \d+ 张图片，已保存到工作区：[\s\S]*?\]\s*/, "")
+		.replace(/\s+/g, " ")
+		.trim();
+	if (!content) return undefined;
+	return content.length > 28 ? `${content.slice(0, 28)}...` : content;
+}
+
 interface ChatConversationProps {
 	chat: {
 		messages: ChatMessage[];
@@ -30,6 +39,8 @@ interface ChatConversationProps {
 		/** A manual job run is streaming into this conversation — the empty
 		 *  session placeholder must not cover the live job timeline. */
 		jobStreaming: boolean;
+		/** Whether the manual job stream belongs to this conversation. */
+		jobStreamInCurrentSession: boolean;
 		activeTools: ChatToolRecord[];
 		completedTools: ChatToolRecord[];
 		pendingQuestion: PendingQuestion | null;
@@ -62,6 +73,8 @@ interface ChatConversationProps {
 	wsError: string;
 	/** Session topic shown in the conversation header. */
 	sessionTitle?: string;
+	/** True once the server has recorded a deliberate session topic. */
+	sessionHasTopic?: boolean;
 	/** Bound workspace name rendered as a chip next to the title. */
 	workspaceName?: string | null;
 	/** Reserve room for the desktop chrome's workspace button when collapsed. */
@@ -95,6 +108,7 @@ export function ChatConversation({
 	onRetry,
 	wsError,
 	sessionTitle,
+	sessionHasTopic = false,
 	workspaceName,
 	workspaceCollapsed = false,
 	sidebarCollapsed = false,
@@ -111,6 +125,10 @@ export function ChatConversation({
 		return () => window.clearTimeout(timer);
 	}, [chat.isLoadingHistory, chat.messages.length]);
 	const conversationTurns = useMemo(() => buildConversationTurns(chat.messages), [chat.messages]);
+	const initialTitle = useMemo(() => firstMessageTitle(chat.messages), [chat.messages]);
+	const visibleSessionTitle = sessionHasTopic && sessionTitle
+		? sessionTitle
+		: initialTitle || t("nav.newChat", "新建会话");
 	const turnIndexByStartMessage = useMemo(
 		() => new Map(conversationTurns.map((turn) => [turn.startMessageIndex, turn.index])),
 		[conversationTurns],
@@ -131,13 +149,14 @@ export function ChatConversation({
 	// markdown re-parse) in place of the live stream tree. Defer that swap to
 	// a transition-scheduled render so React can slice the expensive mount
 	// across frames while StreamingBubbles keeps showing the finished stream.
-	const settledSending = useDeferredValue(chat.isSending);
-	const activeTurnStartMessage = settledSending ? conversationTurns.at(-1)?.startMessageIndex : undefined;
+	const liveTurn = chat.isSending || (chat.jobStreaming && chat.jobStreamInCurrentSession);
+	const settledLiveTurn = useDeferredValue(liveTurn);
+	const activeTurnStartMessage = settledLiveTurn ? conversationTurns.at(-1)?.startMessageIndex : undefined;
 	// The assistant record for a finished stream mounts at the same render the
 	// live trace unmounts; skip its entrance fade so the swap is seamless.
 	// Messages mounted any other way (e.g. switching conversations) still fade in.
 	const skipFadeKeysRef = useRef<Set<string>>(new Set());
-	const wasSendingRef = useRef(chat.isSending);
+	const wasLiveTurnRef = useRef(liveTurn);
 	const knownKeysRef = useRef<Set<string>>(new Set());
 	const currentKeys = chat.messages.map((message, index) => `${message.timestamp}-${index}`);
 	// Fresh conversation load: none of the previously seen keys survive, so
@@ -146,7 +165,7 @@ export function ChatConversation({
 		skipFadeKeysRef.current.clear();
 	}
 	knownKeysRef.current = new Set(currentKeys);
-	if (wasSendingRef.current && !chat.isSending) {
+	if (wasLiveTurnRef.current && !liveTurn) {
 		for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
 			if (chat.messages[index]?.role === "assistant") {
 				skipFadeKeysRef.current.add(`${chat.messages[index].timestamp}-${index}`);
@@ -154,7 +173,7 @@ export function ChatConversation({
 			}
 		}
 	}
-	wasSendingRef.current = chat.isSending;
+	wasLiveTurnRef.current = liveTurn;
 	const traceTurnPresentation = useMemo(() => {
 		const coveredAssistantIndexes = new Set<number>();
 		const actionOwnerIndexes = new Set<number>();
@@ -213,10 +232,9 @@ export function ChatConversation({
 		<section className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-chat-bg)]">
 			{topOverlay}
 			{smartToast}
-			{sessionTitle ? (
-				<header className={`inno-conversation-header relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] pr-4 backdrop-blur-md ${workspaceCollapsed ? "pr-14" : ""} ${sidebarCollapsed ? "inno-conversation-header--sidebar-collapsed" : "pl-4"}`}>
+			<header className={`inno-conversation-header relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] pr-4 backdrop-blur-md ${workspaceCollapsed ? "pr-14" : ""} ${sidebarCollapsed ? "inno-conversation-header--sidebar-collapsed" : "pl-4"}`}>
 					<div className="inno-conversation-heading flex min-w-0 items-center gap-2.5">
-						<span className="inno-conversation-title min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]" title={sessionTitle}>{sessionTitle}</span>
+					<span className="inno-conversation-title min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]" title={visibleSessionTitle}>{visibleSessionTitle}</span>
 					{workspaceName ? (
 						<span className="inno-conversation-workspace-chip inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] bg-[var(--inno-chip-bg)] px-2.5 py-[3px] text-[11px] text-[var(--inno-text-subtle)]">
 							<Folder size={11} aria-hidden="true" />
@@ -225,8 +243,7 @@ export function ChatConversation({
 						) : null}
 					</div>
 					{btwControl ? <div className="ml-auto flex shrink-0 items-center">{btwControl}</div> : null}
-				</header>
-			) : null}
+			</header>
 			<div className="conversation-stage relative flex-1 min-h-0">
 				<div
 					ref={scrollRef}
@@ -244,7 +261,7 @@ export function ChatConversation({
 							</div>
 						) : null}
 
-						{!chat.isLoadingHistory && chat.messages.length === 0 && !chat.isSending && !chat.jobStreaming ? (
+						{!chat.isLoadingHistory && chat.messages.length === 0 && !chat.isSending && !chat.jobStreamInCurrentSession ? (
 							<div className="flex flex-col items-center justify-center pt-20 text-center text-[var(--inno-text-muted)]">
 								<div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]"><Sparkles size={18} /></div>
 								<p className="text-sm font-medium text-[var(--inno-text)]">{t("chat.emptySessionTitle")}</p>
@@ -263,7 +280,7 @@ export function ChatConversation({
 								// terminal stream event. Keep the live trace as the only
 								// visible representation until the turn is finalized, so the
 								// trace does not briefly duplicate or change its geometry.
-								if (settledSending && index === chat.messages.length - 1 && message.role === "assistant") return null;
+								if (settledLiveTurn && index === chat.messages.length - 1 && message.role === "assistant") return null;
 								const isActiveTurnAssistant = activeTurnStartMessage !== undefined && index >= activeTurnStartMessage && message.role === "assistant";
 								const isTurnActionOwner = lastAssistantMessageIndexes.has(index) || traceTurnPresentation.actionOwnerIndexes.has(index);
 								const showActions = message.role === "user" || (isTurnActionOwner && !isActiveTurnAssistant);
@@ -289,8 +306,8 @@ export function ChatConversation({
 							});
 						})()}
 
-						<StreamingBubbles onOpenSkill={onOpenSkill} holdCompleted={settledSending} />
-						<JobStreamBubbles />
+						{!chat.jobStreamInCurrentSession ? <StreamingBubbles onOpenSkill={onOpenSkill} holdCompleted={settledLiveTurn} /> : null}
+						<JobStreamBubbles holdCompleted={settledLiveTurn} />
 					</div>
 				</div>
 				<ConversationMinimap messages={chat.messages} scrollContainerRef={scrollRef} onNavigateStart={onPauseAutoScroll} />

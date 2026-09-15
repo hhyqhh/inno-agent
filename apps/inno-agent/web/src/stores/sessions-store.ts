@@ -54,6 +54,9 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	currentSessionId: string | null = null;
 	isLoading = false;
 	openingSessionId: string | null = null;
+	/** Incremented after the backend runtime finishes activating a session so
+	 * context-usage can make one definitive refresh after navigation. */
+	contextUsageRevision = 0;
 	channelFilter: SessionChannel | null = null;
 	searchQuery = "";
 	/** When true, ChatCenter shows the workspace chooser instead of opening a session. */
@@ -152,18 +155,19 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	}
 
 	/**
-	 * Refresh the sidebar until the session's auto-generated topic lands.
+	 * Refresh the sidebar until the session's recorded topic/preview lands.
 	 *
-	 * Topic generation is fire-and-forget on the server (an extra LLM call
-	 * after the turn's `done` event), so the refresh that runs at turn end
-	 * usually sees the untitled fallback name. Poll with bounded backoff and
-	 * stop as soon as `hasTopic` flips (or the session disappears).
+	 * Topic recording is fire-and-forget on the server, so the refresh that
+	 * runs at turn end can race the first-message preview or the later summary.
+	 * Poll with bounded backoff and stop once the final topic is visible (or the
+	 * session disappears). A recorded first-message preview can still be waiting
+	 * for the richer summary after the conversation reaches six messages.
 	 */
 	async refreshUntilTopic(sessionId: string): Promise<void> {
 		await this.refresh();
 		for (const delayMs of TOPIC_REFRESH_DELAYS_MS) {
 			const entry = this.sessions.find((session) => session.id === sessionId);
-			if (!entry || entry.hasTopic) return;
+			if (!entry || (entry.hasTopic && entry.topicPendingUpgrade !== true)) return;
 			await new Promise((resolve) => setTimeout(resolve, delayMs));
 			await this.refresh();
 		}
@@ -252,9 +256,19 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 			this._messageCache.set(id, session.messages);
 			chatStore.loadHistory(session.messages, id);
 
-			void activateSession(id).catch((err) => {
+			// The context-usage endpoint reads the active runtime, so let the
+			// activation finish before publishing the completed session view. This
+			// prevents the first usage request after a switch from being mistaken
+			// for a session with no usage.
+			try {
+				await withTimeout(activateSession(id), 15_000, "激活会话超时");
+				if (requestId === this._openRequestId && this.currentSessionId === id) {
+					this.contextUsageRevision += 1;
+					this.emit("change", undefined);
+				}
+			} catch (err) {
 				console.warn(`[sessions] failed to activate ${id}: ${err instanceof Error ? err.message : String(err)}`);
-			});
+			}
 
 			this._backgroundRunningSessions.delete(id);
 			if (chatStatus.stream && ["queued", "running"].includes(chatStatus.stream.status)) {

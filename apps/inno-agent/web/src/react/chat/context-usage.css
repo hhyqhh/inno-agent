@@ -5,9 +5,11 @@
 	transition: background-color 120ms ease-out, color 120ms ease-out;
 }
 .inno-context-trigger:focus-visible, .inno-context-close:focus-visible { outline: 2px solid var(--inno-accent); outline-offset: 2px; }
-.inno-context-trigger:active, .inno-context-close:active { background: var(--inno-surface-muted); }
+.inno-context-trigger:active { background: radial-gradient(circle 14px, var(--inno-surface-muted) 0 100%, transparent 100%); }
+.inno-context-close:active { background: var(--inno-surface-muted); }
 @media (hover: hover) and (pointer: fine) {
-	.inno-context-trigger:hover, .inno-context-close:hover { background: var(--inno-surface-muted); color: var(--inno-text); }
+	.inno-context-trigger:hover { background: radial-gradient(circle 14px, var(--inno-surface-muted) 0 100%, transparent 100%); color: var(--inno-text); }
+	.inno-context-close:hover { background: var(--inno-surface-muted); color: var(--inno-text); }
 }
 .inno-context-panel, .inno-context-tooltip {
 	position: fixed; z-index: 180; box-sizing: border-box; overflow: auto;
@@ -34,5 +36,5 @@
 .inno-context-color-mcp { background: #27c4d8; }
 .inno-context-color-skills { background: #5383ff; }
 .inno-context-note { margin: 16px 0 0; font-size: 11px; line-height: 1.6; color: var(--inno-text-muted); }
-.inno-context-tooltip { padding: 9px 12px; border-radius: 8px; font-size: 12px; text-align: center; pointer-events: none; }
+.inno-context-tooltip { padding: 9px 12px; border-radius: 8px; font-size: 12px; line-height: 1.45; text-align: center; white-space: pre-line; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .inno-context-trigger, .inno-context-close { transition: none; } }

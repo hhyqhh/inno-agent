@@ -238,6 +238,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		isSending: chatStore.isSending,
 		isLoadingHistory: chatStore.isLoadingHistory,
 		jobStreaming: chatStore.jobStreaming,
+		jobStreamInCurrentSession: chatStore.jobStreamInCurrentSession,
 		canReconnect: chatStore.canReconnect,
 		activeTools: chatStore.activeTools,
 		completedTools: chatStore.completedTools,
@@ -247,6 +248,8 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	}));
 	const sessions = useStoreSnapshot(sessionsStore, () => ({
 		currentSessionId: sessionsStore.currentSessionId,
+		openingSessionId: sessionsStore.openingSessionId,
+		contextUsageRevision: sessionsStore.contextUsageRevision,
 		preselectedWorkspaceId: sessionsStore.preselectedWorkspaceId,
 		busyBlocker: sessionsStore.busyBlocker,
 		isWelcome: sessionsStore.isWelcomeView,
@@ -1386,8 +1389,10 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 				contextUsageControl={!isWelcome && sessions.currentSessionId ? <ContextUsage
 					key={`${sessions.currentSessionId}:${currentModel?.provider}:${currentModel?.id}`}
 					sessionId={sessions.currentSessionId}
+					modelKey={`${currentModel?.provider ?? ""}:${currentModel?.id ?? ""}`}
+					activating={sessions.openingSessionId === sessions.currentSessionId}
 					streaming={chat.isSending || chat.jobStreaming}
-					revision={`${chat.messages.length}:${chat.isLoadingHistory}`}
+					revision={`${chat.messages.length}:${chat.isLoadingHistory}:${sessions.contextUsageRevision}`}
 				/> : null}
 				permissionControl={<PermissionModeControl variant={isWelcome ? "pill" : "inline"} />}
 			workspaceControl={workspaceContext}
@@ -1563,6 +1568,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 			onRetry={handleRetry}
 			wsError={wsError}
 			sessionTitle={currentSessionMeta?.name}
+			sessionHasTopic={currentSessionMeta?.hasTopic === true}
 			workspaceName={activeWorkspaceName}
 			workspaceCollapsed={appLayout.workspaceMode === "collapsed"}
 			sidebarCollapsed={appLayout.sidebarCollapsed}

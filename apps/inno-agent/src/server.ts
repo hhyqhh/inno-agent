@@ -61,6 +61,7 @@ import { mergeSessionAgentCommands } from "./server/agent-command-store.js";
 import {
 	mergeChannels,
 	selectActiveSessionEntries,
+	TOPIC_UPGRADE_MESSAGE_THRESHOLD,
 	type SessionChannel,
 	type SessionChannelMetadata,
 	type SessionMessageSummary,
@@ -1366,7 +1367,6 @@ ${excerpt}
  *    once there is enough context.
  */
 const _pendingAutoTopics = new Set<string>();
-const TOPIC_UPGRADE_MESSAGE_THRESHOLD = 6;
 
 function maybeAutoGenerateTopic(sessionId: string): void {
 	if (!sessionId || _pendingAutoTopics.has(sessionId)) return;

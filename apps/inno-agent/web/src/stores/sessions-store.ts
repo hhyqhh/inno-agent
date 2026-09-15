@@ -159,14 +159,15 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	 *
 	 * Topic recording is fire-and-forget on the server, so the refresh that
 	 * runs at turn end can race the first-message preview or the later summary.
-	 * Poll with bounded backoff and stop as soon as `hasTopic` flips (or the
-	 * session disappears).
+	 * Poll with bounded backoff and stop once the final topic is visible (or the
+	 * session disappears). A recorded first-message preview can still be waiting
+	 * for the richer summary after the conversation reaches six messages.
 	 */
 	async refreshUntilTopic(sessionId: string): Promise<void> {
 		await this.refresh();
 		for (const delayMs of TOPIC_REFRESH_DELAYS_MS) {
 			const entry = this.sessions.find((session) => session.id === sessionId);
-			if (!entry || entry.hasTopic) return;
+			if (!entry || (entry.hasTopic && entry.topicPendingUpgrade !== true)) return;
 			await new Promise((resolve) => setTimeout(resolve, delayMs));
 			await this.refresh();
 		}

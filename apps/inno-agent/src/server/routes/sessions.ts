@@ -42,6 +42,7 @@ import { contentDispositionAttachment } from "../file-helpers.js";
 import { HttpError, json, matchRoute, readBody } from "../http-helpers.js";
 import {
 	mergeChannels,
+	TOPIC_UPGRADE_MESSAGE_THRESHOLD,
 	type SessionChannel,
 	type SessionChannelMetadata,
 	type SessionMessageSummary,
@@ -215,10 +216,16 @@ function withRecordedChannels(summary: SessionSummary, metadata: SessionChannelM
 }
 
 function withRecordedTopic(summary: SessionSummary, metadata: SessionTopicMetadata): SessionSummary {
-	const topic = metadata[summary.id]?.topic?.trim();
-	// hasTopic lets clients distinguish "no topic recorded yet" (auto-topic may
-	// still be generating) from a fallback preview name, without guessing.
-	return topic ? { ...summary, name: topic, hasTopic: true } : { ...summary, hasTopic: false };
+	const recorded = metadata[summary.id];
+	const topic = recorded?.topic?.trim();
+	if (!topic) return { ...summary, hasTopic: false, topicPendingUpgrade: false };
+	// A generated preview is only provisional once the conversation has enough
+	// messages for the richer upgrade pass. Legacy generated topics without the
+	// upgraded marker remain final until a later turn reaches that threshold.
+	const topicPendingUpgrade = recorded.generated === true
+		&& recorded.upgraded !== true
+		&& summary.messageCount >= TOPIC_UPGRADE_MESSAGE_THRESHOLD;
+	return { ...summary, name: topic, hasTopic: true, topicPendingUpgrade };
 }
 
 /**

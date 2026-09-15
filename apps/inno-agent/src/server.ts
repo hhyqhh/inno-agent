@@ -1358,11 +1358,12 @@ ${excerpt}
  *
  * Two passes, both guarded by `_pendingAutoTopics`:
  * 1. First pass: no topic recorded yet and ≥2 messages (the first exchange).
- * 2. Upgrade pass: the existing topic is auto-generated (never a manual
+ *    Persist the user's first-message preview immediately so the UI never
+ *    shows a model-generated placeholder or a session-file id.
+ * 2. Upgrade pass: the existing preview is auto-generated (never a manual
  *    rename), hasn't been upgraded yet, and the conversation has grown to
- *    TOPIC_UPGRADE_MESSAGE_THRESHOLD messages — the first-pass title was
- *    based on a single exchange and is often vague, so re-roll it once with
- *    richer context.
+ *    TOPIC_UPGRADE_MESSAGE_THRESHOLD messages — generate a richer summary
+ *    once there is enough context.
  */
 const _pendingAutoTopics = new Set<string>();
 const TOPIC_UPGRADE_MESSAGE_THRESHOLD = 6;
@@ -1381,7 +1382,9 @@ function maybeAutoGenerateTopic(sessionId: string): void {
 			const parsed = parseSessionFile(sessionPath);
 			if (!parsed || parsed.messages.length < 2) return;
 			if (existing && parsed.messages.length < TOPIC_UPGRADE_MESSAGE_THRESHOLD) return;
-			const topic = await generateSessionTopic(parsed.summary, parsed.messages);
+			const topic = existing
+				? await generateSessionTopic(parsed.summary, parsed.messages)
+				: fallbackTopicFromMessages(parsed.messages, parsed.summary);
 			writeSessionTopic(sessionId, topic, true, existing ? { upgraded: true } : undefined);
 			logger.info(`[auto-topic] ${sessionId} → ${topic}${existing ? " (upgraded)" : ""}`);
 		} catch (err) {

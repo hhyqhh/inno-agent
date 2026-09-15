@@ -1564,6 +1564,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 			onRetry={handleRetry}
 			wsError={wsError}
 			sessionTitle={currentSessionMeta?.name}
+			sessionHasTopic={currentSessionMeta?.hasTopic === true}
 			workspaceName={activeWorkspaceName}
 			workspaceCollapsed={appLayout.workspaceMode === "collapsed"}
 			sidebarCollapsed={appLayout.sidebarCollapsed}

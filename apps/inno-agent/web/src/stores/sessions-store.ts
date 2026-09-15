@@ -152,12 +152,12 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	}
 
 	/**
-	 * Refresh the sidebar until the session's auto-generated topic lands.
+	 * Refresh the sidebar until the session's recorded topic/preview lands.
 	 *
-	 * Topic generation is fire-and-forget on the server (an extra LLM call
-	 * after the turn's `done` event), so the refresh that runs at turn end
-	 * usually sees the untitled fallback name. Poll with bounded backoff and
-	 * stop as soon as `hasTopic` flips (or the session disappears).
+	 * Topic recording is fire-and-forget on the server, so the refresh that
+	 * runs at turn end can race the first-message preview or the later summary.
+	 * Poll with bounded backoff and stop as soon as `hasTopic` flips (or the
+	 * session disappears).
 	 */
 	async refreshUntilTopic(sessionId: string): Promise<void> {
 		await this.refresh();

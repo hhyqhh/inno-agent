@@ -17,10 +17,6 @@ function formatSummaryTokens(value: number): string {
 	return String(Math.round(value));
 }
 
-function formatSummaryPercent(value: number): string {
-	return `${Number(value.toFixed(1))}%`;
-}
-
 /** Mount with a session/model key so an old session's numbers can never flash. */
 export function ContextUsage({ sessionId, streaming, revision, modelKey, activating = false }: { sessionId: string; streaming: boolean; revision: string; modelKey?: string; activating?: boolean }) {
 	const { t } = useTranslation();
@@ -36,14 +32,15 @@ export function ContextUsage({ sessionId, streaming, revision, modelKey, activat
 	const percent = data?.status === "ready" ? data.percent : null;
 	const known = percent !== null && percent !== undefined && data?.tokens !== null;
 	const percentage = known ? `${percent.toFixed(1)}%` : "—";
+	const remainingPercentage = known ? `${Math.max(0, 100 - percent).toFixed(1)}%` : "—";
 	const amount = data?.tokens != null && data.contextWindow != null
 		? `${formatContextTokens(data.tokens)} / ${formatContextTokens(data.contextWindow)}` : "—";
 	const summaryAmount = data?.tokens != null && data.contextWindow != null
 		? `${formatSummaryTokens(data.tokens)} / ${formatSummaryTokens(data.contextWindow)}` : "—";
 	const status = loading ? "loading" : failed ? "failed" : data?.status === "pending" ? "pending" : data?.status === "inactive" ? "inactive" : "unavailable";
 	const summary = known ? t("contextUsage.summary", {
-		percent: formatSummaryPercent(percent),
-		remaining: formatSummaryPercent(Math.max(0, 100 - percent)),
+		percent: `${Number(percent.toFixed(1))}%`,
+		remaining: remainingPercentage,
 		amount: summaryAmount,
 	}) : t(`contextUsage.${status}`);
 	const close = () => {

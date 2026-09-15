@@ -236,6 +236,10 @@ function mimeTypeToExtension(mimeType: string): string {
  * Only sent when the model can't natively see images (text-only model or a
  * rejected native payload) — vision-capable turns receive the raw prompt so
  * they aren't steered toward `ocr_image`.
+ *
+ * The prefix format is owned by `server/upload-prefix.ts`
+ * (UPLOADED_IMAGES_PREFIX_PATTERN), which strips it back out when deriving
+ * session titles — keep the two in sync when changing the format.
  */
 function prependImagePathsHint(prompt: string, imagePaths: string[]): string {
 	if (imagePaths.length === 0) return prompt;

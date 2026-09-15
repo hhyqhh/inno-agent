@@ -58,6 +58,7 @@ import { handleChatRoutes } from "./server/routes/chat.js";
 import { handleCommandsRoutes } from "./server/routes/commands.js";
 import { handleBtwRoutes } from "./server/routes/btw.js";
 import { mergeSessionAgentCommands } from "./server/agent-command-store.js";
+import { stripUploadedImagesPrefix } from "./server/upload-prefix.js";
 import {
 	mergeChannels,
 	selectActiveSessionEntries,
@@ -1283,9 +1284,7 @@ function cleanGeneratedTopic(raw: string): string {
 /** Strip machine-injected prefixes (e.g. the image-upload hint prepended to
  *  user prompts) so titles reflect the user's actual words. */
 function stripInjectedPrefix(content: string): string {
-	return content
-		.replace(/^\[用户本轮上传了 \d+ 张图片，已保存到工作区：[\s\S]*?\]\s*/, "")
-		.trim();
+	return stripUploadedImagesPrefix(content);
 }
 
 function fallbackTopicFromMessages(messages: SessionMessageSummary[], summary: SessionSummary): string {

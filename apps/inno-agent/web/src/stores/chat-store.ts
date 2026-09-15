@@ -333,13 +333,16 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.flushStreamChange();
 		this.jobStreaming = false;
 		const messageId = this.jobUserMessageId;
+		const sessionId = this.jobStreamSessionId;
 		this.jobStreamSessionId = null;
 		this.jobStreamController = null;
 		this.jobStreamTrace = [];
 		this.jobStreamText = "";
 		this.jobStreamError = "";
-		this.pendingQuestion = null;
-		this.pendingPermission = null;
+		// Question/permission state is shared with normal chat turns — only
+		// clear cards that belong to this job run's session.
+		if (this.pendingQuestion?.sessionId === sessionId) this.pendingQuestion = null;
+		if (this.pendingPermission?.sessionId === sessionId) this.pendingPermission = null;
 		this.jobUserMessageId = null;
 		if (!messageId) return;
 		const index = this.messages.findIndex((message) => message.turnId === messageId && message.transient);
@@ -364,8 +367,10 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.jobStreamTrace = [];
 		this.jobStreamText = "";
 		this.jobStreamError = "";
-		this.pendingQuestion = null;
-		this.pendingPermission = null;
+		// Question/permission state is shared with normal chat turns — only
+		// clear cards that belong to this job run's session.
+		if (this.pendingQuestion?.sessionId === sessionId) this.pendingQuestion = null;
+		if (this.pendingPermission?.sessionId === sessionId) this.pendingPermission = null;
 		// The settled record belongs to the run's conversation only — never to
 		// whatever other session the user may be viewing by then.
 		if (!sessionId || sessionId !== this.currentSessionContext) return;

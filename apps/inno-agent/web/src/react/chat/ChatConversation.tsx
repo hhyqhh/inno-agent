@@ -30,6 +30,8 @@ interface ChatConversationProps {
 		/** A manual job run is streaming into this conversation — the empty
 		 *  session placeholder must not cover the live job timeline. */
 		jobStreaming: boolean;
+		/** Whether the manual job stream belongs to this conversation. */
+		jobStreamInCurrentSession: boolean;
 		activeTools: ChatToolRecord[];
 		completedTools: ChatToolRecord[];
 		pendingQuestion: PendingQuestion | null;
@@ -131,13 +133,14 @@ export function ChatConversation({
 	// markdown re-parse) in place of the live stream tree. Defer that swap to
 	// a transition-scheduled render so React can slice the expensive mount
 	// across frames while StreamingBubbles keeps showing the finished stream.
-	const settledSending = useDeferredValue(chat.isSending);
-	const activeTurnStartMessage = settledSending ? conversationTurns.at(-1)?.startMessageIndex : undefined;
+	const liveTurn = chat.isSending || (chat.jobStreaming && chat.jobStreamInCurrentSession);
+	const settledLiveTurn = useDeferredValue(liveTurn);
+	const activeTurnStartMessage = settledLiveTurn ? conversationTurns.at(-1)?.startMessageIndex : undefined;
 	// The assistant record for a finished stream mounts at the same render the
 	// live trace unmounts; skip its entrance fade so the swap is seamless.
 	// Messages mounted any other way (e.g. switching conversations) still fade in.
 	const skipFadeKeysRef = useRef<Set<string>>(new Set());
-	const wasSendingRef = useRef(chat.isSending);
+	const wasLiveTurnRef = useRef(liveTurn);
 	const knownKeysRef = useRef<Set<string>>(new Set());
 	const currentKeys = chat.messages.map((message, index) => `${message.timestamp}-${index}`);
 	// Fresh conversation load: none of the previously seen keys survive, so
@@ -146,7 +149,7 @@ export function ChatConversation({
 		skipFadeKeysRef.current.clear();
 	}
 	knownKeysRef.current = new Set(currentKeys);
-	if (wasSendingRef.current && !chat.isSending) {
+	if (wasLiveTurnRef.current && !liveTurn) {
 		for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
 			if (chat.messages[index]?.role === "assistant") {
 				skipFadeKeysRef.current.add(`${chat.messages[index].timestamp}-${index}`);
@@ -154,7 +157,7 @@ export function ChatConversation({
 			}
 		}
 	}
-	wasSendingRef.current = chat.isSending;
+	wasLiveTurnRef.current = liveTurn;
 	const traceTurnPresentation = useMemo(() => {
 		const coveredAssistantIndexes = new Set<number>();
 		const actionOwnerIndexes = new Set<number>();
@@ -244,7 +247,7 @@ export function ChatConversation({
 							</div>
 						) : null}
 
-						{!chat.isLoadingHistory && chat.messages.length === 0 && !chat.isSending && !chat.jobStreaming ? (
+						{!chat.isLoadingHistory && chat.messages.length === 0 && !chat.isSending && !chat.jobStreamInCurrentSession ? (
 							<div className="flex flex-col items-center justify-center pt-20 text-center text-[var(--inno-text-muted)]">
 								<div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]"><Sparkles size={18} /></div>
 								<p className="text-sm font-medium text-[var(--inno-text)]">{t("chat.emptySessionTitle")}</p>
@@ -263,7 +266,7 @@ export function ChatConversation({
 								// terminal stream event. Keep the live trace as the only
 								// visible representation until the turn is finalized, so the
 								// trace does not briefly duplicate or change its geometry.
-								if (settledSending && index === chat.messages.length - 1 && message.role === "assistant") return null;
+								if (settledLiveTurn && index === chat.messages.length - 1 && message.role === "assistant") return null;
 								const isActiveTurnAssistant = activeTurnStartMessage !== undefined && index >= activeTurnStartMessage && message.role === "assistant";
 								const isTurnActionOwner = lastAssistantMessageIndexes.has(index) || traceTurnPresentation.actionOwnerIndexes.has(index);
 								const showActions = message.role === "user" || (isTurnActionOwner && !isActiveTurnAssistant);
@@ -289,8 +292,8 @@ export function ChatConversation({
 							});
 						})()}
 
-						<StreamingBubbles onOpenSkill={onOpenSkill} holdCompleted={settledSending} />
-						<JobStreamBubbles />
+						{!chat.jobStreamInCurrentSession ? <StreamingBubbles onOpenSkill={onOpenSkill} holdCompleted={settledLiveTurn} /> : null}
+						<JobStreamBubbles holdCompleted={settledLiveTurn} />
 					</div>
 				</div>
 				<ConversationMinimap messages={chat.messages} scrollContainerRef={scrollRef} onNavigateStart={onPauseAutoScroll} />

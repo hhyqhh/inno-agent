@@ -238,6 +238,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		isSending: chatStore.isSending,
 		isLoadingHistory: chatStore.isLoadingHistory,
 		jobStreaming: chatStore.jobStreaming,
+		jobStreamInCurrentSession: chatStore.jobStreamInCurrentSession,
 		canReconnect: chatStore.canReconnect,
 		activeTools: chatStore.activeTools,
 		completedTools: chatStore.completedTools,

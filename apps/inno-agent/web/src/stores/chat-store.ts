@@ -338,6 +338,8 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.jobStreamTrace = [];
 		this.jobStreamText = "";
 		this.jobStreamError = "";
+		this.pendingQuestion = null;
+		this.pendingPermission = null;
 		this.jobUserMessageId = null;
 		if (!messageId) return;
 		const index = this.messages.findIndex((message) => message.turnId === messageId && message.transient);
@@ -362,6 +364,8 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.jobStreamTrace = [];
 		this.jobStreamText = "";
 		this.jobStreamError = "";
+		this.pendingQuestion = null;
+		this.pendingPermission = null;
 		// The settled record belongs to the run's conversation only — never to
 		// whatever other session the user may be viewing by then.
 		if (!sessionId || sessionId !== this.currentSessionContext) return;

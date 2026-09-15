@@ -47,6 +47,14 @@ export async function handleCheckInsRoutes(
 		}
 		const cancelled = cancelDeferredRun(occurrenceId);
 		if (!cancelled) {
+			// The response to an earlier skip can be lost after the server has
+			// already persisted the slot. Treat a repeated request for that same
+			// slot as success so the client cannot resurrect the banner by polling.
+			const occurrence = ctx.checkInStore.getOccurrenceById(occurrenceId);
+			if (occurrence?.status === "skipped") {
+				json(res, 200, { skipped: true, alreadySkipped: true });
+				return true;
+			}
 			json(res, 409, { error: "This slot is no longer pending." });
 			return true;
 		}

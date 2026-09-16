@@ -4,7 +4,7 @@
 
 - Developer ID Application: Hao Hao (Q5N3RF9WVC)
 - Team ID：`Q5N3RF9WVC`
-- 本机证书默认路径：`$HOME/Documents/inno-agent-developer-id.p12`
+- 本机证书路径：`<repo>/runtime/inno-agent-developer-id.p12`（原 `$HOME/Documents/` 位置受 macOS TCC 保护，终端/CI 脚本读不到，已迁至 gitignored 的 runtime/）
 - 本机默认 Apple ID：`hhyqhh@126.com`（可用环境变量 `APPLE_ID` 覆盖）
 
 `.p12` 包含私钥，不能提交 Git、作为 Release 附件，或发送到聊天中。

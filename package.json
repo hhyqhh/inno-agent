@@ -1,6 +1,6 @@
 {
 	"name": "inno-agent",
-	"version": "0.6.1",
+	"version": "0.6.2",
 	"private": true,
 	"description": "Personal learning agent built on PI SDK with three-layer memory system",
 	"author": "Inno Agent Contributors",
@@ -30,7 +30,10 @@
 		"showcase:dev": "npm run dev --workspace inno-agent-showcase",
 		"showcase:build": "npm run build --workspace inno-agent-showcase",
 		"showcase:list": "tsx scripts/export-showcase-cases.ts --list",
-		"showcase:view": "node scripts/view-showcase-export.mjs"
+		"showcase:view": "node scripts/view-showcase-export.mjs",
+		"electron:build:mac:signed": "bash scripts/build-mac-signed.sh",
+		"electron:package:mac:signed": "node scripts/check-mac-signing.cjs && electron-builder --config build/electron-builder.mac-signed.cjs --mac dmg --arm64 --publish never && bash scripts/verify-mac-release.sh",
+		"test:mac-signing": "node --test scripts/check-mac-signing.test.cjs"
 	},
 	"engines": {
 		"node": ">=20.6.0"

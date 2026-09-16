@@ -36,7 +36,9 @@ jobs:
       # ── 3. 覆盖版本号（仅 workflow_dispatch 且输入了版本） ──────────────────
       - name: Bump version
         if: github.event_name == 'workflow_dispatch' && inputs.version != ''
-        run: npm version "${{ inputs.version }}" --no-git-tag-version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: npm version "$RELEASE_VERSION" --no-git-tag-version
 
       # ── 4. 安装依赖 ──────────────────────────────────────────────────────────
       - name: Install dependencies
@@ -44,7 +46,9 @@ jobs:
 
       # ── 4.5 跑测试（vitest，作为发版门禁）───────────────────────────────────
       - name: Run tests
-        run: npm test
+        run: |
+          npm test
+          npm run test:mac-signing
 
       # ── 5. 编译后端 TypeScript ───────────────────────────────────────────────
       - name: Build backend (tsc)
@@ -56,24 +60,15 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=4096
         run: npm --workspace inno-agent-web run build
 
-      # ── 7. 打包 Electron DMG ─────────────────────────────────────────────────
-      #   未签名版：不需要 Apple 证书，用户首次打开需右键→打开
-      - name: Package Electron (unsigned DMG)
-        # --publish never：只打包，不让 electron-builder 自动发布（发布交给后面的步骤）
-        run: npx electron-builder --mac dmg --arm64 --publish never
+      # ── 7. 签名、公证，并验证 DMG 内的实际应用；失败时禁止上传 ───────────────
+      - name: Package and verify signed + notarized DMG
+        run: npm run electron:package:mac:signed
         env:
-          # 跳过代码签名（无证书时必须）
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-
-      # ── 7b. [可选] 签名 + 公证版（取消注释并配置 Secrets 后生效） ────────────
-      # - name: Package Electron (signed + notarized DMG)
-      #   run: npx electron-builder --mac dmg --arm64
-      #   env:
-      #     CSC_LINK: ${{ secrets.CSC_LINK }}                          # base64 编码的 .p12 证书
-      #     CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}          # .p12 密码
-      #     APPLE_ID: ${{ secrets.APPLE_ID }}                          # Apple ID 邮箱
-      #     APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      #     APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       # ── 8. 读取实际版本号 ────────────────────────────────────────────────────
       - name: Read version
@@ -89,6 +84,7 @@ jobs:
           name: InnoAgent-${{ steps.pkg.outputs.version }}-arm64
           path: dist-electron/*.dmg
           retention-days: 30
+          if-no-files-found: error
 
       # ── 10. 创建 GitHub Release（仅 tag 触发时） ────────────────────────────
       - name: Create GitHub Release

@@ -29,3 +29,11 @@ build/icon.iconset/
 # Docs (local only)
 apps/inno-agent/docs/
 .zcode/
+
+# Signing credentials: never commit private keys, exports, or local passwords
+*.p12
+*.pfx
+*.p8
+*.key
+.env.*
+!.env.example

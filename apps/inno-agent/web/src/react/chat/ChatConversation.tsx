@@ -22,6 +22,9 @@ function traceContainsAssistantText(message: ChatMessage): boolean {
 	)));
 }
 
+// The strip regex mirrors UPLOADED_IMAGES_PREFIX_PATTERN in the backend's
+// src/server/upload-prefix.ts (the web bundle cannot import server code) —
+// keep the two in sync when the upload-prefix format changes.
 function firstMessageTitle(messages: ChatMessage[]): string | undefined {
 	const content = messages.find((message) => message.role === "user")?.content
 		.replace(/^\[用户本轮上传了 \d+ 张图片，已保存到工作区：[\s\S]*?\]\s*/, "")

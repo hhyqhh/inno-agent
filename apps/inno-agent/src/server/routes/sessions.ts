@@ -215,7 +215,8 @@ function withRecordedChannels(summary: SessionSummary, metadata: SessionChannelM
 	};
 }
 
-function withRecordedTopic(summary: SessionSummary, metadata: SessionTopicMetadata): SessionSummary {
+/** Exported for tests — pure merge of a listing summary with recorded topic metadata. */
+export function withRecordedTopic(summary: SessionSummary, metadata: SessionTopicMetadata): SessionSummary {
 	const recorded = metadata[summary.id];
 	const topic = recorded?.topic?.trim();
 	if (!topic) return { ...summary, hasTopic: false, topicPendingUpgrade: false };

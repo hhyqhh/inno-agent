@@ -1013,6 +1013,35 @@ export function appendAssistantNotification(text: string): void {
 }
 
 /**
+ * Persist a learning-system response in the active conversation without
+ * starting another model turn. Unlike scheduler notifications, this keeps the
+ * message in the normal web conversation rather than marking it as scheduled.
+ */
+export function appendAssistantLearningFeedback(text: string, expectedSessionId: string): boolean {
+	if (!_runtime || getCurrentSessionId() !== expectedSessionId) return false;
+	const session = getSession();
+	const message: AssistantMessage = {
+		role: "assistant",
+		content: [{ type: "text", text }],
+		api: "inno-learning-feedback",
+		provider: "inno",
+		model: "personal-link-review",
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "stop",
+		timestamp: Date.now(),
+	};
+	session.sessionManager.appendMessage(message);
+	return true;
+}
+
+/**
  * Append a background notification to a specific persisted session. The
  * session switch and append share one queue slot so a concurrent chat turn
  * cannot switch the singleton runtime between those two operations.

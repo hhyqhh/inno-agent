@@ -35,6 +35,8 @@ let _currentCwd = "";
 let _configHolder: ConfigHolder | null = null;
 let _cwdResolver: ((sessionPath: string) => string | null) | null = null;
 let _activePromptToken: string | null = null;
+/** Server-side observer for metadata that must cover every prompt entrypoint. */
+let _promptEventObserver: ((event: AgentSessionEvent, sessionPath: string | null) => void) | null = null;
 /** Provider IDs registered into the active model registry by Inno's config. */
 const _registeredProviderIds = new Set<string>();
 
@@ -57,6 +59,26 @@ export type RuntimeChannelHint = "web" | "feishu" | "wechat" | "qq" | "scheduler
  */
 export function setWorkspaceCwdResolver(fn: ((sessionPath: string) => string | null) | null): void {
 	_cwdResolver = fn;
+}
+
+/**
+ * Observe raw agent events without changing prompt output or stream delivery.
+ * The server uses this for workspace activity metadata so channel, scheduler,
+ * and non-streaming prompts are tracked alongside web streams.
+ */
+export function setPromptEventObserver(
+	observer: ((event: AgentSessionEvent, sessionPath: string | null) => void) | null,
+): void {
+	_promptEventObserver = observer;
+}
+
+function notifyPromptEvent(event: AgentSessionEvent): void {
+	if (!_promptEventObserver) return;
+	try {
+		_promptEventObserver(event, _runtime?.session.sessionFile ?? null);
+	} catch (err) {
+		logger.warn({ err, eventType: event.type }, "prompt event observer failed");
+	}
 }
 
 function resolveCwdFor(sessionPath: string | null | undefined): string {
@@ -1248,6 +1270,7 @@ export async function runPrompt(
 	const obsUnsub = session.subscribe(promptObserver);
 
 	const unsubscribe = session.subscribe((event) => {
+		notifyPromptEvent(event);
 		if (event.type === "message_update") {
 			const ev = event.assistantMessageEvent;
 			if (ev.type === "text_delta") {
@@ -1543,6 +1566,7 @@ export function runPromptStreaming(
 		const obsUnsub = session.subscribe(promptObserver);
 
 		const unsubscribe = session.subscribe((event) => {
+			notifyPromptEvent(event);
 			if (
 				!retryingWithoutNativeImages &&
 				isNativeImagePayloadError(eventErrorMessage(event))
@@ -1658,6 +1682,7 @@ export function runPromptStreamingInSession(
 				const promptObserver = createPromptObserver({ promptStartTime });
 				const obsUnsub = session.subscribe(promptObserver);
 				const unsubscribe = session.subscribe((event) => {
+					notifyPromptEvent(event);
 					if (
 						!retryingWithoutNativeImages &&
 						isNativeImagePayloadError(eventErrorMessage(event))

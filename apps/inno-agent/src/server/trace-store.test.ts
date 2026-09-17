@@ -76,6 +76,18 @@ describe("session UI trace sidecar", () => {
 		expect(mergeSessionTraces(dataDir, "session-1", messages)).toEqual(messages);
 	});
 
+	it("persists the active workspace on trace events", () => {
+		recordSessionTrace(dataDir, "session-1", {
+			assistantIndex: 0,
+			workspaceId: "workspace-1",
+			events: [envelope(1, { type: "tool_start", toolName: "read_file", args: { path: "notes.md" } })],
+		});
+
+		const messages: SessionMessageSummary[] = [{ role: "assistant", content: "answer", timestamp: 1 }];
+		expect(mergeSessionTraces(dataDir, "session-1", messages)[0]?.traceEvents?.[0]?.event.workspaceId)
+			.toBe("workspace-1");
+	});
+
 	it("prefers the persisted PI message id when a branch changes message indexes", () => {
 		recordSessionTrace(dataDir, "session-1", {
 			assistantIndex: 4,

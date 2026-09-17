@@ -80,6 +80,8 @@ export function recordSessionTrace(
 		assistantMessageId?: string;
 		startedAt?: string;
 		finishedAt?: string;
+		/** Workspace active for this turn; persisted onto each trace event. */
+		workspaceId?: string;
 		events: StreamEventEnvelope[];
 	},
 ): void {
@@ -89,7 +91,10 @@ export function recordSessionTrace(
 		eventId: envelope.eventId,
 		...(envelope.traceId ? { traceId: envelope.traceId } : {}),
 		...(envelope.occurredAt ? { occurredAt: envelope.occurredAt } : {}),
-		event: envelope.event as Record<string, unknown>,
+		event: {
+			...(envelope.event as Record<string, unknown>),
+			...(entry.workspaceId ? { workspaceId: entry.workspaceId } : {}),
+		},
 	}));
 	const nextEntry: SessionTraceEntry = {
 		assistantIndex: entry.assistantIndex,

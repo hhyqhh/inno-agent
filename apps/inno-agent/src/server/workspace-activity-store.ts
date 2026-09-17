@@ -281,7 +281,11 @@ function legacyTraceActivities(
 			const event = envelope.event ?? {};
 			const type = typeof event.type === "string" ? event.type : "";
 			if (type === "workspace_change") {
-				const eventWorkspaceId = typeof event.workspaceId === "string" ? event.workspaceId : workspaceId;
+				const eventWorkspaceId = typeof event.workspaceId === "string" && event.workspaceId ? event.workspaceId : null;
+				if (!eventWorkspaceId) {
+					incomplete = true;
+					continue;
+				}
 				if (eventWorkspaceId !== workspaceId) continue;
 				if (event.truncated === true) incomplete = true;
 				const changes = Array.isArray(event.changes) ? event.changes : [];
@@ -307,12 +311,26 @@ function legacyTraceActivities(
 				continue;
 			}
 			if (type !== "tool_start" && type !== "tool_call_start" && type !== "tool_call_end") continue;
-			const toolName = typeof event.toolName === "string" ? event.toolName : "";
-			const { paths, access, incomplete: toolIncomplete } = extractToolActivity(toolName, event.args);
-			if (toolIncomplete || access === "none") {
-				incomplete ||= toolIncomplete;
+			const eventWorkspaceId = typeof event.workspaceId === "string" && event.workspaceId ? event.workspaceId : null;
+			if (!eventWorkspaceId) {
+				// Tool traces without a persisted workspace binding are unsafe to
+				// attribute after a session has been switched between workspaces.
+				incomplete = true;
 				continue;
 			}
+			if (eventWorkspaceId !== workspaceId) continue;
+			// The assistant-side start event often has no arguments; the matching
+			// end/execution event carries the usable path. Do not turn that normal
+			// streaming shape into a false incomplete-tracking warning.
+			if (type === "tool_call_start" && event.args === undefined) continue;
+			const toolName = typeof event.toolName === "string" ? event.toolName : "";
+			const { paths, access, incomplete: toolIncomplete } = extractToolActivity(toolName, event.args);
+			if (access === "none") continue;
+			if (access === "unknown") {
+				incomplete = true;
+				continue;
+			}
+			if (toolIncomplete) incomplete = true;
 			if (paths.length === 0) {
 				incomplete = true;
 				continue;
@@ -342,11 +360,17 @@ function legacyAttachmentActivities(
 	sessionId: string,
 	workspaceId: string,
 	workspaceRoot: string,
-): { files: WorkspaceFileActivity[]; hasAttachments: boolean } {
+): { files: WorkspaceFileActivity[]; incomplete: boolean; hasAttachments: boolean } {
 	const metadata = readJson<SessionAttachmentsMetadata>(attachmentsMetadataPath(dataDir), {});
 	const entries = metadata[sessionId] ?? [];
 	const map = new Map<string, WorkspaceFileActivity>();
+	let incomplete = false;
 	for (const entry of entries) {
+		if (typeof entry.workspaceId !== "string" || !entry.workspaceId) {
+			incomplete = true;
+			continue;
+		}
+		if (entry.workspaceId !== workspaceId) continue;
 		const attachments = entry.attachments;
 		if (!attachments) continue;
 		const timestamp = typeof entry.timestamp === "number" ? entry.timestamp : typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
@@ -357,7 +381,7 @@ function legacyAttachmentActivities(
 			addEphemeralActivity(map, { sessionId, workspaceId, path, access: "read", firstSeenAt: seenAt, lastSeenAt: seenAt });
 		}
 	}
-	return { files: [...map.values()], hasAttachments: entries.length > 0 };
+	return { files: [...map.values()], incomplete, hasAttachments: entries.length > 0 };
 }
 
 /**
@@ -390,6 +414,7 @@ export function getWorkspaceFileActivities(
 	const legacyOnly = !hasCurrentActivity && (legacyTrace.hasTrace || legacyAttachments.hasAttachments);
 	const trackingIncomplete = currentIncomplete
 		|| legacyTrace.incomplete
+		|| legacyAttachments.incomplete
 		|| legacyOnly
 		|| (input.hasSessionHistory === true && !current && !legacyOnly);
 	return { files: [...map.values()], trackingIncomplete };

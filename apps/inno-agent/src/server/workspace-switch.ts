@@ -206,13 +206,16 @@ export function transferWorkspaceFiles(input: {
 		.filter(([, action]) => action !== "none")
 		.map(([rawPath, action]) => [rawPath, action as TransferAction, normalizeTransferPath(rawPath)] as const);
 	if (!isSafeWorkspaceRoot(input.sourceRoot) || !isSafeWorkspaceRoot(input.targetRoot)) {
-		return entries.map(([rawPath, action, path]) => fileResult(
-			path ?? rawPath,
-			(path && allowed.get(path)?.access) ?? "read",
-			action,
-			"failed",
-			"Source or target workspace root is unsafe or unavailable",
-		));
+		return entries.map(([rawPath, action, path]) => {
+			const access = path ? (allowed.get(path)?.access ?? "read") : "read";
+			return fileResult(
+				path ?? rawPath,
+				access,
+				action,
+				"failed",
+				"Source or target workspace root is unsafe or unavailable",
+			);
+		});
 	}
 	return entries.map(([rawPath, action, path]) => {
 		const previewFile = path ? allowed.get(path) : undefined;

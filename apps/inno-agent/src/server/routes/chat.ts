@@ -36,7 +36,6 @@ import { recordSessionAgentCommand } from "../agent-command-store.js";
 import { recordSessionTrace } from "../trace-store.js";
 import {
 	markWorkspaceTrackingIncomplete,
-	recordToolWorkspaceActivity,
 	recordWorkspaceAttachmentActivity,
 	recordWorkspaceFileAccess,
 } from "../workspace-activity-store.js";
@@ -546,6 +545,7 @@ export async function handleChatRoutes(
 				promptContent: prompt,
 				attachments,
 				timestamp: Date.now(),
+				workspaceId: imageWorkspaceId,
 			});
 			recordWorkspaceAttachmentActivity(dataDir, {
 				sessionId: imageSessionId,
@@ -804,6 +804,7 @@ export async function handleChatRoutes(
 				promptContent: prompt,
 				attachments: streamAttachments,
 				timestamp: Date.now(),
+				workspaceId: streamWorkspaceId,
 			});
 			recordWorkspaceAttachmentActivity(dataDir, {
 				sessionId: requestedSessionId,
@@ -885,37 +886,17 @@ export async function handleChatRoutes(
 					}
 					break;
 				}
-					case "tool_execution_start":
-						recordToolWorkspaceActivity(dataDir, {
-						sessionId: state.sessionId,
-						workspaceId: state.workspaceId,
-						workspaceRoot: state.workspaceRoot,
-						toolName: event.toolName,
-							args: event.args,
-						});
-						logger.info(
-							{ toolName: event.toolName, toolCallId: event.toolCallId },
-							"tool call started: %s", event.toolName,
-						);
-						break;
-					case "tool_execution_update":
-					recordToolWorkspaceActivity(dataDir, {
-						sessionId: state.sessionId,
-						workspaceId: state.workspaceId,
-						workspaceRoot: state.workspaceRoot,
-						toolName: event.toolName,
-							args: event.args,
-						});
-						// Partial tool output is forwarded to the stream registry below.
-						// Do not report these normal progress events as unhandled.
-						break;
+				case "tool_execution_start":
+					logger.info(
+						{ toolName: event.toolName, toolCallId: event.toolCallId },
+						"tool call started: %s", event.toolName,
+					);
+					break;
+				case "tool_execution_update":
+					// Partial tool output is forwarded to the stream registry below.
+					// Do not report these normal progress events as unhandled.
+					break;
 				case "tool_execution_end":
-					recordToolWorkspaceActivity(dataDir, {
-						sessionId: state.sessionId,
-						workspaceId: state.workspaceId,
-						workspaceRoot: state.workspaceRoot,
-						toolName: event.toolName,
-					});
 					workspaceChangeMonitor?.noteToolEnd(event.toolCallId, event.toolName);
 					if (event.isError) {
 						const errText = Array.isArray(event.result?.content)
@@ -1047,6 +1028,7 @@ export async function handleChatRoutes(
 								assistantMessageId: assistantMessage?.role === "assistant" ? assistantMessage.entryId : undefined,
 								startedAt: state.startedAt,
 								finishedAt: state.finishedAt ?? new Date().toISOString(),
+								workspaceId: state.workspaceId,
 								events: state.history,
 							});
 						} catch (err) {

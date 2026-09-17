@@ -22,6 +22,7 @@ import {
 	initSession,
 	isQueueTaskCancelled,
 	reloadResources,
+	setPromptEventObserver,
 	setWorkspaceCwdResolver,
 } from "./agent/pi-runner.js";
 import { completePromptOnce, runPromptSerialized, runPromptStreamingInSession, runPromptInSession, abortPromptForTurnToken, abortJobPromptInSession } from "./agent/pi-runner.js";
@@ -58,6 +59,7 @@ import { handleChatRoutes } from "./server/routes/chat.js";
 import { handleCommandsRoutes } from "./server/routes/commands.js";
 import { handleBtwRoutes } from "./server/routes/btw.js";
 import { mergeSessionAgentCommands } from "./server/agent-command-store.js";
+import { recordToolWorkspaceActivity } from "./server/workspace-activity-store.js";
 import { stripUploadedImagesPrefix } from "./server/upload-prefix.js";
 import {
 	mergeChannels,
@@ -221,6 +223,25 @@ async function ensureBootstrapped(): Promise<void> {
 			const id = basename(sessionPath);
 			const workspaceId = workspaceRegistry.getSessionWorkspaceId(id);
 			return workspaceRegistry.resolveWorkspaceDir(workspaceId);
+		});
+		setPromptEventObserver((event, sessionPath) => {
+			if (event.type !== "tool_execution_start" && event.type !== "tool_execution_update") return;
+			// Progress events normally omit args; the start event is the source of
+			// truth in that case, so do not turn a harmless update into an
+			// incomplete-tracking warning.
+			if (event.type === "tool_execution_update" && event.args === undefined) return;
+			const sessionId = sessionPath ? basename(sessionPath) : getCurrentSessionId();
+			if (!sessionId) return;
+			const workspaceId = workspaceRegistry.getSessionWorkspaceId(sessionId);
+			const workspaceRoot = workspaceRegistry.resolveWorkspaceDir(workspaceId);
+			if (!workspaceRoot) return;
+			recordToolWorkspaceActivity(dataDir, {
+				sessionId,
+				workspaceId,
+				workspaceRoot,
+				toolName: event.toolName,
+				args: event.args,
+			});
 		});
 
 		migrateLegacyPiSkills();

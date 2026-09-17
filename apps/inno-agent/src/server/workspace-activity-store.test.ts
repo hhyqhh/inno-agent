@@ -65,7 +65,7 @@ describe("workspace activity sidecar", () => {
 				assistantIndex: 0,
 				events: [{
 					occurredAt: "2026-09-17T00:00:00.000Z",
-					event: { type: "tool_start", toolName: "read", args: { path: "legacy.md" } },
+					event: { type: "tool_start", workspaceId: "w1", toolName: "read", args: { path: "legacy.md" } },
 				}],
 			}],
 		}));
@@ -76,6 +76,35 @@ describe("workspace activity sidecar", () => {
 			hasSessionHistory: true,
 		});
 		expect(activity.files).toEqual([expect.objectContaining({ path: "legacy.md", access: "read" })]);
+		expect(activity.trackingIncomplete).toBe(true);
+	});
+
+	it("does not attribute unscoped or other-workspace legacy traces", () => {
+		writeFileSync(join(root, "same.md"), "current workspace");
+		mkdirSync(join(dir, "sessions"), { recursive: true });
+		writeFileSync(traceMetadataPath(dir), JSON.stringify({
+			"s1": [{
+				assistantIndex: 0,
+				events: [
+					{
+						occurredAt: "2026-09-17T00:00:00.000Z",
+						event: { type: "tool_start", workspaceId: "w2", toolName: "read", args: { path: "same.md" } },
+					},
+					{
+						occurredAt: "2026-09-17T00:00:01.000Z",
+						event: { type: "tool_start", toolName: "read", args: { path: "same.md" } },
+					},
+				],
+			}],
+		}));
+
+		const activity = getWorkspaceFileActivities(dir, {
+			sessionId: "s1",
+			workspaceId: "w1",
+			workspaceRoot: root,
+			hasSessionHistory: true,
+		});
+		expect(activity.files).toEqual([]);
 		expect(activity.trackingIncomplete).toBe(true);
 	});
 });

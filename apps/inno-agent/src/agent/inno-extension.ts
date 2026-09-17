@@ -6,7 +6,7 @@ import {
 	type ExtensionAPI,
 	type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
-import { saveConfig, setDefaultModel, type InnoConfig } from "../config.js";
+import { isComputerUseEnabled, saveConfig, setDefaultModel, type InnoConfig } from "../config.js";
 import { createLearnerTools } from "../memory/learner/learner-tools.js";
 import { isProfileEmpty, loadProfile, loadRecentEvents } from "../memory/learner/profile-store.js";
 import { buildContextPack, formatContextPackForPrompt } from "../memory/learner/context-pack.js";
@@ -795,6 +795,38 @@ export function createInnoExtension(
 				});
 			} catch (err) {
 				logger.warn({ err }, "Failed to load pi-permission-system extension");
+			}
+		}
+
+		// 12. Computer use (@injaneity/pi-computer-use): desktop GUI control
+		// tools (find_roots / observe_ui / search_ui / expand_ui / inspect_ui /
+		// act_ui / read_text / wait_for + browser tools). These drive the
+		// machine's local screen, which only makes sense — and is only
+		// acceptable — on a local install. Registered when
+		// plugins.computerUse.enabled === true (explicit opt-in, e.g. a local
+		// CLI run) or when unset and INNO_DESKTOP=1 (set by electron/main.js);
+		// explicit `enabled: false` always wins, and online deployments (no
+		// INNO_DESKTOP) stay off unless explicitly enabled.
+		//
+		// TS-only source, loaded through jiti like the other bundled plugins.
+		// The package has no exports map, so the entry loads by subpath. It
+		// imports only pi-coding-agent + typebox (both resolve to the hoisted
+		// backend copies), so no jiti alias is needed. In headless sessions
+		// (server and desktop both run without a TUI) the plugin skips its
+		// interactive setup; each tool lazily runs ensureReady on first use,
+		// and a missing macOS permission grant surfaces as a tool error
+		// carrying grant instructions.
+		if (isComputerUseEnabled(configHolder.current)) {
+			try {
+				const { createJiti: createJitiCU } = await import("jiti/static");
+				const jitiCU = createJitiCU(import.meta.url, { moduleCache: false });
+				const mod = (await jitiCU.import("@injaneity/pi-computer-use/extensions/computer-use.ts", { default: true })) as unknown;
+				if (typeof mod === "function") {
+					(mod as (pi: ExtensionAPI) => void)(pi);
+					logger.info("pi-computer-use extension registered");
+				}
+			} catch (err) {
+				logger.warn({ err }, "Failed to load pi-computer-use extension");
 			}
 		}
 	};

@@ -57,6 +57,7 @@
 		"asarUnpack": [
 			"**/node_modules/node-pty/**/*",
 			"**/node_modules/@homebridge/**/*",
+			"**/node_modules/@injaneity/pi-computer-use/**/*",
 			"apps/inno-agent/presets/**/*",
 			"apps/inno-agent/scripts/**/*"
 		],

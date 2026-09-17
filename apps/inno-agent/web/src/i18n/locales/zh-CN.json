@@ -684,6 +684,11 @@
 			"title": "单美元符号行内公式",
 			"description": "允许用 $...$ 表示公式。默认关闭，避免价格和货币金额被误判；\\(...\\) 与 $$...$$ 不受影响。"
 		},
+		"computerUse": {
+			"title": "电脑控制",
+			"description": "允许 agent 查看并操作本机屏幕(点击、输入、浏览器控制)。macOS 首次使用需在系统设置中为 pi-computer-use.app 授予「辅助功能」与「屏幕录制」权限。",
+			"restartHint": "更改将在重启后生效。"
+		},
 		"permissions": {
 			"title": "工具权限",
 			"description": "控制 agent 执行命令前的审批粒度。危险命令与敏感文件在任何模式下都会被拒绝；切换后立即生效，无需重启。",

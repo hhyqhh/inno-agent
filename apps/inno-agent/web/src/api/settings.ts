@@ -73,6 +73,13 @@ export async function savePermissionMode(mode: PermissionPolicyMode): Promise<In
 	});
 }
 
+export async function saveComputerUseSettings(enabled: boolean): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>("/api/settings/computer-use", {
+		method: "PUT",
+		body: JSON.stringify({ enabled }),
+	});
+}
+
 export async function saveSmartInputSettings(payload: SmartInputSettings): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings/smart-input", {
 		method: "PUT",

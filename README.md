@@ -60,6 +60,7 @@ These constraints keep the memory layers, scheduler, and channels simple enough 
 - 🌍 **i18n & themes** — Chinese/English UI, four themes.
 - 🎬 **Session replay showcase** — export any real session (button or CLI) and replay it in a standalone site built from the real product UI, with streaming messages, workspace/notebook/profile panels, and generated artifacts.
 - 🛡️ **Optional OS-level sandbox** — gate bash/file operations via [pi-sandbox](https://github.com/carderne/pi-sandbox); optional subagents via `pi-subagents`.
+- 🖥️ **Computer use (desktop)** — the desktop app can observe and control the local screen (accessibility-tree-first) via [`pi-computer-use`](https://github.com/injaneity/pi-computer-use); off by default on server deployments. See [Computer Use](#computer-use).
 
 ## Quick Start
 
@@ -154,6 +155,28 @@ Both CLI and server resolve paths through `apps/inno-agent/src/runtime.ts`. Prec
 ### Permissions & Sandbox
 
 Two independent guardrails control what the agent's tools can do. The **permission layer** (pi-permission-system, on by default) gates tool calls with allow/ask/deny rules — `ask` pops an approval card in the web UI (allow once / allow for session / deny). Three policy modes — `default` (asks on non-allowlisted bash), `auto` (approves bash), `yolo` (approves everything) — switchable from the shield button in the composer toolbar, persisted as `plugins.permissionSystem.mode`, effective immediately without restart. A hard-deny floor (destructive commands, `~/.ssh/*`, `*.env`, …) applies in every mode. The **sandbox layer** (pi-sandbox, opt-in via `--sandbox`) enforces filesystem/network limits at the OS level (sandbox-exec on macOS, bubblewrap on Linux) — a permission approval never overrides it. Full details and configuration: [docs/PERMISSIONS_AND_SANDBOX.md](./docs/PERMISSIONS_AND_SANDBOX.md).
+
+### Computer Use
+
+The desktop app ships with GUI computer control (via [`@injaneity/pi-computer-use`](https://github.com/injaneity/pi-computer-use)): the agent observes windows through the OS accessibility tree and acts — click, type, scroll, or drive a browser. Passive observation tools stay allowed; every side-effecting action (`act_ui`, browser launch/navigation/evaluate) pops an approval card first. On macOS, first use installs a signed helper at `~/Applications/pi-computer-use.app` and needs **Accessibility** + **Screen Recording** grants in System Settings → Privacy & Security (if a fresh grant isn't picked up, restart the helper with `pkill -f pi-computer-use.app`).
+
+**Enable / disable:**
+
+- **Desktop app** — on by default. Toggle in **Settings → General → Computer use**, then restart the app (tools register at session start, so the change applies on restart).
+- **Local server / CLI** — off by default. Start with the desktop flag to enable:
+
+  ```bash
+  INNO_DESKTOP=1 npm run server -- --home ./runtime --workspace ./workspace --port 3000
+  ```
+
+  To turn it back off, restart the service **without** `INNO_DESKTOP`.
+- **Explicit override** (wins over the env default in both directions) in `config.json`:
+
+  ```json
+  "plugins": { "computerUse": { "enabled": true } }
+  ```
+
+- **Online deployments** — leave it unset (no `INNO_DESKTOP`) and the feature stays off.
 
 ### Content Hub
 

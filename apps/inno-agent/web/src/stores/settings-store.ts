@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, savePermissionMode as savePermissionModeApi, saveSmartInputSettings, saveMcpSettings, saveCloseBehavior, saveMarkdownSettings, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, savePermissionMode as savePermissionModeApi, saveComputerUseSettings, saveSmartInputSettings, saveMcpSettings, saveCloseBehavior, saveMarkdownSettings, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
 import type { WindowCloseBehavior, PermissionPolicyMode } from "../types/settings.js";
 import type { InnoSettings, SmartInputSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
@@ -19,6 +19,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingTavily = false;
 	isSavingContentHub = false;
 	isSavingPermissionMode = false;
+	isSavingComputerUse = false;
 	isSavingSmartInput = false;
 	isSavingMcp = false;
 	isSavingCloseBehavior = false;
@@ -141,6 +142,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			throw err;
 		} finally {
 			this.isSavingMemory = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveComputerUse(enabled: boolean): Promise<void> {
+		this.isSavingComputerUse = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveComputerUseSettings(enabled);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save computer-use setting";
+			this.emit("change", undefined);
+			throw err;
+		} finally {
+			this.isSavingComputerUse = false;
 			this.emit("change", undefined);
 		}
 	}

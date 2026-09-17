@@ -292,11 +292,23 @@ export interface InnoConfig {
 	 *   hard-deny floor (destructive commands, credential paths) applies in all
 	 *   three. Switching modes rewrites the plugin config file from the
 	 *   template — hand edits to that file are lost on a mode switch.
+	 * - `computerUse` (@injaneity/pi-computer-use): desktop GUI control
+	 *   tools (find_roots / observe_ui / search_ui / act_ui / browser tools).
+	 *   Drives the local screen, so unlike the other plugins it is NOT on by
+	 *   default everywhere: unset `enabled` means on only when INNO_DESKTOP=1
+	 *   (set by electron/main.js for the desktop app); `enabled: true` opts
+	 *   in anywhere (e.g. a local CLI run); `enabled: false` always wins.
+	 *   Online deployments (no INNO_DESKTOP) stay off unless explicitly
+	 *   enabled. On macOS the helper app (~/Applications/pi-computer-use.app)
+	 *   needs Accessibility + Screen Recording grants; headless sessions
+	 *   cannot prompt, so a missing grant surfaces as a tool error with
+	 *   grant instructions.
 	 */
 	plugins?: {
 		todo?: { enabled?: boolean };
 		webAccess?: { enabled?: boolean };
 		permissionSystem?: { enabled?: boolean; mode?: PermissionPolicyMode };
+		computerUse?: { enabled?: boolean };
 	};
 }
 

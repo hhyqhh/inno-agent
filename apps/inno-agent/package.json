@@ -19,6 +19,7 @@
 		"@earendil-works/pi-ai": "^0.84.2",
 		"@earendil-works/pi-coding-agent": "^0.84.2",
 		"@gotgenes/pi-permission-system": "^31.1.3",
+		"@injaneity/pi-computer-use": "^0.5.1",
 		"@juicesharp/rpiv-ask-user-question": "^1.12.0",
 		"@juicesharp/rpiv-todo": "^2.6.4",
 		"@larksuiteoapi/node-sdk": "^1.63.1",

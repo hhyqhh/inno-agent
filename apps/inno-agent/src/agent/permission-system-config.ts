@@ -28,6 +28,14 @@
  *    default never generates asks on those surfaces. OS-level confinement
  *    remains pi-sandbox's job; inno's workspace-path-guard bounds the agent's
  *    own file tools.
+ * 4. Computer-use side effects ask. pi-computer-use (desktop app only) splits
+ *    into passive observation tools (find_roots / observe_ui / search_ui /
+ *    expand_ui / inspect_ui / read_text / wait_for — inherit the `"*" allow`)
+ *    and side-effect tools (`act_ui`, `launch_browser`, `navigate_browser`,
+ *    `evaluate_browser`) which are `ask` here, so every click / keystroke /
+ *    navigation / in-page JS evaluation gets an approval card. Existing
+ *    installs keep their current file (ensurePermissionSystemConfig never
+ *    overwrites); the rules land on first run or the next mode switch.
  *
  * The file is only written when absent — user edits are never clobbered —
  * except by an explicit mode switch from the settings UI
@@ -114,6 +122,14 @@ const MANAGED_DEFAULT = {
 			"*.pem": "deny",
 			"*.key": "deny",
 		},
+		// Computer use (pi-computer-use, desktop app only): passively reading
+		// the screen inherits the "*" allow; acting on it does not. Every
+		// click, keystroke, drag, browser launch/navigation, or in-page JS
+		// evaluation gets an approval card.
+		act_ui: "ask",
+		launch_browser: "ask",
+		navigate_browser: "ask",
+		evaluate_browser: "ask",
 		// See module docstring §3: asks on this surface can never be approved
 		// by a chain link (bounded-delegation downgrade), so the managed default
 		// does not generate them.

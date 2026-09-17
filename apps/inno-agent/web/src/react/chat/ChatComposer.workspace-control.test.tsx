@@ -68,7 +68,7 @@ function baseProps(overrides: Partial<ChatComposerProps> = {}): ChatComposerProp
 }
 
 describe("ChatComposer workspace/permission controls", () => {
-	it("renders the workspace control inside the conversation toolbar", () => {
+	it("does not render the workspace control inside an active conversation", () => {
 		render(
 			<ChatComposer
 				{...baseProps({
@@ -78,7 +78,7 @@ describe("ChatComposer workspace/permission controls", () => {
 				})}
 			/>,
 		);
-		expect(screen.getByTestId("ws-switcher")).toBeTruthy();
+		expect(screen.queryByTestId("ws-switcher")).toBeNull();
 		expect(screen.getByTestId("perm-control")).toBeTruthy();
 	});
 

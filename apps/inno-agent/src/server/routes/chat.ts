@@ -34,6 +34,12 @@ import {
 import { recordSessionAttachments } from "../attachments-store.js";
 import { recordSessionAgentCommand } from "../agent-command-store.js";
 import { recordSessionTrace } from "../trace-store.js";
+import {
+	markWorkspaceTrackingIncomplete,
+	recordToolWorkspaceActivity,
+	recordWorkspaceAttachmentActivity,
+	recordWorkspaceFileAccess,
+} from "../workspace-activity-store.js";
 import { WORKSPACE_IGNORES } from "../file-helpers.js";
 import { json, matchRoute, readBody } from "../http-helpers.js";
 import type {
@@ -387,12 +393,6 @@ interface WorkspaceChangeMonitor {
 	close(): void;
 }
 
-const WORKSPACE_CHANGE_IGNORES = new Set([
-	...WORKSPACE_IGNORES,
-	".next",
-	".vite",
-	"coverage",
-]);
 const MAX_WORKSPACE_CHANGE_EVENTS = 40;
 const WORKSPACE_CHANGE_SETTLE_MS = 80;
 
@@ -451,7 +451,7 @@ function createWorkspaceChangeMonitor(
 			const relativePath = relative(root, fullPath);
 			if (!relativePath || relativePath.startsWith("..") || isAbsolute(relativePath)) return;
 			const normalizedPath = relativePath.replaceAll("\\", "/");
-			if (normalizedPath.split("/").some((part) => WORKSPACE_CHANGE_IGNORES.has(part))) return;
+			if (normalizedPath.split("/").some((part) => WORKSPACE_IGNORES.has(part))) return;
 			pending.set(normalizedPath, eventType);
 			scheduleFlush();
 		});
@@ -522,6 +522,13 @@ export async function handleChatRoutes(
 		const imageWorkspaceId = workspaceRegistry.getSessionWorkspaceId(imageSessionId);
 		const imageWorkspaceRoot = workspaceRegistry.resolveWorkspaceDir(imageWorkspaceId) ?? paths.workspaceDir;
 		const imagePaths = persistInlineImages(images, imageWorkspaceRoot);
+						recordWorkspaceFileAccess(dataDir, {
+			sessionId: imageSessionId,
+			workspaceId: imageWorkspaceId,
+			workspaceRoot: imageWorkspaceRoot,
+			paths: imagePaths,
+			access: "write",
+		});
 		// Sent only when the images can't reach the model natively (text-only
 		// model or provider rejection); vision turns get the raw prompt so
 		// they aren't steered toward ocr_image.
@@ -539,6 +546,12 @@ export async function handleChatRoutes(
 				promptContent: prompt,
 				attachments,
 				timestamp: Date.now(),
+			});
+			recordWorkspaceAttachmentActivity(dataDir, {
+				sessionId: imageSessionId,
+				workspaceId: imageWorkspaceId,
+				workspaceRoot: imageWorkspaceRoot,
+				attachments,
 			});
 		}
 		// Use atomic switch+prompt when a specific session is requested.
@@ -742,6 +755,13 @@ export async function handleChatRoutes(
 		// Persist inline images to the workspace so file-path tools (ocr_image,
 		// parse_document) can read them when the chat model can't see images.
 		const imagePaths = persistInlineImages(images, streamWorkspaceRoot);
+		recordWorkspaceFileAccess(dataDir, {
+			sessionId: requestedSessionId,
+			workspaceId: streamWorkspaceId,
+			workspaceRoot: streamWorkspaceRoot,
+			paths: imagePaths,
+			access: "write",
+		});
 		// Sent only when the images can't reach the model natively (text-only
 		// model or provider rejection); vision turns get the raw prompt so
 		// they aren't steered toward ocr_image.
@@ -784,6 +804,12 @@ export async function handleChatRoutes(
 				promptContent: prompt,
 				attachments: streamAttachments,
 				timestamp: Date.now(),
+			});
+			recordWorkspaceAttachmentActivity(dataDir, {
+				sessionId: requestedSessionId,
+				workspaceId: streamWorkspaceId,
+				workspaceRoot: streamWorkspaceRoot,
+				attachments: streamAttachments,
 			});
 		}
 		streamRegistry.publishStreamEvent(state, { type: "stream_state", status: "queued" });
@@ -860,16 +886,36 @@ export async function handleChatRoutes(
 					break;
 				}
 					case "tool_execution_start":
+						recordToolWorkspaceActivity(dataDir, {
+						sessionId: state.sessionId,
+						workspaceId: state.workspaceId,
+						workspaceRoot: state.workspaceRoot,
+						toolName: event.toolName,
+							args: event.args,
+						});
 						logger.info(
 							{ toolName: event.toolName, toolCallId: event.toolCallId },
 							"tool call started: %s", event.toolName,
 						);
 						break;
 					case "tool_execution_update":
+					recordToolWorkspaceActivity(dataDir, {
+						sessionId: state.sessionId,
+						workspaceId: state.workspaceId,
+						workspaceRoot: state.workspaceRoot,
+						toolName: event.toolName,
+							args: event.args,
+						});
 						// Partial tool output is forwarded to the stream registry below.
 						// Do not report these normal progress events as unhandled.
 						break;
-					case "tool_execution_end":
+				case "tool_execution_end":
+					recordToolWorkspaceActivity(dataDir, {
+						sessionId: state.sessionId,
+						workspaceId: state.workspaceId,
+						workspaceRoot: state.workspaceRoot,
+						toolName: event.toolName,
+					});
 					workspaceChangeMonitor?.noteToolEnd(event.toolCallId, event.toolName);
 					if (event.isError) {
 						const errText = Array.isArray(event.result?.content)
@@ -941,7 +987,23 @@ export async function handleChatRoutes(
 						timeoutMs: 30 * 60_000,
 					});
 					workspaceChangeMonitor = createWorkspaceChangeMonitor(streamWorkspaceRoot, (event) => {
-						streamRegistry.publishStreamEvent(state, event as { type: string });
+						const changeEvent = event as { type?: string; changes?: Array<{ path?: unknown }> };
+						if ((event as { truncated?: unknown }).truncated === true) {
+							markWorkspaceTrackingIncomplete(dataDir, state.sessionId);
+						}
+						const paths = (changeEvent.changes ?? [])
+							.map((change) => typeof change.path === "string" ? change.path : "")
+							.filter(Boolean);
+						if (paths.length > 0) {
+							recordWorkspaceFileAccess(dataDir, {
+								sessionId: state.sessionId,
+								workspaceId: state.workspaceId,
+								workspaceRoot: state.workspaceRoot,
+								paths,
+								access: "write",
+							});
+						}
+						streamRegistry.publishStreamEvent(state, { ...event as { type: string }, workspaceId: state.workspaceId });
 					});
 				},
 				onFinish: async (outcome) => {

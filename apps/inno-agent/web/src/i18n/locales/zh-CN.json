@@ -884,6 +884,43 @@
 			"settingsDesc": "打开设置"
 		},
 		"loadingSession": "正在加载会话…",
+		"workspaceSwitchExistingOnly": "会话标题栏仅支持切换已有工作区",
+		"workspaceSwitch": {
+			"title": "切换会话工作区",
+			"loading": "正在检查可迁移文件…",
+			"warningTitle": "切换工作区可能影响上下文",
+			"warning": "会话历史会保留，但相同的相对路径可能指向新工作区中的不同文件，可能导致 AI 的上下文或记忆判断错误。此次不会迁移会话历史或记忆。",
+			"filesTitle": "本会话访问过的文件",
+			"filesHint": "为每个文件分别选择复制、移动或不处理",
+			"missing": "已不存在或不可处理",
+			"noFiles": "没有可追踪的文件",
+			"trackingIncomplete": "部分历史文件访问无法可靠还原，文件统计可能不完整。",
+			"action": {
+				"none": "不处理",
+				"copy": "复制",
+				"move": "移动"
+			},
+			"access": {
+				"read": "读取",
+				"write": "写入",
+				"read_write": "读取+写入"
+			},
+			"confirm": "确认切换",
+			"executing": "正在切换…",
+			"resultTitle": "工作区已切换",
+			"resultSuccess": "成功 {{count}}",
+			"resultConflict": "冲突跳过 {{count}}",
+			"resultFailure": "失败 {{count}}",
+			"resultMissing": "缺失 {{count}}",
+			"resultDetails": "查看具体路径",
+			"result": {
+				"moved": "已移动",
+				"copied": "已复制",
+				"conflict": "跳过冲突",
+				"missing": "文件缺失",
+				"failed": "处理失败"
+			}
+		},
 		"trace": {
 			"timeline": "工作过程",
 			"working": "工作中",

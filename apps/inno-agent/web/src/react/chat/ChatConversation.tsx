@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
-import { ArrowDown, Folder, Sparkles } from "lucide-react";
+import { ArrowDown, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { AttachmentRef, ChatMessage, ChatToolRecord, PendingQuestion } from "../../types/chat.js";
 import { workspaceFileUrl } from "../../api/workspace.js";
@@ -78,8 +78,10 @@ interface ChatConversationProps {
 	sessionTitle?: string;
 	/** True once the server has recorded a deliberate session topic. */
 	sessionHasTopic?: boolean;
-	/** Bound workspace name rendered as a chip next to the title. */
-	workspaceName?: string | null;
+	/** The selected session is still loading its history. */
+	sessionOpening?: boolean;
+	/** Existing-workspace switcher rendered next to the title. */
+	workspaceControl?: ReactNode;
 	/** Reserve room for the desktop chrome's workspace button when collapsed. */
 	workspaceCollapsed?: boolean;
 	/** When the session sidebar is collapsed its floating expand button overlaps the header's left edge. */
@@ -112,7 +114,8 @@ export function ChatConversation({
 	wsError,
 	sessionTitle,
 	sessionHasTopic = false,
-	workspaceName,
+	sessionOpening = false,
+	workspaceControl,
 	workspaceCollapsed = false,
 	sidebarCollapsed = false,
 }: ChatConversationProps) {
@@ -129,7 +132,7 @@ export function ChatConversation({
 	}, [chat.isLoadingHistory, chat.messages.length]);
 	const conversationTurns = useMemo(() => buildConversationTurns(chat.messages), [chat.messages]);
 	const initialTitle = useMemo(() => firstMessageTitle(chat.messages), [chat.messages]);
-	const visibleSessionTitle = sessionHasTopic && sessionTitle
+	const visibleSessionTitle = (sessionHasTopic || sessionOpening) && sessionTitle
 		? sessionTitle
 		: initialTitle || t("nav.newChat", "新建会话");
 	const turnIndexByStartMessage = useMemo(
@@ -236,16 +239,11 @@ export function ChatConversation({
 			{topOverlay}
 			{smartToast}
 			<header className={`inno-conversation-header relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] pr-4 backdrop-blur-md ${workspaceCollapsed ? "pr-14" : ""} ${sidebarCollapsed ? "inno-conversation-header--sidebar-collapsed" : "pl-4"}`}>
-					<div className="inno-conversation-heading flex min-w-0 items-center gap-2.5">
+				<div className="inno-conversation-heading flex min-w-0 items-center gap-2.5">
 					<span className="inno-conversation-title min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]" title={visibleSessionTitle}>{visibleSessionTitle}</span>
-					{workspaceName ? (
-						<span className="inno-conversation-workspace-chip inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] bg-[var(--inno-chip-bg)] px-2.5 py-[3px] text-[11px] text-[var(--inno-text-subtle)]">
-							<Folder size={11} aria-hidden="true" />
-							<span className="max-w-[220px] truncate max-md:max-w-24">{workspaceName}</span>
-						</span>
-						) : null}
-					</div>
-					{btwControl ? <div className="ml-auto flex shrink-0 items-center">{btwControl}</div> : null}
+					{workspaceControl ? <div className="inno-conversation-workspace-control shrink-0">{workspaceControl}</div> : null}
+				</div>
+				{btwControl ? <div className="ml-auto flex shrink-0 items-center">{btwControl}</div> : null}
 			</header>
 			<div className="conversation-stage relative flex-1 min-h-0">
 				<div

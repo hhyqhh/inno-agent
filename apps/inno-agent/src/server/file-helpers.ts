@@ -43,7 +43,7 @@ export function slugifySkillName(value: string): string {
 export const WORKSPACE_TREE_MAX_DEPTH = 8;
 
 /** Directories never shown in workspace/skill trees or change monitors. */
-export const WORKSPACE_IGNORES = new Set([".git", "node_modules", "dist", ".DS_Store"]);
+export const WORKSPACE_IGNORES = new Set([".git", "node_modules", "dist", ".DS_Store", ".next", ".vite", "coverage"]);
 
 /**
  * Build a `Content-Disposition: attachment` header value that survives

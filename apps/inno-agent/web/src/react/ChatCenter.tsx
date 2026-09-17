@@ -22,7 +22,13 @@ import { settingsStore } from "../stores/settings-store.js";
 import { appStore } from "../stores/app-store.js";
 import { skillsStore } from "../stores/skills-store.js";
 import { branchSessionBeforeMessage, type CreateSessionInput } from "../api/sessions.js";
-import { bindSessionWorkspace } from "../api/workspaces.js";
+import {
+	getWorkspaceSwitchPreview,
+	switchSessionWorkspace,
+	type WorkspaceSwitchFileAction,
+	type WorkspaceSwitchPreview,
+	type WorkspaceSwitchResult,
+} from "../api/workspaces.js";
 import { ApiError } from "../api/client.js";
 import type { PresetMeta } from "../types/presets.js";
 import { arrayBufferToBase64 } from "../api/uploads.js";
@@ -45,7 +51,8 @@ import {
 	type SlashPaletteEntry,
 } from "./chat/slash-palette-utils.js";
 import { fetchSlashCommands, type SlashCommandItem } from "../api/commands.js";
-import { WorkspaceContext } from "./chat/WorkspaceContext.js";
+import { WorkspaceSwitchConfirm } from "./chat/WorkspaceSwitchConfirm.js";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher.js";
 import { BtwPanel } from "./BtwPanel.js";
 import { PermissionModeControl } from "./chat/PermissionModeControl.js";
 import type { WorkspaceChoice } from "./WorkspaceSwitcher.js";
@@ -178,6 +185,11 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	const [wsExistingId, setWsExistingId] = useState(() => readLastWsId());
 	const [wsError, setWsError] = useState("");
 	const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
+	const [workspaceSwitchPreview, setWorkspaceSwitchPreview] = useState<WorkspaceSwitchPreview | null>(null);
+	const [workspaceSwitchPhase, setWorkspaceSwitchPhase] = useState<"loading" | "executing" | null>(null);
+	const [workspaceSwitchFileActions, setWorkspaceSwitchFileActions] = useState<Record<string, WorkspaceSwitchFileAction>>({});
+	const [workspaceSwitchResult, setWorkspaceSwitchResult] = useState<WorkspaceSwitchResult | null>(null);
+	const workspaceSwitchRequestRef = useRef(0);
 
 	const modelState = useStoreSnapshot(settingsStore, () => {
 		const settings = settingsStore.settings;
@@ -335,35 +347,89 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 
 		const sessionId = sessions.currentSessionId;
 		if (!sessionId) return;
-		if (chat.isSending || isUploading) {
+		if (choice.kind === "new") {
+			setWsError(t("chat.workspaceSwitchExistingOnly"));
+			return;
+		}
+		const targetWorkspaceId = choice.kind === "workspace"
+			? choice.workspaceId
+			: choice.kind === "temp"
+				? workspaces.list.find((workspace) => workspace.isTemp)?.id
+				: undefined;
+		if (!targetWorkspaceId) {
+			setWsError(t("chat.workspaceUnavailable"));
+			return;
+		}
+		const currentWorkspaceId = activeWorkspaceId ?? workspaces.list.find((workspace) => workspace.isTemp)?.id ?? null;
+		if (targetWorkspaceId === currentWorkspaceId) return;
+		if (chat.isSending || chat.jobStreaming || isUploading || hasConversationStatus) {
 			setWsError(t("chat.workspaceBusy"));
 			return;
 		}
 
+		const requestId = ++workspaceSwitchRequestRef.current;
 		setIsSwitchingWorkspace(true);
+		setWorkspaceSwitchPhase("loading");
+		setWorkspaceSwitchPreview(null);
+		setWorkspaceSwitchResult(null);
+		setWorkspaceSwitchFileActions({});
 		try {
-			let workspaceId: string;
-			if (choice.kind === "workspace") {
-				workspaceId = choice.workspaceId;
-			} else if (choice.kind === "new") {
-				workspaceId = (await workspacesStore.create({ name: choice.name, isTemp: false })).id;
-			} else {
-				const tempWorkspace = workspaces.list.find((workspace) => workspace.isTemp);
-				if (!tempWorkspace) throw new Error(t("chat.workspaceUnavailable"));
-				workspaceId = tempWorkspace.id;
-			}
-
-			if (workspaceId !== activeWorkspaceId) {
-				await bindSessionWorkspace(sessionId, workspaceId);
-				await workspaceStore.setActiveWorkspace(workspaceId);
-			}
-			await workspacesStore.load();
+			const preview = await getWorkspaceSwitchPreview(sessionId, targetWorkspaceId);
+			if (workspaceSwitchRequestRef.current !== requestId) return;
+			setWorkspaceSwitchPreview(preview);
+			setWorkspaceSwitchFileActions(Object.fromEntries(preview.files.filter((file) => file.selectable).map((file) => [file.path, "none" as const])));
 		} catch (error) {
-			setWsError(error instanceof Error ? error.message : t("chat.workspaceSwitchFailed"));
+			if (workspaceSwitchRequestRef.current === requestId) setWsError(error instanceof Error ? error.message : t("chat.workspaceSwitchFailed"));
 		} finally {
-			setIsSwitchingWorkspace(false);
+			if (workspaceSwitchRequestRef.current === requestId) {
+				setWorkspaceSwitchPhase(null);
+				setIsSwitchingWorkspace(false);
+			}
 		}
-	}, [activeWorkspaceId, chat.isSending, isUploading, isWelcome, sessions.currentSessionId, t, workspaces.list]);
+	}, [activeWorkspaceId, chat.isSending, chat.jobStreaming, hasConversationStatus, isUploading, isWelcome, sessions.currentSessionId, t, workspaces.list]);
+
+	const closeWorkspaceSwitch = useCallback(() => {
+		workspaceSwitchRequestRef.current += 1;
+		setIsSwitchingWorkspace(false);
+		setWorkspaceSwitchPreview(null);
+		setWorkspaceSwitchPhase(null);
+		setWorkspaceSwitchFileActions({});
+		setWorkspaceSwitchResult(null);
+		setWsError("");
+	}, []);
+
+	const setWorkspaceSwitchFileAction = useCallback((path: string, action: WorkspaceSwitchFileAction) => {
+		setWorkspaceSwitchFileActions((current) => ({ ...current, [path]: action }));
+	}, []);
+
+	const handleWorkspaceSwitchConfirm = useCallback(async () => {
+		const sessionId = sessions.currentSessionId;
+		const preview = workspaceSwitchPreview;
+		if (!sessionId || !preview || workspaceSwitchPhase === "executing") return;
+		const requestId = ++workspaceSwitchRequestRef.current;
+		setWorkspaceSwitchPhase("executing");
+		setIsSwitchingWorkspace(true);
+		setWsError("");
+		try {
+			const result = await switchSessionWorkspace(sessionId, {
+				targetWorkspaceId: preview.targetWorkspace.id,
+				fileActions: workspaceSwitchFileActions,
+			});
+			if (workspaceSwitchRequestRef.current !== requestId) return;
+			setWorkspaceSwitchResult(result);
+			if (result.switched) {
+				await workspaceStore.setActiveWorkspace(result.targetWorkspace.id);
+				await workspacesStore.load();
+			}
+		} catch (error) {
+			if (workspaceSwitchRequestRef.current === requestId) setWsError(error instanceof Error ? error.message : t("chat.workspaceSwitchFailed"));
+		} finally {
+			if (workspaceSwitchRequestRef.current === requestId) {
+				setWorkspaceSwitchPhase(null);
+				setIsSwitchingWorkspace(false);
+			}
+		}
+	}, [sessions.currentSessionId, t, workspaceSwitchFileActions, workspaceSwitchPhase, workspaceSwitchPreview]);
 
 	// Import a workspace from a .zip archive: upload first, then route the
 	// freshly created workspace through the normal selection flow (welcome
@@ -1395,7 +1461,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 					revision={`${chat.messages.length}:${chat.isLoadingHistory}:${sessions.contextUsageRevision}`}
 				/> : null}
 				permissionControl={<PermissionModeControl variant={isWelcome ? "pill" : "inline"} />}
-			workspaceControl={workspaceContext}
+			workspaceControl={isWelcome ? workspaceContext : undefined}
 			modelPickerOpen={modelPickerOpen}
 			attachMenuOpen={attachMenuOpen}
 			workspaceFiles={workspaceFiles}
@@ -1445,26 +1511,51 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	const selectedWorkspaceId = isWelcome ? (wsMode === "existing" ? wsExistingId : null) : activeWorkspaceId;
 	const selectedKind: "workspace" | "temp" | "new" = isWelcome ? (wsMode === "existing" ? "workspace" : wsMode) : "workspace";
 	const workspaceContext = (
-			<WorkspaceContext
-				workspaces={workspaces.list}
-				selectedWorkspaceId={selectedWorkspaceId}
-				selectedKind={selectedKind}
-				newWorkspaceName={wsMode === "new" ? wsName : ""}
-				busy={isSwitchingWorkspace}
-				disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
-				onChange={handleWorkspaceChange}
-				onImport={handleWorkspaceImport}
-			/>
+		<WorkspaceSwitcher
+			workspaces={workspaces.list}
+			selectedWorkspaceId={selectedWorkspaceId}
+			selectedKind={selectedKind}
+			newWorkspaceName={wsMode === "new" ? wsName : ""}
+			busy={isSwitchingWorkspace}
+			disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
+			onChange={handleWorkspaceChange}
+			onImport={handleWorkspaceImport}
+		/>
 	);
 
 	const questionHint = chat.pendingQuestion ? <QuestionHint scrollRef={scrollRef} /> : null;
 	const busyBlocker = sessions.busyBlocker ? <BusyBlocker busyBlocker={sessions.busyBlocker} /> : null;
 
-	// Conversation header (InnoSpark anatomy): session topic + workspace chip +
+	// Conversation header (InnoSpark anatomy): session topic + workspace switcher +
 	// right-panel toggle. The panel flip mirrors the workspace panel's own
 	// open/close controls.
 	const currentSessionMeta = sessions.list.find((session) => session.id === sessions.currentSessionId);
-	const activeWorkspaceName = workspaces.list.find((workspace) => workspace.id === activeWorkspaceId)?.name ?? null;
+	const headerWorkspaceId = activeWorkspaceId ?? tempWorkspaceId ?? null;
+	const headerWorkspace = workspaces.list.find((workspace) => workspace.id === headerWorkspaceId);
+	const headerWorkspaceControl = sessions.currentSessionId ? (
+		<WorkspaceSwitcher
+			workspaces={workspaces.list}
+			selectedWorkspaceId={headerWorkspaceId}
+			selectedKind={headerWorkspace?.isTemp ? "temp" : "workspace"}
+			busy={isSwitchingWorkspace || Boolean(workspaceSwitchPreview)}
+			disabled={chat.isSending || chat.jobStreaming || isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission) || Boolean(sessions.busyBlocker)}
+			conversationMode
+			onChange={handleWorkspaceChange}
+		/>
+	) : null;
+	const workspaceSwitchModal = !isWelcome && (workspaceSwitchPhase === "loading" || workspaceSwitchPreview) ? (
+		<WorkspaceSwitchConfirm
+			preview={workspaceSwitchPreview}
+			loading={workspaceSwitchPhase === "loading"}
+			fileActions={workspaceSwitchFileActions}
+			result={workspaceSwitchResult}
+			executing={workspaceSwitchPhase === "executing"}
+			error={wsError || undefined}
+			onFileActionChange={setWorkspaceSwitchFileAction}
+			onConfirm={() => void handleWorkspaceSwitchConfirm()}
+			onCancel={closeWorkspaceSwitch}
+		/>
+	) : null;
 	const smartToastNode = smartToast ? (
 		<div className={`inno-smart-toast ${smartToast.error ? "is-error" : ""}`} role="status">{smartToast.message}</div>
 	) : null;
@@ -1541,12 +1632,13 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	return (
 		<>
 		{smartOverlayNode}
+		{workspaceSwitchModal}
 		<ChatConversation
 			chat={chat}
 			topOverlay={scheduledRunBanner}
 			// Job-run conversations carry the full job prompt as the user turn —
 			// collapse it to its first line so it doesn't drown the conversation.
-			collapseUserMessages={sessions.list.find((s) => s.id === sessions.currentSessionId)?.origin === "scheduler"}
+			collapseUserMessages={currentSessionMeta?.origin === "scheduler"}
 			scrollRef={scrollRef}
 			onScroll={handleChatScroll}
 			onWheel={markUserScrollGesture}
@@ -1569,7 +1661,8 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 			wsError={wsError}
 			sessionTitle={currentSessionMeta?.name}
 			sessionHasTopic={currentSessionMeta?.hasTopic === true}
-			workspaceName={activeWorkspaceName}
+			sessionOpening={sessions.openingSessionId === sessions.currentSessionId}
+			workspaceControl={headerWorkspaceControl}
 			workspaceCollapsed={appLayout.workspaceMode === "collapsed"}
 			sidebarCollapsed={appLayout.sidebarCollapsed}
 		/>

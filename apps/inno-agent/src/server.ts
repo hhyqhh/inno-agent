@@ -1561,7 +1561,8 @@ const server = createServer(async (req, res) => {
 		if (await handleWorkspacesRoutes(req, res, method, url, {
 			workspaceRegistry, dataDir, paths,
 			installSkillZip, installSkillMarkdown, scheduleSkillsReload, importWorkspaceZip,
-			sessionFileFromId, releaseQueueFromQuestionBlockedTurn, runQueueOpWithTimeout,
+			sessionFileFromId,
+			releaseQueueFromQuestionBlockedTurn, runQueueOpWithTimeout,
 		})) return;
 
 		// --- Presets API (extracted to server/routes/presets.ts) ---

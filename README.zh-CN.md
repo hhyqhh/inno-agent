@@ -49,6 +49,7 @@ Inno Agent 是服务于单个学习者的长期学习伙伴。它把长期学习
 - 🔌 **可插拔模型供应商**——任意 `openai-completions` 或 `anthropic-messages` 端点(Anthropic、OpenAI、DeepSeek、Ollama、本地模型),UI 内实时切换。
 - 🌍 **国际化与主题**——中/英文界面,四套主题。
 - 🛡️ **可选系统级沙箱**——通过 [pi-sandbox](https://github.com/carderne/pi-sandbox) 管控 bash/文件操作;可选 `pi-subagents` 子代理。
+- 🖥️ **电脑控制(桌面端)**——桌面应用可通过 [`pi-computer-use`](https://github.com/injaneity/pi-computer-use) 查看并操作本机屏幕(无障碍树优先);服务器部署默认关闭。见[电脑控制](#电脑控制-computer-use)。
 
 ## 快速开始
 
@@ -139,6 +140,28 @@ CLI 与 server 都通过 `apps/inno-agent/src/runtime.ts` 解析路径。优先�
 | `--skills` | `INNO_SKILLS_DIR` | `<home>/skills` |
 | `--workspace` | `INNO_WORKSPACE_DIR` | 调用时的工作目录 |
 | `--port` | `INNO_PORT` | `3000` |
+
+### 电脑控制(Computer Use)
+
+桌面应用内置 GUI 电脑控制能力(基于 [`@injaneity/pi-computer-use`](https://github.com/injaneity/pi-computer-use)):agent 通过操作系统无障碍树观察窗口,并可执行点击、输入、滚动、浏览器操控。被动观察类工具始终放行;每个有副作用的动作(`act_ui`、浏览器启动/导航/页面内 JS)都会先弹出审批卡片。macOS 首次使用会安装已签名的 helper 到 `~/Applications/pi-computer-use.app`,需在 **系统设置 → 隐私与安全性** 中授予**辅助功能**与**屏幕录制**权限(授权后若未生效,执行 `pkill -f pi-computer-use.app` 重启 helper)。
+
+**开启 / 关闭:**
+
+- **桌面应用**——默认开启。在 **设置 → 通用 → 电脑控制** 中切换,然后重启应用(工具在会话启动时注册,更改在重启后生效)。
+- **本地服务器 / CLI**——默认关闭。带上桌面标记启动即可开启:
+
+  ```bash
+  INNO_DESKTOP=1 npm run server -- --home ./runtime --workspace ./workspace --port 3000
+  ```
+
+  要关闭,**不带 `INNO_DESKTOP` 重启服务**即可。
+- **显式覆盖**(优先级高于环境变量默认值,双向生效),在 `config.json` 中:
+
+  ```json
+  "plugins": { "computerUse": { "enabled": true } }
+  ```
+
+- **线上部署**——保持默认(不设置 `INNO_DESKTOP`)即为关闭。
 
 ### 内容中心(Content Hub)
 

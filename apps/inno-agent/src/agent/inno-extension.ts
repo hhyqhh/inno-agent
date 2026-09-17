@@ -6,7 +6,7 @@ import {
 	type ExtensionAPI,
 	type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
-import { saveConfig, setDefaultModel, type InnoConfig } from "../config.js";
+import { isComputerUseEnabled, saveConfig, setDefaultModel, type InnoConfig } from "../config.js";
 import { createLearnerTools } from "../memory/learner/learner-tools.js";
 import { isProfileEmpty, loadProfile, loadRecentEvents } from "../memory/learner/profile-store.js";
 import { buildContextPack, formatContextPackForPrompt } from "../memory/learner/context-pack.js";
@@ -64,18 +64,6 @@ export interface InnoExtensionDeps {
 const WORKSPACE_AGENT_FILE = "agent.md";
 /** Directory holding per-workspace private skills (merged with global skills). */
 const WORKSPACE_SKILLS_DIR = ".skills";
-
-/**
- * Computer-use gate. Desktop GUI control only makes sense on a local install:
- * default-on under the Electron desktop app (INNO_DESKTOP=1, set by
- * electron/main.js), default-off everywhere else (online deployments, plain
- * server/CLI). `plugins.computerUse.enabled` overrides in both directions.
- */
-export function isComputerUseEnabled(config: InnoConfig): boolean {
-	const explicit = config.plugins?.computerUse?.enabled;
-	if (typeof explicit === "boolean") return explicit;
-	return process.env.INNO_DESKTOP === "1";
-}
 
 /**
  * Resolve the directory of the workspace bound to the active session.

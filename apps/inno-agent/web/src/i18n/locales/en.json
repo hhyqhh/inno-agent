@@ -684,6 +684,11 @@
 			"title": "Single-dollar inline math",
 			"description": "Allow $...$ math. Off by default so prices remain plain text; \\(...\\) and $$...$$ still work."
 		},
+		"computerUse": {
+			"title": "Computer use",
+			"description": "Let the agent see and control this machine's screen (clicking, typing, browser control). On macOS, first use requires granting Accessibility and Screen Recording to pi-computer-use.app in System Settings.",
+			"restartHint": "Changes take effect after restart."
+		},
 		"permissions": {
 			"title": "Tool permissions",
 			"description": "How strictly tool calls are approved. Dangerous commands and sensitive files are denied in every mode; changes apply immediately, no restart needed.",

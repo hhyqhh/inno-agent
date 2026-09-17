@@ -694,6 +694,18 @@ export function getConfiguredPort(config: InnoConfig, override?: number): number
 }
 
 /**
+ * Computer-use gate. Desktop GUI control only makes sense on a local install:
+ * default-on under the Electron desktop app (INNO_DESKTOP=1, set by
+ * electron/main.js), default-off everywhere else (online deployments, plain
+ * server/CLI). `plugins.computerUse.enabled` overrides in both directions.
+ */
+export function isComputerUseEnabled(config: InnoConfig): boolean {
+	const explicit = config.plugins?.computerUse?.enabled;
+	if (typeof explicit === "boolean") return explicit;
+	return process.env.INNO_DESKTOP === "1";
+}
+
+/**
  * Get the data directory path for the project.
  */
 export function getDataDir(projectDir: string): string {

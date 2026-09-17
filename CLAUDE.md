@@ -283,6 +283,7 @@ Plain Node `http.createServer` (no framework), ~1750 lines plus route domains ex
 - `PUT /api/settings/permissions` — switch the pi-permission-system policy mode (`default` / `auto` / `yolo`; stored as `plugins.permissionSystem.mode`). Rewrites `extensions/pi-permission-system/config.json` from the managed template (clobbering hand edits) and triggers a resources reload so the plugin re-reads it without a restart. All modes keep the hard-deny floor; `auto` allows all bash, `yolo` sets `yoloMode`.
 - `PATCH /api/settings/content-hub` — update content hub config.
 - `PATCH /api/settings/memory` — toggle L1/L2/L3 memory.
+- `PUT /api/settings/computer-use` — toggle computer use (`plugins.computerUse.enabled`); takes effect on server restart (tools register at session init). The settings payload exposes the effective state as `computerUse: { enabled, explicit, isDesktop }`.
 - `PATCH /api/settings/theme` — persist UI theme preference.
 - `GET /health` — health check (polled by Electron loading screen).
 - WebSocket upgrade for `/api/terminal` — xterm.js in-browser terminal.

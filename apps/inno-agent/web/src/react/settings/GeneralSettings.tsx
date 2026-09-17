@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { themeStore, THEME_IDS, THEME_PREVIEW_COLORS } from "../../stores/theme-store.js";
 import { settingsStore } from "../../stores/settings-store.js";
@@ -98,6 +99,39 @@ function MarkdownMathToggle() {
 	);
 }
 
+function ComputerUseToggle() {
+	const { t } = useTranslation();
+	const [changed, setChanged] = useState(false);
+	const state = useStoreSnapshot(settingsStore, () => ({
+		enabled: settingsStore.settings?.computerUse?.enabled === true,
+		isSaving: settingsStore.isSavingComputerUse,
+		isReady: settingsStore.settings !== null,
+	}));
+
+	function handleChange(enabled: boolean) {
+		settingsStore
+			.saveComputerUse(enabled)
+			.then(() => setChanged(true))
+			.catch(() => undefined);
+	}
+
+	return (
+		<div className="flex flex-col items-end gap-1">
+			<Switch
+				checked={state.enabled}
+				disabled={!state.isReady || state.isSaving}
+				aria-label={t("settings.computerUse.title")}
+				onChange={handleChange}
+			/>
+			{changed && (
+				<span className="text-[11px] text-[var(--inno-text-muted)]">
+					{t("settings.computerUse.restartHint")}
+				</span>
+			)}
+		</div>
+	);
+}
+
 export function GeneralSettings() {
 	const { t } = useTranslation();
 	return (
@@ -129,6 +163,13 @@ export function GeneralSettings() {
 					label={t("settings.markdownMath.title")}
 					description={t("settings.markdownMath.description")}
 					control={<MarkdownMathToggle />}
+				/>
+			</SettingsCard>
+			<SettingsCard>
+				<SettingsRow
+					label={t("settings.computerUse.title")}
+					description={t("settings.computerUse.description")}
+					control={<ComputerUseToggle />}
 				/>
 			</SettingsCard>
 			</SettingsSection>

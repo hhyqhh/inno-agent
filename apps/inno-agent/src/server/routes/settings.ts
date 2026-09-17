@@ -10,6 +10,7 @@ import {
 import {
 	deleteModel,
 	deleteProvider,
+	isComputerUseEnabled,
 	normalizeContentHubConfig,
 	normalizeSmartInputConfig,
 	normalizeUiConfig,
@@ -130,6 +131,15 @@ function buildSafeSettings(config: InnoConfig) {
 		contentHub: config.contentHub
 			? { ...config.contentHub, token: maskSecret(config.contentHub.token) }
 			: undefined,
+		// Effective computer-use state for the settings UI: `enabled` resolves
+		// the INNO_DESKTOP default, `explicit` is the user's override (null =
+		// unset). Changes only take effect on server restart (the extension
+		// registers its tools at session init).
+		computerUse: {
+			enabled: isComputerUseEnabled(config),
+			explicit: config.plugins?.computerUse?.enabled ?? null,
+			isDesktop: process.env.INNO_DESKTOP === "1",
+		},
 	};
 }
 
@@ -410,6 +420,23 @@ export async function handleSettingsRoutes(
 			l2Enabled: typeof body.l2Enabled === "boolean" ? body.l2Enabled : current.l2Enabled,
 			l3Enabled: typeof body.l3Enabled === "boolean" ? body.l3Enabled : current.l3Enabled,
 		};
+		save(saveConfig(paths.configPath, config));
+		syncConfig(config);
+		json(res, 200, buildSafeSettings(config));
+		return true;
+	}
+
+	// --- Computer use toggle. Persists plugins.computerUse.enabled. The
+	// extension registers its tools once per process (the extension factory
+	// runs at session init), so the change only takes effect on the next
+	// server restart — the response flags this so the UI can say so. ---
+	if (method === "PUT" && url === "/api/settings/computer-use") {
+		const body = (await readBody(req)) as Record<string, unknown>;
+		if (typeof body.enabled !== "boolean") {
+			json(res, 400, { error: "enabled must be a boolean" });
+			return true;
+		}
+		config.plugins = { ...config.plugins, computerUse: { enabled: body.enabled } };
 		save(saveConfig(paths.configPath, config));
 		syncConfig(config);
 		json(res, 200, buildSafeSettings(config));

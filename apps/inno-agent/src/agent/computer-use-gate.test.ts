@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { isComputerUseEnabled } from "./inno-extension.js";
-import type { InnoConfig } from "../config.js";
+import { isComputerUseEnabled, type InnoConfig } from "../config.js";
 
 function configWith(enabled?: boolean): InnoConfig {
 	return {

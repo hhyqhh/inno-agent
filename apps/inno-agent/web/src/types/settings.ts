@@ -112,7 +112,11 @@ export interface InnoSettings {
 		todo?: { enabled?: boolean };
 		webAccess?: { enabled?: boolean };
 		permissionSystem?: { enabled?: boolean; mode?: PermissionPolicyMode };
+		computerUse?: { enabled?: boolean };
 	};
+	/** Effective computer-use state from the backend (resolves the
+	 *  INNO_DESKTOP default; `explicit` is the user's override, null = unset). */
+	computerUse?: { enabled: boolean; explicit: boolean | null; isDesktop: boolean };
 	smartInput?: SmartInputSettings;
 	mcp?: { enabled: boolean };
 	ui?: { theme: string; closeBehavior: WindowCloseBehavior; mathSingleDollar: boolean };

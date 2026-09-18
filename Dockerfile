@@ -12,6 +12,9 @@ RUN sed -i 's|http://deb.debian.org/debian|http://mirrors.tuna.tsinghua.edu.cn/d
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY apps/inno-agent/package.json apps/inno-agent/tsconfig.json apps/inno-agent/
 COPY apps/inno-agent/web/package.json apps/inno-agent/web/tsconfig.json apps/inno-agent/web/
+# Vendored xlsx tarball — both package.json files pull it in via a `file:` dependency,
+# so it must exist before npm ci runs.
+COPY vendor/ vendor/
 
 RUN npm config set registry https://registry.npmmirror.com && npm ci
 

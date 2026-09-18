@@ -11,6 +11,51 @@ export interface WorkspaceMeta {
 	sessionIds?: string[];
 }
 
+export type WorkspaceFileAccess = "read" | "write" | "read_write";
+
+export interface WorkspaceSwitchFile {
+	path: string;
+	access: WorkspaceFileAccess;
+	exists: boolean;
+	selectable: boolean;
+}
+
+export interface WorkspaceSwitchPreview {
+	sourceWorkspace: WorkspaceMeta;
+	targetWorkspace: WorkspaceMeta;
+	files: WorkspaceSwitchFile[];
+	trackingIncomplete: boolean;
+}
+
+export type WorkspaceSwitchFileAction = "move" | "copy" | "none";
+
+export type WorkspaceSwitchFileStatus = "moved" | "copied" | "conflict" | "missing" | "failed";
+
+export interface WorkspaceSwitchFileResult {
+	path: string;
+	access: WorkspaceFileAccess;
+	action: Exclude<WorkspaceSwitchFileAction, "none">;
+	status: WorkspaceSwitchFileStatus;
+	error?: string;
+	copied?: boolean;
+}
+
+export interface WorkspaceSwitchResult {
+	switched: boolean;
+	sessionId: string;
+	sourceWorkspace: WorkspaceMeta;
+	targetWorkspace: WorkspaceMeta;
+	files: WorkspaceSwitchFileResult[];
+	statistics: {
+		success: number;
+		conflicts: number;
+		failures: number;
+		missing: number;
+		selected: number;
+	};
+	trackingIncomplete: boolean;
+}
+
 export interface CreateWorkspaceInput {
 	name?: string;
 	isTemp?: boolean;
@@ -54,9 +99,18 @@ export async function getSessionWorkspace(sessionId: string): Promise<{ sessionI
 	return apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}/workspace`);
 }
 
-export async function bindSessionWorkspace(sessionId: string, workspaceId: string): Promise<{ sessionId: string; workspaceId: string }> {
-	return apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}/workspace`, {
-		method: "PUT",
-		body: JSON.stringify({ workspaceId }),
+export async function getWorkspaceSwitchPreview(sessionId: string, targetWorkspaceId: string): Promise<WorkspaceSwitchPreview> {
+	return apiFetch<WorkspaceSwitchPreview>(
+		`/api/sessions/${encodeURIComponent(sessionId)}/workspace/switch-preview?targetWorkspaceId=${encodeURIComponent(targetWorkspaceId)}`,
+	);
+}
+
+export async function switchSessionWorkspace(
+	sessionId: string,
+	input: { targetWorkspaceId: string; fileActions: Record<string, WorkspaceSwitchFileAction> },
+): Promise<WorkspaceSwitchResult> {
+	return apiFetch<WorkspaceSwitchResult>(`/api/sessions/${encodeURIComponent(sessionId)}/workspace/switch`, {
+		method: "POST",
+		body: JSON.stringify(input),
 	});
 }

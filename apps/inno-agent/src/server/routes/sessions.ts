@@ -39,6 +39,7 @@ import { clearSessionAgentCommands } from "../agent-command-store.js";
 import { clearSessionTraces, mergeSessionTraces } from "../trace-store.js";
 import { clearSessionBtw } from "../btw-store.js";
 import { contentDispositionAttachment } from "../file-helpers.js";
+import { clearWorkspaceActivity } from "../workspace-activity-store.js";
 import { HttpError, json, matchRoute, readBody } from "../http-helpers.js";
 import {
 	mergeChannels,
@@ -712,10 +713,11 @@ export async function handleSessionsRoutes(
 				delete questionMeta[sessionId];
 				writeSessionQuestionMetadata(questionMeta);
 			}
-				clearSessionAttachments(dataDir, sessionId);
-				clearSessionAgentCommands(dataDir, sessionId);
-				clearSessionTraces(dataDir, sessionId);
-				clearSessionBtw(dataDir, sessionId);
+			clearSessionAttachments(dataDir, sessionId);
+			clearSessionAgentCommands(dataDir, sessionId);
+			clearSessionTraces(dataDir, sessionId);
+			clearSessionBtw(dataDir, sessionId);
+			clearWorkspaceActivity(dataDir, sessionId);
 			workspaceRegistry.unbindSession(sessionId);
 			if (shouldDropTempWorkspace) {
 				workspaceRegistry.deleteWorkspace(boundWorkspaceId, { removeFiles: true });

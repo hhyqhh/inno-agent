@@ -34,6 +34,13 @@ import {
 	WORKSPACE_TREE_MAX_DEPTH,
 	type WorkspaceTreeNode,
 } from "../file-helpers.js";
+import {
+	buildWorkspaceSwitchPreview,
+	isSwitchableWorkspace,
+	transferWorkspaceFiles,
+	workspaceSwitchStatistics,
+	type WorkspaceSwitchFileAction,
+} from "../workspace-switch.js";
 import { json, matchRoute, readBody } from "../http-helpers.js";
 
 /**
@@ -327,6 +334,23 @@ export async function handleWorkspacesRoutes(
 		// into a relative path by the API boundary.
 		if (normalizedPath.startsWith("/") || /^[A-Za-z]:\//.test(normalizedPath)) return null;
 		return safeJoinReal(root, normalizedPath);
+	};
+	const sessionPathForSwitch = (sessionId: string): string | null => {
+		const sessionPath = sessionFileFromId(join(dataDir, "sessions"), sessionId);
+		if (!sessionPath || !existsSync(sessionPath)) {
+			json(res, 404, { error: "Session not found" });
+			return null;
+		}
+		if (streamRegistry.getActiveForSession(sessionId)) {
+			json(res, 409, { error: "Cannot rebind a session with an active chat turn" });
+			return null;
+		}
+		return sessionPath;
+	};
+	const isAvailableSwitchTarget = (workspaceId: string): boolean => {
+		if (isSwitchableWorkspace(workspaceRegistry.getWorkspace(workspaceId))) return true;
+		json(res, 404, { error: "Target workspace not found or unavailable" });
+		return false;
 	};
 
 	// --- Workspace API ---
@@ -800,6 +824,117 @@ export async function handleWorkspacesRoutes(
 	}
 
 	// --- Session ↔ workspace binding ---
+	const sessionWorkspaceSwitchPreviewMatch = matchRoute("GET", method, url, "/api/sessions/:id/workspace/switch-preview");
+	if (sessionWorkspaceSwitchPreviewMatch) {
+		const sessionId = decodeURIComponent(sessionWorkspaceSwitchPreviewMatch.id);
+		const sessionPath = sessionPathForSwitch(sessionId);
+		if (!sessionPath) return true;
+		const targetWorkspaceId = new URL(url, "http://localhost").searchParams.get("targetWorkspaceId")?.trim() ?? "";
+		if (!targetWorkspaceId) {
+			json(res, 400, { error: "Missing targetWorkspaceId" });
+			return true;
+		}
+		if (!isAvailableSwitchTarget(targetWorkspaceId)) return true;
+		try {
+			const preview = buildWorkspaceSwitchPreview({
+				dataDir,
+				sessionId,
+				sessionPath,
+				workspaceRegistry,
+				targetWorkspaceId,
+			});
+			json(res, 200, preview);
+		} catch (err) {
+			json(res, 400, { error: err instanceof Error ? err.message : "Unable to preview workspace switch" });
+		}
+		return true;
+	}
+
+	const sessionWorkspaceSwitchMatch = matchRoute("POST", method, url, "/api/sessions/:id/workspace/switch");
+	if (sessionWorkspaceSwitchMatch) {
+		const sessionId = decodeURIComponent(sessionWorkspaceSwitchMatch.id);
+		const sessionPath = sessionPathForSwitch(sessionId);
+		if (!sessionPath) return true;
+		const body = (await readBody(req)) as Record<string, unknown>;
+		const targetWorkspaceId = typeof body.targetWorkspaceId === "string" ? body.targetWorkspaceId.trim() : "";
+		if (!targetWorkspaceId) {
+			json(res, 400, { error: "targetWorkspaceId is required" });
+			return true;
+		}
+		if (!body.fileActions || typeof body.fileActions !== "object" || Array.isArray(body.fileActions)) {
+			json(res, 400, { error: "fileActions must be an object mapping relative paths to move|copy|none" });
+			return true;
+		}
+		const entries = Object.entries(body.fileActions as Record<string, unknown>);
+		if (entries.some(([path, action]) => !path.trim() || (action !== "move" && action !== "copy" && action !== "none"))) {
+			json(res, 400, { error: "fileActions must contain only relative paths and move|copy|none actions" });
+			return true;
+		}
+		const fileActions = Object.fromEntries(entries) as Record<string, WorkspaceSwitchFileAction>;
+		const sourceWorkspaceId = workspaceRegistry.getSessionWorkspaceId(sessionId);
+		if (sourceWorkspaceId === targetWorkspaceId) {
+			json(res, 409, { error: "Session is already bound to this workspace" });
+			return true;
+		}
+		if (!isAvailableSwitchTarget(targetWorkspaceId)) return true;
+		const sourceRoot = workspaceRegistry.resolveWorkspaceDir(sourceWorkspaceId);
+		const targetRoot = workspaceRegistry.resolveWorkspaceDir(targetWorkspaceId);
+		if (!sourceRoot || !targetRoot) {
+			json(res, 404, { error: "Workspace path is not available" });
+			return true;
+		}
+		let preview;
+		try {
+			preview = buildWorkspaceSwitchPreview({
+				dataDir,
+				sessionId,
+				sessionPath,
+				workspaceRegistry,
+				targetWorkspaceId,
+			});
+		} catch (err) {
+			json(res, 400, { error: err instanceof Error ? err.message : "Unable to validate workspace switch" });
+			return true;
+		}
+
+		// Bind before touching any file. If the live agent cannot adopt the new
+		// cwd, restore the old binding and leave both workspaces untouched.
+		if (!workspaceRegistry.bindSession(sessionId, targetWorkspaceId)) {
+			json(res, 404, { error: "Target workspace not found" });
+			return true;
+		}
+		if (getCurrentSessionId() === sessionId) {
+			releaseQueueFromQuestionBlockedTurn(sessionId);
+			try {
+				const applied = await runQueueOpWithTimeout(req, res, (signal) => {
+					const currentPath = sessionFileFromId(join(dataDir, "sessions"), sessionId);
+					if (!currentPath) throw new Error("Session not found");
+					return applyWorkspaceCwd(currentPath, { signal });
+				});
+				if (applied === null) {
+					workspaceRegistry.bindSession(sessionId, sourceWorkspaceId);
+					return true;
+				}
+			} catch (err) {
+				workspaceRegistry.bindSession(sessionId, sourceWorkspaceId);
+				json(res, 500, { error: err instanceof Error ? err.message : "Failed to bind target workspace" });
+				return true;
+			}
+		}
+
+		const files = transferWorkspaceFiles({ preview, sourceRoot, targetRoot, fileActions });
+		json(res, 200, {
+			switched: true,
+			sessionId,
+			sourceWorkspace: preview.sourceWorkspace,
+			targetWorkspace: preview.targetWorkspace,
+			files,
+			statistics: workspaceSwitchStatistics(files),
+			trackingIncomplete: preview.trackingIncomplete,
+		});
+		return true;
+	}
+
 	const sessionWorkspaceGetMatch = matchRoute("GET", method, url, "/api/sessions/:id/workspace");
 	if (sessionWorkspaceGetMatch) {
 		const sessionId = decodeURIComponent(sessionWorkspaceGetMatch.id);

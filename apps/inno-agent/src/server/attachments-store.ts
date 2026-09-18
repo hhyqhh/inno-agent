@@ -17,6 +17,8 @@ export interface SessionAttachmentEntry {
 	promptContent: string;
 	attachments: ChatAttachments;
 	timestamp: number;
+	/** Workspace that contained the attached files when the turn was accepted. */
+	workspaceId?: string;
 }
 
 export type SessionAttachmentsMetadata = Record<string, SessionAttachmentEntry[]>;

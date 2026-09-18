@@ -13,7 +13,7 @@ export type WorkspaceChoice =
 export type WorkspaceSelectionKind = "workspace" | "temp" | "new";
 
 interface WorkspaceSwitcherProps {
-	/** All registered workspaces. Temporary and channel-native workspaces are hidden from the picker list. */
+	/** All registered workspaces. Channel-native workspaces are always hidden. */
 	workspaces: WorkspaceMeta[];
 	/** The workspace currently represented by the surrounding session or draft. */
 	selectedWorkspaceId: string | null;
@@ -22,6 +22,8 @@ interface WorkspaceSwitcherProps {
 	newWorkspaceName?: string;
 	busy?: boolean;
 	disabled?: boolean;
+	/** Active-conversation mode: only choose an existing workspace; no create/import actions. */
+	conversationMode?: boolean;
 	className?: string;
 	onChange: (choice: WorkspaceChoice) => void;
 	/** Import a workspace from a .zip archive picked via the menu action. */
@@ -52,6 +54,7 @@ export function WorkspaceSwitcher({
 	newWorkspaceName = "",
 	busy = false,
 	disabled = false,
+	conversationMode = false,
 	className = "",
 	onChange,
 	onImport,
@@ -86,9 +89,9 @@ export function WorkspaceSwitcher({
 	const visibleWorkspaces = useMemo(() => {
 		const normalized = query.trim().toLocaleLowerCase();
 		return workspaces
-			.filter((workspace) => !workspace.isTemp && !workspace.id.startsWith("channel-"))
+			.filter((workspace) => !workspace.id.startsWith("channel-") && (conversationMode || !workspace.isTemp))
 			.filter((workspace) => !normalized || `${workspace.name} ${workspace.relPath}`.toLocaleLowerCase().includes(normalized));
-	}, [query, workspaces]);
+	}, [conversationMode, query, workspaces]);
 
 	const triggerLabel = resolvedKind === "temp"
 		? t("workspace.tempWorkspaceLabel")
@@ -195,6 +198,18 @@ export function WorkspaceSwitcher({
 	};
 
 	const choose = (choice: WorkspaceChoice) => {
+		if (conversationMode) {
+			const choiceWorkspaceId = choice.kind === "workspace"
+				? choice.workspaceId
+				: choice.kind === "temp"
+					? workspaces.find((workspace) => workspace.isTemp)?.id
+					: undefined;
+			const currentWorkspaceId = selectedWorkspace?.id;
+			if (choiceWorkspaceId && currentWorkspaceId === choiceWorkspaceId) {
+				close();
+				return;
+			}
+		}
 		onChange(choice);
 		close();
 	};
@@ -319,7 +334,7 @@ export function WorkspaceSwitcher({
 
 							<div className="inno-workspace-options" role="group" aria-label={t("workspace.title")}>
 								{visibleWorkspaces.length > 0 ? visibleWorkspaces.map((workspace) => {
-									const selected = resolvedKind === "workspace" && selectedWorkspaceId === workspace.id;
+									const selected = selectedWorkspaceId === workspace.id && (workspace.isTemp ? resolvedKind === "temp" : resolvedKind === "workspace");
 									return (
 										<button
 											key={workspace.id}
@@ -343,28 +358,32 @@ export function WorkspaceSwitcher({
 								)}
 							</div>
 
-							<div className="inno-workspace-menu-divider" />
-							<button type="button" className="inno-workspace-action" role="menuitem" onClick={() => setCreating(true)}>
-								<span className="inno-workspace-action-icon" aria-hidden="true"><Plus size={15} /></span>
-								<span>{t("workspace.newWorkspace")}</span>
-							</button>
-							{onImport ? (
-								<button type="button" className="inno-workspace-action" role="menuitem" onClick={pickImportArchive}>
-									<span className="inno-workspace-action-icon" aria-hidden="true"><FolderInput size={15} /></span>
-									<span>{t("workspace.importWorkspace")}</span>
-								</button>
+							{!conversationMode ? (
+								<>
+									<div className="inno-workspace-menu-divider" />
+									<button type="button" className="inno-workspace-action" role="menuitem" onClick={() => setCreating(true)}>
+										<span className="inno-workspace-action-icon" aria-hidden="true"><Plus size={15} /></span>
+										<span>{t("workspace.newWorkspace")}</span>
+									</button>
+									{onImport ? (
+										<button type="button" className="inno-workspace-action" role="menuitem" onClick={pickImportArchive}>
+											<span className="inno-workspace-action-icon" aria-hidden="true"><FolderInput size={15} /></span>
+											<span>{t("workspace.importWorkspace")}</span>
+										</button>
+									) : null}
+									<button
+										type="button"
+										className={`inno-workspace-action ${resolvedKind === "temp" ? "is-selected" : ""}`}
+										role="menuitemradio"
+										aria-checked={resolvedKind === "temp"}
+										onClick={() => choose({ kind: "temp" })}
+									>
+										<span className="inno-workspace-action-icon" aria-hidden="true"><Ban size={14} /></span>
+										<span>{t("workspace.tempWorkspace")}</span>
+										{resolvedKind === "temp" ? <Check size={15} className="inno-workspace-option-check" aria-hidden="true" /> : null}
+									</button>
+								</>
 							) : null}
-							<button
-								type="button"
-								className={`inno-workspace-action ${resolvedKind === "temp" ? "is-selected" : ""}`}
-								role="menuitemradio"
-								aria-checked={resolvedKind === "temp"}
-								onClick={() => choose({ kind: "temp" })}
-							>
-								<span className="inno-workspace-action-icon" aria-hidden="true"><Ban size={14} /></span>
-								<span>{t("workspace.tempWorkspace")}</span>
-								{resolvedKind === "temp" ? <Check size={15} className="inno-workspace-option-check" aria-hidden="true" /> : null}
-							</button>
 						</>
 					)}
 				</PopoverSurface>,

@@ -884,6 +884,43 @@
 			"settingsDesc": "Open settings"
 		},
 		"loadingSession": "Loading session…",
+		"workspaceSwitchExistingOnly": "The conversation title bar can only switch to an existing workspace",
+		"workspaceSwitch": {
+			"title": "Switch conversation workspace",
+			"loading": "Checking files that can be transferred…",
+			"warningTitle": "Switching workspaces can affect context",
+			"warning": "Conversation history stays here, but the same relative path may point to a different file in the new workspace. This can make AI context or memory judgments wrong. Conversation history and memory are not migrated.",
+			"filesTitle": "Files accessed by this conversation",
+			"filesHint": "Choose copy, move, or no action for each file",
+			"missing": "Missing or unavailable",
+			"noFiles": "No trackable files",
+			"trackingIncomplete": "Some historical file accesses could not be restored reliably; file statistics may be incomplete.",
+			"action": {
+				"none": "No action",
+				"copy": "Copy",
+				"move": "Move"
+			},
+			"access": {
+				"read": "Read",
+				"write": "Write",
+				"read_write": "Read + write"
+			},
+			"confirm": "Confirm switch",
+			"executing": "Switching…",
+			"resultTitle": "Workspace switched",
+			"resultSuccess": "Success {{count}}",
+			"resultConflict": "Conflicts skipped {{count}}",
+			"resultFailure": "Failed {{count}}",
+			"resultMissing": "Missing {{count}}",
+			"resultDetails": "View paths",
+			"result": {
+				"moved": "Moved",
+				"copied": "Copied",
+				"conflict": "Conflict skipped",
+				"missing": "Missing",
+				"failed": "Failed"
+			}
+		},
 		"trace": {
 			"timeline": "Work process",
 			"working": "Working",

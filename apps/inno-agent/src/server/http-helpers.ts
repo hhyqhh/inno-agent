@@ -1,4 +1,5 @@
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 
 /**
  * Shared HTTP helpers for the server route domains.
@@ -75,6 +76,35 @@ export function readBody(req: HttpReq, options?: { maxBytes?: number }): Promise
 		});
 		req.on("error", reject);
 	});
+}
+
+/**
+ * Constant-time bearer-token check. Shared by the bridge endpoint's own
+ * per-channel token and the server-wide `server.token` gate — both guard
+ * against the same timing-attack class, so one implementation.
+ */
+export function bearerTokenMatches(authHeader: string | undefined, token: string): boolean {
+	if (!authHeader) return false;
+	const expected = Buffer.from(`Bearer ${token}`, "utf-8");
+	const actual = Buffer.from(authHeader, "utf-8");
+	return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+/**
+ * CSRF / DNS-rebinding guard: when a request carries an Origin header, its
+ * host must match the request's own Host header. A browser always sends
+ * Origin on cross-site requests; a same-origin page or a non-browser client
+ * (curl, the bridge sidecar) either matches or sends no Origin at all, so
+ * this only ever rejects genuine cross-origin browser requests.
+ */
+export function originIsSameHost(originHeader: string | undefined, hostHeader: string | undefined): boolean {
+	if (!originHeader) return true;
+	if (!hostHeader) return false;
+	try {
+		return new URL(originHeader).host === hostHeader;
+	} catch {
+		return false;
+	}
 }
 
 export function json(res: ServerResponse, status: number, data: unknown): void {

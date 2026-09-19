@@ -24,6 +24,7 @@ export interface RuntimeCliOptions {
 	configDir?: string;
 	dataDir?: string;
 	home?: string;
+	host?: string;
 	port?: number;
 	sandbox?: boolean;
 	skillsDir?: string;
@@ -93,6 +94,8 @@ export function parseRuntimeArgs(args: string[]): ParsedRuntimeArgs {
 			const port = parsePort(readValue("--port"));
 			if (!port) throw new Error(`Invalid port: ${arg}`);
 			options.port = port;
+		} else if (arg === "--host" || arg.startsWith("--host=")) {
+			options.host = readValue("--host");
 		} else if (arg === "--sandbox") {
 			options.sandbox = true;
 		} else if (arg === "--no-sandbox") {

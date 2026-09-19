@@ -225,7 +225,23 @@ export interface InnoConfig {
 	defaultModel: string;
 	providers: Record<string, InnoProviderConfig>;
 	server?: {
-		port: number;
+		port?: number;
+		/**
+		 * Bind address. Defaults to loopback (127.0.0.1) — binding to a
+		 * non-loopback address exposes every unauthenticated /api/* route
+		 * (including the terminal WebSocket, i.e. a remote shell) to the
+		 * LAN. Set this explicitly (and set `token` too) if you actually
+		 * need remote access.
+		 */
+		host?: string;
+		/**
+		 * Optional bearer token. When set, all /api/* requests and the
+		 * terminal WS upgrade require `Authorization: Bearer <token>` (or
+		 * `?token=` where a header can't be set). Unset by default, matching
+		 * the project's single-user, no-auth-system stance — this only
+		 * hardens the default deployment posture, it isn't a user system.
+		 */
+		token?: string;
 	};
 	feishu?: {
 		appId: string;
@@ -679,6 +695,18 @@ export function getConfiguredPort(config: InnoConfig, override?: number): number
 	const envPort = process.env.INNO_PORT ? Number.parseInt(process.env.INNO_PORT, 10) : undefined;
 	if (envPort && Number.isFinite(envPort)) return envPort;
 	return config.server?.port ?? 3000;
+}
+
+/**
+ * Resolve the bind host with the same CLI > env > config > default
+ * precedence as getConfiguredPort. Defaults to loopback-only — see the
+ * `server.host` doc comment on InnoConfig for why.
+ */
+export function getConfiguredHost(config: InnoConfig, override?: string): string {
+	if (override) return override;
+	const envHost = process.env.INNO_HOST?.trim();
+	if (envHost) return envHost;
+	return config.server?.host?.trim() || "127.0.0.1";
 }
 
 /**

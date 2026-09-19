@@ -124,6 +124,30 @@ describe("server smoke", () => {
 		expect(await res.json()).toEqual({ status: "ok" });
 	});
 
+	it("defaults to a loopback-only bind (issue #159)", () => {
+		// No --host was passed in beforeAll, and the test only ever reached the
+		// server via 127.0.0.1 (getFreePort binds there too) — the real
+		// assertion is the startup log, which must report the actual bound
+		// address rather than the old hardcoded "localhost" string.
+		expect(childLog).toContain(`listening on http://127.0.0.1:${port}`);
+	});
+
+	it("rejects a cross-origin API request and allows a same-origin one (issue #159 / #162 item 8)", async () => {
+		const evil = await fetch(`http://127.0.0.1:${port}/api/sessions`, {
+			headers: { Origin: "http://evil.example" },
+		});
+		expect(evil.status).toBe(403);
+
+		const sameOrigin = await fetch(`http://127.0.0.1:${port}/api/sessions`, {
+			headers: { Origin: `http://127.0.0.1:${port}` },
+		});
+		expect(sameOrigin.status).toBe(200);
+
+		// A request with no Origin header at all (curl, the bridge sidecar) is
+		// unaffected — this is what keeps non-browser clients working.
+		expect((await api("/api/sessions")).status).toBe(200);
+	});
+
 	it("GET /api/settings returns 200 with provider API keys redacted", async () => {
 		const res = await api("/api/settings");
 		expect(res.status).toBe(200);

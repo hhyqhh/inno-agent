@@ -43,6 +43,13 @@ ENV NODE_ENV=production \
     INNO_DATA_DIR=/var/lib/inno-agent/data \
     INNO_SKILLS_DIR=/var/lib/inno-agent/skills \
     INNO_WORKSPACE_DIR=/srv/inno-workspace \
+    # The app defaults to a loopback-only bind (127.0.0.1) for security —
+    # inside the container that would make it unreachable through the port
+    # mapping, since Docker's port forwarding targets the container's
+    # network interface, not loopback. This host must listen on all
+    # interfaces; if you expose this port beyond localhost on the Docker
+    # host, set `server.token` in config.json.
+    INNO_HOST=0.0.0.0 \
     INNO_PORT=3000
 
 # Copy the FULL node_modules from build stage (no pruning).

@@ -19,7 +19,7 @@ PI SDK packages (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@e
 
 Key dependencies: `ws` (WebSocket), `node-pty` (PTY terminal), `cron-parser` (scheduler), `@larksuiteoapi/node-sdk` (Feishu), `typebox` (validation), `undici` (HTTP client), `@juicesharp/rpiv-ask-user-question` (bridges agent `ask_user_question` tool calls to the web UI), `@juicesharp/rpiv-todo` (`todo` task-list tool), `pi-web-access` (`fetch_content`/`get_search_content` URL/GitHub/PDF/YouTube extraction), `pi-subagents` (optional subagent support), `pi-sandbox` (optional OS-level sandboxing), `graphology` + `graphology-communities-louvain` (wiki knowledge graph), `yaml` (YAML parsing), `@llamaindex/liteparse` (document parsing).
 
-Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is 90 files (703 tests), including backend chat-stream/trace persistence coverage and web chat trace/timeline coverage, while remaining skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
+Tests run with `npm test` (`vitest run`, root script) and also execute in the release CI. The suite is 91 files (713 tests), including backend chat-stream/trace persistence coverage, web chat trace/timeline coverage, and spawn-based HTTP smoke tests for the server's bind/token/Origin gate (`server.smoke.test.ts`, `server-auth.smoke.test.ts`), while remaining skewed toward `memory/l2`; coverage for channels/scheduler/terminal/L1/L3 is tracked in `docs/quality-remediation-plan.md`. The TypeScript build (`npm run build`) remains the primary sanity check. No ESLint or Prettier configuration exists.
 
 When a PR changes the test count, the size of `server.ts`, or other structural facts stated in this file, update this file in the same PR — AI agents read it as ground truth.
 
@@ -159,6 +159,7 @@ Precedence: CLI flag → env var → `~/.inno-agent/...`.
 | `--skills` / `--skills-dir` | `INNO_SKILLS_DIR` | `<home>/skills` |
 | `--workspace` / `--workspace-dir` | `INNO_WORKSPACE_DIR` | invocation CWD |
 | `--port` | `INNO_PORT` (via config) | `3000` |
+| `--host` | `INNO_HOST` (via `server.host` in config) | `127.0.0.1` (loopback-only — see [Server bind address, token, and Origin validation](#server-bind-address-token-and-origin-validation)) |
 
 Derived paths inside `dataDir`: `learner/`, `sessions/`, `jobs/`, `l2/`, `l3/`, `channels/`, `preset-cache/`. `applyRuntimeEnvironment` re-exports the resolved paths back into `process.env` plus `PI_CODING_AGENT_SESSION_DIR` so PI SDK code picks them up. It also sets `PI_CODING_AGENT_DIR` to `configDir` so pi-sandbox reads `sandbox.json` from the config directory.
 
@@ -288,6 +289,14 @@ Plain Node `http.createServer` (no framework), ~1750 lines plus route domains ex
 
 Static frontend is served from `paths.webDistDir = apps/inno-agent/web/dist` when present. Skills are loaded from `paths.skillsDir` (defaults to `<home>/skills` but can be pointed at `.inno/skills/` for project-local skills).
 
+#### Server bind address, token, and Origin validation
+
+This project has no multi-user auth model (see README Non-goals) — these three settings only harden the *default deployment posture* for a single-user tool, they don't add accounts or sessions.
+
+- **Bind address** defaults to loopback (`127.0.0.1`), resolved once at startup via `getConfiguredHost` (`config.ts`) with `--host` > `INNO_HOST` > `server.host` (config.json) > `127.0.0.1` precedence — the same tier as `--port`/`INNO_PORT`. The startup log prints the real bound address. Binding non-loopback without `server.token` set logs a visible warning (every unauthenticated `/api/*` route, including the terminal WebSocket, becomes LAN-reachable). Docker sets `INNO_HOST=0.0.0.0` explicitly (`Dockerfile`, `docker-compose.yml`) since the container's own loopback isn't reachable through the port mapping.
+- **`server.token`** (optional): when set, every `/api/*` request and the terminal WS upgrade require `Authorization: Bearer <token>` (constant-time compare via `bearerTokenMatches` in `server/http-helpers.ts`, shared with the bridge channel's own per-channel token) or a `?token=` query param for contexts that can't set headers (`<img>`/`<iframe>` previews, downloads, the terminal WS). Exempt: `/health` and `/api/bridge/messages` (its own bridge token). The frontend injects `window.__INNO_API_TOKEN__` into `index.html` server-side when a token is configured (`serveIndexHtml` in `server.ts`); `web/src/api/client.ts`'s `authHeaders()`/`withApiToken()` pick it up automatically for every request. Host and token are both peeked from `config.json` once at process start (restart-only — a change requires restarting the server).
+- **Origin validation**: any `/api/*` request or WS upgrade carrying an `Origin` header must have that header's host match the request's `Host` header, or it's rejected (`originIsSameHost` in `server/http-helpers.ts`) — this blocks drive-by cross-site POSTs and DNS-rebinding reads against `localhost`. Requests with no `Origin` header (curl, the bridge sidecar) are unaffected. A rejected WS upgrade gets a real `401`/`403` HTTP status line instead of a silent `socket.destroy()`.
+
 ### Terminal / Practice Lab (`src/terminal/`)
 
 In-browser terminal (xterm.js over WebSocket) scoped to a workspace. `terminal-session-manager.ts` manages PTY sessions via `node-pty` (`local-pty-backend.ts`). `run-record-store.ts` persists run records that the agent can read (via practice tools in `agent/practice-tools.ts`), enabling the agent to observe command outputs in the Practice Lab.
@@ -376,7 +385,7 @@ Separate Dockerfile for building the custom base image. Based on `node:22-bookwo
 
 ### User-facing config (`<configDir>/config.json`)
 
-Template: `config.example.json` at repo root. Declares `defaultProvider`, `defaultModel`, a `providers` map (each with `baseUrl`, `api` ∈ {`openai-completions`, `anthropic-messages`}, `apiKey`, `models[]`), optional `server.port`, optional `channels.*` blocks, optional `bridge.token`, optional `subagents.enabled`, optional `contentHub`, `memory`, and `ui` sections. The server hot-rewrites this file when the user switches model via the UI.
+Template: `config.example.json` at repo root. Declares `defaultProvider`, `defaultModel`, a `providers` map (each with `baseUrl`, `api` ∈ {`openai-completions`, `anthropic-messages`}, `apiKey`, `models[]`), optional `server.port`/`server.host`/`server.token`, optional `channels.*` blocks, optional `bridge.token`, optional `subagents.enabled`, optional `contentHub`, `memory`, and `ui` sections. The server hot-rewrites this file when the user switches model via the UI.
 
 Model config supports `reasoning` (boolean), `input` (modality array, e.g. `["text", "image"]`), `contextWindow`, and `maxTokens` per model entry. Provider config supports `authHeader` (boolean) and `bypassProxy` (boolean) fields.
 
@@ -386,7 +395,7 @@ Full config.json structure (see `config.example.json`):
   "defaultProvider": "innospark",
   "defaultModel": "claude-sonnet-4-6",
   "providers": { /* ... */ },
-  "server": { "port": 3000 },
+  "server": { "port": 3000, "host": "127.0.0.1", "token": "" },
   "channels": {
     "feishu": { "enabled": false, "personalOnly": true, "allowedUserIds": [] },
     "wechat": { "enabled": false, "mode": "bridge", "allowedUserIds": [], "sidecarBaseUrl": "http://127.0.0.1:4319" }
@@ -423,6 +432,7 @@ Full config.json structure (see `config.example.json`):
 
 Note: parts of `ui` are not in `config.example.json` but are added at runtime by `normalizeConfig` defaults (`ui.theme: "light"`, `ui.mathSingleDollar: false`). QQ channel is supported in code via bridge but is not in the template config.
 
+- `server.host` / `server.token` — see [Server bind address, token, and Origin validation](#server-bind-address-token-and-origin-validation).
 - `contentHub` configures the remote source for skills and presets. `type` is `"github"` or `"bundle"`. For `"bundle"`, set `baseUrl` to the self-hosted server URL. `token` is the GitHub PAT (for `"github"` type) or bundle auth token.
 - `memory.l1Enabled` / `l2Enabled` / `l3Enabled` individually gate each memory layer.
 - `ui.theme` persists the UI theme preference.

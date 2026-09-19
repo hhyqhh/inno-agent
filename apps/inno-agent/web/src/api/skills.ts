@@ -1,4 +1,4 @@
-import { apiFetch } from "./client.js";
+import { apiFetch, withApiToken } from "./client.js";
 import { assertUploadSize } from "../utils/upload-limits.js";
 import type { SkillInfo, SkillLibraryItem } from "../types/skills.js";
 import type { WorkspaceTreeNode, WorkspaceFileDetail } from "../types/workspace.js";
@@ -84,7 +84,7 @@ export async function saveSkillFile(name: string, path: string, content: string)
 }
 
 export function skillRawUrl(name: string, path: string): string {
-	return `/api/skills/${encodeURIComponent(name)}/raw?path=${encodeURIComponent(path)}`;
+	return withApiToken(`/api/skills/${encodeURIComponent(name)}/raw?path=${encodeURIComponent(path)}`);
 }
 
 // ---- HTML resource inlining for srcdoc previews ----

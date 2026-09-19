@@ -9,6 +9,12 @@ services:
       INNO_SKILLS_DIR: /var/lib/inno-agent/skills
       INNO_WORKSPACE_DIR: /srv/inno-workspace
       INNO_PORT: 3000
+      # The app defaults to loopback-only (127.0.0.1); inside the container
+      # that would break the port mapping above, so this must stay 0.0.0.0
+      # (also set as the image default in Dockerfile). If this port is ever
+      # exposed beyond localhost on the Docker host, set `server.token` in
+      # runtime/config/config.json.
+      INNO_HOST: "0.0.0.0"
     volumes:
       - ./runtime/config:/etc/inno-agent
       - ./runtime/data:/var/lib/inno-agent/data

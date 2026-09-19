@@ -8,7 +8,7 @@ import { cpSync, existsSync, readFileSync, readdirSync, realpathSync, rmSync, st
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
-import { loadConfig, type InnoConfig } from "./config.js";
+import { getConfiguredHost, loadConfig, type InnoConfig } from "./config.js";
 import { installFetchLogger } from "./utils/fetch-logger.js";
 import { canonicalContainmentRoot, isWithin } from "./utils/path-safety.js";
 import { applyProviderProxyBypass } from "./utils/proxy-bypass.js";
@@ -37,7 +37,7 @@ import { JobStore } from "./scheduler/job-store.js";
 import { CheckInStore } from "./checkins/check-in-store.js";
 import { seedManagedMcpConfig } from "./mcp/mcp-config-store.js";
 import { CronScheduler } from "./scheduler/cron-scheduler.js";
-import { HttpError, json } from "./server/http-helpers.js";
+import { bearerTokenMatches, HttpError, json, originIsSameHost } from "./server/http-helpers.js";
 import {
 	safeJoinReal,
 	slugifySkillName,
@@ -104,6 +104,23 @@ applyRuntimeEnvironment(paths);
 const port = parsed.options.port
 	?? (process.env.INNO_PORT ? Number.parseInt(process.env.INNO_PORT, 10) : undefined)
 	?? 3000;
+
+// Host + token are peeked from config.json once at startup — restart-only,
+// unlike the rest of config which reloads via ensureBootstrapped(). This is
+// deliberate: server.listen() below needs the bind address before any
+// request exists to trigger the lazy bootstrap, and the auth gate needs the
+// token before it can handle the first request at all. A missing or
+// unreadable config.json (first run, before setup) isn't an error here — it
+// just means the safe defaults (loopback, no token) apply; the real
+// loadConfig() inside ensureBootstrapped() below still throws for that case.
+let startupConfigPeek: InnoConfig | undefined;
+try {
+	startupConfigPeek = loadConfig(paths.configPath);
+} catch {
+	startupConfigPeek = undefined;
+}
+const host = getConfiguredHost(startupConfigPeek ?? ({} as InnoConfig), parsed.options.host);
+const serverToken = startupConfigPeek?.server?.token?.trim() || undefined;
 
 // Config is loaded on first API request, not at startup.
 let config!: InnoConfig;
@@ -520,6 +537,34 @@ function serveStatic(req: HttpReq, res: ServerResponse, filePath: string, sendBo
 		res.end(sendBody ? content : undefined);
 		return true;
 	} catch (err) {
+		return false;
+	}
+}
+
+/**
+ * Serve index.html with the server token injected so the SPA can send it
+ * back on every request (apiFetch / SSE / the terminal WS) without the user
+ * pasting it in manually. Only used when server.token is configured —
+ * otherwise index.html goes through the plain, cheaper serveStatic() path.
+ * Deliberately bypasses serveStatic's compression-sibling logic: index.html
+ * is tiny and, unlike hashed JS/CSS bundles, is never precompressed by the
+ * Vite build.
+ */
+function serveIndexHtml(res: ServerResponse, indexPath: string, sendBody: boolean, token: string): boolean {
+	try {
+		if (!existsSync(indexPath) || !statSync(indexPath).isFile()) return false;
+		const html = readFileSync(indexPath, "utf-8");
+		const tokenScript = `<script>window.__INNO_API_TOKEN__=${JSON.stringify(token)};</script>`;
+		const injected = html.includes("</head>") ? html.replace("</head>", `${tokenScript}</head>`) : `${tokenScript}${html}`;
+		const content = Buffer.from(injected, "utf-8");
+		res.writeHead(200, {
+			"Content-Type": "text/html; charset=utf-8",
+			"Content-Length": content.length,
+			"Cache-Control": "no-cache",
+		});
+		res.end(sendBody ? content : undefined);
+		return true;
+	} catch {
 		return false;
 	}
 }
@@ -1474,6 +1519,28 @@ async function runQueueOpWithTimeout<T>(
 	}
 }
 
+/**
+ * Origin + optional bearer-token gate for every /api/* request. The WS
+ * terminal upgrade has its own copy below since it rejects on the raw
+ * socket instead of a ServerResponse. Returns true if the request may
+ * proceed; false means a rejection response has already been written and
+ * the caller must return without further handling.
+ */
+function checkApiAuth(req: HttpReq, res: ServerResponse, url: string): boolean {
+	if (!originIsSameHost(req.headers.origin, req.headers.host)) {
+		json(res, 403, { error: "Cross-origin request rejected" });
+		return false;
+	}
+	// The bridge endpoint authenticates with its own per-channel bridge
+	// token (handleBridgeMessage), independent of server.token.
+	if (!serverToken || url.split("?")[0] === "/api/bridge/messages") return true;
+	if (bearerTokenMatches(req.headers.authorization, serverToken)) return true;
+	const queryToken = new URL(url, "http://placeholder").searchParams.get("token");
+	if (queryToken && bearerTokenMatches(`Bearer ${queryToken}`, serverToken)) return true;
+	json(res, 401, { error: "Unauthorized" });
+	return false;
+}
+
 const server = createServer(async (req, res) => {
 	const url = req.url ?? "/";
 	const method = req.method ?? "GET";
@@ -1485,11 +1552,12 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
-		// --- Lazy bootstrap on first API request ---
+		// --- Origin + optional token gate, then lazy bootstrap on first API request ---
 		// All /api/* endpoints need the agent session and data stores.
-		// Static files and SPA fallback skip this so no directories are
+		// Static files and SPA fallback skip both so no directories are
 		// created until the user actually interacts with the web UI.
 		if (url.startsWith("/api/")) {
+			if (!checkApiAuth(req, res, url)) return;
 			await ensureBootstrapped();
 		}
 
@@ -1602,10 +1670,20 @@ const server = createServer(async (req, res) => {
 		// --- Static files / SPA fallback ---
 		if (method === "GET" || method === "HEAD") {
 			const urlPath = decodeURIComponent(url.split("?")[0]);
-			const staticPath = safeJoinReal(webDistDir, urlPath.replace(/^\/+/, ""));
 			const sendBody = method === "GET";
-			// Try exact file in web/dist
-			if (staticPath && serveStatic(req, res, staticPath, sendBody, webDistDir)) return;
+			const indexHtmlPath = join(webDistDir, "index.html");
+			// index.html carries the injected __INNO_API_TOKEN__ when a server
+			// token is configured, so an explicit /index.html request can't go
+			// through the generic byte-stream serveStatic() path in that case —
+			// it's redirected through serveIndexHtml() instead, same as the SPA
+			// fallback below.
+			if (serverToken && urlPath === "/index.html") {
+				if (serveIndexHtml(res, indexHtmlPath, sendBody, serverToken)) return;
+			} else {
+				// Try exact file in web/dist
+				const staticPath = safeJoinReal(webDistDir, urlPath.replace(/^\/+/, ""));
+				if (staticPath && serveStatic(req, res, staticPath, sendBody, webDistDir)) return;
+			}
 			// Never route an asset miss through the SPA fallback. Returning
 			// index.html with a 200 status for a stale hashed JS/CSS URL makes the
 			// browser report an opaque dynamic-import failure instead of exposing
@@ -1614,7 +1692,11 @@ const server = createServer(async (req, res) => {
 			// SPA fallback: serve index.html for non-API, non-asset paths only. An
 			// unmatched /api/* route must fall through to the JSON 404 — returning
 			// HTML with a 200 status breaks API client error handling.
-			if (!isAssetRequest && urlPath !== "/api" && !urlPath.startsWith("/api/") && serveStatic(req, res, join(webDistDir, "index.html"), sendBody, webDistDir)) return;
+			if (!isAssetRequest && urlPath !== "/api" && !urlPath.startsWith("/api/")) {
+				if (serverToken) {
+					if (serveIndexHtml(res, indexHtmlPath, sendBody, serverToken)) return;
+				} else if (serveStatic(req, res, indexHtmlPath, sendBody, webDistDir)) return;
+			}
 		}
 
 		// --- 404 ---
@@ -1649,10 +1731,37 @@ const server = createServer(async (req, res) => {
 // bootstrap — terminal WebSocket connections can't happen before then).
 // ---------------------------------------------------------------------------
 
+/**
+ * Reject a WS upgrade with a real HTTP status line instead of a silent
+ * socket.destroy() — a bare RST is indistinguishable from "wrong URL" or
+ * "server down" and defeats client-side error reporting / testing.
+ */
+function rejectUpgrade(socket: { write: (chunk: string) => unknown; destroy: () => unknown }, status: number, statusText: string): void {
+	try {
+		socket.write(`HTTP/1.1 ${status} ${statusText}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+	} catch {
+		// best effort — the socket may already be half-closed
+	}
+	socket.destroy();
+}
+
 const wss = new WebSocketServer({ noServer: true });
 server.on("upgrade", (req, socket, head) => {
 	const url = req.url ?? "";
-		if (!bootstrapped) { socket.destroy(); return; }
+	if (!bootstrapped) { socket.destroy(); return; }
+	if (!originIsSameHost(req.headers.origin, req.headers.host)) {
+		rejectUpgrade(socket, 403, "Forbidden");
+		return;
+	}
+	if (serverToken) {
+		const queryToken = new URL(url, "http://placeholder").searchParams.get("token");
+		const authorized = bearerTokenMatches(req.headers.authorization, serverToken)
+			|| (queryToken !== null && bearerTokenMatches(`Bearer ${queryToken}`, serverToken));
+		if (!authorized) {
+			rejectUpgrade(socket, 401, "Unauthorized");
+			return;
+		}
+	}
 	const m = /^\/api\/terminal\/sessions\/([^/?]+)\/ws$/.exec(url.split("?")[0]);
 	if (!m) {
 		socket.destroy();
@@ -1788,7 +1897,19 @@ installProcessFallbacks({
 	},
 });
 
-server.listen(port, () => {
-	console.log(`[inno-server] listening on http://localhost:${port}`);
+server.listen(port, host, () => {
+	console.log(`[inno-server] listening on http://${host}:${port}`);
 	console.log(`[inno-server] config: ${paths.configPath}`);
+	const isLoopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
+	if (!isLoopback && !serverToken) {
+		const warning =
+			`[inno-server] WARNING: bound to ${host} (not loopback) with no server.token set — every /api/* ` +
+			"route, including the terminal WebSocket (an interactive shell), is reachable by anyone who can " +
+			"reach this host with no authentication. Set server.token in config.json, or bind loopback-only " +
+			"(--host 127.0.0.1 / unset server.host) unless you specifically need remote access.";
+		console.warn(warning);
+		logger.warn(warning);
+	} else if (!isLoopback) {
+		console.log(`[inno-server] bound to ${host} (non-loopback) with server.token auth enabled`);
+	}
 });

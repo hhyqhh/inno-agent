@@ -1,4 +1,4 @@
-import { apiFetch } from "./client.js";
+import { apiFetch, withApiToken } from "./client.js";
 import type { RunRecord, TerminalSessionInfo } from "../types/terminal.js";
 
 export async function createTerminalSession(input: {
@@ -19,7 +19,7 @@ export async function closeTerminalSession(id: string): Promise<void> {
 
 export function terminalWsUrl(id: string): string {
 	const proto = location.protocol === "https:" ? "wss:" : "ws:";
-	return `${proto}//${location.host}/api/terminal/sessions/${encodeURIComponent(id)}/ws`;
+	return withApiToken(`${proto}//${location.host}/api/terminal/sessions/${encodeURIComponent(id)}/ws`);
 }
 
 export async function listRuns(sessionId: string, limit = 20): Promise<RunRecord[]> {

@@ -1,3 +1,15 @@
+declare global {
+	interface Window {
+		/**
+		 * Injected by the server into index.html only when `server.token` is
+		 * configured (see serveIndexHtml in server.ts). Absent by default —
+		 * this project has no multi-user auth model, this only guards the
+		 * single-user deployment's own API surface.
+		 */
+		__INNO_API_TOKEN__?: string;
+	}
+}
+
 export class ApiError extends Error {
 	constructor(
 		public status: number,
@@ -12,9 +24,35 @@ export class ApiError extends Error {
 
 const BASE_URL = ""; // Same origin — Vite proxy in dev
 
+/**
+ * The injected token, or undefined outside a browser (SSR-less here, but
+ * also plain Node test environments that mock fetch without a DOM/window).
+ */
+function apiToken(): string | undefined {
+	return typeof window !== "undefined" ? window.__INNO_API_TOKEN__ : undefined;
+}
+
+/** `Authorization` header for the optional server.token, when the server injected one. */
+function authHeaders(): Record<string, string> {
+	const token = apiToken();
+	return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/**
+ * Append `?token=`/`&token=` for URLs the browser renders directly
+ * (`<img src>`, `<iframe src>`, download links, the terminal WebSocket) —
+ * these can't carry an Authorization header, so the server also accepts the
+ * token as a query param on those routes. No-op when no token is configured.
+ */
+export function withApiToken(url: string): string {
+	const token = apiToken();
+	if (!token) return url;
+	return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+}
+
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 	const res = await fetch(`${BASE_URL}${path}`, {
-		headers: { "Content-Type": "application/json", ...options?.headers },
+		headers: { "Content-Type": "application/json", ...authHeaders(), ...options?.headers },
 		...options,
 	});
 	if (!res.ok) {
@@ -100,7 +138,7 @@ export async function* streamSSE<T>(url: string, body: unknown, signal?: AbortSi
 	try {
 		res = await fetch(url, {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { "Content-Type": "application/json", ...authHeaders() },
 			body: JSON.stringify(body),
 			signal,
 		});
@@ -122,7 +160,7 @@ export async function* streamSSE<T>(url: string, body: unknown, signal?: AbortSi
 export async function* streamSSEGet<T>(url: string, signal?: AbortSignal, options: { allowNotFound?: boolean } = {}): AsyncGenerator<T> {
 	let res: Response;
 	try {
-		res = await fetch(url, { method: "GET", signal });
+		res = await fetch(url, { method: "GET", headers: authHeaders(), signal });
 	} catch (err) {
 		if (signal?.aborted) return;
 		throw err;

@@ -12,7 +12,19 @@ export interface LearnerProfile {
 	knowledge_states: KnowledgeState[];
 	misconceptions: Misconception[];
 	preferences: LearnerPreferences;
+	/** Abstract, revisable observations about how the learner organizes ideas. */
+	cognitive_patterns: CognitivePattern[];
 	profile_summary: string;
+}
+
+export interface CognitivePattern {
+	pattern_id: string;
+	label: string;
+	description: string;
+	teaching_implication: string;
+	confidence: number;
+	evidence_count: number;
+	updated_at: string;
 }
 
 export interface LearningGoal {
@@ -197,6 +209,7 @@ export interface LearnerContextPack {
 	}[];
 	active_misconceptions: string[];
 	teaching_hints: string[];
+	cognitive_patterns?: Pick<CognitivePattern, "label" | "teaching_implication">[];
 	recent_events?: {
 		event_id: string;
 		event_type: LearningEventType;
@@ -228,6 +241,7 @@ export function createDefaultProfile(learnerId?: string): LearnerProfile {
 			feedback_tone: [],
 			avoid: [],
 		},
+		cognitive_patterns: [],
 		profile_summary: "",
 	};
 }

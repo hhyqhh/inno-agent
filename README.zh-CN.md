@@ -232,7 +232,7 @@ npm run server
 扫码加入微信用户群,提问、分享使用场景、关注更新:
 
 <p align="center">
-  <img src="./docs/assets/wechat-community-qr-2026-09-13.jpg" alt="Inno Agent 微信社区群二维码" width="240" />
+  <img src="./docs/assets/wechat-community-qr-2026-09-22.jpg" alt="Inno Agent 微信社区群二维码" width="240" />
 </p>
 
 ## 许可证

@@ -154,6 +154,16 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		}
 	}
 
+	/** Refresh the open transcript after a server-side learning message is persisted. */
+	async reloadCurrentSessionMessages(): Promise<void> {
+		const sessionId = this.currentSessionId;
+		if (!sessionId) return;
+		const session = await getSession(sessionId);
+		if (this.currentSessionId !== sessionId) return;
+		this._messageCache.set(sessionId, session.messages);
+		chatStore.loadHistory(session.messages, sessionId);
+	}
+
 	/**
 	 * Refresh the sidebar until the session's recorded topic/preview lands.
 	 *

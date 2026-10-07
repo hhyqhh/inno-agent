@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Scan, Shuffle, RefreshCw, Network, Tag } from "lucide-react";
+import { Scan, Shuffle, RefreshCw, Network, Tag, Link2 } from "lucide-react";
 import { Spinner } from "../ui/Spinner.js";
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
 import { ForceSimulation, type SimLink, type SimNode } from "./force-simulation.js";
 import type { WikiGraphEdge, WikiGraphNode } from "../../types/wiki.js";
+import type { PersonalLink } from "../../types/learner.js";
 import { notebookStore } from "../../stores/notebook-store.js";
+import { appStore, type WorkspaceMode } from "../../stores/app-store.js";
+import { chatStore } from "../../stores/chat-store.js";
+import { sessionsStore } from "../../stores/sessions-store.js";
 import { useStoreSnapshot } from "../hooks.js";
+import { PersonalLinksPanel } from "./PersonalLinksPanel.js";
 
 type NodeCategory = "source" | "entity" | "concept" | "comparison" | "synthesis" | "analysis" | "tag";
 type GraphColorMode = "type" | "community";
@@ -135,6 +140,14 @@ function cyStyle(theme: GraphTheme): cytoscape.StylesheetJson {
 			},
 		},
 		{
+			selector: "node.co-build-selected",
+			style: {
+				"border-color": theme.accent,
+				"border-width": 4,
+				label: "data(fullLabel)",
+			},
+		},
+		{
 			selector: "node.hidden, edge.hidden",
 			style: { display: "none" },
 		},
@@ -152,6 +165,14 @@ function cyStyle(theme: GraphTheme): cytoscape.StylesheetJson {
 		{
 			selector: "edge[edgeType = 'tag']",
 			style: { "line-color": theme.tagEdgeColor, "line-style": "dashed", opacity: 0.16 },
+		},
+		{
+			selector: "edge[edgeType = 'personal']",
+			style: { "line-color": theme.edgeColor, "line-style": "dashed", width: 0.8, opacity: 0.3 },
+		},
+		{
+			selector: "edge[personalStatus = 'rejected']",
+			style: { "line-color": theme.edgeColor, opacity: 0.45 },
 		},
 		{
 			selector: "edge.dim",
@@ -260,6 +281,23 @@ function buildElements(nodes: WikiGraphNode[], edges: WikiGraphEdge[]): ElementD
 	return els;
 }
 
+function buildPersonalLinkElements(cy: Core, personalLinks: PersonalLink[]): ElementDefinition[] {
+	return personalLinks.flatMap((link) => {
+		if (cy.getElementById(link.source).empty() || cy.getElementById(link.target).empty()) return [];
+		return [{
+			data: {
+				id: `personal__${link.id}`,
+				source: link.source,
+				target: link.target,
+				edgeType: "personal",
+				personalStatus: link.status,
+				edgeWidth: 0.8,
+				edgeOpacity: 0.3,
+			},
+		}];
+	});
+}
+
 /**
  * Rebuild the live simulation from the currently visible elements, keeping
  * each node's on-screen position. Returns cytoscape nodes aligned index-for-
@@ -362,6 +400,23 @@ export function GraphView() {
 	);
 	const [colorMode, setColorMode] = useState<GraphColorMode>("community");
 	const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+	const [isCoBuilding, setIsCoBuilding] = useState(false);
+	const [connectionNodeIds, setConnectionNodeIds] = useState<string[]>([]);
+	const [personalLinks, setPersonalLinks] = useState<PersonalLink[]>([]);
+	const [showPersonalLinks, setShowPersonalLinks] = useState(false);
+	const isCoBuildingRef = useRef(false);
+	const connectionNodeIdsRef = useRef<string[]>([]);
+	const workspaceModeBeforeCoBuildRef = useRef<WorkspaceMode | null>(null);
+
+	const chooseConnectionNodes = useCallback((ids: string[]) => {
+		connectionNodeIdsRef.current = ids;
+		setConnectionNodeIds(ids);
+	}, []);
+
+	useEffect(() => {
+		isCoBuildingRef.current = isCoBuilding;
+		if (!isCoBuilding) chooseConnectionNodes([]);
+	}, [chooseConnectionNodes, isCoBuilding]);
 
 	const toggleCategory = useCallback((category: NodeCategory) => {
 		setVisibleCategories((prev) => {
@@ -372,7 +427,10 @@ export function GraphView() {
 		});
 	}, []);
 
-	const elements = useMemo(() => buildElements(state.nodes, state.edges), [state.nodes, state.edges]);
+	const elements = useMemo(
+		() => buildElements(state.nodes, state.edges),
+		[state.nodes, state.edges],
+	);
 
 	useEffect(() => {
 		if (!containerRef.current) return;
@@ -411,6 +469,15 @@ export function GraphView() {
 			const id = evt.target.id() as string;
 			const node = state.nodes.find((n) => n.id === id);
 			if (!node) return;
+			if (isCoBuildingRef.current && node.type !== "tag") {
+				const current = connectionNodeIdsRef.current;
+				if (current.includes(id)) {
+					chooseConnectionNodes(current.filter((item) => item !== id));
+				} else if (current.length < 2) {
+					chooseConnectionNodes([...current, id]);
+				}
+				return;
+			}
 			if (node.type === "tag") {
 				notebookStore.selectNode(id);
 				// Touch has no hover: let the tap also light up the neighborhood
@@ -492,8 +559,16 @@ export function GraphView() {
 		});
 
 		cyRef.current = cy;
+		// GraphView is mounted inside a tabbed flex layout. Give Cytoscape a
+		// stable, non-zero viewport after the tab becomes visible and whenever
+		// the surrounding panel is resized.
+		const resizeObserver = new ResizeObserver(() => {
+			cy.resize();
+		});
+		resizeObserver.observe(containerRef.current);
 		return () => {
 			themeObserver.disconnect();
+			resizeObserver.disconnect();
 			if (rafRef.current !== null) {
 				cancelAnimationFrame(rafRef.current);
 				rafRef.current = null;
@@ -505,6 +580,27 @@ export function GraphView() {
 		};
 	}, [elements]); // eslint-disable-line react-hooks/exhaustive-deps
 
+	// Personal links are an overlay, not part of the Wiki graph's lifecycle.
+	// Updating them must not recreate Cytoscape or move the learner's viewport.
+	useEffect(() => {
+		const cy = cyRef.current;
+		if (!cy) return;
+		cy.batch(() => {
+			cy.edges("[edgeType = 'personal']").remove();
+			cy.add(buildPersonalLinkElements(cy, personalLinks));
+			cy.edges("[edgeType = 'personal']").forEach((edge) => {
+				edge.toggleClass("hidden", !showPersonalLinks || edge.source().hasClass("hidden") || edge.target().hasClass("hidden"));
+			});
+		});
+	}, [personalLinks, showPersonalLinks]);
+
+	useEffect(() => {
+		const cy = cyRef.current;
+		if (!cy) return;
+		cy.nodes().removeClass("co-build-selected");
+		for (const id of connectionNodeIds) cy.getElementById(id).addClass("co-build-selected");
+	}, [connectionNodeIds]);
+
 	// Keep presentation and layout changes in one effect. Separate mode and
 	// visibility effects would each rebuild the simulation when the graph mounts.
 	useEffect(() => {
@@ -515,14 +611,14 @@ export function GraphView() {
 			cy.nodes().forEach((node) => {
 				node.data("color", node.data(colorMode === "community" ? "communityColor" : "typeColor"));
 			});
-			cy.edges().forEach((edge) => {
+			cy.edges().filter("[edgeType != 'personal']").forEach((edge) => {
 				edge.data("edgeOpacity", edge.data(colorMode === "community" ? "communityEdgeOpacity" : "typeEdgeOpacity"));
 			});
 			cy.nodes().forEach((node) => {
 				const type = (node.data("type") as NodeCategory) ?? "entity";
 				node.toggleClass("hidden", !visibleCategories.has(type));
 			});
-			cy.edges().forEach((edge) => {
+			cy.edges().filter("[edgeType != 'personal']").forEach((edge) => {
 				const sourceHidden = edge.source().hasClass("hidden");
 				const targetHidden = edge.target().hasClass("hidden");
 				edge.toggleClass("hidden", sourceHidden || targetHidden);
@@ -538,6 +634,16 @@ export function GraphView() {
 		sim.reheat(colorMode === "community" ? 0.35 : 0.6);
 		(cy.scratch("innoStartTicking") as (() => void) | undefined)?.();
 	}, [colorMode, elements, visibleCategories]);
+
+	// This is deliberately separate from the layout effect: toggling personal
+	// links is a visibility preference, so it must never fit or rearrange nodes.
+	useEffect(() => {
+		const cy = cyRef.current;
+		if (!cy) return;
+		cy.edges("[edgeType = 'personal']").forEach((edge) => {
+			edge.toggleClass("hidden", !showPersonalLinks || edge.source().hasClass("hidden") || edge.target().hasClass("hidden"));
+		});
+	}, [showPersonalLinks, visibleCategories]);
 
 	// React to selection from outside (e.g. clicking the list)
 	useEffect(() => {
@@ -590,6 +696,45 @@ export function GraphView() {
 		(cy.scratch("innoStartTicking") as (() => void) | undefined)?.();
 	}
 
+	function openCoBuilding(): void {
+		if (isCoBuilding) {
+			closeCoBuilding();
+			return;
+		}
+		workspaceModeBeforeCoBuildRef.current = appStore.workspaceMode;
+		appStore.setPage("notebook");
+		appStore.setWorkspaceMode("full");
+		setShowPersonalLinks(true);
+		setIsCoBuilding(true);
+	}
+
+	function closeCoBuilding(): void {
+		setIsCoBuilding(false);
+		const previousMode = workspaceModeBeforeCoBuildRef.current;
+		workspaceModeBeforeCoBuildRef.current = null;
+		if (previousMode && appStore.workspaceMode === "full") appStore.setWorkspaceMode(previousMode);
+	}
+
+	function returnToChatWithReview(feedback: string, persisted: boolean): void {
+		setIsCoBuilding(false);
+		workspaceModeBeforeCoBuildRef.current = null;
+		appStore.setWorkspaceMode("collapsed");
+		if (!feedback || !sessionsStore.currentSessionId) return;
+		if (persisted) {
+			void sessionsStore.reloadCurrentSessionMessages().catch(() => {
+				// The server already saved the message; keep the current view useful
+				// when the history refresh is temporarily unavailable.
+				chatStore.appendAssistantMessage(feedback);
+			});
+		} else {
+			chatStore.appendAssistantMessage(feedback);
+		}
+	}
+
+	function togglePersonalLinks(): void {
+		setShowPersonalLinks((visible) => !visible);
+	}
+
 	const visibleNodeCount = useMemo(
 		() => state.nodes.filter((n) => visibleCategories.has(graphCategory(n.type))).length,
 		[state.nodes, visibleCategories],
@@ -627,6 +772,16 @@ export function GraphView() {
 				<button className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void notebookStore.loadGraph()} title={t("notebook.graph.refresh")}>
 					<RefreshCw size={14} />
 					<span className="hidden @[1050px]:inline">{t("notebook.graph.refresh")}</span>
+				</button>
+				<button
+					type="button"
+					onClick={openCoBuilding}
+					className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${isCoBuilding ? "border-teal-700 bg-teal-700 text-white" : "border-[var(--inno-border)] bg-[var(--inno-surface)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"}`}
+					aria-pressed={isCoBuilding}
+					title={t("notebook.graph.coBuildTitle")}
+				>
+					<Link2 size={14} />
+					<span>{t("notebook.graph.coBuild")}</span>
 				</button>
 				<div className="mx-1 h-4 w-px bg-[var(--inno-surface-muted)]" />
 				<div className="inline-flex rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-0.5">
@@ -676,6 +831,21 @@ export function GraphView() {
 						</button>
 					);
 				})}
+				<button
+					type="button"
+					onClick={togglePersonalLinks}
+					disabled={personalLinks.length === 0}
+					className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${
+						showPersonalLinks
+							? "border-slate-400 bg-[var(--inno-surface)] text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]"
+							: "border-[var(--inno-border)] bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+					}`}
+					aria-pressed={showPersonalLinks}
+					title={personalLinks.length > 0 ? t("notebook.graph.togglePersonalLinks") : t("notebook.graph.noPersonalLinks")}
+				>
+					<span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full border border-slate-400" />
+					<span>{t("notebook.graph.personalLinks")}{personalLinks.length > 0 ? ` (${personalLinks.length})` : ""}</span>
+				</button>
 				<div className="ml-auto hidden shrink-0 text-right @[900px]:block">
 					<div>{t("notebook.subtitle", { nodes: visibleNodeCount, edges: visibleEdgeCount })}</div>
 					{colorMode === "community" && state.communities ? (
@@ -688,7 +858,9 @@ export function GraphView() {
 					) : null}
 				</div>
 			</div>
-			<div ref={containerRef} className="relative min-h-0 flex-1 overflow-hidden bg-[var(--inno-card-bg)]">
+			<div className="relative min-h-0 flex-1 overflow-hidden bg-[var(--inno-card-bg)]">
+				{/* Cytoscape owns this subtree; React overlays remain sibling layers. */}
+				<div ref={containerRef} className="h-full w-full" />
 				{displayNode ? (
 					<div className="absolute inset-x-0 top-0 z-10 flex items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-xs">
 						<span
@@ -715,6 +887,16 @@ export function GraphView() {
 							</button>
 						) : null}
 					</div>
+				) : null}
+				{isCoBuilding ? (
+					<PersonalLinksPanel
+						nodes={state.nodes}
+						selectedIds={connectionNodeIds}
+						onResetSelection={() => chooseConnectionNodes([])}
+						onClose={closeCoBuilding}
+						onReviewComplete={returnToChatWithReview}
+						onLinksChange={setPersonalLinks}
+					/>
 				) : null}
 			</div>
 			{state.isLoading ? (

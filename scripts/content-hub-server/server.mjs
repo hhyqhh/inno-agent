@@ -59,17 +59,19 @@ function isUsableItemDir(name) {
 	return ITEM_NAME_RE.test(name) && name !== "." && name !== ".." && !name.startsWith("_") && !name.startsWith(".") && name !== "__MACOSX";
 }
 
-/** Read description + category from SKILL.md frontmatter in one pass. */
+/** Read description + category + name-zh from SKILL.md frontmatter in one pass. */
 function readSkillMeta(skillDir) {
 	const md = join(skillDir, "SKILL.md");
-	if (!existsSync(md)) return { description: "", category: "" };
+	if (!existsSync(md)) return { description: "", category: "", nameZh: "" };
 	const text = readFileSync(md, "utf-8").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 	const fm = text.match(/^---\n([\s\S]*?)\n---/);
-	if (!fm) return { description: "", category: "" };
+	if (!fm) return { description: "", category: "", nameZh: "" };
 	const lines = fm[1].split("\n");
 	return {
 		description: extractFrontmatterField(lines, "description"),
 		category: extractFrontmatterField(lines, "category"),
+		// Chinese display name; empty string when the skill doesn't declare one.
+		nameZh: extractFrontmatterField(lines, "name-zh"),
 	};
 }
 
@@ -113,7 +115,13 @@ function buildIndex() {
 			const dir = join(skillsRoot, entry.name);
 			if (!existsSync(join(dir, CATEGORY.skills.marker))) continue;
 			const meta = readSkillMeta(dir);
-			index.skills.push({ id: entry.name, name: entry.name, description: meta.description, category: meta.category || undefined });
+			index.skills.push({
+				id: entry.name,
+				name: entry.name,
+				description: meta.description,
+				category: meta.category || undefined,
+				"name-zh": meta.nameZh,
+			});
 		}
 	}
 

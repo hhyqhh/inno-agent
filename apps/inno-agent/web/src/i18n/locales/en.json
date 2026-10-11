@@ -160,7 +160,12 @@
 			"refresh": "Refresh",
 			"relayout": "Re-layout",
 			"show": "Show:",
-			"empty": "No graph data yet."
+			"empty": "No graph data yet.",
+			"coBuild": "Co-build link",
+			"coBuildTitle": "Co-build a personal link",
+			"personalLinks": "My links",
+			"togglePersonalLinks": "Show or hide my dashed links",
+			"noPersonalLinks": "You have not created a personal link yet"
 		},
 		"editor": {
 			"preview": "Preview",

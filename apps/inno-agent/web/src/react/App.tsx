@@ -17,14 +17,15 @@ import { ChatCenter } from "./ChatCenter.js";
 import { FeaturePage } from "./FeaturePage.js";
 import { SessionSidebar, startNewChat } from "./SessionSidebar.js";
 import { WorkspacePanel } from "./WorkspacePanel.js";
+import { WorkspacePreviewTabs } from "./WorkspacePreviewTabs.js";
 import { DesktopWindowChrome } from "./DesktopWindowChrome.js";
 import { Tooltip } from "./ui/index.js";
 import {
 	CHAT_ONLY_BP,
-	DESKTOP_SIDEBAR_CONTENT_WIDTH,
-	DESKTOP_SIDEBAR_EXPANDED_MIN_WIDTH,
+	CHAT_BASELINE_WIDTH,
 	DESKTOP_SIDEBAR_RAIL_WIDTH,
 	fitPanelLayout,
+	getSidebarLayoutWidth,
 	WORKSPACE_DEFAULT_WIDTH,
 } from "../stores/app-layout.js";
 import { ensureWindowForPanel } from "../stores/window-expansion.js";
@@ -102,6 +103,7 @@ function MainApp() {
 		page: appStore.page,
 		settingsOpen: appStore.settingsOpen,
 		sidebarCollapsed: appStore.sidebarCollapsed,
+		sidebarWidth: appStore.sidebarWidth,
 		workspaceMode: appStore.workspaceMode,
 		workspaceWidth: appStore.workspaceWidth,
 	}));
@@ -109,7 +111,7 @@ function MainApp() {
 	const showNewChatControl = isDesktopWindow && app.page === "chat" && app.sidebarCollapsed && currentSessionId !== null;
 	const terminalOpen = useStoreSnapshot(terminalStore, () => terminalStore.isOpen);
 	// The terminal toggle belongs beside "随便问问" in the chat title row.
-	const desktopTerminalControl = isDesktopWindow && app.page === "chat" && currentSessionId ? (
+	const desktopTerminalControl = isDesktopWindow && app.page === "chat" ? (
 		<Tooltip label={t(terminalOpen ? "terminal.collapse" : "terminal.expand")} side="bottom">
 			<button
 				type="button"
@@ -195,21 +197,27 @@ function MainApp() {
 	// cannot squeeze the conversation. Browser sizing retains its old breakpoint.
 	// We intentionally do not restore either column when the window widens again;
 	// reopening a panel is an explicit user action. Runs only on mount and on
-	// breakpoint transitions — NOT on panel state changes, so panels reopened at
+	// window-width changes — NOT on panel state changes, so panels reopened at
 	// narrow widths (drawer sidebar / full-overlay workspace) stay open.
 	useEffect(() => {
-		const sidebarBreakpoint = isDesktopWindow ? DESKTOP_SIDEBAR_EXPANDED_MIN_WIDTH : CHAT_ONLY_BP;
-		const mql = window.matchMedia(`(max-width: ${sidebarBreakpoint}px)`);
-		const enforceChatOnly = (e: MediaQueryListEvent | MediaQueryList) => {
-			if (!e.matches) return;
+		let previousWidth = window.innerWidth;
+		const enforceChatOnly = () => {
+			const sidebarBreakpoint = isDesktopWindow
+				? CHAT_BASELINE_WIDTH + getSidebarLayoutWidth(false, true, appStore.sidebarWidth) - 1 : CHAT_ONLY_BP;
+			if (window.innerWidth > sidebarBreakpoint) return;
 			if (!appStore.sidebarCollapsed) appStore.setSidebarCollapsed(true);
 			if (window.innerWidth <= CHAT_ONLY_BP && appStore.workspaceMode !== "collapsed") {
 				appStore.setWorkspaceMode("collapsed");
 			}
 		};
-		enforceChatOnly(mql);
-		mql.addEventListener("change", enforceChatOnly);
-		return () => mql.removeEventListener("change", enforceChatOnly);
+		const onResize = () => {
+			if (previousWidth === window.innerWidth) return;
+			previousWidth = window.innerWidth;
+			enforceChatOnly();
+		};
+		enforceChatOnly();
+		window.addEventListener("resize", onResize);
+		return () => window.removeEventListener("resize", onResize);
 	}, [isDesktopWindow]);
 
 	// Track the narrow breakpoint so the drawer scrim only renders on small
@@ -253,6 +261,10 @@ function MainApp() {
 	useEffect(() => {
 		if (app.page !== "chat") return;
 		const fitCurrentLayout = () => {
+			if (isDesktopWindow && !appStore.sidebarCollapsed
+				&& window.innerWidth < CHAT_BASELINE_WIDTH + getSidebarLayoutWidth(false, true, appStore.sidebarWidth)) {
+				appStore.setSidebarCollapsed(true);
+			}
 			const currentMode = appStore.workspaceMode;
 			if (currentMode === "collapsed" || currentMode === "full") return;
 			const fitted = fitPanelLayout(
@@ -261,6 +273,7 @@ function MainApp() {
 				currentMode,
 				appStore.workspaceWidth,
 				isDesktopWindow,
+				appStore.sidebarWidth,
 			);
 			if (!fitted) {
 				appStore.setWorkspaceMode("collapsed");
@@ -404,6 +417,16 @@ function MainApp() {
 	// returning to chat restores the exact previous layout.
 	const chatVisible = app.page === "chat";
 	const layoutWorkspaceMode = chatVisible ? app.workspaceMode : "collapsed";
+	const workspacePanel = <WorkspacePanel
+		mode={app.workspaceMode}
+		width={app.workspaceWidth}
+		merged={isDesktopWindow}
+		showFileTree={!isDesktopWindow}
+		showTerminalToggle={!isDesktopWindow}
+		onModeChange={setWorkspaceMode}
+		onWidthChange={setWorkspaceWidth}
+		onPreviewFile={openFilePreview}
+	/>;
 
 	return (
 		<>
@@ -413,15 +436,17 @@ function MainApp() {
 					style={{
 						"--inno-workspace-width": `${app.workspaceWidth}px`,
 						"--sidebar-rail-w": `${DESKTOP_SIDEBAR_RAIL_WIDTH}px`,
-						"--sidebar-content-w": `${DESKTOP_SIDEBAR_CONTENT_WIDTH}px`,
+						"--sidebar-content-w": `min(${app.sidebarWidth}px, calc(100vw - ${DESKTOP_SIDEBAR_RAIL_WIDTH + 8}px))`,
 					} as React.CSSProperties}
 				>
 					<SessionSidebar
+						onPreviewFile={openFilePreview}
 						collapsed={app.sidebarCollapsed}
 						isDesktopWindow={isDesktopWindow}
 						onOpenSearch={openSearch}
+						workspaceContent={isDesktopWindow && chatVisible ? workspacePanel : undefined}
 						chatContent={isDesktopWindow && chatVisible
-							? <ChatCenter onPreviewFile={openFilePreview} desktopHeaderHost={desktopHeaderHost} terminalControl={desktopTerminalControl} />
+							? <ChatCenter onPreviewFile={openFilePreview} desktopHeaderHost={desktopHeaderHost} />
 							: undefined}
 					/>
 					{isDesktopWindow && chatVisible ? null : chatVisible ? (
@@ -429,22 +454,19 @@ function MainApp() {
 					) : (
 						<FeaturePage page={app.page as Exclude<AppPage, "chat">} />
 					)}
-					{chatVisible ? (
-						<WorkspacePanel
-							mode={app.workspaceMode}
-							width={app.workspaceWidth}
-							showTerminalToggle={!isDesktopWindow || !currentSessionId}
-							onModeChange={setWorkspaceMode}
-							onWidthChange={setWorkspaceWidth}
-							onPreviewFile={openFilePreview}
-						/>
-					) : null}
+					{chatVisible && !isDesktopWindow ? workspacePanel : null}
 					<DesktopWindowChrome
 						showWorkspaceControl={chatVisible}
 						showSidebarControl={chatVisible}
 						showNewChatControl={showNewChatControl}
 						showChatHeader={chatVisible}
 						isDesktopWindow={isDesktopWindow}
+						terminalControl={desktopTerminalControl}
+						workspaceTabs={<WorkspacePreviewTabs />}
+						workspaceMode={app.workspaceMode}
+						workspaceFullLabel={t("workspace.full")}
+						workspaceRestoreLabel={t("workspace.half")}
+						onWorkspaceModeChange={setWorkspaceMode}
 						sidebarCollapsed={app.sidebarCollapsed}
 						newChatLabel={t("nav.newChat")}
 						sidebarExpandLabel={t("sidebar.expandSidebar")}

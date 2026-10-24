@@ -1,5 +1,5 @@
 import { EventEmitter } from "./event-emitter.js";
-import { fitPanelLayout, resolveWorkspaceModeForViewport, WORKSPACE_DEFAULT_WIDTH } from "./app-layout.js";
+import { DESKTOP_SIDEBAR_CONTENT_WIDTH, fitPanelLayout, getEffectiveSidebarWidth, resolveWorkspaceModeForViewport, WORKSPACE_DEFAULT_WIDTH } from "./app-layout.js";
 import { syncNavigationHistory } from "./navigation-history.js";
 
 /**
@@ -47,6 +47,7 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 	page: AppPage = getInitialPage();
 	rightPanelTab: RightPanelTab = "preview";
 	sidebarCollapsed = false;
+	sidebarWidth = getInitialSidebarWidth();
 	workspaceMode: WorkspaceMode = "collapsed";
 	workspaceWidth = getInitialWorkspaceWidth();
 	settingsOpen = getInitialSettingsOpen();
@@ -105,6 +106,18 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 		this.setSidebarCollapsed(!this.sidebarCollapsed);
 	}
 
+	setSidebarWidth(width: number) {
+		const nextWidth = getEffectiveSidebarWidth(width);
+		if (this.sidebarWidth === nextWidth) return;
+		this.sidebarWidth = nextWidth;
+		try {
+			if (typeof window !== "undefined") window.localStorage.setItem("inno.sidebarWidth", String(nextWidth));
+		} catch {
+			// Keep resizing usable when browser storage is unavailable.
+		}
+		this.emit("change", undefined);
+	}
+
 	setSidebarCollapsed(collapsed: boolean) {
 		let nextWorkspaceMode = this.workspaceMode;
 		let nextWorkspaceWidth = this.workspaceWidth;
@@ -118,6 +131,7 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 					nextWorkspaceMode,
 					this.workspaceWidth,
 					Boolean(window.innoDesktop),
+					this.sidebarWidth,
 				);
 				if (fitted?.sidebarCollapsed === false) {
 					nextWorkspaceMode = fitted.workspaceMode;
@@ -152,6 +166,7 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 				nextWorkspaceMode,
 				nextWorkspaceWidth,
 				Boolean(window.innoDesktop),
+				this.sidebarWidth,
 			);
 			if (!fitted) return;
 			nextSidebarCollapsed = fitted.sidebarCollapsed;
@@ -180,6 +195,7 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 				nextWorkspaceMode,
 				nextWorkspaceWidth,
 				Boolean(window.innoDesktop),
+				this.sidebarWidth,
 			);
 			if (fitted) {
 				nextSidebarCollapsed = fitted.sidebarCollapsed;
@@ -205,6 +221,15 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 
 	toggleWorkspace() {
 		this.setWorkspaceMode(this.workspaceMode === "collapsed" ? "half" : "collapsed");
+	}
+}
+
+function getInitialSidebarWidth(): number {
+	try {
+		const saved = typeof window !== "undefined" ? window.localStorage.getItem("inno.sidebarWidth") : null;
+		return saved === null ? DESKTOP_SIDEBAR_CONTENT_WIDTH : getEffectiveSidebarWidth(Number(saved));
+	} catch {
+		return DESKTOP_SIDEBAR_CONTENT_WIDTH;
 	}
 }
 

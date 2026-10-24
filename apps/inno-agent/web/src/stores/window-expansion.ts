@@ -85,6 +85,7 @@ export async function ensureWindowForPanel(
 	const leftWidth = getSidebarLayoutWidth(
 		currentSidebarCollapsed && side !== "left",
 		Boolean(typeof window !== "undefined" && window.innoDesktop),
+		appStore.sidebarWidth,
 	);
 	const rightWidth = currentWorkspaceMode === "collapsed" && side !== "right"
 		? 0

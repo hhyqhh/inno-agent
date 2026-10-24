@@ -16,12 +16,17 @@ import {
 	Button,
 	IconButton,
 	Tooltip,
+	TabPanel,
+	getTabTriggerId,
 } from "./ui/index.js";
+import { STREAMING_PREVIEW_TAB, WORKSPACE_PREVIEW_TABS_ID } from "./WorkspacePreviewTabs.js";
 import { isDynamicImportError, recoverFromDynamicImportError } from "../utils/dynamic-import-recovery.js";
 
 interface WorkspacePanelProps {
 	mode: WorkspaceMode;
 	width: number;
+	showFileTree?: boolean;
+	merged?: boolean;
 	showTerminalToggle?: boolean;
 	onModeChange(mode: WorkspaceMode): void;
 	onWidthChange(width: number): void;
@@ -126,14 +131,14 @@ class WorkspaceContentErrorBoundary extends Component<
 	}
 }
 
-function WorkspaceBrowserContent({ retryKey, onPreviewFile, dndManager }: { retryKey: number; onPreviewFile: WorkspacePanelProps["onPreviewFile"]; dndManager: DragDropManager }) {
+function WorkspaceBrowserContent({ retryKey, onPreviewFile, dndManager, showFileTree }: { retryKey: number; onPreviewFile: WorkspacePanelProps["onPreviewFile"]; dndManager: DragDropManager; showFileTree: boolean }) {
 	const Browser = useMemo(
 		() => lazy(() => import("./WorkspaceBrowser.js").then((mod) => ({ default: mod.WorkspaceBrowser }))),
 		[retryKey],
 	);
 	return (
 		<Suspense fallback={<WorkspaceContentFallback />}>
-			<Browser onPreviewFile={onPreviewFile} dndManager={dndManager} />
+			<Browser variant={showFileTree ? "workspace" : "preview"} onPreviewFile={onPreviewFile} dndManager={dndManager} />
 		</Suspense>
 	);
 }
@@ -146,7 +151,7 @@ function WorkspaceContentFallback() {
 	);
 }
 
-function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPreviewFile, showTerminalToggle = true }: WorkspacePanelProps) {
+function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPreviewFile, showFileTree = true, merged = false, showTerminalToggle = true }: WorkspacePanelProps) {
 	const { t } = useTranslation();
 	const dndManager = useDragDropManager();
 	const [isResizing, setIsResizing] = useState(false);
@@ -162,6 +167,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 
 	const terminalOpen = useStoreSnapshot(terminalStore, () => terminalStore.isOpen);
 	const fileCount = useStoreSnapshot(workspaceStore, () => countTreeFiles(workspaceStore.tree?.children));
+	const activePreview = useStoreSnapshot(workspaceStore, () => workspaceStore.streamingPreview ? STREAMING_PREVIEW_TAB : workspaceStore.activePreviewPath);
 
 	const commitResize = useCallback(async (nextWidth: number) => {
 		const generation = ++resizeCommitGenerationRef.current;
@@ -193,7 +199,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 			);
 			const directMaxWidth = Math.max(
 				start.width,
-				getMaximumWorkspaceWidth(window.innerWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop)),
+				getMaximumWorkspaceWidth(window.innerWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop), appStore.sidebarWidth),
 			);
 			if (nextWidth <= directMaxWidth) {
 				// Keep the workspace attached to the pointer while the current
@@ -262,7 +268,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 		// Invalidate a previous asynchronous commit if the user starts another
 		// resize before a host-window expansion has finished.
 		resizeCommitGenerationRef.current += 1;
-		const layoutMaxWidth = getMaximumWorkspaceWidth(window.innerWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop));
+		const layoutMaxWidth = getMaximumWorkspaceWidth(window.innerWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop), appStore.sidebarWidth);
 		const startWidth = clampResizeWidth(width, mode, Math.max(width, layoutMaxWidth));
 		resizeMaxWidthRef.current = Math.max(startWidth, layoutMaxWidth);
 		resizeStartRef.current = {
@@ -296,7 +302,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 					WORKSPACE_MAX_WIDTH,
 					Math.max(
 						resizeMaxWidthRef.current,
-						getMaximumWorkspaceWidth(expandedViewportWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop)),
+						getMaximumWorkspaceWidth(expandedViewportWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop), appStore.sidebarWidth),
 					),
 				);
 				const maxWidth = resizeMaxWidthRef.current;
@@ -326,21 +332,32 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	}, [dndManager]);
 
 	return (
-		<aside className={`workspace-panel inno-workspace-scope ${collapsed ? "" : "inno-desktop-panel-surface"} relative flex h-full min-h-0 min-w-0 flex-col ${resizePreviewWidth !== null ? "workspace-resize-preview-active" : ""} ${collapsed ? "overflow-visible border-l-0 bg-transparent" : "overflow-hidden border-l border-[var(--inno-border)] bg-[var(--inno-workspace-bg)]"}`}>
+		<aside id="workspace-preview" aria-hidden={collapsed || undefined} inert={collapsed || undefined} className={`workspace-panel inno-workspace-scope ${merged ? "workspace-panel--merged" : collapsed ? "" : "inno-desktop-panel-surface"} relative flex h-full min-h-0 min-w-0 flex-col ${resizePreviewWidth !== null ? "workspace-resize-preview-active" : ""} ${collapsed ? "overflow-visible border-l-0 bg-transparent" : "overflow-hidden border-l border-[var(--inno-border)] bg-[var(--inno-workspace-bg)]"}`}>
 			{resizePreviewPortal}
 			{mode === "half" || mode === "quarter" ? (
 				<Tooltip label={`${t("workspace.resize")} (${width}px)`}>
 					<button
 						className="workspace-resize-handle"
+						role="separator"
+						aria-orientation="vertical"
+						aria-valuenow={width}
+						aria-valuemin={mode === "quarter" ? WORKSPACE_QUARTER_MIN_WIDTH : WORKSPACE_MIN_WIDTH}
+						aria-valuemax={getMaximumWorkspaceWidth(typeof window === "undefined" ? 1440 : window.innerWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop), appStore.sidebarWidth)}
 						aria-label={t("workspace.resize") ?? ""}
 						onPointerDown={startResize}
+						onKeyDown={(event) => {
+							const step = event.shiftKey ? 32 : 8;
+							if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+							event.preventDefault();
+							onWidthChange(clampResizeWidth(width + (event.key === "ArrowLeft" ? step : -step), mode, getMaximumWorkspaceWidth(window.innerWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop), appStore.sidebarWidth)));
+						}}
 					/>
 				</Tooltip>
 			) : null}
 
 			{/* Panel header — mirrors the design mockup's artifact-panel head:
 			    title + file count on the left, chrome actions on the right. */}
-			<div hidden={collapsed} className="inno-workspace-header inno-workspace-panel-header flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-workspace-bg)] px-3.5">
+			{!merged ? <div hidden={collapsed} className="inno-workspace-header inno-workspace-panel-header flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-workspace-bg)] px-3.5">
 				<div className="min-w-0 flex items-baseline gap-1.5">
 					<span className="whitespace-nowrap text-[14.5px] font-semibold text-[var(--inno-text)]">{t("workspace.panelTitle")}</span>
 					<span className="whitespace-nowrap text-[11.5px] text-[var(--inno-text-subtle)]">{t("workspace.fileCount", { count: fileCount })}</span>
@@ -369,19 +386,22 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 						{mode === "full" ? <Minimize2 size={15} strokeWidth={1.8} /> : <Maximize2 size={15} strokeWidth={1.8} />}
 					</IconButton>
 				</div>
-			</div>
+			</div> : null}
 
-			<div
+			<TabPanel
+				id={`${WORKSPACE_PREVIEW_TABS_ID}-panel`}
+				labelledBy={merged && activePreview ? getTabTriggerId(WORKSPACE_PREVIEW_TABS_ID, activePreview) : undefined}
+				aria-label={activePreview ? undefined : t("files.previewTabs")}
 				className={`flex-1 min-h-0 overflow-hidden bg-[var(--inno-workspace-bg)] ${collapsed ? "hidden" : ""}`}
 			>
 				{shouldMountContent ? (
 					<WorkspaceContentErrorBoundary resetKey={`preview:${contentRetryKey}`} onRetry={retryContent}>
 						<Suspense fallback={<WorkspaceContentFallback />}>
-							<WorkspaceBrowserContent retryKey={contentRetryKey} onPreviewFile={onPreviewFile} dndManager={dndManager} />
+							<WorkspaceBrowserContent retryKey={contentRetryKey} onPreviewFile={onPreviewFile} dndManager={dndManager} showFileTree={showFileTree} />
 						</Suspense>
 					</WorkspaceContentErrorBoundary>
 				) : null}
-			</div>
+			</TabPanel>
 		</aside>
 	);
 }

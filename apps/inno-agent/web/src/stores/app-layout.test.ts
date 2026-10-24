@@ -8,6 +8,8 @@ import {
 	DESKTOP_SIDEBAR_RAIL_WIDTH,
 	DESKTOP_SIDEBAR_WIDTH,
 	fitPanelLayout,
+	getEffectiveSidebarWidth,
+	getMaximumSidebarWidth,
 	getMaximumWorkspaceWidth,
 	getSidebarLayoutWidth,
 	resolveWorkspaceModeForViewport,
@@ -42,6 +44,23 @@ describe("fitPanelLayout", () => {
 		expect(canOpenWorkspaceBesideSidebar(CHAT_BASELINE_WIDTH + DESKTOP_SIDEBAR_WIDTH + 240, 300, true)).toBe(true);
 	});
 
+	it("accounts for the resized sidebar when fitting chat and the workspace", () => {
+		expect(getSidebarLayoutWidth(false, true, 400)).toBe(452);
+		expect(getSidebarLayoutWidth(true, true, 400)).toBe(52);
+		expect(getMaximumWorkspaceWidth(1600, false, "half", true, 400)).toBe(348);
+		expect(fitPanelLayout(1600, false, "half", 520, true, 400)).toEqual({ sidebarCollapsed: false, workspaceMode: "half", workspaceWidth: 348 });
+		expect(canOpenWorkspaceBesideSidebar(1400, 300, true, 400)).toBe(false);
+	});
+
+	it("bounds sidebar sizing and gives a floating preview its own viewport space", () => {
+		expect(getEffectiveSidebarWidth(100)).toBe(220);
+		expect(getEffectiveSidebarWidth(900)).toBe(480);
+		expect(getEffectiveSidebarWidth(Number.NaN)).toBe(246);
+		expect(getMaximumSidebarWidth(1600, 400)).toBe(348);
+		expect(getMaximumSidebarWidth(1100, 0)).toBe(248);
+		expect(getMaximumSidebarWidth(1100, 400, true)).toBe(480);
+		expect(getMaximumSidebarWidth(400, 0, true)).toBe(340);
+	});
 	it("limits resize previews to the space the current layout can actually use", () => {
 		expect(getMaximumWorkspaceWidth(1_140, true, "quarter")).toBe(340);
 		expect(getMaximumWorkspaceWidth(1_700, false, "half")).toBe(636);

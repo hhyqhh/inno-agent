@@ -5,6 +5,8 @@ export const CHAT_BASELINE_WIDTH = 800;
 export const SIDEBAR_WIDTH = 264;
 export const DESKTOP_SIDEBAR_RAIL_WIDTH = 52;
 export const DESKTOP_SIDEBAR_CONTENT_WIDTH = 246;
+export const DESKTOP_SIDEBAR_MIN_WIDTH = 220;
+export const DESKTOP_SIDEBAR_MAX_WIDTH = 480;
 export const DESKTOP_SIDEBAR_WIDTH = DESKTOP_SIDEBAR_RAIL_WIDTH + DESKTOP_SIDEBAR_CONTENT_WIDTH;
 export const WORKSPACE_QUARTER_MIN_WIDTH = 240;
 export const WORKSPACE_MIN_WIDTH = 320;
@@ -19,9 +21,20 @@ export const CHAT_ONLY_BP = 960;
 /** The desktop Chat panel may only stay pinned when it fits beside the chat. */
 export const DESKTOP_SIDEBAR_EXPANDED_MIN_WIDTH = CHAT_BASELINE_WIDTH + DESKTOP_SIDEBAR_WIDTH;
 
-export function getSidebarLayoutWidth(sidebarCollapsed: boolean, isDesktopWindow = false): number {
+export function getEffectiveSidebarWidth(width: number): number {
+	return Number.isFinite(width)
+		? Math.max(DESKTOP_SIDEBAR_MIN_WIDTH, Math.min(DESKTOP_SIDEBAR_MAX_WIDTH, Math.round(width)))
+		: DESKTOP_SIDEBAR_CONTENT_WIDTH;
+}
+
+/** Preview floats over the content; a pinned sidebar must leave room for chat and workspace. */
+export function getMaximumSidebarWidth(viewportWidth: number, workspaceWidth = 0, isPreview = false): number {
+	return getEffectiveSidebarWidth(viewportWidth - DESKTOP_SIDEBAR_RAIL_WIDTH - (isPreview ? 8 : CHAT_BASELINE_WIDTH + workspaceWidth));
+}
+
+export function getSidebarLayoutWidth(sidebarCollapsed: boolean, isDesktopWindow = false, sidebarWidth = DESKTOP_SIDEBAR_CONTENT_WIDTH): number {
 	if (isDesktopWindow) {
-		return DESKTOP_SIDEBAR_RAIL_WIDTH + (sidebarCollapsed ? 0 : DESKTOP_SIDEBAR_CONTENT_WIDTH);
+		return DESKTOP_SIDEBAR_RAIL_WIDTH + (sidebarCollapsed ? 0 : getEffectiveSidebarWidth(sidebarWidth));
 	}
 	return sidebarCollapsed ? 0 : SIDEBAR_WIDTH;
 }
@@ -40,9 +53,10 @@ export function getMaximumWorkspaceWidth(
 	sidebarCollapsed: boolean,
 	mode: WorkspaceMode,
 	isDesktopWindow = false,
+	sidebarWidth = DESKTOP_SIDEBAR_CONTENT_WIDTH,
 ): number {
 	const minWidth = mode === "quarter" ? WORKSPACE_QUARTER_MIN_WIDTH : WORKSPACE_MIN_WIDTH;
-	const availableWidth = viewportWidth - CHAT_BASELINE_WIDTH - getSidebarLayoutWidth(sidebarCollapsed, isDesktopWindow);
+	const availableWidth = viewportWidth - CHAT_BASELINE_WIDTH - getSidebarLayoutWidth(sidebarCollapsed, isDesktopWindow, sidebarWidth);
 	return Math.max(minWidth, Math.min(WORKSPACE_MAX_WIDTH, Math.round(availableWidth)));
 }
 
@@ -66,6 +80,7 @@ export function fitPanelLayout(
 	workspaceMode: WorkspaceMode,
 	workspaceWidth: number,
 	isDesktopWindow = false,
+	sidebarWidth = DESKTOP_SIDEBAR_CONTENT_WIDTH,
 ): FittedPanelLayout | null {
 	if (workspaceMode === "collapsed" || workspaceMode === "full") {
 		return { sidebarCollapsed, workspaceMode, workspaceWidth };
@@ -74,7 +89,7 @@ export function fitPanelLayout(
 	let nextSidebarCollapsed = sidebarCollapsed;
 	let availableWorkspaceWidth = viewportWidth
 		- CHAT_BASELINE_WIDTH
-		- getSidebarLayoutWidth(nextSidebarCollapsed, isDesktopWindow);
+		- getSidebarLayoutWidth(nextSidebarCollapsed, isDesktopWindow, sidebarWidth);
 
 	// If the requested workspace would squeeze the chat, hide the optional
 	// left column first. This is used by direct workspace-opening call sites
@@ -83,7 +98,7 @@ export function fitPanelLayout(
 		nextSidebarCollapsed = true;
 		availableWorkspaceWidth = viewportWidth
 			- CHAT_BASELINE_WIDTH
-			- getSidebarLayoutWidth(true, isDesktopWindow);
+			- getSidebarLayoutWidth(true, isDesktopWindow, sidebarWidth);
 	}
 
 	let nextWorkspaceMode = workspaceMode;
@@ -108,8 +123,8 @@ export function fitPanelLayout(
 }
 
 /** Whether a quarter-width workspace can open while keeping the sidebar visible. */
-export function canOpenWorkspaceBesideSidebar(viewportWidth: number, workspaceWidth: number, isDesktopWindow = false): boolean {
-	const fitted = fitPanelLayout(viewportWidth, false, "quarter", workspaceWidth, isDesktopWindow);
+export function canOpenWorkspaceBesideSidebar(viewportWidth: number, workspaceWidth: number, isDesktopWindow = false, sidebarWidth = DESKTOP_SIDEBAR_CONTENT_WIDTH): boolean {
+	const fitted = fitPanelLayout(viewportWidth, false, "quarter", workspaceWidth, isDesktopWindow, sidebarWidth);
 	return fitted?.sidebarCollapsed === false;
 }
 

@@ -31,11 +31,44 @@ interface WorkspaceStoreEvents {
 	change: void;
 }
 
-class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
+interface FilePreviewState {
+	file: WorkspaceFileDetail | null;
+	isLoading: boolean;
+	isEditing: boolean;
+	editBuffer: string;
+	isSaving: boolean;
+	error: string;
+	requestId: number;
+}
+
+export interface WorkspacePreviewTab extends FilePreviewState {
+	path: string;
+	name: string;
+}
+
+const emptyFilePreview = (): FilePreviewState => ({ file: null, isLoading: false, isEditing: false, editBuffer: "", isSaving: false, error: "", requestId: 0 });
+
+export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	tree: WorkspaceTree | null = null;
-	currentFile: WorkspaceFileDetail | null = null;
+	previewTabs: WorkspacePreviewTab[] = [];
+	activePreviewPath: string | null = null;
+	private emptyPreview = emptyFilePreview();
+	private get previewState(): FilePreviewState {
+		return this.previewTabs.find((tab) => tab.path === this.activePreviewPath) ?? this.emptyPreview;
+	}
+	// Keep the existing preview/editor API, with each tab owning its own draft.
+	get currentFile() { return this.previewState.file; }
+	set currentFile(file: WorkspaceFileDetail | null) { this.previewState.file = file; }
+	get isLoadingFile() { return this.previewState.isLoading; }
+	set isLoadingFile(value: boolean) { this.previewState.isLoading = value; }
+	get isEditing() { return this.previewState.isEditing; }
+	set isEditing(value: boolean) { this.previewState.isEditing = value; }
+	get editBuffer() { return this.previewState.editBuffer; }
+	set editBuffer(value: string) { this.previewState.editBuffer = value; }
+	get isSaving() { return this.previewState.isSaving; }
+	set isSaving(value: boolean) { this.previewState.isSaving = value; }
+	get previewError() { return this.previewState.error; }
 	isLoadingTree = false;
-	isLoadingFile = false;
 	isMutating = false;
 	error = "";
 	streamingPreview: StreamingWorkspacePreview | null = null;
@@ -43,12 +76,44 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	/** The workspace currently shown in the panel. null → server default. */
 	activeWorkspaceId: string | null = null;
 
-	/* --- Editing state --- */
-	isEditing = false;
-	editBuffer = "";
-	isSaving = false;
 	private treeRequestId = 0;
 	private fileRequestId = 0;
+
+	private notifyPreview(): void {
+		this.previewTabs = [...this.previewTabs];
+		this.emit("change", undefined);
+	}
+
+	activatePreview(path: string): void {
+		if (!this.previewTabs.some((tab) => tab.path === path)) return;
+		this.activePreviewPath = path;
+		this.streamingPreview = null;
+		this.notifyPreview();
+	}
+
+	closePreview(path: string): void {
+		const index = this.previewTabs.findIndex((tab) => tab.path === path);
+		if (index < 0) return;
+		this.previewTabs = this.previewTabs.filter((tab) => tab.path !== path);
+		if (this.activePreviewPath === path) {
+			this.activePreviewPath = this.previewTabs[Math.min(index, this.previewTabs.length - 1)]?.path ?? null;
+		}
+		this.notifyPreview();
+	}
+
+	private relocatePreviews(oldPath: string, newPath: string): void {
+		for (const tab of this.previewTabs) {
+			if (tab.path !== oldPath && !tab.path.startsWith(`${oldPath}/`)) continue;
+			const nextPath = newPath + tab.path.slice(oldPath.length);
+			if (this.activePreviewPath === tab.path) this.activePreviewPath = nextPath;
+			tab.path = nextPath;
+			tab.name = nextPath.split("/").pop() || nextPath;
+			if (tab.file) tab.file = { ...tab.file, path: nextPath, name: tab.name };
+			tab.requestId = ++this.fileRequestId;
+			tab.isLoading = false;
+		}
+		this.notifyPreview();
+	}
 
 	/** Set the active workspace and reload the tree. */
 	async setActiveWorkspace(workspaceId: string | null): Promise<void> {
@@ -56,7 +121,10 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 		this.treeRequestId++;
 		this.fileRequestId++;
 		this.activeWorkspaceId = workspaceId;
-		this.currentFile = null;
+		this.previewTabs = [];
+		this.activePreviewPath = null;
+		this.emptyPreview = emptyFilePreview();
+		this.streamingPreview = null;
 		this.isLoadingTree = false;
 		this.isLoadingFile = false;
 		this.isEditing = false;
@@ -79,10 +147,7 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 			const tree = await getWorkspaceTree(workspaceId);
 			if (requestId !== this.treeRequestId || workspaceId !== this.wsId || !isCurrent()) return;
 			this.tree = tree;
-			if (!this.currentFile) {
-				const first = this.findFirstPreviewable(this.tree.children);
-				if (first) await this.selectFile(first.path, isCurrent);
-			}
+			// Loading file management must not implicitly open the first file.
 		} catch (err) {
 			if (requestId !== this.treeRequestId || workspaceId !== this.wsId || !isCurrent()) return;
 			this.error = err instanceof Error ? err.message : "Failed to load workspace";
@@ -96,32 +161,39 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	}
 
 	async selectFile(path: string, isCurrent: () => boolean = () => true): Promise<void> {
-		const requestId = ++this.fileRequestId;
+		if (!isCurrent()) return;
 		const workspaceId = this.wsId;
-		// Discard any in-progress edit when switching files
-		if (this.isEditing) {
-			this.isEditing = false;
-			this.editBuffer = "";
+		let tab = this.previewTabs.find((item) => item.path === path);
+		if (!tab) {
+			tab = { ...emptyFilePreview(), path, name: path.split("/").pop() || path };
+			this.previewTabs = [...this.previewTabs, tab];
 		}
-		this.isLoadingFile = true;
+		this.activePreviewPath = path;
+		this.streamingPreview = null;
 		this.error = "";
-		this.emit("change", undefined);
+		if (tab.file || tab.isLoading) { this.notifyPreview(); return; }
+		const target = tab;
+		const requestId = ++this.fileRequestId;
+		target.requestId = requestId;
+		target.isLoading = true;
+		target.error = "";
+		const valid = () => this.previewTabs.includes(target) && target.requestId === requestId && workspaceId === this.wsId && isCurrent();
+		this.notifyPreview();
 		try {
 			const file = await getWorkspaceFile(path, workspaceId);
-			if (requestId !== this.fileRequestId || workspaceId !== this.wsId || !isCurrent()) return;
+			if (!valid()) return;
 			if (file && file.kind === "html" && file.content) {
 				file.content = await inlineWorkspaceHtml(file.content, file.path, workspaceId);
-				if (requestId !== this.fileRequestId || workspaceId !== this.wsId || !isCurrent()) return;
+				if (!valid()) return;
 			}
-			this.currentFile = file;
+			target.file = file;
 		} catch (err) {
-			if (requestId !== this.fileRequestId || workspaceId !== this.wsId || !isCurrent()) return;
-			this.error = err instanceof Error ? err.message : "Failed to load file";
-			this.currentFile = null;
+			if (!valid()) return;
+			target.error = err instanceof Error ? err.message : "Failed to load file";
 		} finally {
-			if (requestId === this.fileRequestId && workspaceId === this.wsId && isCurrent()) {
-				this.isLoadingFile = false;
-				this.emit("change", undefined);
+			if (this.previewTabs.includes(target) && target.requestId === requestId) {
+				target.isLoading = false;
+				this.notifyPreview();
 			}
 		}
 	}
@@ -184,18 +256,22 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 
 	/** Re-fetch the current file forcing text mode (for binary files the user wants to edit). */
 	async openAsText(): Promise<void> {
-		if (!this.currentFile) return;
-		this.isLoadingFile = true;
-		this.error = "";
-		this.emit("change", undefined);
+		const target = this.previewState;
+		if (!target.file) return;
+		const path = target.file.path;
+		const workspaceId = this.wsId;
+		const requestId = target.requestId = ++this.fileRequestId;
+		target.isLoading = true;
+		target.error = "";
+		this.notifyPreview();
 		try {
-			const file = await getWorkspaceFile(this.currentFile.path, this.wsId, true);
-			this.currentFile = file;
+			const file = await getWorkspaceFile(path, workspaceId, true);
+			if (target.requestId === requestId && workspaceId === this.wsId) target.file = file;
 		} catch (err) {
-			this.error = err instanceof Error ? err.message : "Failed to load file as text";
+			if (target.requestId === requestId) target.error = err instanceof Error ? err.message : "Failed to load file as text";
 		} finally {
-			this.isLoadingFile = false;
-			this.emit("change", undefined);
+			if (target.requestId === requestId) target.isLoading = false;
+			this.notifyPreview();
 		}
 	}
 
@@ -203,35 +279,40 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 		if (!this.currentFile || this.currentFile.content == null) return;
 		this.isEditing = true;
 		this.editBuffer = this.currentFile.content;
-		this.emit("change", undefined);
+		this.notifyPreview();
 	}
 
 	updateEditBuffer(value: string): void {
 		this.editBuffer = value;
-		this.emit("change", undefined);
+		this.notifyPreview();
 	}
 
 	cancelEditing(): void {
 		this.isEditing = false;
 		this.editBuffer = "";
-		this.emit("change", undefined);
+		this.notifyPreview();
 	}
 
 	async saveFile(): Promise<void> {
-		if (!this.currentFile) return;
-		this.isSaving = true;
-		this.emit("change", undefined);
+		const target = this.previewState;
+		if (!target.file || target.isSaving) return;
+		const path = target.file.path;
+		const workspaceId = this.wsId;
+		const content = target.editBuffer;
+		target.isSaving = true;
+		target.error = "";
+		this.notifyPreview();
 		try {
-			await saveWorkspaceFile(this.currentFile.path, this.editBuffer, this.wsId);
-			// Refresh the file to get updated metadata
-			this.currentFile = await getWorkspaceFile(this.currentFile.path, this.wsId);
-			this.isEditing = false;
-			this.editBuffer = "";
+			// Capture the owning tab before awaiting: switching tabs during save
+			// must never write the response or clear the draft of another file.
+			await saveWorkspaceFile(path, content, workspaceId);
+			target.file = await getWorkspaceFile(path, workspaceId);
+			if (target.editBuffer === content) { target.isEditing = false; target.editBuffer = ""; }
 		} catch (err) {
-			this.error = err instanceof Error ? err.message : "Failed to save file";
+			target.error = err instanceof Error ? err.message : "Failed to save file";
 		} finally {
-			this.isSaving = false;
-			this.emit("change", undefined);
+			target.isSaving = false;
+			this.notifyPreview();
 		}
 	}
 
@@ -261,6 +342,7 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 		this.emit("change", undefined);
 		try {
 			await renameWorkspaceItem(oldPath, newPath, this.wsId);
+			this.relocatePreviews(oldPath, newPath);
 			await this.loadTree();
 			if (this.currentFile?.path === oldPath) {
 				await this.selectFile(newPath);
@@ -278,6 +360,9 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 		this.emit("change", undefined);
 		try {
 			await deleteWorkspaceItem(path, this.wsId);
+			for (const tab of [...this.previewTabs]) {
+				if (tab.path === path || tab.path.startsWith(`${path}/`)) this.closePreview(tab.path);
+			}
 			if (this.currentFile?.path === path || this.currentFile?.path.startsWith(path + "/")) {
 				this.currentFile = null;
 				this.isEditing = false;
@@ -297,6 +382,7 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 		this.emit("change", undefined);
 		try {
 			await moveWorkspaceItem(sourcePath, targetDir, this.wsId);
+			this.relocatePreviews(sourcePath, [targetDir, sourcePath.split("/").pop()].filter(Boolean).join("/"));
 			await this.loadTree();
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : "Failed to move";
@@ -369,14 +455,6 @@ class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 		}
 	}
 
-	private findFirstPreviewable(nodes: WorkspaceTree["children"]): { path: string } | null {
-		for (const node of nodes) {
-			if (node.type === "file") return node;
-			const child = node.children ? this.findFirstPreviewable(node.children) : null;
-			if (child) return child;
-		}
-		return null;
-	}
 }
 
 export const workspaceStore = new WorkspaceStoreImpl();

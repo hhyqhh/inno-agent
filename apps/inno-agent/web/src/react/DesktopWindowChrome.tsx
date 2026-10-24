@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SquarePen } from "lucide-react";
-import { Tooltip } from "./ui/index.js";
+import { ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SquarePen } from "lucide-react";
+import { IconButton, Tooltip } from "./ui/index.js";
+import type { WorkspaceMode } from "../stores/app-store.js";
 
 interface DesktopWindowChromeProps {
 	showWorkspaceControl: boolean;
@@ -20,6 +21,12 @@ interface DesktopWindowChromeProps {
 	canNavigateBack: boolean;
 	canNavigateForward: boolean;
 	btwControl?: ReactNode;
+	terminalControl?: ReactNode;
+	workspaceTabs?: ReactNode;
+	workspaceMode?: WorkspaceMode;
+	workspaceFullLabel?: string;
+	workspaceRestoreLabel?: string;
+	onWorkspaceModeChange?: (mode: WorkspaceMode) => void;
 	onHeaderHostChange?: (host: HTMLDivElement | null) => void;
 	onToggleSidebar: () => void;
 	onNewChat: () => void;
@@ -51,6 +58,12 @@ export function DesktopWindowChrome({
 	canNavigateBack,
 	canNavigateForward,
 	btwControl,
+	terminalControl,
+	workspaceTabs,
+	workspaceMode,
+	workspaceFullLabel,
+	workspaceRestoreLabel,
+	onWorkspaceModeChange,
 	onHeaderHostChange,
 	onToggleSidebar,
 	onNewChat,
@@ -112,6 +125,24 @@ export function DesktopWindowChrome({
 				<div className="inno-window-chrome-right-actions">
 					{btwControl}
 				</div>
+			) : null}
+			{isDesktopWindow && showWorkspaceControl && workspaceMode ? (
+				<>
+					<div className="inno-window-chrome-preview-terminal">{terminalControl}</div>
+					<div className="inno-window-chrome-preview-divider" aria-hidden="true" />
+					<div className="inno-window-chrome-preview-tabs" aria-hidden={workspaceCollapsed || undefined} inert={workspaceCollapsed || undefined}>
+						{workspaceTabs}
+					</div>
+					{!workspaceCollapsed ? <IconButton
+						size="xs"
+						className="inno-window-chrome-preview-fullscreen"
+						aria-label={workspaceMode === "full" ? workspaceRestoreLabel ?? "Restore preview" : workspaceFullLabel ?? "Maximize preview"}
+						aria-pressed={workspaceMode === "full"}
+						onClick={() => onWorkspaceModeChange?.(workspaceMode === "full" ? "half" : "full")}
+					>
+						{workspaceMode === "full" ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+					</IconButton> : null}
+				</>
 			) : null}
 			{/* Keep workspace visibility in the upper toolbar so opening and closing
 			    stay in the same place in split and full views. */}

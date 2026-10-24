@@ -8,6 +8,7 @@ export * from "./PopoverSurface.js";
 export * from "./SearchableSelect.js";
 export * from "./Select.js";
 export * from "./Separator.js";
+export * from "./ResizeHandle.js";
 export * from "./Spinner.js";
 export * from "./Switch.js";
 export * from "./Tabs.js";

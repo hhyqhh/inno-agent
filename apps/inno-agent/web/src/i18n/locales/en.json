@@ -152,6 +152,8 @@
 	"nav": {
 		"primary": "Primary navigation",
 		"chat": "Chat",
+		"files": "Files",
+		"sidebarViews": "Messages and files",
 		"newChat": "New chat",
 		"workbench": "Workbench",
 		"notebook": "Notebook",
@@ -1177,6 +1179,7 @@
 		"answeredViaChat": "Answered via chat"
 	},
 	"sidebar": {
+		"resize": "Resize sidebar",
 		"expand": "Expand",
 		"collapse": "Collapse",
 		"expandSidebar": "Expand sidebar",
@@ -1267,6 +1270,10 @@
 		}
 	},
 	"files": {
+		"searchFiles": "Search files",
+		"noResults": "No matching files",
+		"fileCount_one": "{{count}} file",
+		"fileCount_other": "{{count}} files",
 		"download": "Download",
 		"editing": "Editing",
 		"newFile": "New File",

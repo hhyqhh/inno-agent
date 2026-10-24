@@ -10,7 +10,7 @@ import { WorkspacePanel } from "./WorkspacePanel.js";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("./WorkspaceBrowser.js", () => ({
-	WorkspaceBrowser: () => <article aria-label="File preview">Preview content</article>,
+	WorkspaceBrowser: ({ variant }: { variant: string }) => <article aria-label="File preview" data-variant={variant}>Preview content</article>,
 }));
 
 function Layout({ desktop = true, terminal = false }: { desktop?: boolean; terminal?: boolean }) {
@@ -43,6 +43,7 @@ function Layout({ desktop = true, terminal = false }: { desktop?: boolean; termi
 			<WorkspacePanel
 				mode={mode}
 				width={520}
+				showFileTree={!desktop}
 				showTerminalToggle={terminal}
 				onModeChange={setMode}
 				onWidthChange={vi.fn()}
@@ -76,6 +77,7 @@ describe("Workspace header controls", () => {
 		expect(screen.queryByRole("button", { name: "workspace.openWorkspace" })).toBeNull();
 		expect(screen.queryByRole("button", { name: "terminal.expand" })).toBeNull();
 		const preview = await screen.findByRole("article", { name: "File preview" });
+		expect(preview.getAttribute("data-variant")).toBe(desktop ? "preview" : "workspace");
 		fireEvent.click(close);
 		expect(screen.queryByRole("button", { name: "workspace.collapseWorkspace" })).toBeNull();
 		expect(screen.getByRole("button", { name: "workspace.openWorkspace" }).getAttribute("aria-expanded")).toBe("false");

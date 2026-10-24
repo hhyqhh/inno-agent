@@ -152,6 +152,8 @@
 	"nav": {
 		"primary": "主导航",
 		"chat": "对话",
+		"files": "文件",
+		"sidebarViews": "消息与文件",
 		"newChat": "新建会话",
 		"workbench": "工作台",
 		"notebook": "笔记本",
@@ -1177,6 +1179,7 @@
 		"answeredViaChat": "已通过对话回答"
 	},
 	"sidebar": {
+		"resize": "调整侧栏宽度",
 		"expand": "展开",
 		"collapse": "折叠",
 		"expandSidebar": "展开侧边栏",
@@ -1267,6 +1270,9 @@
 		}
 	},
 	"files": {
+		"searchFiles": "搜索文件",
+		"noResults": "没有匹配的文件",
+		"fileCount": "{{count}} 个文件",
 		"download": "下载",
 		"editing": "编辑中",
 		"newFile": "新建文件",

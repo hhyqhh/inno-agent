@@ -1335,7 +1335,8 @@ inno-app-shell {
 }
 
 /* The Electron chat toolbar owns the top 40px across all three columns. */
-.app-layout--desktop.app-layout--chat > :nth-child(-n + 3) {
+.app-layout--desktop.app-layout--chat > .inno-desktop-sidebar,
+.app-layout--desktop.app-layout--chat > .inno-desktop-chat-shell {
 	top: var(--inno-window-chrome-height);
 }
 
@@ -1500,6 +1501,29 @@ inno-app-shell {
 	flex-direction: column;
 	align-items: center;
 	gap: 6px;
+}
+
+.inno-desktop-sidebar-segment {
+	-webkit-app-region: no-drag;
+}
+
+.inno-sidebar-view {
+	display: flex;
+	width: 100%;
+	height: 100%;
+	min-height: 0;
+	flex-direction: column;
+	overflow: hidden;
+	animation: inno-sidebar-view-in var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-sidebar-view[hidden] {
+	display: none;
+}
+
+@keyframes inno-sidebar-view-in {
+	from { opacity: 0; }
+	to { opacity: 1; }
 }
 
 .inno-desktop-sidebar-rail-button {
@@ -1698,7 +1722,7 @@ inno-app-shell {
 	top: calc(var(--inno-window-chrome-height) + 2px);
 	bottom: 3px;
 	left: var(--sidebar-rail-w);
-	right: calc(var(--workspace-w) + 3px);
+	right: 3px;
 	display: grid;
 	grid-template-columns: var(--sidebar-content-w) minmax(0, 1fr);
 	overflow: hidden;
@@ -1731,12 +1755,60 @@ inno-app-shell {
 }
 
 .inno-desktop-chat-content {
-	grid-column: 2;
+	flex: 1 1 0;
 	width: 100%;
 	height: 100%;
 	min-width: 0;
 	min-height: 0;
 	overflow: hidden;
+}
+
+/* The conversation and preview share one outer surface. Only this internal
+   splitter moves; the frame remains fixed while expanding or maximizing. */
+.inno-desktop-workbench {
+	grid-column: 2;
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.inno-desktop-workbench > .workspace-panel--merged {
+	position: relative;
+	box-sizing: border-box;
+	flex: 0 0 auto;
+	width: max(0px, calc(var(--workspace-w) - 3px));
+	height: 100%;
+	min-width: 0;
+	overflow: visible;
+	border: 0;
+	border-left: 1px solid var(--inno-border);
+	border-radius: 0;
+	box-shadow: none;
+	background: var(--inno-chat-bg);
+	transition: width var(--inno-dur-modal) var(--inno-ease-in-out);
+}
+
+.app-layout--workspace-collapsed .inno-desktop-workbench > .workspace-panel--merged {
+	width: 0;
+	border-left: 0;
+}
+
+.app-layout--workspace-full .inno-desktop-workbench > .workspace-panel--merged {
+	width: 100%;
+}
+
+.workspace-resizing .inno-desktop-workbench > .workspace-panel--merged {
+	transition: none;
+}
+
+.workspace-panel--merged > .inno-ui-tab-panel,
+.workspace-panel--merged .inno-workspace-preview-pane {
+	background: var(--inno-chat-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.inno-desktop-workbench > .workspace-panel--merged { transition: none; }
 }
 
 .app-layout > :nth-child(3) {
@@ -1787,7 +1859,7 @@ inno-app-shell {
 }
 
 .app-layout--desktop.app-layout--workspace-full.app-layout--sidebar-expanded {
-	--sidebar-w: 298px;
+	--sidebar-w: calc(var(--sidebar-rail-w) + var(--sidebar-content-w));
 }
 
 .app-layout--workspace-full > .workspace-panel {
@@ -2202,9 +2274,9 @@ inno-app-shell {
 	z-index: 1;
 }
 
-/* With only the tree visible, let it share the panel's edge and background.
-   The split view keeps the two quiet cards; the narrow view should read as a
-   single file drawer rather than a card floating inside another card. */
+/* A single tree or preview shares the workspace's edge and background.
+   Desktop previews fill the space released by the file tree; browser split
+   views retain their two quiet cards. */
 .inno-workspace-browser--single-pane {
 	gap: 0;
 	padding: 0;
@@ -3256,6 +3328,102 @@ inno-workspace-panel textarea {
 .inno-ui-segmented-control__option[aria-checked="true"]:hover:not(:disabled) {
 	background: var(--inno-surface);
 	color: var(--inno-text);
+}
+
+.inno-ui-segmented-control[aria-orientation="vertical"] {
+	flex-direction: column;
+}
+
+/* Height pushes the following icons: a 160ms ease-out made hover expansion abrupt.
+   Give expansion two UI beats with a gradual start; collapse uses panel timing. */
+.inno-ui-segmented-control--rail {
+	position: relative;
+	box-sizing: border-box;
+	width: 36px;
+	height: 36px;
+	gap: 4px;
+	overflow: hidden;
+	padding: 2px;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	box-shadow: inset 0 0 0 1px transparent;
+	/* Keep the bottom frame visible through the same beat as the height change. */
+	transition: height var(--inno-dur-modal) var(--inno-ease-in-out), background-color var(--inno-dur-modal) var(--inno-ease-in-out), box-shadow var(--inno-dur-modal) var(--inno-ease-in-out);
+}
+
+.inno-ui-segmented-control--rail[data-option-count="2"] {
+	height: 72px;
+	background: color-mix(in srgb, var(--inno-sidebar-active) 60%, transparent);
+	box-shadow: inset 0 0 0 1px var(--inno-border);
+	transition-duration: calc(var(--inno-dur-ui) * 2), var(--inno-dur-modal), var(--inno-dur-modal);
+}
+
+.inno-ui-segmented-control--rail::before {
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	box-sizing: border-box;
+	width: 32px;
+	height: 32px;
+	border: 1px solid var(--inno-border);
+	border-radius: 6px;
+	background: var(--inno-surface-raised);
+	box-shadow: 0 1px 3px color-mix(in srgb, var(--inno-text) 10%, transparent);
+	content: "";
+	transition: transform var(--inno-dur-ui) var(--inno-ease-out), opacity var(--inno-dur-modal) var(--inno-ease-in-out);
+}
+
+.inno-ui-segmented-control--rail[data-selected-index="1"]::before {
+	transform: translateY(36px);
+}
+
+.inno-ui-segmented-control--rail[data-option-count="1"]::before,
+.inno-ui-segmented-control--rail[data-selected-index="-1"]::before {
+	opacity: 0;
+}
+
+.inno-ui-segmented-control--rail .inno-ui-segmented-control__option,
+.inno-ui-segmented-control--rail .inno-ui-segmented-control__option[aria-checked="true"],
+.inno-ui-segmented-control--rail .inno-ui-segmented-control__option[aria-checked="true"]:hover {
+	position: relative;
+	z-index: 1;
+	width: 32px;
+	height: 32px;
+	min-height: 32px;
+	flex: 0 0 32px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	opacity: 1;
+	transform: translateY(0);
+	transition: opacity var(--inno-dur-modal) var(--inno-ease-in-out), transform var(--inno-dur-modal) var(--inno-ease-in-out), color var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-ui-segmented-control--rail .inno-ui-segmented-control__option[aria-hidden="true"] {
+	opacity: 0;
+	transform: translateY(-4px);
+	pointer-events: none;
+}
+
+.inno-ui-segmented-control--rail .inno-ui-segmented-control__option:focus-visible {
+	outline-offset: -2px;
+}
+
+.inno-ui-segmented-control--rail[data-option-count="1"] .inno-ui-segmented-control__option:hover {
+	background: var(--inno-sidebar-active);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.inno-ui-segmented-control--rail,
+	.inno-ui-segmented-control--rail::before,
+	.inno-ui-segmented-control--rail .inno-ui-segmented-control__option {
+		transition: none !important;
+	}
+	.inno-sidebar-view {
+		animation: none;
+	}
 }
 
 .inno-ui-segmented-control--toolbar {
@@ -5113,6 +5281,63 @@ inno-workspace-panel textarea {
 	align-self: stretch;
 }
 
+/* An inset hit target remains reachable inside a clipped or rounded panel. */
+.inno-ui-resize-handle[data-orientation="vertical"] {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 3;
+	width: 8px;
+	background: transparent;
+	outline: none;
+	cursor: col-resize;
+	touch-action: none;
+	user-select: none;
+	-webkit-app-region: no-drag;
+}
+
+.inno-ui-resize-handle::after {
+	position: absolute;
+	top: 12px;
+	right: 1px;
+	bottom: 12px;
+	width: 1px;
+	background: transparent;
+	content: "";
+	transition: background-color var(--inno-dur-fast) var(--inno-ease-out);
+}
+
+.inno-ui-resize-handle:hover::after,
+:root:not([data-inno-input-modality="pointer"]) .inno-ui-resize-handle:focus-visible::after,
+.inno-ui-resize-handle[data-resizing]::after {
+	background: var(--inno-border-strong);
+}
+
+/* Pointer capture focuses the splitter; Chromium can retain :focus-visible
+   after release. Reuse App's modality so only keyboard input draws the frame. */
+:root:not([data-inno-input-modality="pointer"]) .inno-ui-resize-handle:focus-visible {
+	outline: 2px solid var(--inno-focus-border);
+	outline-offset: -2px;
+}
+
+.inno-ui-resizing-columns,
+.inno-ui-resizing-columns * {
+	cursor: col-resize !important;
+	user-select: none !important;
+}
+
+/* Follow the pointer directly instead of replaying the collapse animation. */
+.inno-ui-resizing-columns .app-layout--desktop > .inno-desktop-sidebar,
+.inno-ui-resizing-columns .app-layout--desktop > .inno-desktop-chat-shell,
+.inno-ui-resizing-columns .inno-desktop-sidebar-panel {
+	transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.inno-ui-resize-handle::after { transition: none; }
+}
+
 @keyframes inno-popover-enter {
 	from {
 		opacity: 0;
@@ -5539,6 +5764,128 @@ inno-workspace-panel textarea {
 .inno-workspace-subheader,
 .inno-workspace-content-toolbar {
 	flex-shrink: 0;
+}
+
+/* Sidebar files inherit the same pinned/preview surface as conversation history. */
+.inno-workspace-browser--sidebar {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	height: 100%;
+	min-height: 0;
+	background: var(--inno-sidebar-panel-bg, var(--inno-sidebar-bg));
+}
+
+.inno-workspace-browser--sidebar .inno-workspace-tree-toolbar {
+	height: 36px;
+	padding-inline: 12px;
+	border: 0;
+	background: transparent;
+}
+
+.inno-sidebar-file-search {
+	flex: 0 0 auto;
+	margin: 8px 12px 0;
+}
+
+.inno-workspace-browser--sidebar .inno-workspace-filter-bar {
+	gap: 4px;
+	padding: 8px 12px;
+	border: 0;
+}
+
+.inno-workspace-browser--sidebar .inno-filter-button {
+	min-width: 0;
+	flex: 1 1 auto;
+}
+
+.inno-workspace-browser--sidebar .workspace-scroll {
+	margin-inline: 6px;
+	padding-block: 4px;
+}
+
+.inno-sidebar-file-row {
+	display: flex;
+	height: 100%;
+	align-items: center;
+	gap: 8px;
+	padding: 0 8px;
+	border-radius: 6px;
+	color: var(--inno-text-muted);
+	cursor: pointer;
+	user-select: none;
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-sidebar-file-row:hover,
+.inno-sidebar-file-result:hover {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+
+.inno-sidebar-file-row[data-selected="true"],
+.inno-sidebar-file-result[aria-pressed="true"] {
+	background: var(--inno-sidebar-active);
+	color: var(--inno-text);
+}
+
+.inno-sidebar-file-chevron {
+	flex: 0 0 auto;
+	color: var(--inno-text-subtle);
+	transition: transform var(--inno-dur-ui) var(--inno-ease-out);
+}
+
+.inno-sidebar-file-chevron.is-open {
+	transform: rotate(90deg);
+}
+
+.inno-sidebar-file-chevron.is-file {
+	visibility: hidden;
+}
+
+.inno-sidebar-file-size {
+	flex: 0 0 auto;
+	color: var(--inno-text-subtle);
+	font-variant-numeric: tabular-nums;
+}
+
+.inno-sidebar-file-result {
+	width: 100%;
+	height: auto;
+	min-height: 52px;
+	justify-content: flex-start;
+	gap: 8px;
+	text-align: left;
+}
+
+.inno-sidebar-file-result > span:last-child {
+	text-align: left;
+}
+
+.inno-workspace-browser--sidebar .inno-workspace-file-icon {
+	color: var(--inno-text-subtle);
+}
+
+.inno-workspace-browser--sidebar .inno-workspace-file-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+.inno-sidebar-files-footer {
+	display: flex;
+	min-height: 36px;
+	flex: 0 0 auto;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	border-top: 1px solid var(--inno-border);
+	color: var(--inno-text-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.inno-sidebar-file-chevron,
+	.inno-sidebar-file-row {
+		transition: none;
+	}
 }
 
 .inno-workspace-tree-toolbar .inno-ui-icon-button,
@@ -6891,9 +7238,9 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 	pointer-events: none;
 }
 
-/* ── Workspace files are draggable from the whole row ── */
+/* File rows open on click, so hover uses a pointer; native whole-row dragging stays enabled. */
 .inno-smart-ws-drag-row {
-	cursor: grab;
+	cursor: pointer;
 }
 .inno-smart-ws-drag-row:active {
 	cursor: grabbing;

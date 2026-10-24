@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	appStore: {
 		sidebarCollapsed: false,
+		sidebarWidth: 246,
 		workspaceMode: "collapsed" as const,
 		workspaceWidth: 520,
 	},
@@ -16,6 +17,7 @@ import { ensureWindowForPanel } from "./window-expansion.js";
 	beforeEach(() => {
 		vi.unstubAllGlobals();
 		mocks.appStore.sidebarCollapsed = false;
+		mocks.appStore.sidebarWidth = 246;
 		mocks.appStore.workspaceMode = "collapsed";
 		mocks.appStore.workspaceWidth = 520;
 	});
@@ -24,6 +26,18 @@ import { ensureWindowForPanel } from "./window-expansion.js";
 		vi.stubGlobal("window", { innerWidth: 1200 });
 
 		await expect(ensureWindowForPanel("right", 640, "half")).resolves.toBe("unavailable");
+	});
+
+	it("uses the shared resized width when making room to reopen the sidebar", async () => {
+		mocks.appStore.sidebarCollapsed = true;
+		mocks.appStore.sidebarWidth = 400;
+		const windowMock = { innerWidth: 1200, innoDesktop: { expandWindowWidth: vi.fn(async (_side: string, width: number) => {
+			windowMock.innerWidth += width;
+			return true;
+		}) } };
+		vi.stubGlobal("window", windowMock);
+		await expect(ensureWindowForPanel("left")).resolves.toBe("ready");
+		expect(windowMock.innoDesktop.expandWindowWidth).toHaveBeenCalledWith("left", 52);
 	});
 
 	it("moves the window left when the right edge has no room", async () => {

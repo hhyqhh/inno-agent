@@ -18,9 +18,13 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 	Tooltip,
+	SegmentedControl,
+	ResizeHandle,
+	type ResizePoint,
 } from "./ui/index.js";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type ReactNode, type RefObject } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { useDragDropManager } from "react-dnd";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -57,7 +61,7 @@ import {
 	Languages,
 } from "lucide-react";
 import { appStore, type AppPage } from "../stores/app-store.js";
-import { CHAT_ONLY_BP, canOpenWorkspaceBesideSidebar, WORKSPACE_DEFAULT_WIDTH } from "../stores/app-layout.js";
+import { CHAT_ONLY_BP, canOpenWorkspaceBesideSidebar, DESKTOP_SIDEBAR_MIN_WIDTH, getEffectiveWorkspaceWidth, getMaximumSidebarWidth, WORKSPACE_DEFAULT_WIDTH } from "../stores/app-layout.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
@@ -72,6 +76,8 @@ import { useStoreSnapshot, useTitleMarquee } from "./hooks.js";
 import { getLongPressHandlers } from "./ui/long-press.js";
 import { useSidebarPreview } from "./use-sidebar-preview.js";
 
+const SidebarWorkspaceBrowser = lazy(() => import("./WorkspaceBrowser.js").then((module) => ({ default: module.WorkspaceBrowser })));
+type SidebarView = "messages" | "files";
 
 export function startNewChat(): void {
 	void (async () => {
@@ -90,7 +96,9 @@ interface SessionSidebarProps {
 	collapsed: boolean;
 	isDesktopWindow: boolean;
 	onOpenSearch: () => void;
+	onPreviewFile: (minimumWidth: number) => void | Promise<void>;
 	chatContent?: ReactNode;
+	workspaceContent?: ReactNode;
 }
 
 interface DesktopSidebarPreviewProps {
@@ -105,6 +113,7 @@ interface DesktopSidebarPreviewProps {
 	onPointerEnter: () => void;
 	onPointerLeave: () => void;
 	onFocusLeave: () => void;
+	resizeHandle?: ReactNode;
 	children: ReactNode;
 }
 
@@ -120,6 +129,7 @@ function DesktopSidebarPreview({
 	onPointerEnter,
 	onPointerLeave,
 	onFocusLeave,
+	resizeHandle,
 	children,
 }: DesktopSidebarPreviewProps) {
 	return (
@@ -143,6 +153,7 @@ function DesktopSidebarPreview({
 			<div className="inno-sidebar-scope flex h-full min-h-0 flex-col overflow-hidden bg-[var(--inno-sidebar-bg)]">
 				{children}
 			</div>
+			{resizeHandle}
 		</section>
 	);
 }
@@ -822,10 +833,14 @@ function SidebarUserMenu({ compact = false }: { compact?: boolean }) {
 
 /* ── Main sidebar ── */
 
-export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, chatContent }: SessionSidebarProps) {
+export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, onPreviewFile, chatContent, workspaceContent }: SessionSidebarProps) {
 	const uiTransition = useUITransition();
 	const panelTransition = useUITransition("modal");
+	const dndManager = useDragDropManager();
 	const { t } = useTranslation();
+	const [sidebarView, setSidebarView] = useState<SidebarView>("messages");
+	const [previewView, setPreviewView] = useState<SidebarView>("messages");
+	const [hasOpenedFiles, setHasOpenedFiles] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [editingName, setEditingName] = useState("");
 	const [generatingId, setGeneratingId] = useState<string | null>(null);
@@ -869,10 +884,11 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, chatC
 	const wsActive = useStoreSnapshot(workspaceStore, () => ({
 		activeWorkspaceId: workspaceStore.activeWorkspaceId,
 	}));
-	const page = useStoreSnapshot(appStore, () => appStore.page);
-	const chatRailButtonRef = useRef<HTMLButtonElement>(null);
+	const layout = useStoreSnapshot(appStore, () => ({ page: appStore.page, sidebarWidth: appStore.sidebarWidth, workspaceMode: appStore.workspaceMode, workspaceWidth: appStore.workspaceWidth }));
+	const { page } = layout;
 	const desktopRailRef = useRef<HTMLElement>(null);
 	const desktopPanelRef = useRef<HTMLElement>(null);
+	const sidebarResizingRef = useRef(false);
 	const previousCollapsed = useRef(collapsed);
 	const previousPage = useRef(page);
 	const immediateDismissFrameRef = useRef<number | null>(null);
@@ -889,10 +905,35 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, chatC
 		const activeMenu = activeElement instanceof HTMLElement ? activeElement.closest<HTMLElement>("[role='menu']") : null;
 		return Boolean(activeMenu);
 	}, []);
-	const preview = useSidebarPreview(isDesktopWindow && (collapsed || page !== "chat"), keepPreviewForFocus);
+	const sidebarPreviewEnabled = isDesktopWindow && (collapsed || page !== "chat");
+	const preview = useSidebarPreview(sidebarPreviewEnabled, keepPreviewForFocus);
+	const railExpanded = page === "chat" || preview.previewOpen;
+	// Page-only checks left collapsed chat previews locked to the committed panel.
+	// Both preview entry points use a temporary view without changing that selection.
+	const visibleSidebarView = sidebarPreviewEnabled && preview.previewOpen ? previewView : sidebarView;
 	const desktopPanelVisible = ((!collapsed || isCollapsing) && page === "chat") || preview.previewOpen;
 	const desktopPanelPreview = page !== "chat"
 		|| (collapsed && !isCollapsing && (!suppressSidebarFade || preview.previewOpen));
+	const occupiedWorkspaceWidth = page === "chat" && (layout.workspaceMode === "half" || layout.workspaceMode === "quarter")
+		? getEffectiveWorkspaceWidth(layout.workspaceWidth, layout.workspaceMode) : 0;
+	const maximumSidebarWidth = getMaximumSidebarWidth(typeof window === "undefined" ? 1440 : window.innerWidth, occupiedWorkspaceWidth, desktopPanelPreview);
+	const schedulePreviewPointerClose = useCallback(() => {
+		if (!sidebarResizingRef.current) preview.schedulePointerClose();
+	}, [preview.schedulePointerClose]);
+	const startSidebarResize = useCallback(() => {
+		sidebarResizingRef.current = true;
+		preview.cancelClose();
+	}, [preview.cancelClose]);
+	const finishSidebarResize = useCallback((point: ResizePoint | null) => {
+		sidebarResizingRef.current = false;
+		if (!point) return;
+		const containsPointer = [desktopPanelRef.current, desktopRailRef.current].some((element) => {
+			const rect = element?.getBoundingClientRect();
+			return rect && point.clientX >= rect.left && point.clientX <= rect.right && point.clientY >= rect.top && point.clientY <= rect.bottom;
+		});
+		if (!containsPointer) preview.schedulePointerClose();
+	}, [preview.schedulePointerClose]);
+	const resizeSidebar = useCallback((width: number) => appStore.setSidebarWidth(width), []);
 	const handleCollapseTransitionEnd = useCallback((part: "panel" | "chatTrack") => {
 		if (!collapsed || !isCollapsing || page !== "chat") return;
 		const ended = { ...collapseTransitionEndsRef.current, [part]: true };
@@ -1206,6 +1247,21 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, chatC
 			appStore.setSidebarCollapsed(true);
 		}
 	}, [isDesktopWindow, preview.closePreview]);
+	const selectSidebarView = useCallback((view: SidebarView) => {
+		setSidebarView(view);
+		setPreviewView(view);
+		if (view === "files") setHasOpenedFiles(true);
+		navigateTo("chat");
+	}, [navigateTo]);
+	const previewSidebarView = useCallback((view: SidebarView) => {
+		setPreviewView(view);
+		if (view === "files") setHasOpenedFiles(true);
+	}, []);
+	const openSidebarFile = useCallback((minimumWidth: number) => {
+		setSidebarView("files");
+		navigateTo("chat");
+		return onPreviewFile(minimumWidth);
+	}, [navigateTo, onPreviewFile]);
 
 	const togglePinned = useCallback((id: string) => {
 		setPinnedSessionIds((current) => {
@@ -1262,7 +1318,7 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, chatC
 		const canOpenWorkspace = appStore.workspaceMode !== "collapsed"
 			|| typeof window === "undefined"
 			|| appStore.sidebarCollapsed
-			|| canOpenWorkspaceBesideSidebar(window.innerWidth, 300, isDesktopWindow);
+			|| canOpenWorkspaceBesideSidebar(window.innerWidth, 300, isDesktopWindow, appStore.sidebarWidth);
 		if (canOpenWorkspace) {
 			appStore.setRightPanelTab("preview");
 			// 300px is the default only when opening the workspace from its
@@ -1878,20 +1934,27 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, chatC
 		const desktopRail = (
 			<div className="inno-desktop-sidebar-rail">
 				<nav ref={desktopRailRef} className="inno-desktop-sidebar-rail-nav" aria-label={t("nav.primary")}>
-					<button
-						ref={chatRailButtonRef}
-						type="button"
-						className="inno-desktop-sidebar-rail-button"
-						aria-label={t("nav.chat")}
-						aria-current={page === "chat" ? "page" : undefined}
+					<div
+						className="inno-desktop-sidebar-segment"
 						onPointerEnter={preview.openPreview}
-						onPointerLeave={preview.schedulePointerClose}
-						onFocus={preview.openPreview}
-						onBlur={preview.scheduleClose}
-						onClick={() => navigateTo("chat")}
+						onPointerLeave={schedulePreviewPointerClose}
+						onFocusCapture={preview.openPreview}
+						onBlurCapture={preview.scheduleClose}
 					>
-						<MessageSquare size={17} />
-					</button>
+						<SegmentedControl<SidebarView>
+							variant="rail"
+							orientation="vertical"
+							collapsed={!railExpanded}
+							value={visibleSidebarView}
+							ariaLabel={t("nav.sidebarViews")}
+							onValueChange={selectSidebarView}
+							onValuePreview={sidebarPreviewEnabled ? previewSidebarView : undefined}
+							items={[
+								{ value: "messages", label: <MessageSquare size={18} />, ariaLabel: t("nav.chat") },
+								{ value: "files", label: <FolderClosed size={18} />, ariaLabel: t("nav.files") },
+							]}
+						/>
+					</div>
 					{([
 						["notebook", t("nav.notebook"), <BookOpen size={17} />],
 						["skills", t("nav.skills"), <Puzzle size={17} />],
@@ -1904,7 +1967,7 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, chatC
 								className="inno-desktop-sidebar-rail-button"
 								aria-label={label}
 								aria-current={page === destination ? "page" : undefined}
-								onPointerEnter={preview.schedulePointerClose}
+								onPointerEnter={schedulePreviewPointerClose}
 								onFocus={preview.scheduleClose}
 								onClick={() => navigateTo(destination)}
 							>
@@ -1921,7 +1984,7 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, chatC
 		const sidebarPreview = (
 			<DesktopSidebarPreview
 				panelRef={desktopPanelRef}
-				label={t("nav.chat")}
+				label={t(visibleSidebarView === "files" ? "nav.files" : "nav.chat")}
 				isPreview={desktopPanelPreview}
 				isImmediateDismiss={isImmediateSidebarDismiss}
 				isCollapsing={isCollapsing}
@@ -1929,10 +1992,31 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, chatC
 				visible={desktopPanelVisible}
 				onCollapseTransitionEnd={handleCollapseTransitionEnd}
 				onPointerEnter={preview.cancelClose}
-				onPointerLeave={preview.schedulePointerClose}
+				onPointerLeave={schedulePreviewPointerClose}
 				onFocusLeave={preview.scheduleClose}
+				resizeHandle={desktopPanelVisible && !isCollapsing ? (
+					<ResizeHandle
+						value={layout.sidebarWidth}
+						min={DESKTOP_SIDEBAR_MIN_WIDTH}
+						max={maximumSidebarWidth}
+						onValueChange={resizeSidebar}
+						onResizeStart={startSidebarResize}
+						onResizeEnd={finishSidebarResize}
+						aria-label={t("sidebar.resize")}
+						aria-controls="session-sidebar-panel"
+					/>
+				) : null}
 			>
-				{sidebarContent}
+				<div className="inno-sidebar-view" hidden={visibleSidebarView !== "messages"}>
+					{sidebarContent}
+				</div>
+				{hasOpenedFiles ? (
+					<div className="inno-sidebar-view" hidden={visibleSidebarView !== "files"}>
+						<Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner size={18} /></div>}>
+							<SidebarWorkspaceBrowser variant="sidebar" dndManager={dndManager} onPreviewFile={openSidebarFile} />
+						</Suspense>
+					</div>
+				) : null}
 			</DesktopSidebarPreview>
 		);
 
@@ -1941,7 +2025,7 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, chatC
 				<aside
 					id="session-sidebar"
 					className={`inno-desktop-sidebar${collapsed ? " is-collapsed" : " is-expanded"}`}
-					onPointerLeave={preview.schedulePointerClose}
+						onPointerLeave={schedulePreviewPointerClose}
 					onKeyDown={(event) => preview.handleKeyDown(event.nativeEvent)}
 				>
 					{desktopRail}
@@ -1963,7 +2047,10 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, chatC
 							aria-hidden="true"
 							inert
 						/>
-						<main className="inno-desktop-chat-content">{chatContent}</main>
+						<div className="inno-desktop-workbench">
+							<main className="inno-desktop-chat-content">{chatContent}</main>
+							{workspaceContent}
+						</div>
 					</div>
 				) : null}
 			</>

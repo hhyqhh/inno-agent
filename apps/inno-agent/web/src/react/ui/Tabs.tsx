@@ -24,7 +24,7 @@ export interface TabsProps<Value extends string> extends SelectableControlProps<
 	id: string;
 	size?: "compact" | "sm";
 	spacing?: "compact" | "comfortable";
-	variant?: "underline" | "pill";
+	variant?: "underline" | "pill" | "browser";
 }
 
 export function getTabTriggerId(id: string, value: string): string {
@@ -149,7 +149,7 @@ export function Tabs<Value extends string>({
 }
 
 export interface TabPanelProps extends Omit<HTMLAttributes<HTMLDivElement>, "role" | "aria-labelledby" | "tabIndex"> {
-	labelledBy: string;
+	labelledBy?: string;
 	tabIndex?: number;
 }
 
@@ -170,7 +170,12 @@ export const TabPanel = forwardRef<HTMLDivElement, TabPanelProps>(function TabPa
 });
 
 export type SegmentedControlProps<Value extends string> = SelectableControlProps<Value> & {
-	variant?: "default" | "toolbar";
+	variant?: "default" | "toolbar" | "rail";
+	orientation?: "horizontal" | "vertical";
+	/** Rail only: keep trailing options mounted while collapsing to the first. */
+	collapsed?: boolean;
+	/** Preview an option without committing navigation or a persistent selection. */
+	onValuePreview?: (value: Value) => void;
 };
 
 /** Single-choice control with radio semantics and arrow-key selection. */
@@ -180,20 +185,30 @@ export function SegmentedControl<Value extends string>({
 	items,
 	ariaLabel,
 	variant = "default",
+	orientation = "horizontal",
+	collapsed = false,
+	onValuePreview,
 	className = "",
 }: SegmentedControlProps<Value>) {
 	const buttons = useRef<Array<HTMLButtonElement | null>>([]);
-	const selectedIndex = items.findIndex((item) => item.value === value && !item.disabled);
-	const firstEnabledIndex = items.findIndex((item) => !item.disabled);
+	// Removing the file option on hover close cut off its fade before the rail
+	// finished shrinking. Keep its node, but exclude it from all interaction.
+	const visibleItems = variant === "rail" && collapsed ? items.slice(0, 1) : items;
+	const selectedIndex = visibleItems.findIndex((item) => item.value === value && !item.disabled);
+	const firstEnabledIndex = visibleItems.findIndex((item) => !item.disabled);
 
 	return (
 		<div
 			role="radiogroup"
 			aria-label={ariaLabel}
+			aria-orientation={orientation}
+			data-option-count={visibleItems.length}
+			data-selected-index={selectedIndex}
 			className={`inno-ui-segmented-control inno-ui-segmented-control--${variant}${className ? ` ${className}` : ""}`}
 		>
 			{items.map((item, index) => {
 				const selected = index === selectedIndex;
+				const collapsedOption = index >= visibleItems.length;
 				const option = (
 					<button
 						key={item.value}
@@ -202,12 +217,16 @@ export function SegmentedControl<Value extends string>({
 						role="radio"
 						aria-checked={selected}
 						aria-label={item.ariaLabel}
-						tabIndex={selected || (selectedIndex < 0 && index === firstEnabledIndex) ? 0 : -1}
-						disabled={item.disabled}
+						aria-hidden={collapsedOption || undefined}
+						inert={collapsedOption || undefined}
+						tabIndex={!collapsedOption && (selected || (selectedIndex < 0 && index === firstEnabledIndex)) ? 0 : -1}
+						disabled={item.disabled || collapsedOption}
 						title={item.disabled ? item.title : undefined}
 						className="inno-ui-segmented-control__option"
+						onPointerEnter={() => { if (!collapsedOption) onValuePreview?.(item.value); }}
+						onFocus={() => { if (!collapsedOption) onValuePreview?.(item.value); }}
 						onClick={() => onValueChange(item.value)}
-						onKeyDown={(event) => moveToNextEnabled(event, items, index, buttons, onValueChange)}
+						onKeyDown={(event) => moveToNextEnabled(event, visibleItems, index, buttons, onValueChange)}
 					>
 						{item.label}
 					</button>

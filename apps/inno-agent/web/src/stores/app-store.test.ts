@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { appStore, pageFromSearch } from "./app-store.js";
 
 describe("pageFromSearch", () => {
@@ -40,6 +40,31 @@ describe("pageFromSearch", () => {
 });
 
 describe("sidebar navigation state", () => {
+	it("keeps one bounded sidebar width through page changes and collapse", () => {
+		const previousWidth = appStore.sidebarWidth;
+		const previousCollapsed = appStore.sidebarCollapsed;
+		const setItem = vi.fn();
+		vi.stubGlobal("window", { innerWidth: 1800, localStorage: { setItem } });
+		try {
+			appStore.setSidebarWidth(360);
+			expect(setItem).toHaveBeenLastCalledWith("inno.sidebarWidth", "360");
+			appStore.setPage("notebook", "none");
+			appStore.setSidebarCollapsed(true);
+			appStore.setPage("chat", "none");
+			appStore.setSidebarCollapsed(false);
+			expect(appStore.sidebarWidth).toBe(360);
+			appStore.setSidebarWidth(900);
+			expect(appStore.sidebarWidth).toBe(480);
+			appStore.setSidebarWidth(100);
+			expect(appStore.sidebarWidth).toBe(220);
+		} finally {
+			appStore.sidebarWidth = previousWidth;
+			appStore.sidebarCollapsed = previousCollapsed;
+			appStore.setPage("chat", "none");
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it("does not change the fixed expand state when navigating between pages", () => {
 		const previousCollapsed = appStore.sidebarCollapsed;
 		try {

@@ -1808,7 +1808,10 @@ inno-app-shell {
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.inno-desktop-workbench > .workspace-panel--merged { transition: none; }
+	.inno-desktop-workbench > .workspace-panel--merged,
+	.inno-window-chrome-preview-divider,
+	.inno-window-chrome-preview-terminal,
+	.inno-window-chrome-preview-tabs { transition: none; }
 }
 
 .app-layout > :nth-child(3) {
@@ -2123,6 +2126,136 @@ inno-app-shell {
 .inno-window-chrome-terminal-button.is-active {
 	background: var(--inno-accent-soft);
 	color: var(--inno-accent);
+}
+
+/* ── Preview tab strip in the window toolbar ──
+   One shared toolbar row: terminal toggle, small divider (same style as the
+   session-title divider), open file tabs, maximize control, panel toggle.
+   The divider marks the chat/preview split below: collapsed it rests between
+   the terminal and the panel toggle; half/quarter pin it above the panel's
+   border-left; full mode has no split, so terminal and divider step aside. */
+
+.inno-window-chrome-preview-divider {
+	position: absolute;
+	top: 17px;
+	right: 50px;
+	z-index: 1;
+	width: 1px;
+	height: 18px;
+	background: var(--inno-border-strong);
+	pointer-events: none;
+	transition: right 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease, visibility 0s linear 120ms;
+}
+
+.app-layout--workspace-half .inno-window-chrome-preview-divider,
+.app-layout--workspace-quarter .inno-window-chrome-preview-divider {
+	/* The merged panel is var(--workspace-w) wide including its 1px
+	   border-left; this lands the divider exactly on that border. */
+	right: var(--workspace-w);
+}
+
+.app-layout--workspace-full .inno-window-chrome-preview-divider {
+	opacity: 0;
+	visibility: hidden;
+}
+
+.inno-window-chrome-preview-terminal {
+	position: absolute;
+	top: var(--inno-window-chrome-control-top);
+	right: 56px;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	transition: right 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease, visibility 0s linear 120ms;
+}
+
+.app-layout--workspace-half .inno-window-chrome-preview-terminal,
+.app-layout--workspace-quarter .inno-window-chrome-preview-terminal {
+	right: calc(var(--workspace-w) + 8px);
+}
+
+/* The terminal drawer belongs to the chat column; with the preview maximized
+   the chat is fully covered, so its toggle has nothing left to act on. */
+.app-layout--workspace-full .inno-window-chrome-preview-terminal {
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+}
+
+.inno-window-chrome-preview-tabs {
+	position: absolute;
+	top: var(--inno-window-chrome-control-top);
+	left: calc(100% - var(--workspace-w) + 10px);
+	right: calc(16px + var(--inno-window-chrome-control-size) * 2 + 12px);
+	z-index: 1;
+	height: var(--inno-window-chrome-control-size);
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	pointer-events: auto;
+	-webkit-app-region: no-drag;
+	transition: left 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease, visibility 0s;
+}
+
+.app-layout--workspace-full .inno-window-chrome-preview-tabs {
+	left: calc(var(--sidebar-w) + 10px);
+}
+
+.app-layout--workspace-collapsed .inno-window-chrome-preview-tabs {
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+	transition: left 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease, visibility 0s linear 120ms;
+}
+
+.inno-workspace-tabs {
+	display: flex;
+	flex: 1 1 auto;
+	height: 100%;
+	min-width: 0;
+	align-items: center;
+	overflow-x: auto;
+	overflow-y: hidden;
+	scrollbar-width: none;
+}
+
+.inno-workspace-tabs::-webkit-scrollbar {
+	display: none;
+}
+
+.inno-workspace-tab-dirty {
+	flex: 0 0 auto;
+	margin-left: 1px;
+	font-size: 15px;
+	line-height: 1;
+	color: var(--inno-accent);
+}
+
+.inno-window-chrome-preview-fullscreen.inno-ui-button {
+	position: absolute;
+	top: var(--inno-window-chrome-control-top);
+	right: calc(16px + var(--inno-window-chrome-control-size) + 8px);
+	z-index: 1;
+	width: var(--inno-window-chrome-control-size);
+	min-height: var(--inno-window-chrome-control-size);
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--inno-text-subtle);
+	pointer-events: auto;
+	-webkit-app-region: no-drag;
+}
+
+.inno-window-chrome-preview-fullscreen.inno-ui-button:hover:not(:disabled) {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+
+/* Restoring is a mode, not an "on" toggle: keep the pressed state neutral. */
+.inno-window-chrome-preview-fullscreen.inno-ui-button[aria-pressed="true"],
+.inno-window-chrome-preview-fullscreen.inno-ui-button[aria-pressed="true"]:hover:not(:disabled) {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
 }
 
 /* Outside desktop chat, keep the sidebar brand row below the native traffic
@@ -3230,6 +3363,57 @@ inno-workspace-panel textarea {
 	border-color: transparent;
 	background: var(--inno-surface-muted);
 	color: var(--inno-text);
+}
+
+/* Browser-style file tabs: the active tab raises as a neutral card, the rest
+   stay quiet ghosts; no underline indicator. Used by the window toolbar's
+   workspace preview strip. */
+.inno-ui-tabs--browser {
+	align-items: center;
+}
+
+/* Browser tabs keep their natural width and let the strip scroll, instead of
+   squeezing each other when several files are open. */
+.inno-ui-tabs--browser .inno-ui-tabs__trigger {
+	flex: 0 0 auto;
+	min-height: 26px;
+	justify-content: flex-start;
+	padding: 0 4px 0 8px;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--inno-text-muted);
+	font-size: 12px;
+	font-weight: 400;
+	-webkit-app-region: no-drag;
+}
+
+.inno-ui-tabs--browser .inno-ui-tabs__trigger:hover:not(:disabled) {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+
+.inno-ui-tabs--browser .inno-ui-tabs__trigger[aria-selected="true"],
+.inno-ui-tabs--browser .inno-ui-tabs__trigger[aria-selected="true"]:hover:not(:disabled) {
+	background: var(--inno-surface);
+	box-shadow: inset 0 0 0 1px var(--inno-border);
+	color: var(--inno-text);
+}
+
+.inno-ui-tabs--browser .inno-ui-tabs__trigger--closable .inno-ui-tabs__label {
+	max-width: 160px;
+}
+
+.inno-ui-tabs--browser .inno-ui-tabs__close {
+	width: 18px;
+	height: 18px;
+	flex: 0 0 18px;
+}
+
+/* The active tab already sits on --inno-surface; hover needs the muted step
+   to stay visible. */
+.inno-ui-tabs--browser .inno-ui-tabs__close:hover {
+	background: var(--inno-surface-muted);
 }
 
 .inno-ui-tabs__label {

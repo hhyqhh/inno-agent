@@ -1798,7 +1798,12 @@ inno-app-shell {
 	width: 100%;
 }
 
-.workspace-resizing .inno-desktop-workbench > .workspace-panel--merged {
+/* While dragging the splitter the toolbar pieces pinned to the border must
+   track it frame by frame; keep only the open/close/maximize transitions. */
+.workspace-resizing .inno-desktop-workbench > .workspace-panel--merged,
+.workspace-resizing .inno-window-chrome-preview-divider,
+.workspace-resizing .inno-window-chrome-preview-terminal,
+.workspace-resizing .inno-window-chrome-preview-tabs {
 	transition: none;
 }
 

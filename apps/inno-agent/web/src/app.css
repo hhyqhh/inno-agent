@@ -1975,7 +1975,15 @@ inno-app-shell {
 
 .app-layout--desktop.app-layout--chat.app-layout--workspace-quarter .inno-window-chrome-chat-header > .inno-conversation-header,
 .app-layout--desktop.app-layout--chat.app-layout--workspace-half .inno-window-chrome-chat-header > .inno-conversation-header {
-	padding-right: calc(var(--workspace-w) + 20px);
+	/* Beyond the panel width, keep the header clear of the terminal toggle and
+	   the small divider that sit just left of the chat/preview border. */
+	padding-right: calc(var(--workspace-w) + 58px);
+}
+
+/* With the panel collapsed the terminal rests between the divider and the
+   panel toggle (56..86px from the right edge); reserve that zone too. */
+.app-layout--desktop.app-layout--chat.app-layout--workspace-collapsed .inno-window-chrome-chat-header > .inno-conversation-header {
+	padding-right: 106px;
 }
 
 .inno-window-chrome-bar {

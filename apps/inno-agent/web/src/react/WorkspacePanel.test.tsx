@@ -3,10 +3,14 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithTooltipProvider as render } from "./test-utils.js";
 import { InnoDndProvider } from "./ui/dnd-backend.js";
+import { IconButton } from "./ui/index.js";
+import { useStoreSnapshot } from "./hooks.js";
 import { terminalStore } from "../stores/terminal-store.js";
+import { workspaceStore, WORKSPACE_START_TAB } from "../stores/workspace-store.js";
 import type { WorkspaceMode } from "../stores/app-store.js";
 import { DesktopWindowChrome } from "./DesktopWindowChrome.js";
 import { WorkspacePanel } from "./WorkspacePanel.js";
+import { WorkspacePreviewTabs } from "./WorkspacePreviewTabs.js";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("./WorkspaceBrowser.js", () => ({
@@ -15,6 +19,7 @@ vi.mock("./WorkspaceBrowser.js", () => ({
 
 function Layout({ desktop = true, terminal = false }: { desktop?: boolean; terminal?: boolean }) {
 	const [mode, setMode] = useState<WorkspaceMode>("collapsed");
+	const terminalOpen = useStoreSnapshot(terminalStore, () => terminalStore.isOpen);
 	return (
 		<InnoDndProvider>
 			<DesktopWindowChrome
@@ -39,10 +44,26 @@ function Layout({ desktop = true, terminal = false }: { desktop?: boolean; termi
 				onNavigateBack={vi.fn()}
 				onNavigateForward={vi.fn()}
 				onToggleWorkspace={() => setMode((current) => current === "collapsed" ? "half" : "collapsed")}
+				workspaceMode={mode}
+				workspaceFullLabel="workspace.full"
+				workspaceRestoreLabel="workspace.half"
+				onWorkspaceModeChange={setMode}
+				workspaceTabs={<WorkspacePreviewTabs />}
+				terminalControl={terminal ? (
+					<IconButton
+						size="xs"
+						aria-label={terminalOpen ? "terminal.collapse" : "terminal.expand"}
+						aria-pressed={terminalOpen}
+						onClick={() => terminalStore.setOpen(!terminalOpen)}
+					>
+						T
+					</IconButton>
+				) : undefined}
 			/>
 			<WorkspacePanel
 				mode={mode}
 				width={520}
+				merged={desktop}
 				showFileTree={!desktop}
 				showTerminalToggle={terminal}
 				onModeChange={setMode}
@@ -55,7 +76,8 @@ function Layout({ desktop = true, terminal = false }: { desktop?: boolean; termi
 
 describe("Workspace header controls", () => {
 	beforeEach(() => {
-		vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+		workspaceStore.previewTabs = []; workspaceStore.activePreviewPath = null; workspaceStore.streamingPreview = null;
+		vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 		terminalStore.setOpen(false);
 	});
 	afterEach(() => {
@@ -71,6 +93,7 @@ describe("Workspace header controls", () => {
 		const toolbar = toggle.closest(".inno-window-chrome") as HTMLElement;
 		fireEvent.click(toggle);
 		const close = screen.getByRole("button", { name: "workspace.collapseWorkspace" });
+		if (desktop) expect(workspaceStore.activePreviewPath).toBe(WORKSPACE_START_TAB);
 		expect(within(toolbar).getByRole("button", { name: "workspace.collapseWorkspace" })).toBe(toggle);
 		expect(close.getAttribute("aria-expanded")).toBe("true");
 		expect(close.closest(".inno-workspace-header")).toBeNull();
@@ -88,23 +111,44 @@ describe("Workspace header controls", () => {
 	it("restores split view from fullscreen and can close directly from fullscreen", () => {
 		render(<Layout />);
 		fireEvent.click(screen.getByRole("button", { name: "workspace.openWorkspace" }));
+		const tab = screen.getByRole("tab", { name: "workspaceStart.tab" });
+		const track = tab.closest(".inno-window-chrome-preview-tabs")!;
+		const separator = track.querySelector(".inno-window-chrome-preview-divider");
+		expect(separator?.parentElement).toBe(track);
+		expect(screen.getByRole("button", { name: "workspaceStart.open" }).closest(".inno-window-chrome-preview-tabs")).toBe(track);
 		fireEvent.click(screen.getByRole("button", { name: "workspace.full" }));
+		expect(screen.getByRole("tab", { name: "workspaceStart.tab" })).toBe(tab);
+		expect(track.querySelector(".inno-window-chrome-preview-divider")).toBe(separator);
+		expect(screen.queryByRole("separator", { name: "workspace.resize" })).toBeNull();
 		expect(screen.getByRole("button", { name: "workspace.half" }).getAttribute("aria-pressed")).toBe("true");
 		expect(screen.getByRole("button", { name: "workspace.collapseWorkspace" }).closest(".inno-window-chrome")).toBeTruthy();
 		fireEvent.click(screen.getByRole("button", { name: "workspace.half" }));
 		expect(screen.getByRole("button", { name: "workspace.full" }).getAttribute("aria-pressed")).toBe("false");
+		expect(screen.getByRole("separator", { name: "workspace.resize" })).toBeTruthy();
 		fireEvent.click(screen.getByRole("button", { name: "workspace.full" }));
 		fireEvent.click(screen.getByRole("button", { name: "workspace.collapseWorkspace" }));
 		expect(screen.getByRole("button", { name: "workspace.openWorkspace" })).toBeTruthy();
+		expect(screen.queryByRole("tab")).toBeNull();
+		expect(separator?.isConnected).toBe(true);
+	});
+
+	it("shows the shared tooltip over the preview fullscreen button", async () => {
+		render(<Layout />);
+		fireEvent.click(screen.getByRole("button", { name: "workspace.openWorkspace" }));
+		const expand = screen.getByRole("button", { name: "workspace.full" });
+		fireEvent.pointerMove(expand);
+		expect(await screen.findByText("workspace.full")).toBeTruthy();
+		// The hint renders through the shared Tooltip; the native title stays
+		// empty so the browser tooltip never doubles up with it.
+		expect(expand.getAttribute("title")).toBeNull();
 	});
 
 	it("keeps the optional terminal toggle in the same action row and exposes its state", () => {
 		render(<Layout terminal />);
 		fireEvent.click(screen.getByRole("button", { name: "workspace.openWorkspace" }));
 		const terminal = screen.getByRole("button", { name: "terminal.expand" });
-		const actions = terminal.parentElement as HTMLElement;
-		expect(within(actions).getByRole("button", { name: "workspace.full" })).toBeTruthy();
-		expect(within(actions).queryByRole("button", { name: "workspace.collapseWorkspace" })).toBeNull();
+		const toolbar = terminal.closest(".inno-window-chrome") as HTMLElement;
+		expect(within(toolbar).getByRole("button", { name: "workspace.full" })).toBeTruthy();
 		fireEvent.click(terminal);
 		expect(terminalStore.isOpen).toBe(true);
 		expect(screen.getByRole("button", { name: "terminal.collapse" }).getAttribute("aria-pressed")).toBe("true");

@@ -18,6 +18,7 @@ import { promisify } from "node:util";
 import { applyWorkspaceCwd, getCurrentSessionId } from "../../agent/pi-runner.js";
 import { streamRegistry } from "../../chat/stream-registry.js";
 import { logger } from "../../logger.js";
+import { getWordPdfPreview, WordPreviewError } from "../../office/word-preview.js";
 import type { RuntimePaths } from "../../runtime.js";
 import { ensureDir } from "../../storage/file-store.js";
 import { isWithin } from "../../utils/path-safety.js";
@@ -41,6 +42,8 @@ import {
 	workspaceSwitchStatistics,
 	type WorkspaceSwitchFileAction,
 } from "../workspace-switch.js";
+import { servePdf } from "../pdf-response.js";
+import { listWorkspaceWriteActivity } from "../workspace-activity-store.js";
 import { json, matchRoute, readBody } from "../http-helpers.js";
 
 /**
@@ -321,6 +324,14 @@ export async function handleWorkspacesRoutes(
 		runQueueOpWithTimeout,
 	} = ctx;
 
+	if (method === "GET" && url.split("?")[0] === "/api/workspace/activity") {
+		const workspaceId = workspaceIdFromQuery(url);
+		const workspaces = await workspaceRegistry.listWorkspacesAsync();
+		if (!workspaces.some((workspace) => workspace.id === workspaceId)) { json(res, 404, { error: "Workspace not found" }); return true; }
+		json(res, 200, await listWorkspaceWriteActivity(dataDir, workspaceId));
+		return true;
+	}
+
 	// safeWorkspacePath closed over server.ts's module-level workspaceRegistry;
 	// rebind it to the injected registry here so the route bodies stay verbatim.
 	// safeJoinReal (not plain safeJoin): a symlink planted inside the workspace
@@ -392,11 +403,12 @@ export async function handleWorkspacesRoutes(
 			const relPath = workspaceRelativePath(root, filePath);
 			const rawUrl = `/api/workspace/raw?workspaceId=${encodeURIComponent(wsId)}&path=${encodeURIComponent(relPath)}`;
 			const format = kind === "office" ? officeFormat(filePath) : undefined;
-			// pptx is rendered as SVG via the Python converter; docx/xlsx are
-			// rendered client-side from the raw bytes, so they need no previewUrl.
+			// Word uses fixed-page PDF previews; HTML reflow changed its print layout.
 			let previewUrl: string | undefined;
 			if (format === "pptx") {
 				previewUrl = `/api/workspace/pptx-preview?workspaceId=${encodeURIComponent(wsId)}&path=${encodeURIComponent(relPath)}`;
+			} else if (format === "doc" || format === "docx") {
+				previewUrl = `/api/workspace/word-preview?workspaceId=${encodeURIComponent(wsId)}&path=${encodeURIComponent(relPath)}`;
 			}
 			json(res, 200, {
 				path: relPath,
@@ -486,6 +498,28 @@ export async function handleWorkspacesRoutes(
 		} catch (err) {
 			logger.error({ err }, "failed to create zip archive");
 			json(res, 500, { error: err instanceof Error ? err.message : "Failed to create zip archive" });
+		}
+		return true;
+	}
+
+	if ((method === "GET" || method === "HEAD") && url.startsWith("/api/workspace/word-preview?")) {
+		const params = new URL(url, "http://localhost").searchParams;
+		const root = workspaceRegistry.resolveWorkspaceDir(workspaceIdFromQuery(url));
+		if (!root) { json(res, 404, { error: "Workspace not found" }); return true; }
+		try {
+			const pdf = await getWordPdfPreview(ctx.dataDir, root, params.get("path") ?? "");
+			if (!res.destroyed) {
+				if (params.get("metadata") === "1") {
+					params.delete("metadata");
+					params.set("v", pdf.etag.replaceAll('"', ""));
+					json(res, 200, { url: `/api/workspace/word-preview?${params}`, size: pdf.size });
+				} else await servePdf(req, res, pdf, method === "HEAD");
+			}
+		} catch (error) {
+			if (!res.destroyed && !res.headersSent) {
+				const failure = error instanceof WordPreviewError ? error : new WordPreviewError("WORD_PREVIEW_FAILED", 422, "Unable to preview this Word document.");
+				json(res, failure.status, { error: failure.message, code: failure.code });
+			}
 		}
 		return true;
 	}

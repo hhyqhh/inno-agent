@@ -151,12 +151,13 @@ export const TEXT_PREVIEW_EXTENSIONS = new Set([
 
 export const TEXT_NOEXT_NAMES = new Set(["makefile", "dockerfile", "gemfile", "rakefile", "procfile", "vagrantfile"]);
 
-/** Office document extensions previewable via LiteParse text extraction. */
-export const OFFICE_PREVIEW_EXTENSIONS = new Set([".docx", ".xlsx", ".pptx"]);
+/** Office document extensions handled by the workspace preview renderers. */
+export const OFFICE_PREVIEW_EXTENSIONS = new Set([".doc", ".docx", ".xlsx", ".pptx"]);
 
 /** Map an office extension to a preview format the frontend dispatches on. */
-export function officeFormat(filePath: string): "docx" | "xlsx" | "pptx" | undefined {
+export function officeFormat(filePath: string): "doc" | "docx" | "xlsx" | "pptx" | undefined {
 	const ext = extname(filePath).toLowerCase();
+	if (ext === ".doc") return "doc";
 	if (ext === ".docx") return "docx";
 	if (ext === ".xlsx") return "xlsx";
 	if (ext === ".pptx") return "pptx";
@@ -179,6 +180,7 @@ export function contentTypeForWorkspaceFile(filePath: string): string {
 	if (ext === ".gif") return "image/gif";
 	if (ext === ".svg") return "image/svg+xml";
 	if (ext === ".webp") return "image/webp";
+	if (ext === ".doc") return "application/msword";
 	if (ext === ".docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 	if (ext === ".xlsx") return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 	if (ext === ".pptx") return "application/vnd.openxmlformats-officedocument.presentationml.presentation";

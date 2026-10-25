@@ -1,6 +1,8 @@
-import { forwardRef, useRef, type HTMLAttributes, type KeyboardEvent, type ReactNode } from "react";
+import { forwardRef, useRef, type HTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Tooltip } from "./Tooltip.js";
+import { motion } from "motion/react";
+import { useUITransition } from "./motion.js";
 
 export interface TabItem<Value extends string> {
 	value: Value;
@@ -9,6 +11,11 @@ export interface TabItem<Value extends string> {
 	title?: string;
 	disabled?: boolean;
 	close?: { label: string; onClose: () => void };
+	/** Right-click hook so hosts can open a shared ContextMenu for the tab. */
+	onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
+	panelId?: string;
+	layoutId?: string;
+	className?: string;
 }
 
 interface SelectableControlProps<Value extends string> {
@@ -25,6 +32,7 @@ export interface TabsProps<Value extends string> extends SelectableControlProps<
 	size?: "compact" | "sm";
 	spacing?: "compact" | "comfortable";
 	variant?: "underline" | "pill" | "browser";
+	animateLayout?: boolean;
 }
 
 export function getTabTriggerId(id: string, value: string): string {
@@ -84,9 +92,11 @@ export function Tabs<Value extends string>({
 	size = "sm",
 	spacing = "compact",
 	variant = "underline",
+	animateLayout = false,
 	className = "",
 }: TabsProps<Value>) {
 	const buttons = useRef<Array<HTMLButtonElement | null>>([]);
+	const transition = useUITransition("modal");
 	const selectedIndex = items.findIndex((item) => item.value === value && !item.disabled);
 	const firstEnabledIndex = items.findIndex((item) => !item.disabled);
 
@@ -100,20 +110,23 @@ export function Tabs<Value extends string>({
 			{items.map((item, index) => {
 				const selected = index === selectedIndex;
 				const trigger = (
-					<button
+					<motion.button
 						key={item.value}
+						layout={animateLayout ? "position" : false}
+						layoutId={animateLayout ? item.layoutId : undefined}
+						transition={transition}
 						ref={(element) => { buttons.current[index] = element; }}
 						type="button"
 						id={getTabTriggerId(id, item.value)}
 						role="tab"
 						aria-selected={selected}
-						aria-controls={`${id}-panel`}
+						aria-controls={item.panelId ?? `${id}-panel`}
 						aria-label={item.ariaLabel}
 						aria-keyshortcuts={item.close ? "Delete" : undefined}
 						tabIndex={selected || (selectedIndex < 0 && index === firstEnabledIndex) ? 0 : -1}
 						disabled={item.disabled}
 						title={item.disabled ? item.title : undefined}
-						className={`inno-ui-tabs__trigger${item.close ? " inno-ui-tabs__trigger--closable" : ""}`}
+						className={`inno-ui-tabs__trigger${item.close ? " inno-ui-tabs__trigger--closable" : ""}${item.className ? ` ${item.className}` : ""}`}
 						onClick={(event) => {
 							if (event.target instanceof Element && event.target.closest("[data-inno-tab-close]")) {
 								event.preventDefault();
@@ -131,6 +144,7 @@ export function Tabs<Value extends string>({
 							}
 							moveToNextEnabled(event, items, index, buttons, onValueChange, false);
 						}}
+						onContextMenu={item.onContextMenu}
 					>
 						<span className="inno-ui-tabs__label">{item.label}</span>
 						{item.close ? (
@@ -140,7 +154,7 @@ export function Tabs<Value extends string>({
 								</span>
 							</Tooltip>
 						) : null}
-					</button>
+					</motion.button>
 				);
 				return item.title && !item.disabled ? <Tooltip key={item.value} label={item.title}>{trigger}</Tooltip> : trigger;
 			})}

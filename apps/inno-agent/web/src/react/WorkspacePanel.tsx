@@ -168,6 +168,9 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	const terminalOpen = useStoreSnapshot(terminalStore, () => terminalStore.isOpen);
 	const fileCount = useStoreSnapshot(workspaceStore, () => countTreeFiles(workspaceStore.tree?.children));
 	const activePreview = useStoreSnapshot(workspaceStore, () => workspaceStore.streamingPreview ? STREAMING_PREVIEW_TAB : workspaceStore.activePreviewPath);
+	const workspaceId = useStoreSnapshot(workspaceStore, () => workspaceStore.activeWorkspaceId);
+	const activeSurface = useStoreSnapshot(workspaceStore, () => workspaceStore.activeSurface);
+	const conversationActive = merged && mode === "full" && activeSurface === "conversation";
 
 	const commitResize = useCallback(async (nextWidth: number) => {
 		const generation = ++resizeCommitGenerationRef.current;
@@ -261,7 +264,8 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	// panel should hide it, not restart its tree/preview lifecycle on reopen.
 	useEffect(() => {
 		if (mode !== "collapsed") setHasOpenedWorkspace(true);
-	}, [mode]);
+		if (mode !== "collapsed" && !showFileTree && !workspaceStore.previewTabs.length && !workspaceStore.streamingPreview) workspaceStore.openStartPage();
+	}, [mode, showFileTree, workspaceId]);
 
 	const startResize = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
 		event.preventDefault();
@@ -332,7 +336,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	}, [dndManager]);
 
 	return (
-		<aside id="workspace-preview" aria-hidden={collapsed || undefined} inert={collapsed || undefined} className={`workspace-panel inno-workspace-scope ${merged ? "workspace-panel--merged" : collapsed ? "" : "inno-desktop-panel-surface"} relative flex h-full min-h-0 min-w-0 flex-col ${resizePreviewWidth !== null ? "workspace-resize-preview-active" : ""} ${collapsed ? "overflow-visible border-l-0 bg-transparent" : "overflow-hidden border-l border-[var(--inno-border)] bg-[var(--inno-workspace-bg)]"}`}>
+		<aside id="workspace-preview" aria-hidden={collapsed || conversationActive || undefined} inert={collapsed || conversationActive || undefined} className={`workspace-panel inno-workspace-scope ${merged ? "workspace-panel--merged" : collapsed ? "" : "inno-desktop-panel-surface"} relative flex h-full min-h-0 min-w-0 flex-col ${resizePreviewWidth !== null ? "workspace-resize-preview-active" : ""} ${collapsed ? "overflow-visible border-l-0 bg-transparent" : "overflow-hidden border-l border-[var(--inno-border)] bg-[var(--inno-workspace-bg)]"}`}>
 			{resizePreviewPortal}
 			{mode === "half" || mode === "quarter" ? (
 				<Tooltip label={`${t("workspace.resize")} (${width}px)`}>

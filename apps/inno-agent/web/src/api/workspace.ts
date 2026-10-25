@@ -1,5 +1,5 @@
 import { apiFetch } from "./client.js";
-import type { PptxPreviewResult, WorkspaceFileDetail, WorkspaceTree, WorkspaceTreeNode } from "../types/workspace.js";
+import type { PptxPreviewResult, WorkspaceActivity, WorkspaceFileDetail, WorkspaceTree, WorkspaceTreeNode } from "../types/workspace.js";
 
 function qs(workspaceId?: string): string {
 	return workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
@@ -11,6 +11,10 @@ function withWorkspace<T extends Record<string, unknown>>(body: T, workspaceId?:
 
 export async function getWorkspaceTree(workspaceId?: string): Promise<WorkspaceTree> {
 	return apiFetch<WorkspaceTree>(`/api/workspace/tree${qs(workspaceId)}`);
+}
+
+export async function getWorkspaceActivity(workspaceId?: string): Promise<WorkspaceActivity> {
+	return apiFetch<WorkspaceActivity>(`/api/workspace/activity${qs(workspaceId)}`);
 }
 
 export async function getWorkspaceFile(path: string, workspaceId?: string, forceText = false): Promise<WorkspaceFileDetail> {

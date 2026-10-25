@@ -2,6 +2,7 @@ import { EventEmitter } from "./event-emitter.js";
 import {
 	getWorkspaceFile,
 	getWorkspaceTree,
+	getWorkspaceActivity,
 	createWorkspaceItem,
 	renameWorkspaceItem,
 	deleteWorkspaceItem,
@@ -11,7 +12,7 @@ import {
 	uploadWorkspaceSkill,
 	inlineWorkspaceHtml,
 } from "../api/workspace.js";
-import type { WorkspaceFileDetail, WorkspaceTree } from "../types/workspace.js";
+import type { WorkspaceActivity, WorkspaceFileDetail, WorkspaceTree } from "../types/workspace.js";
 import { DEFAULT_UPLOAD_MAX_BYTES, getOversizedFiles, UploadLimitError } from "../utils/upload-limits.js";
 
 export interface StreamingWorkspacePreview {
@@ -44,17 +45,59 @@ interface FilePreviewState {
 export interface WorkspacePreviewTab extends FilePreviewState {
 	path: string;
 	name: string;
+	/** File ownership survives navigation; undefined denotes the default workspace. */
+	workspaceId?: string | null;
+}
+
+export function previewTabKey(tab: Pick<WorkspacePreviewTab, "path" | "workspaceId">): string {
+	return tab.path === WORKSPACE_START_TAB || !tab.workspaceId ? tab.path : JSON.stringify([tab.workspaceId, tab.path]);
+}
+
+// Workspace file paths are relative; this absolute key cannot collide with one.
+export const WORKSPACE_START_TAB = "/__inno_start__";
+export const WORKSPACE_CONVERSATION_TAB = "/__inno_conversation__";
+export interface RecentWorkspaceFile {
+	workspaceId: string | null;
+	path: string;
+	name: string;
+	openedAt: number;
 }
 
 const emptyFilePreview = (): FilePreviewState => ({ file: null, isLoading: false, isEditing: false, editBuffer: "", isSaving: false, error: "", requestId: 0 });
+const RECENT_FILES_KEY = "inno.recentWorkspaceFiles";
+
+function readRecentFiles(): RecentWorkspaceFile[] {
+	try {
+		const stored: unknown = typeof localStorage === "undefined" ? [] : JSON.parse(localStorage.getItem(RECENT_FILES_KEY) || "[]");
+		if (!Array.isArray(stored)) return [];
+		return stored.filter((file): file is RecentWorkspaceFile => file && (file.workspaceId === null || typeof file.workspaceId === "string")
+			&& typeof file.path === "string" && file.path.length > 0 && !file.path.startsWith("/") && !/^[A-Za-z]:/.test(file.path) && !file.path.split(/[\\/]/).includes("..")
+			&& typeof file.name === "string" && typeof file.openedAt === "number" && Number.isFinite(file.openedAt)).slice(0, 40);
+	} catch { return []; }
+}
 
 export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	tree: WorkspaceTree | null = null;
 	previewTabs: WorkspacePreviewTab[] = [];
+	/** Persist only bounded open-history metadata; drafts remain owned by tabs. */
+	recentFiles: RecentWorkspaceFile[] = readRecentFiles();
+	activity: WorkspaceActivity = { files: [], trackingIncomplete: false };
+	activityError = "";
+	/** Opaque tab key (workspace + relative path), not a filesystem path. */
 	activePreviewPath: string | null = null;
+	/** Fullscreen surface selection; file tabs continue owning their drafts. */
+	activeSurface: "conversation" | "preview" = "preview";
+	setActiveSurface(surface: "conversation" | "preview"): void {
+		if (this.activeSurface === surface) return;
+		this.activeSurface = surface;
+		this.emit("change", undefined);
+	}
 	private emptyPreview = emptyFilePreview();
 	private get previewState(): FilePreviewState {
-		return this.previewTabs.find((tab) => tab.path === this.activePreviewPath) ?? this.emptyPreview;
+		return this.previewTabs.find((tab) => previewTabKey(tab) === this.activePreviewPath) ?? this.emptyPreview;
+	}
+	get currentFileWorkspaceId(): string | null {
+		return this.previewTabs.find((tab) => previewTabKey(tab) === this.activePreviewPath)?.workspaceId ?? null;
 	}
 	// Keep the existing preview/editor API, with each tab owning its own draft.
 	get currentFile() { return this.previewState.file; }
@@ -78,34 +121,89 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 
 	private treeRequestId = 0;
 	private fileRequestId = 0;
+	private activityRequestId = 0;
 
 	private notifyPreview(): void {
 		this.previewTabs = [...this.previewTabs];
 		this.emit("change", undefined);
 	}
 
+	openStartPage(): void {
+		if (!this.previewTabs.some((tab) => tab.path === WORKSPACE_START_TAB)) {
+			this.previewTabs = [...this.previewTabs, { ...emptyFilePreview(), path: WORKSPACE_START_TAB, name: "" }];
+		}
+		this.activatePreview(WORKSPACE_START_TAB);
+	}
+
+	private persistRecentFiles(): void {
+		try { if (typeof localStorage !== "undefined") localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(this.recentFiles)); } catch { /* History is optional when storage is unavailable/full. */ }
+	}
+
+	private rememberFile(path: string, name: string, workspaceId: string | null): void {
+		this.recentFiles = [{ workspaceId, path, name, openedAt: Date.now() },
+			...this.recentFiles.filter((item) => item.workspaceId !== workspaceId || item.path !== path)].slice(0, 40);
+		this.persistRecentFiles();
+	}
+
 	activatePreview(path: string): void {
-		if (!this.previewTabs.some((tab) => tab.path === path)) return;
+		const tab = this.previewTabs.find((tab) => previewTabKey(tab) === path);
+		if (!tab) return;
+		this.activeSurface = "preview";
 		this.activePreviewPath = path;
 		this.streamingPreview = null;
+		const file = tab.file;
+		if (file) this.rememberFile(file.path, file.name, tab.workspaceId ?? null);
 		this.notifyPreview();
 	}
 
 	closePreview(path: string): void {
-		const index = this.previewTabs.findIndex((tab) => tab.path === path);
+		const index = this.previewTabs.findIndex((tab) => previewTabKey(tab) === path);
 		if (index < 0) return;
-		this.previewTabs = this.previewTabs.filter((tab) => tab.path !== path);
+		this.previewTabs = this.previewTabs.filter((tab) => previewTabKey(tab) !== path);
 		if (this.activePreviewPath === path) {
-			this.activePreviewPath = this.previewTabs[Math.min(index, this.previewTabs.length - 1)]?.path ?? null;
+			const next = this.previewTabs[Math.min(index, this.previewTabs.length - 1)];
+			this.activePreviewPath = next ? previewTabKey(next) : null;
 		}
 		this.notifyPreview();
 	}
 
-	private relocatePreviews(oldPath: string, newPath: string): void {
+	/** Close every tab except `path`; if the active tab was closed, fall back to `path`. */
+	closeOtherPreviews(path: string): void {
+		if (!this.previewTabs.some((tab) => previewTabKey(tab) === path)) return;
+		this.previewTabs = this.previewTabs.filter((tab) => previewTabKey(tab) === path);
+		if (!this.previewTabs.some((tab) => previewTabKey(tab) === this.activePreviewPath)) this.activePreviewPath = path;
+		this.notifyPreview();
+	}
+
+	/** Close all tabs after `path`; if the active tab was among them, fall back to `path`. */
+	closePreviewsToRight(path: string): void {
+		const index = this.previewTabs.findIndex((tab) => previewTabKey(tab) === path);
+		if (index < 0 || index === this.previewTabs.length - 1) return;
+		this.previewTabs = this.previewTabs.slice(0, index + 1);
+		if (!this.previewTabs.some((tab) => previewTabKey(tab) === this.activePreviewPath)) this.activePreviewPath = path;
+		this.notifyPreview();
+	}
+
+	closeAllPreviews(): void {
+		if (!this.previewTabs.length) return;
+		this.previewTabs = [];
+		this.activePreviewPath = null;
+		this.activeSurface = "preview";
+		this.notifyPreview();
+	}
+
+	private relocatePreviews(oldPath: string, newPath: string, workspaceId: string | null): void {
+		this.recentFiles = this.recentFiles.map((item) => {
+			if (item.workspaceId !== workspaceId || (item.path !== oldPath && !item.path.startsWith(`${oldPath}/`))) return item;
+			const path = newPath + item.path.slice(oldPath.length);
+			return { ...item, path, name: path.split("/").pop() || path };
+		});
+		this.persistRecentFiles();
 		for (const tab of this.previewTabs) {
+			if ((tab.workspaceId ?? null) !== workspaceId) continue;
 			if (tab.path !== oldPath && !tab.path.startsWith(`${oldPath}/`)) continue;
 			const nextPath = newPath + tab.path.slice(oldPath.length);
-			if (this.activePreviewPath === tab.path) this.activePreviewPath = nextPath;
+			if (this.activePreviewPath === previewTabKey(tab)) this.activePreviewPath = previewTabKey({ ...tab, path: nextPath });
 			tab.path = nextPath;
 			tab.name = nextPath.split("/").pop() || nextPath;
 			if (tab.file) tab.file = { ...tab.file, path: nextPath, name: tab.name };
@@ -119,22 +217,36 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	async setActiveWorkspace(workspaceId: string | null): Promise<void> {
 		if (this.activeWorkspaceId === workspaceId) return;
 		this.treeRequestId++;
-		this.fileRequestId++;
+		this.activityRequestId++;
 		this.activeWorkspaceId = workspaceId;
-		this.previewTabs = [];
-		this.activePreviewPath = null;
+		// Do not display the previous workspace's files on the start page while loading.
+		this.tree = null;
+		this.activity = { files: [], trackingIncomplete: false };
+		this.activityError = "";
 		this.emptyPreview = emptyFilePreview();
 		this.streamingPreview = null;
 		this.isLoadingTree = false;
-		this.isLoadingFile = false;
-		this.isEditing = false;
-		this.editBuffer = "";
+		// Navigation changes the file tree, not tab ownership or local edits.
 		this.emit("change", undefined);
 		await this.loadTree();
 	}
 
 	private get wsId(): string | undefined {
 		return this.activeWorkspaceId ?? undefined;
+	}
+
+	async loadActivity(): Promise<void> {
+		const requestId = ++this.activityRequestId;
+		const workspaceId = this.wsId;
+		this.activityError = "";
+		try {
+			const activity = await getWorkspaceActivity(workspaceId);
+			if (requestId === this.activityRequestId && workspaceId === this.wsId) this.activity = activity;
+		} catch {
+			if (requestId === this.activityRequestId) this.activityError = "activity";
+		} finally {
+			if (requestId === this.activityRequestId) this.emit("change", undefined);
+		}
 	}
 
 	async loadTree(isCurrent: () => boolean = () => true): Promise<void> {
@@ -160,24 +272,29 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 		}
 	}
 
-	async selectFile(path: string, isCurrent: () => boolean = () => true): Promise<void> {
+	async selectFile(path: string, isCurrent: () => boolean = () => true, ownerWorkspaceId: string | null = this.activeWorkspaceId): Promise<void> {
 		if (!isCurrent()) return;
-		const workspaceId = this.wsId;
-		let tab = this.previewTabs.find((item) => item.path === path);
+		if (path === WORKSPACE_START_TAB) { this.openStartPage(); return; }
+		this.activeSurface = "preview";
+		const workspaceId = ownerWorkspaceId ?? undefined;
+		const key = previewTabKey({ path, workspaceId });
+		let tab = this.previewTabs.find((item) => previewTabKey(item) === key);
 		if (!tab) {
-			tab = { ...emptyFilePreview(), path, name: path.split("/").pop() || path };
+			tab = { ...emptyFilePreview(), path, workspaceId: ownerWorkspaceId, name: path.split("/").pop() || path };
 			this.previewTabs = [...this.previewTabs, tab];
 		}
-		this.activePreviewPath = path;
+		this.activePreviewPath = key;
 		this.streamingPreview = null;
 		this.error = "";
-		if (tab.file || tab.isLoading) { this.notifyPreview(); return; }
+		// File-open events also follow agent writes: an existing tab is not proof
+		// its cached content is current. Revalidate previews, but retain local edits.
+		if (tab.isEditing || tab.isSaving) { this.rememberFile(tab.path, tab.name, ownerWorkspaceId); this.notifyPreview(); return; }
 		const target = tab;
 		const requestId = ++this.fileRequestId;
 		target.requestId = requestId;
 		target.isLoading = true;
 		target.error = "";
-		const valid = () => this.previewTabs.includes(target) && target.requestId === requestId && workspaceId === this.wsId && isCurrent();
+		const valid = () => this.previewTabs.includes(target) && target.requestId === requestId && isCurrent();
 		this.notifyPreview();
 		try {
 			const file = await getWorkspaceFile(path, workspaceId);
@@ -187,6 +304,7 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 				if (!valid()) return;
 			}
 			target.file = file;
+			if (file) this.rememberFile(file.path, file.name, ownerWorkspaceId);
 		} catch (err) {
 			if (!valid()) return;
 			target.error = err instanceof Error ? err.message : "Failed to load file";
@@ -208,6 +326,7 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 		source?: StreamingWorkspacePreview["source"];
 	}): void {
 		const now = Date.now();
+		this.activeSurface = "preview";
 		this.streamingPreview = {
 			id: input.id,
 			title: input.title,
@@ -259,14 +378,14 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 		const target = this.previewState;
 		if (!target.file) return;
 		const path = target.file.path;
-		const workspaceId = this.wsId;
+		const workspaceId = this.currentFileWorkspaceId ?? undefined;
 		const requestId = target.requestId = ++this.fileRequestId;
 		target.isLoading = true;
 		target.error = "";
 		this.notifyPreview();
 		try {
 			const file = await getWorkspaceFile(path, workspaceId, true);
-			if (target.requestId === requestId && workspaceId === this.wsId) target.file = file;
+			if (target.requestId === requestId && this.previewTabs.includes(target as WorkspacePreviewTab)) target.file = file;
 		} catch (err) {
 			if (target.requestId === requestId) target.error = err instanceof Error ? err.message : "Failed to load file as text";
 		} finally {
@@ -297,8 +416,13 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 		const target = this.previewState;
 		if (!target.file || target.isSaving) return;
 		const path = target.file.path;
-		const workspaceId = this.wsId;
+		const workspaceId = this.currentFileWorkspaceId ?? undefined;
 		const content = target.editBuffer;
+		const requestId = target.requestId;
+		// Rename/move invalidates the tab's request generation. An old save's
+		// readback must not restore its old path or discard the relocated draft.
+		const valid = () => this.previewTabs.some((tab) => tab === target)
+			&& target.requestId === requestId;
 		target.isSaving = true;
 		target.error = "";
 		this.notifyPreview();
@@ -306,10 +430,13 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 			// Capture the owning tab before awaiting: switching tabs during save
 			// must never write the response or clear the draft of another file.
 			await saveWorkspaceFile(path, content, workspaceId);
-			target.file = await getWorkspaceFile(path, workspaceId);
+			if (!valid()) return;
+			const file = await getWorkspaceFile(path, workspaceId);
+			if (!valid()) return;
+			target.file = file;
 			if (target.editBuffer === content) { target.isEditing = false; target.editBuffer = ""; }
 		} catch (err) {
-			target.error = err instanceof Error ? err.message : "Failed to save file";
+			if (valid()) target.error = err instanceof Error ? err.message : "Failed to save file";
 		} finally {
 			target.isSaving = false;
 			this.notifyPreview();
@@ -335,18 +462,17 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	}
 
 	async renameItem(oldPath: string, newName: string): Promise<void> {
+		// Navigation may change while a mutation is pending; update only its owner.
+		const workspaceId = this.activeWorkspaceId;
 		const parts = oldPath.split("/");
 		parts[parts.length - 1] = newName;
 		const newPath = parts.join("/");
 		this.isMutating = true;
 		this.emit("change", undefined);
 		try {
-			await renameWorkspaceItem(oldPath, newPath, this.wsId);
-			this.relocatePreviews(oldPath, newPath);
+			await renameWorkspaceItem(oldPath, newPath, workspaceId ?? undefined);
+			this.relocatePreviews(oldPath, newPath, workspaceId);
 			await this.loadTree();
-			if (this.currentFile?.path === oldPath) {
-				await this.selectFile(newPath);
-			}
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : "Failed to rename";
 		} finally {
@@ -356,17 +482,15 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	}
 
 	async deleteItem(path: string): Promise<void> {
+		const workspaceId = this.activeWorkspaceId;
 		this.isMutating = true;
 		this.emit("change", undefined);
 		try {
-			await deleteWorkspaceItem(path, this.wsId);
+			await deleteWorkspaceItem(path, workspaceId ?? undefined);
+			this.recentFiles = this.recentFiles.filter((item) => item.workspaceId !== workspaceId || (item.path !== path && !item.path.startsWith(`${path}/`)));
+			this.persistRecentFiles();
 			for (const tab of [...this.previewTabs]) {
-				if (tab.path === path || tab.path.startsWith(`${path}/`)) this.closePreview(tab.path);
-			}
-			if (this.currentFile?.path === path || this.currentFile?.path.startsWith(path + "/")) {
-				this.currentFile = null;
-				this.isEditing = false;
-				this.editBuffer = "";
+				if ((tab.workspaceId ?? null) === workspaceId && (tab.path === path || tab.path.startsWith(`${path}/`))) this.closePreview(previewTabKey(tab));
 			}
 			await this.loadTree();
 		} catch (err) {
@@ -378,11 +502,12 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	}
 
 	async moveItem(sourcePath: string, targetDir: string): Promise<void> {
+		const workspaceId = this.activeWorkspaceId;
 		this.isMutating = true;
 		this.emit("change", undefined);
 		try {
-			await moveWorkspaceItem(sourcePath, targetDir, this.wsId);
-			this.relocatePreviews(sourcePath, [targetDir, sourcePath.split("/").pop()].filter(Boolean).join("/"));
+			await moveWorkspaceItem(sourcePath, targetDir, workspaceId ?? undefined);
+			this.relocatePreviews(sourcePath, [targetDir, sourcePath.split("/").pop()].filter(Boolean).join("/"), workspaceId);
 			await this.loadTree();
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : "Failed to move";

@@ -1,88 +1,63 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download } from "lucide-react";
-import { renderAsync } from "docx-preview";
+import { Download, RotateCcw } from "lucide-react";
 import type { WorkspaceFileDetail } from "../../types/workspace.js";
 import { triggerDownload } from "../../api/workspace.js";
+import { Button, Spinner } from "../ui/index.js";
 
-/**
- * Render a .docx into an HTML container with formatting preserved, via
- * docx-preview (client-side, no LibreOffice). Options mirror pi-web-ui's
- * DocxArtifact for parity.
- */
+/** Fixed-page PDF keeps Word's paper geometry when the preview panel is resized. */
 export default function DocxPreview({ file }: { file: WorkspaceFileDetail }) {
 	const { t } = useTranslation();
-	const containerRef = useRef<HTMLDivElement>(null);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState("");
+	const [attempt, setAttempt] = useState(0);
+	const key = JSON.stringify([file.previewUrl, file.path, file.updatedAt, file.size, attempt]);
+	const [result, setResult] = useState({ key: "", url: "", errorCode: "" });
 
 	useEffect(() => {
-		if (!file.url) {
-			setError(t("preview.docxFailed", "Failed to render document"));
-			setLoading(false);
-			return;
-		}
-		let cancelled = false;
-		setLoading(true);
-		setError("");
-		const container = containerRef.current;
-		if (container) container.innerHTML = "";
+		const controller = new AbortController();
+
 		(async () => {
 			try {
-				const res = await fetch(file.url as string);
-				if (!res.ok) throw new Error(res.statusText);
-				const buf = await res.arrayBuffer();
-				if (cancelled || !containerRef.current) return;
-				await renderAsync(buf, containerRef.current, undefined, {
-					className: "docx",
-					inWrapper: true,
-					ignoreWidth: true,
-					ignoreHeight: false,
-					ignoreFonts: false,
-					breakPages: true,
-					ignoreLastRenderedPageBreak: true,
-					experimental: false,
-					trimXmlDeclaration: true,
-					useBase64URL: false,
-					renderHeaders: true,
-					renderFooters: true,
-					renderFootnotes: true,
-					renderEndnotes: true,
-				});
-			} catch (e) {
-				if (!cancelled) setError(e instanceof Error ? e.message : t("preview.docxFailed", "Failed to render document"));
-			} finally {
-				if (!cancelled) setLoading(false);
+				if (!file.previewUrl) throw new Error("WORD_PREVIEW_FAILED");
+				const response = await fetch(`${file.previewUrl}&metadata=1`, { signal: controller.signal, cache: "no-store" });
+				if (!response.ok) {
+					const body = await response.json().catch(() => ({})) as { code?: string };
+					throw new Error(body.code ?? "WORD_PREVIEW_FAILED");
+				}
+				const preview = await response.json() as { url?: string };
+				if (!preview.url?.startsWith("/api/workspace/word-preview?")) throw new Error("WORD_PREVIEW_FAILED");
+				if (controller.signal.aborted) return;
+				// Let the browser stream/range-load the PDF instead of waiting for a full Blob copy.
+				setResult({ key, url: preview.url, errorCode: "" });
+			} catch (error) {
+				if (!controller.signal.aborted) setResult({ key, url: "", errorCode: error instanceof Error ? error.message : "WORD_PREVIEW_FAILED" });
 			}
 		})();
-		return () => { cancelled = true; };
-	}, [file.url, t]);
+		return () => {
+			controller.abort();
+		};
+	}, [key, file.previewUrl]);
 
-	const downloadOriginal = () => {
-		if (file.url) triggerDownload(`${file.url}${file.url.includes("?") ? "&" : "?"}download=1`);
-	};
-
-	return (
-		<div className="workspace-scroll h-full overflow-auto bg-[var(--inno-surface-muted)]">
-			{loading ? (
-				<div className="flex h-full items-center justify-center text-sm text-[var(--inno-text-muted)]">
-					{t("preview.docxLoading", "Rendering document...")}
-				</div>
-			) : null}
-			{error ? (
-				<div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-[var(--inno-text-muted)]">
-					<div className="font-medium text-[var(--inno-text)]">{file.name}</div>
-					<div className="text-xs text-[var(--inno-danger)]">{error}</div>
-					<button
-						className="flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)]"
-						onClick={downloadOriginal}
-					>
-						<Download size={12} />
-						{t("files.download", "Download")}
-					</button>
-				</div>
-			) : null}
-			<div ref={containerRef} className={`docx-host px-4 py-4 ${loading || error ? "hidden" : ""}`} />
-		</div>
-	);
+	if (result.key !== key) {
+		return <div role="status" className="flex h-full items-center justify-center gap-2 text-sm text-[var(--inno-text-muted)]">
+			<Spinner size={16} />{t("preview.wordConverting")}
+		</div>;
+	}
+	if (result.errorCode) {
+		const messageKey = result.errorCode === "WORD_ENGINE_UNAVAILABLE" ? "preview.wordEngineMissing"
+			: result.errorCode === "WORD_ENGINE_INCOMPATIBLE" ? "preview.wordEngineIncompatible"
+			: result.errorCode === "WORD_PREVIEW_BUSY" ? "preview.wordBusy"
+			: result.errorCode === "WORD_PREVIEW_TOO_LARGE" ? "preview.wordTooLarge" : "preview.docxFailed";
+		const downloadUrl = file.url ? `${file.url}${file.url.includes("?") ? "&" : "?"}download=1` : null;
+		return <div role="alert" className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-[var(--inno-text-muted)]">
+			<div className="font-medium text-[var(--inno-text)]">{file.name}</div>
+			<div>{t(messageKey)}</div>
+			<div className="flex flex-wrap justify-center gap-2">
+				<Button size="xs" onClick={() => setAttempt((value) => value + 1)}><RotateCcw size={14} />{t("preview.wordRetry")}</Button>
+				{downloadUrl ? <Button size="xs" onClick={() => triggerDownload(downloadUrl)}>
+					<Download size={14} />{t("files.download", "Download")}
+				</Button> : null}
+			</div>
+		</div>;
+	}
+	return <iframe title={file.name} src={`${result.url}#view=FitH&zoom=page-width`} className="h-full w-full border-0 bg-[var(--inno-surface-muted)]" />;
 }

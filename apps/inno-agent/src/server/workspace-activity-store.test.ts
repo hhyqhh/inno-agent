@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	getWorkspaceFileActivities,
+	listWorkspaceWriteActivity,
 	recordToolWorkspaceActivity,
 	recordWorkspaceAttachmentActivity,
 	recordWorkspaceFileAccess,
@@ -28,6 +29,17 @@ afterEach(() => {
 });
 
 describe("workspace activity sidecar", () => {
+	it("projects write activity by workspace without duplicating paths or including reads", async () => {
+		const record = (sessionId: string, workspaceId: string, path: string, access: "read" | "write", seenAt: string) =>
+			recordWorkspaceFileAccess(dir, { sessionId, workspaceId, workspaceRoot: root, paths: [path], access, seenAt });
+		record("s1", "w1", "report.md", "write", "2026-10-20T10:00:00Z");
+		record("s2", "w1", "report.md", "write", "2026-10-24T10:00:00Z");
+		record("s1", "w1", "read.md", "read", "2026-10-25T10:00:00Z");
+		record("s3", "w2", "foreign.md", "write", "2026-10-25T10:00:00Z");
+		expect((await listWorkspaceWriteActivity(dir, "w1")).files).toEqual([{ path: "report.md", lastSeenAt: "2026-10-24T10:00:00Z" }]);
+		resetWorkspaceActivityStoreForTests();
+		expect((await listWorkspaceWriteActivity(dir, "w1")).files).toHaveLength(1);
+	});
 	it("merges read and write access without storing content", () => {
 		writeFileSync(join(root, "notes.md"), "secret content");
 		recordWorkspaceFileAccess(dir, { sessionId: "s1", workspaceId: "w1", workspaceRoot: root, paths: ["notes.md"], access: "read" });

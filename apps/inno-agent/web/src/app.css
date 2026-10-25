@@ -1755,17 +1755,48 @@ inno-app-shell {
 }
 
 .inno-desktop-chat-content {
-	flex: 1 1 0;
-	width: 100%;
+	flex: 0 0 auto;
+	width: max(0px, calc(100% - var(--inno-chat-reserved-width, 0px)));
 	height: 100%;
 	min-width: 0;
 	min-height: 0;
 	overflow: hidden;
+	clip-path: inset(0 0 0 0);
+	visibility: visible;
+	transition:
+		width var(--inno-dur-modal) var(--inno-ease-in-out),
+		clip-path var(--inno-dur-modal) var(--inno-ease-in-out),
+		visibility 0s;
+}
+
+/* Match the sidebar's fixed-content exit: clip, rather than shrink, the chat.
+   Keep it mounted so returning from fullscreen preserves drafts and scroll. */
+.app-layout--workspace-full .inno-desktop-chat-content {
+	clip-path: inset(0 100% 0 0);
+	visibility: hidden;
+	pointer-events: none;
+	transition-delay: 0s, 0s, var(--inno-dur-modal);
+}
+
+.app-layout--workspace-full .inno-desktop-workbench.is-conversation-active > .inno-desktop-chat-content {
+	clip-path: inset(0 0 0 0);
+	visibility: visible;
+	pointer-events: auto;
+	/* Selecting a tab gives chat its final width before revealing it. */
+	transition: opacity var(--inno-dur-fast) ease;
+}
+
+.app-layout--workspace-full .inno-desktop-workbench.is-conversation-active > .workspace-panel--merged {
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+	transition: opacity var(--inno-dur-fast) ease, visibility 0s linear var(--inno-dur-fast);
 }
 
 /* The conversation and preview share one outer surface. Only this internal
    splitter moves; the frame remains fixed while expanding or maximizing. */
 .inno-desktop-workbench {
+	position: relative;
 	grid-column: 2;
 	display: flex;
 	min-width: 0;
@@ -1774,7 +1805,8 @@ inno-app-shell {
 }
 
 .inno-desktop-workbench > .workspace-panel--merged {
-	position: relative;
+	position: absolute;
+	inset: 0 0 0 auto;
 	box-sizing: border-box;
 	flex: 0 0 auto;
 	width: max(0px, calc(var(--workspace-w) - 3px));
@@ -1786,7 +1818,11 @@ inno-app-shell {
 	border-radius: 0;
 	box-shadow: none;
 	background: var(--inno-chat-bg);
-	transition: width var(--inno-dur-modal) var(--inno-ease-in-out);
+	opacity: 1;
+	visibility: visible;
+	transition: width var(--inno-dur-modal) var(--inno-ease-in-out),
+		border-left-color var(--inno-dur-modal) var(--inno-ease-in-out),
+		opacity var(--inno-dur-fast) ease, visibility 0s;
 }
 
 .app-layout--workspace-collapsed .inno-desktop-workbench > .workspace-panel--merged {
@@ -1796,27 +1832,25 @@ inno-app-shell {
 
 .app-layout--workspace-full .inno-desktop-workbench > .workspace-panel--merged {
 	width: 100%;
+	/* The chat/preview boundary no longer exists once preview covers the chat.
+	   Fade its border without changing box sizing or the preview's trajectory. */
+	border-left-color: transparent;
 }
 
 /* While dragging the splitter the toolbar pieces pinned to the border must
    track it frame by frame; keep only the open/close/maximize transitions. */
 .workspace-resizing .inno-desktop-workbench > .workspace-panel--merged,
+.workspace-resizing .inno-desktop-chat-content,
 .workspace-resizing .inno-window-chrome-preview-divider,
 .workspace-resizing .inno-window-chrome-preview-terminal,
-.workspace-resizing .inno-window-chrome-preview-tabs {
+.workspace-resizing .inno-window-chrome-preview-tabs,
+.workspace-resizing .app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header > .inno-conversation-header {
 	transition: none;
 }
 
 .workspace-panel--merged > .inno-ui-tab-panel,
 .workspace-panel--merged .inno-workspace-preview-pane {
 	background: var(--inno-chat-bg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.inno-desktop-workbench > .workspace-panel--merged,
-	.inno-window-chrome-preview-divider,
-	.inno-window-chrome-preview-terminal,
-	.inno-window-chrome-preview-tabs { transition: none; }
 }
 
 .app-layout > :nth-child(3) {
@@ -1906,6 +1940,7 @@ inno-app-shell {
    reaches the top edge. The renderer owns the compact full-width chat row;
    native traffic lights remain above it. */
 .app-layout > .inno-window-chrome {
+	--inno-window-chrome-action-gap: 4px;
 	position: absolute;
 	inset: 0;
 	width: auto;
@@ -1970,6 +2005,13 @@ inno-app-shell {
 	-webkit-app-region: drag;
 }
 
+/* The question action follows the terminal via the header's trailing padding.
+   Animate both with the preview's curve so the gap stays fixed during motion. */
+.app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header > .inno-conversation-header {
+	transition: padding-left 220ms cubic-bezier(0.4, 0, 0.2, 1),
+		padding-right var(--inno-dur-modal) var(--inno-ease-in-out);
+}
+
 .app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header .inno-workspace-switcher-trigger {
 	padding-block: 3px;
 }
@@ -1982,13 +2024,38 @@ inno-app-shell {
 .app-layout--desktop.app-layout--chat.app-layout--workspace-half .inno-window-chrome-chat-header > .inno-conversation-header {
 	/* Beyond the panel width, keep the header clear of the terminal toggle and
 	   the small divider that sit just left of the chat/preview border. */
-	padding-right: calc(var(--workspace-w) + 58px);
+	padding-right: calc(var(--workspace-w) + var(--inno-window-chrome-control-size) + 16px);
 }
 
 /* With the panel collapsed the terminal rests between the divider and the
-   panel toggle (56..86px from the right edge); reserve that zone too. */
+   panel toggle. Keep an 8px gap on each side of the terminal at every width. */
 .app-layout--desktop.app-layout--chat.app-layout--workspace-collapsed .inno-window-chrome-chat-header > .inno-conversation-header {
-	padding-right: 106px;
+	padding-right: calc(50px + var(--inno-window-chrome-control-size) + 16px);
+}
+
+.app-layout--desktop.app-layout--chat .inno-conversation-header-actions {
+	position: absolute;
+	top: calc(var(--inno-window-chrome-control-top) - 1px);
+	right: calc(50px + var(--inno-window-chrome-control-size) + 16px);
+	margin-left: 0;
+	transition: right var(--inno-dur-modal) var(--inno-ease-in-out);
+}
+
+.app-layout--desktop.app-layout--chat.app-layout--workspace-quarter .inno-conversation-header-actions,
+.app-layout--desktop.app-layout--chat.app-layout--workspace-half .inno-conversation-header-actions {
+	right: calc(var(--workspace-w) + var(--inno-window-chrome-control-size) + 16px);
+}
+
+.app-layout--desktop.app-layout--chat.app-layout--workspace-full .inno-conversation-header-actions {
+	/* All three full-view actions use the same hit area and stride. The old
+	   32px question button and independent offsets left uneven icon spacing. */
+	top: var(--inno-window-chrome-control-top);
+	right: calc(16px + (var(--inno-window-chrome-control-size) + var(--inno-window-chrome-action-gap)) * 2);
+}
+
+.app-layout--desktop.app-layout--chat.app-layout--workspace-full .inno-conversation-btw-control {
+	width: var(--inno-window-chrome-control-size);
+	height: var(--inno-window-chrome-control-size);
 }
 
 .inno-window-chrome-bar {
@@ -2146,25 +2213,19 @@ inno-app-shell {
    session-title divider), open file tabs, maximize control, panel toggle.
    The divider marks the chat/preview split below: collapsed it rests between
    the terminal and the panel toggle; half/quarter pin it above the panel's
-   border-left; full mode has no split, so terminal and divider step aside. */
+   border-left; full mode hides the terminal and keeps a separator before tabs. */
 
 .inno-window-chrome-preview-divider {
 	position: absolute;
-	top: 17px;
-	right: 50px;
+	top: 50%;
+	left: -11px;
 	z-index: 1;
 	width: 1px;
 	height: 18px;
 	background: var(--inno-border-strong);
 	pointer-events: none;
-	transition: right 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease, visibility 0s linear 120ms;
-}
-
-.app-layout--workspace-half .inno-window-chrome-preview-divider,
-.app-layout--workspace-quarter .inno-window-chrome-preview-divider {
-	/* The merged panel is var(--workspace-w) wide including its 1px
-	   border-left; this lands the divider exactly on that border. */
-	right: var(--workspace-w);
+	transform: translateY(-50%);
+	transition: opacity var(--inno-dur-fast) ease, visibility 0s linear var(--inno-dur-fast);
 }
 
 .app-layout--workspace-full .inno-window-chrome-preview-divider {
@@ -2175,11 +2236,11 @@ inno-app-shell {
 .inno-window-chrome-preview-terminal {
 	position: absolute;
 	top: var(--inno-window-chrome-control-top);
-	right: 56px;
+	right: 58px;
 	z-index: 1;
 	display: flex;
 	align-items: center;
-	transition: right 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease, visibility 0s linear 120ms;
+	transition: right var(--inno-dur-modal) var(--inno-ease-in-out), opacity var(--inno-dur-fast) ease, visibility 0s linear var(--inno-dur-fast);
 }
 
 .app-layout--workspace-half .inno-window-chrome-preview-terminal,
@@ -2205,20 +2266,140 @@ inno-app-shell {
 	min-width: 0;
 	display: flex;
 	align-items: center;
+	/* The strip floats above the workspace panel edge where the resize handle
+	   cannot reach; its blank area drags the whole client window instead
+	   (title-bar behavior, matching the chat header overlay). */
+	-webkit-app-region: drag;
 	pointer-events: auto;
+	transition: left var(--inno-dur-modal) var(--inno-ease-in-out), right var(--inno-dur-modal) var(--inno-ease-in-out), opacity var(--inno-dur-fast) ease, visibility 0s;
+}
+
+/* Tabs stay interactive (click to switch, right-click for the tab menu);
+   only the blank strip around them drags the window. */
+.inno-window-chrome-preview-tabs button {
 	-webkit-app-region: no-drag;
-	transition: left 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease, visibility 0s;
+}
+
+.inno-window-chrome-preview-tab-content {
+	display: flex;
+	flex: 1 1 auto;
+	min-width: 0;
+	height: 100%;
+	transition: opacity var(--inno-dur-fast) ease, visibility 0s;
+}
+
+/* Shared layout projection moves the conversation title and the tab track
+   together. A simultaneous CSS left tween would make their paths diverge. */
+.inno-window-chrome.has-conversation-tabs .inno-window-chrome-preview-tabs {
+	transition: opacity var(--inno-dur-fast) ease, visibility 0s;
+}
+
+.app-layout--desktop.app-layout--chat.app-layout--workspace-full .inno-window-chrome.has-conversation-tabs > .inno-window-chrome-divider {
+	/* Outrank the active-conversation rule that reveals the original title
+	   separator; fullscreen already has one separator on the shared tab track. */
+	opacity: 0;
+	visibility: hidden;
+}
+
+.inno-window-chrome-chat-header .inno-conversation-workspace-control {
+	max-width: 320px;
+	opacity: 1;
+	overflow: hidden;
+	transition: max-width var(--inno-dur-modal) var(--inno-ease-in-out), opacity var(--inno-dur-ui) ease;
+}
+
+.app-layout--workspace-full .inno-window-chrome-chat-header .inno-conversation-workspace-control {
+	max-width: 0;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.inno-ui-tabs--browser .inno-ui-tabs__trigger.inno-workspace-conversation-tab {
+	max-width: 240px;
+	/* Reserve the selected border's space without framing an inactive conversation. */
+	border: 1px solid transparent;
+	background: transparent;
+	font-weight: 500;
+}
+
+.inno-ui-tabs--browser .inno-ui-tabs__trigger.inno-workspace-conversation-tab[aria-selected="true"] {
+	border-color: var(--inno-border-strong);
+	background: var(--inno-accent-soft);
+	color: var(--inno-text);
 }
 
 .app-layout--workspace-full .inno-window-chrome-preview-tabs {
 	left: calc(var(--sidebar-w) + 10px);
 }
 
+.app-layout--desktop:not(.app-layout--windows).app-layout--workspace-full .inno-window-chrome {
+	/* Both welcome and open conversations share the tab row. The live title
+	   becomes a tab, so only the actual navigation controls need a safe area. */
+	--inno-window-chrome-navigation-count: 3;
+	--inno-workspace-full-tabs-left: max(
+		calc(var(--sidebar-w) + 16px),
+		var(--inno-window-chrome-title-inset),
+		calc(var(--inno-window-chrome-control-left) + var(--inno-window-chrome-control-size) * var(--inno-window-chrome-navigation-count) + 16px)
+	);
+}
+
+.app-layout--desktop:not(.app-layout--windows).app-layout--workspace-full .inno-window-chrome.has-new-chat-control {
+	--inno-window-chrome-navigation-count: 4;
+}
+
+.app-layout--desktop:not(.app-layout--windows).app-layout--workspace-full .inno-window-chrome-preview-tabs {
+	/* Start after the macOS controls and the visible conversation heading. */
+	left: var(--inno-workspace-full-tabs-left);
+}
+
+.app-layout--desktop.app-layout--chat.app-layout--workspace-full .inno-window-chrome:has(> .inno-window-chrome-chat-header[data-active-conversation="true"]) .inno-window-chrome-preview-tabs {
+	/* Reserve the question, fullscreen, and collapse buttons in a single row. */
+	right: calc(16px + (var(--inno-window-chrome-control-size) + var(--inno-window-chrome-action-gap)) * 3);
+}
+
+.app-layout--desktop:not(.app-layout--windows).app-layout--chat.app-layout--workspace-full .inno-window-chrome-chat-header > .inno-conversation-header {
+	/* The title is now a tab and the workspace selector collapses. The former
+	   clipping padding plus the leading inset exceeded the viewport by 12px,
+	   expanding this border-box and shifting the question action to the right. */
+	padding-right: 0;
+}
+
+.app-layout--desktop:not(.app-layout--windows).app-layout--workspace-full .inno-window-chrome-preview-divider {
+	/* Keep the toolbar separator immediately before the first tab in full view. */
+	opacity: 1;
+	visibility: visible;
+}
+
+.app-layout--desktop:not(.app-layout--windows).app-layout--workspace-full.app-layout--sidebar-expanded .inno-window-chrome-preview-divider {
+	/* The tab track has a 16px leading inset, whereas its split-view separator
+	   uses -11px. Anchor to the sidebar boundary to remove that 5px mismatch,
+	   including when the sidebar is resized. */
+	left: calc(var(--sidebar-w) - var(--inno-workspace-full-tabs-left));
+}
+
 .app-layout--workspace-collapsed .inno-window-chrome-preview-tabs {
+	left: calc(100% - 40px);
+}
+
+.app-layout--workspace-collapsed .inno-window-chrome-preview-tab-content {
 	opacity: 0;
 	visibility: hidden;
 	pointer-events: none;
-	transition: left 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms ease, visibility 0s linear 120ms;
+	transition: opacity var(--inno-dur-fast) ease, visibility 0s linear var(--inno-dur-fast);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.inno-desktop-chat-content,
+	.inno-desktop-workbench > .workspace-panel--merged,
+	.app-layout--desktop.app-layout--chat .inno-window-chrome-preview-divider,
+	.app-layout--desktop.app-layout--chat .inno-window-chrome-preview-terminal,
+	.app-layout--desktop.app-layout--chat .inno-window-chrome-preview-tabs,
+	.app-layout--desktop.app-layout--chat .inno-window-chrome-preview-tab-content,
+	.app-layout--desktop.app-layout--chat .inno-conversation-header-actions,
+	.app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header > .inno-conversation-header { transition: none; }
+	.inno-window-chrome-chat-header .inno-conversation-workspace-control,
+	.app-layout--workspace-full .inno-desktop-workbench.is-conversation-active > .inno-desktop-chat-content,
+	.app-layout--workspace-full .inno-desktop-workbench.is-conversation-active > .workspace-panel--merged { transition: none; }
 }
 
 .inno-workspace-tabs {
@@ -2227,12 +2408,21 @@ inno-app-shell {
 	height: 100%;
 	min-width: 0;
 	align-items: center;
-	overflow-x: auto;
+	overflow-x: hidden;
 	overflow-y: hidden;
 	scrollbar-width: none;
 }
 
-.inno-workspace-tabs::-webkit-scrollbar {
+.inno-workspace-tabs-strip {
+	/* Follow the last tab while there is space; only the tab list scrolls
+	   when full, leaving the adjacent new-tab button reachable. */
+	flex: 0 1 auto;
+	width: max-content;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.inno-workspace-tabs-strip::-webkit-scrollbar {
 	display: none;
 }
 
@@ -2247,7 +2437,7 @@ inno-app-shell {
 .inno-window-chrome-preview-fullscreen.inno-ui-button {
 	position: absolute;
 	top: var(--inno-window-chrome-control-top);
-	right: calc(16px + var(--inno-window-chrome-control-size) + 8px);
+	right: calc(16px + var(--inno-window-chrome-control-size) + var(--inno-window-chrome-action-gap));
 	z-index: 1;
 	width: var(--inno-window-chrome-control-size);
 	min-height: var(--inno-window-chrome-control-size);
@@ -2264,8 +2454,15 @@ inno-app-shell {
 	color: var(--inno-text);
 }
 
-/* Restoring is a mode, not an "on" toggle: keep the pressed state neutral. */
-.inno-window-chrome-preview-fullscreen.inno-ui-button[aria-pressed="true"],
+/* The shared IconButton paints a persistent pressed chip
+   (.inno-ui-icon-button[aria-pressed="true"]); the user asked for a plain
+   button here, so the pressed state keeps the resting look and hover still
+   shows the normal hover chip. */
+.inno-window-chrome-preview-fullscreen.inno-ui-button[aria-pressed="true"] {
+	background: transparent;
+	color: var(--inno-text-subtle);
+}
+
 .inno-window-chrome-preview-fullscreen.inno-ui-button[aria-pressed="true"]:hover:not(:disabled) {
 	background: var(--inno-surface-muted);
 	color: var(--inno-text);
@@ -4257,6 +4454,8 @@ inno-workspace-panel textarea {
 	flex-direction: column;
 	align-items: center;
 	text-align: center;
+	/* Greeting is UI copy, not content; dragging across it must not start a text selection. */
+	user-select: none;
 }
 
 /* The Electron welcome state uses a text-only greeting with more air above
@@ -4307,6 +4506,17 @@ inno-workspace-panel textarea {
 	align-items: center;
 	gap: 8px;
 	padding: 0 4px;
+	/* Selector pills are controls, not copyable text. */
+	user-select: none;
+}
+
+/* Selector pill triggers carry this class in the welcome subrow, the
+   conversation toolbar and the conversation header alike. */
+.inno-composer-subrow-control {
+	/* Selector pills are controls, not copyable text. Standalone rule so the
+	   conversation header trigger (styled by .inno-workspace-switcher-trigger)
+	   gets only the selection guard, not the subrow pill's box styles. */
+	user-select: none;
 }
 
 .inno-composer-subrow .inno-composer-subrow-control {
@@ -4584,6 +4794,8 @@ inno-workspace-panel textarea {
 
 .inno-composer-toolbar {
 	min-height: 36px;
+	/* Toolbar pills are controls, not copyable text. */
+	user-select: none;
 }
 
 .inno-composer-model-picker {

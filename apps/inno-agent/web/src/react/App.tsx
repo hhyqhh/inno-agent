@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Terminal as TerminalIcon } from "lucide-react";
+import { LayoutGroup } from "motion/react";
 import { useTranslation } from "react-i18next";
 import { appStore, pageFromSearch, type AppPage, type WorkspaceMode } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
@@ -108,6 +109,7 @@ function MainApp() {
 		workspaceWidth: appStore.workspaceWidth,
 	}));
 	const currentSessionId = useStoreSnapshot(sessionsStore, () => sessionsStore.currentSessionId);
+	const hasOpenConversation = useStoreSnapshot(sessionsStore, () => Boolean(sessionsStore.currentSessionId) && !sessionsStore.isWelcomeView);
 	const showNewChatControl = isDesktopWindow && app.page === "chat" && app.sidebarCollapsed && currentSessionId !== null;
 	const terminalOpen = useStoreSnapshot(terminalStore, () => terminalStore.isOpen);
 	// The terminal toggle belongs beside "随便问问" in the chat title row.
@@ -385,6 +387,9 @@ function MainApp() {
 	}, [openSidebar]);
 
 	const setWorkspaceMode = useCallback((mode: WorkspaceMode) => {
+		// A new maximize/restore action starts with the existing file preview;
+		// conversation selection belongs only to the current fullscreen view.
+		workspaceStore.setActiveSurface("preview");
 		if (mode === "collapsed" || app.workspaceMode !== "collapsed") {
 			appStore.setWorkspaceMode(mode);
 			return;
@@ -400,6 +405,7 @@ function MainApp() {
 			// collapses it if (and only if) that is what makes the panel fit, and
 			// otherwise leaves the layout untouched instead of collapsing for nothing.
 			if (appStore.workspaceWidth < requestedWidth) appStore.setWorkspaceWidth(requestedWidth);
+			workspaceStore.openStartPage();
 			appStore.setWorkspaceMode(mode);
 			// The layout fitter can refuse the split when the viewport is too
 			// narrow; a clickable button that silently does nothing is worse than
@@ -429,7 +435,7 @@ function MainApp() {
 	/>;
 
 	return (
-		<>
+		<LayoutGroup id="inno-workbench">
 			<InnoDndProvider>
 				<div
 					className={`app-layout app-layout--${isDesktopWindow ? "desktop" : "browser"}${isWindowsDesktop ? " app-layout--windows" : ""}${isMacFullScreen ? " app-layout--macos-fullscreen" : ""}${chatVisible ? " app-layout--chat" : ""} app-layout--sidebar-${app.sidebarCollapsed ? "collapsed" : "expanded"} app-layout--workspace-${layoutWorkspaceMode}`}
@@ -460,6 +466,7 @@ function MainApp() {
 						showSidebarControl={chatVisible}
 						showNewChatControl={showNewChatControl}
 						showChatHeader={chatVisible}
+						hasOpenConversation={hasOpenConversation}
 						isDesktopWindow={isDesktopWindow}
 						terminalControl={desktopTerminalControl}
 						workspaceTabs={<WorkspacePreviewTabs />}
@@ -506,7 +513,7 @@ function MainApp() {
 			) : null}
 			{app.settingsOpen ? <Suspense fallback={null}><SettingsOverlay /></Suspense> : null}
 			{searchOpen ? <SearchPanel onClose={() => setSearchOpen(false)} onNavigate={navigateFromSearch} /> : null}
-		</>
+		</LayoutGroup>
 	);
 }
 

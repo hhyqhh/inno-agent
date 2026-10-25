@@ -1,15 +1,19 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { motion } from "motion/react";
 import { ArrowDown, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { AttachmentRef, ChatMessage, ChatToolRecord, PendingQuestion } from "../../types/chat.js";
 import { workspaceFileUrl } from "../../api/workspace.js";
 import { workspaceStore } from "../../stores/workspace-store.js";
+import { appStore } from "../../stores/app-store.js";
+import { getConversationTitle } from "./conversation-title.js";
 import { buildConversationTurns, ConversationMinimap } from "../ConversationMinimap.js";
 import { useStoreSnapshot } from "../hooks.js";
 import {
 	Spinner,
 	Tooltip,
+	useUITransition,
 } from "../ui/index.js";
 import { MessageBubble } from "./MessageBubble.js";
 import { JobStreamBubbles } from "./JobStreamBubbles.js";
@@ -24,18 +28,6 @@ function traceContainsAssistantText(message: ChatMessage): boolean {
 	return Boolean(message.traceEvents?.some((record) => (
 		record.event.type === "text_delta" && Boolean(record.event.delta.trim())
 	)));
-}
-
-// The strip regex mirrors UPLOADED_IMAGES_PREFIX_PATTERN in the backend's
-// src/server/upload-prefix.ts (the web bundle cannot import server code) —
-// keep the two in sync when the upload-prefix format changes.
-function firstMessageTitle(messages: ChatMessage[]): string | undefined {
-	const content = messages.find((message) => message.role === "user")?.content
-		.replace(/^\[用户本轮上传了 \d+ 张图片，已保存到工作区：[\s\S]*?\]\s*/, "")
-		.replace(/\s+/g, " ")
-		.trim();
-	if (!content) return undefined;
-	return content.length > 28 ? `${content.slice(0, 28)}...` : content;
 }
 
 interface ChatConversationProps {
@@ -121,6 +113,9 @@ export function ChatConversation({
 	sidebarCollapsed = false,
 }: ChatConversationProps) {
 	const { t } = useTranslation();
+	const transition = useUITransition("modal");
+	const mode = useStoreSnapshot(appStore, () => appStore.workspaceMode);
+	const titleIsTab = Boolean(desktopHeaderHost) && mode === "full";
 	const [showHistoryLoading, setShowHistoryLoading] = useState(false);
 	useEffect(() => {
 		const shouldShow = chat.isLoadingHistory && chat.messages.length === 0;
@@ -132,10 +127,7 @@ export function ChatConversation({
 		return () => window.clearTimeout(timer);
 	}, [chat.isLoadingHistory, chat.messages.length]);
 	const conversationTurns = useMemo(() => buildConversationTurns(chat.messages), [chat.messages]);
-	const initialTitle = useMemo(() => firstMessageTitle(chat.messages), [chat.messages]);
-	const visibleSessionTitle = (sessionHasTopic || sessionOpening) && sessionTitle
-		? sessionTitle
-		: initialTitle || t("nav.newChat", "新建会话");
+	const visibleSessionTitle = getConversationTitle(chat.messages, sessionTitle, sessionHasTopic || sessionOpening, t("nav.newChat", "新建会话"));
 	const turnIndexByStartMessage = useMemo(
 		() => new Map(conversationTurns.map((turn) => [turn.startMessageIndex, turn.index])),
 		[conversationTurns],
@@ -237,12 +229,12 @@ export function ChatConversation({
 	const conversationHeader = (
 		<header className={`inno-conversation-header relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] pr-4 backdrop-blur-md ${workspaceCollapsed ? "pr-14" : ""} ${sidebarCollapsed ? "inno-conversation-header--sidebar-collapsed" : "pl-4"}`}>
 			<div className="inno-conversation-heading flex min-w-0 items-center gap-2.5">
-				<Tooltip label={visibleSessionTitle}>
-					<span className="inno-conversation-title min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]">{visibleSessionTitle}</span>
-				</Tooltip>
-				{workspaceControl ? <div className="inno-conversation-workspace-control shrink-0">{workspaceControl}</div> : null}
+				{!titleIsTab ? <Tooltip label={visibleSessionTitle}>
+					<motion.span layoutId={desktopHeaderHost ? "inno-conversation-title" : undefined} transition={transition} className="inno-conversation-title min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]">{visibleSessionTitle}</motion.span>
+				</Tooltip> : null}
+				{workspaceControl ? <div aria-hidden={titleIsTab || undefined} inert={titleIsTab} className="inno-conversation-workspace-control shrink-0">{workspaceControl}</div> : null}
 			</div>
-			{btwControl ? <div className="ml-auto flex shrink-0 items-center">{btwControl}</div> : null}
+			{btwControl ? <div className="inno-conversation-header-actions ml-auto flex shrink-0 items-center">{btwControl}</div> : null}
 		</header>
 	);
 	const renderedConversationHeader = desktopHeaderHost === undefined

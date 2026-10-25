@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
+import { motion } from "motion/react";
 import { ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SquarePen } from "lucide-react";
-import { IconButton, Tooltip } from "./ui/index.js";
+import { IconButton, Tooltip, useUITransition } from "./ui/index.js";
 import type { WorkspaceMode } from "../stores/app-store.js";
 
 interface DesktopWindowChromeProps {
@@ -8,6 +9,7 @@ interface DesktopWindowChromeProps {
 	showSidebarControl: boolean;
 	showNewChatControl: boolean;
 	showChatHeader: boolean;
+	hasOpenConversation?: boolean;
 	isDesktopWindow: boolean;
 	sidebarCollapsed: boolean;
 	newChatLabel: string;
@@ -45,6 +47,7 @@ export function DesktopWindowChrome({
 	showSidebarControl,
 	showNewChatControl,
 	showChatHeader,
+	hasOpenConversation = false,
 	isDesktopWindow,
 	sidebarCollapsed,
 	newChatLabel,
@@ -73,9 +76,10 @@ export function DesktopWindowChrome({
 }: DesktopWindowChromeProps) {
 	const showSidebarToggle = isDesktopWindow ? showSidebarControl : sidebarCollapsed;
 	const showNavigationControls = isDesktopWindow;
+	const transition = useUITransition("modal");
 
 	return (
-		<div className={`inno-window-chrome${showNewChatControl ? " has-new-chat-control" : ""}`} aria-label="窗口工具栏">
+		<div className={`inno-window-chrome${showNewChatControl ? " has-new-chat-control" : ""}${hasOpenConversation ? " has-conversation-tabs" : ""}`} aria-label="窗口工具栏">
 			{isDesktopWindow && showChatHeader ? (
 				<>
 					<div className="inno-window-chrome-chat-header" ref={onHeaderHostChange} />
@@ -129,13 +133,18 @@ export function DesktopWindowChrome({
 			{isDesktopWindow && showWorkspaceControl && workspaceMode ? (
 				<>
 					<div className="inno-window-chrome-preview-terminal">{terminalControl}</div>
-					<div className="inno-window-chrome-preview-divider" aria-hidden="true" />
-					<div className="inno-window-chrome-preview-tabs" aria-hidden={workspaceCollapsed || undefined} inert={workspaceCollapsed || undefined}>
-						{workspaceTabs}
-					</div>
+					<motion.div layout={hasOpenConversation ? "position" : false} layoutDependency={`${workspaceMode}:${sidebarCollapsed}`} transition={transition} className="inno-window-chrome-preview-tabs">
+						{/* A single moving track keeps the separator and tabs together
+						    throughout maximize/restore, including the welcome screen. */}
+						<div className="inno-window-chrome-preview-divider" aria-hidden="true" />
+						<div className="inno-window-chrome-preview-tab-content" aria-hidden={workspaceCollapsed || undefined} inert={workspaceCollapsed || undefined}>
+							{workspaceTabs}
+						</div>
+					</motion.div>
 					{!workspaceCollapsed ? <IconButton
 						size="xs"
 						className="inno-window-chrome-preview-fullscreen"
+						title={workspaceMode === "full" ? workspaceRestoreLabel ?? "Restore preview" : workspaceFullLabel ?? "Maximize preview"}
 						aria-label={workspaceMode === "full" ? workspaceRestoreLabel ?? "Restore preview" : workspaceFullLabel ?? "Maximize preview"}
 						aria-pressed={workspaceMode === "full"}
 						onClick={() => onWorkspaceModeChange?.(workspaceMode === "full" ? "half" : "full")}

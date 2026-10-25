@@ -37,3 +37,4 @@ apps/inno-agent/docs/
 *.key
 .env.*
 !.env.example
+vendor/libreoffice/

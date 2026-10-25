@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { DragDropManager } from "dnd-core";
 import { Tree, type NodeRendererProps, type TreeApi, type CreateHandler, type RenameHandler, type DeleteHandler, type MoveHandler } from "react-arborist";
 import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, ExternalLink, FileCode2, Presentation, FileSpreadsheet, Copy, Check, ListChecks, Trash2, Search, ChevronRight } from "lucide-react";
-import { workspaceStore, type StreamingWorkspacePreview } from "../stores/workspace-store.js";
+import { workspaceStore, WORKSPACE_START_TAB, type StreamingWorkspacePreview } from "../stores/workspace-store.js";
+import { WorkspaceStartPage } from "./WorkspaceStartPage.js";
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
@@ -134,7 +135,7 @@ function nodeIcon(name: string, isDir: boolean, isOpen: boolean) {
 	if (lower.endsWith(".html") || lower.endsWith(".htm")) return <Globe size={14} />;
 	if (lower.endsWith(".pptx")) return <Presentation size={14} />;
 	if (lower.endsWith(".xlsx")) return <FileSpreadsheet size={14} />;
-	if (lower.endsWith(".docx")) return <FileText size={14} />;
+	if (lower.endsWith(".doc") || lower.endsWith(".docx")) return <FileText size={14} />;
 	return <File size={14} />;
 }
 
@@ -143,6 +144,7 @@ function officeFormatFromName(name: string): WorkspaceOfficeFormat | undefined {
 	const lower = name.toLowerCase();
 	if (lower.endsWith(".pptx")) return "pptx";
 	if (lower.endsWith(".docx")) return "docx";
+	if (lower.endsWith(".doc")) return "doc";
 	if (lower.endsWith(".xlsx")) return "xlsx";
 	return undefined;
 }
@@ -187,7 +189,7 @@ type ArtifactFilter = "all" | "docs" | "sheets" | "images";
 const FILTER_ORDER: ArtifactFilter[] = ["all", "docs", "sheets", "images"];
 
 const FILTER_EXTS: Record<Exclude<ArtifactFilter, "all">, string[]> = {
-	docs: [".md", ".markdown", ".txt", ".pdf", ".docx", ".html", ".htm"],
+	docs: [".md", ".markdown", ".txt", ".pdf", ".doc", ".docx", ".html", ".htm"],
 	sheets: [".csv", ".tsv", ".xlsx"],
 	images: [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"],
 };
@@ -436,7 +438,7 @@ function Preview({ file, isLoading }: { file: WorkspaceFileDetail; isLoading: bo
 			</div>
 		);
 		if (fmt === "pptx") return <Suspense fallback={fallback}><PptxPreview file={file} /></Suspense>;
-		if (fmt === "docx") return <Suspense fallback={fallback}><DocxPreview file={file} /></Suspense>;
+		if (fmt === "doc" || fmt === "docx") return <Suspense fallback={fallback}><DocxPreview file={file} /></Suspense>;
 		if (fmt === "xlsx") return <Suspense fallback={fallback}><XlsxPreview file={file} /></Suspense>;
 		return <OfficePreview file={file} />;
 	}
@@ -608,6 +610,8 @@ function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = f
 		error: workspaceStore.previewError || workspaceStore.error,
 		streamingPreview: workspaceStore.streamingPreview,
 		activePreviewPath: workspaceStore.activePreviewPath,
+		fileWorkspaceId: workspaceStore.currentFileWorkspaceId,
+		workspaceId: workspaceStore.activeWorkspaceId,
 	}));
 
 	const canEdit = state.file != null && isEditable(state.file.kind);
@@ -615,6 +619,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = f
 	if (state.streamingPreview) {
 		return <StreamingPreviewPane key={state.streamingPreview.id} preview={state.streamingPreview} onToggleSidebar={onToggleSidebar} sidebarOpen={sidebarOpen} />;
 	}
+	if (state.activePreviewPath === WORKSPACE_START_TAB) return <WorkspaceStartPage />;
 	if (emptyWhenUnselected && !state.activePreviewPath && !state.file) return null;
 
 	if (state.isEditing && state.file) {
@@ -648,8 +653,9 @@ function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = f
 						</Button>
 					</div>
 				</div>
-				{/* Editor body */}
-				<div className="min-h-0 flex-1">
+				{/* Reusing CodeMirror across file tabs merges their undo histories.
+				    Remount both editor kinds per path; drafts remain owned by the store. */}
+				<div key={state.activePreviewPath} className="min-h-0 flex-1">
 					{isMd ? (
 						<MarkdownEditorPane value={state.editBuffer} onChange={(v) => workspaceStore.updateEditBuffer(v)} />
 					) : (
@@ -682,7 +688,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = f
 					</div>
 				</div>
 				<div className="flex items-center gap-2">
-					{state.file ? <RunButton filePath={state.file.path} /> : null}
+					{state.file && state.fileWorkspaceId === state.workspaceId ? <RunButton filePath={state.file.path} /> : null}
 					{canEdit && (
 						<Button
 							variant="secondary"
@@ -1089,6 +1095,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 		isLoadingTree: workspaceStore.isLoadingTree,
 		isMutating: workspaceStore.isMutating,
 		activeWorkspaceId: workspaceStore.activeWorkspaceId,
+		fileWorkspaceId: workspaceStore.currentFileWorkspaceId,
 	}));
 	const wsState = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
@@ -1256,9 +1263,9 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 	// the tree node's click handler. Keep react-arborist's visual selection in
 	// sync with the store so both entry points identify the same file.
 	useEffect(() => {
-		if (isSidebar || multiSelectMode || !state.currentFilePath) return;
+		if (isSidebar || multiSelectMode || !state.currentFilePath || state.fileWorkspaceId !== state.activeWorkspaceId) return;
 		revealAndSelectTreeFile(treeRef.current, state.currentFilePath);
-	}, [isSidebar, multiSelectMode, state.currentFilePath, arboristData]);
+	}, [isSidebar, multiSelectMode, state.currentFilePath, state.fileWorkspaceId, state.activeWorkspaceId, arboristData]);
 
 	// One Set shared by the file collection and the context value; collecting
 	// with an empty selection would still walk the whole tree, so short-circuit.
@@ -1529,7 +1536,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 				{!isSidebar && !showContent && state.currentFile ? (
 					<ArtifactPreviewCard
 						file={state.currentFile}
-						workspaceId={state.activeWorkspaceId ?? undefined}
+						workspaceId={state.fileWorkspaceId ?? undefined}
 						onOpen={() => {
 							if (onPreviewFile) void onPreviewFile(DEFAULT_PREVIEW_PANEL_WIDTH);
 							else appStore.setWorkspaceWidth(DEFAULT_PREVIEW_PANEL_WIDTH);
@@ -1567,7 +1574,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 						) : (
 							filteredFiles.map((node) => {
 								const tone = artifactToneForName(node.name);
-								const selected = !isSidebar && state.currentFilePath === node.path;
+							const selected = !isSidebar && state.fileWorkspaceId === state.activeWorkspaceId && state.currentFilePath === node.path;
 								return (
 									<Button
 										variant="ghost"

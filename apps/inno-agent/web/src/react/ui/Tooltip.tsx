@@ -3,6 +3,16 @@ import { cloneElement, useEffect, useRef, useState, type ComponentPropsWithoutRe
 
 export const TooltipProvider = TooltipPrimitive.Provider;
 
+const silentFocusTargets = new WeakSet<HTMLElement>();
+
+/** Return focus after a close without treating restoration as a tooltip request. */
+export function focusWithoutTooltip(target: HTMLElement | null): void {
+	if (!target) return;
+	silentFocusTargets.add(target);
+	try { target.focus({ preventScroll: true }); }
+	finally { silentFocusTargets.delete(target); }
+}
+
 let tooltipWindowFocused = true;
 let suppressTooltipUntilInteraction = false;
 let ignoreNextPointerMoveAfterFocus = false;
@@ -71,6 +81,7 @@ export function Tooltip({
 	const pointerPositionRef = useRef<{ x: number; y: number } | null>(null);
 	const triggerBoundsRef = useRef<{ left: number; right: number; top: number; bottom: number } | null>(null);
 	const childProps = children.props as {
+		onFocus?: (event: React.FocusEvent<HTMLElement>) => void;
 		onBlur?: (event: React.FocusEvent<HTMLElement>) => void;
 		onClick?: (event: React.MouseEvent<HTMLElement>) => void;
 		onKeyDown?: (event: React.KeyboardEvent<HTMLElement>) => void;
@@ -92,6 +103,12 @@ export function Tooltip({
 		setOpen(false);
 	};
 	const trigger = cloneElement(children, {
+		onFocus: (event: React.FocusEvent<HTMLElement>) => {
+			childProps.onFocus?.(event);
+			// Radix opens on focus. Tab-close restoration is programmatic, so
+			// prevent only this focus event, without disabling later hover/Tab hints.
+			if (silentFocusTargets.has(event.currentTarget)) { event.preventDefault(); setOpen(false); }
+		},
 		onBlur: (event: React.FocusEvent<HTMLElement>) => {
 			childProps.onBlur?.(event);
 			if (!suppressUntilPointerMoveRef.current) suppressTooltipRef.current = false;

@@ -557,7 +557,12 @@ async function startServer(onReady) {
   serverProcess = spawn(process.execPath, [serverScript, "--server", "--port", String(serverPort)], {
     // INNO_DESKTOP marks the desktop (Electron) runtime: gates desktop-only
     // capabilities like computer-use (see plugins.computerUse in config.ts).
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", INNO_DESKTOP: "1" },
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      INNO_DESKTOP: "1",
+      ...(app.isPackaged ? { INNO_BUNDLED_TOOLS_DIR: process.resourcesPath } : {}),
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
 

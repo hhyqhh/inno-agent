@@ -1,8 +1,25 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { SegmentedControl } from "./Tabs.js";
+import { SegmentedControl, Tabs } from "./Tabs.js";
 
 afterEach(cleanup);
+
+it("passes right-clicks on a tab trigger to the item's context menu handler", () => {
+	const onContextMenu = vi.fn();
+	render(
+		<Tabs
+			id="tabs"
+			ariaLabel="Tabs"
+			value="a"
+			onValueChange={() => {}}
+			items={[{ value: "a", label: "A", onContextMenu }, { value: "b", label: "B" }]}
+		/>,
+	);
+	fireEvent.contextMenu(screen.getByRole("tab", { name: "A" }));
+	expect(onContextMenu).toHaveBeenCalledTimes(1);
+	fireEvent.contextMenu(screen.getByRole("tab", { name: "B" }));
+	expect(onContextMenu).toHaveBeenCalledTimes(1);
+});
 
 it("excludes collapsed rail options from keyboard navigation and hover until reopened", () => {
 	const onValueChange = vi.fn();

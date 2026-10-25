@@ -114,6 +114,12 @@ macOS 上使用系统内置工具，无需额外安装：
 
 **Office 文档解析需要系统级依赖：** liteparse 通过 headless LibreOffice 将 Office 文档（`.docx`、`.xlsx`、`.pptx` 等）转换为 PDF 后再提取文本。
 
+**工作区 Word 预览也使用 LibreOffice：** `.doc` / `.docx` 在后台转换为 PDF，保留纸张比例和分页。转换复用独立的常驻引擎与字体缓存，服务启动后异步预热，不修改原文件。预览按内容版本缓存在数据目录 `office-previews/`，可跨服务重启复用；生成新版本时清理超过 7 天或总量 256MB 的旧预览。最多排队 4 个不同版本，串行转换，每 20 次转换回收引擎。Word 原文件上限 25MB，PDF 上限 64MB，单次转换超时 60 秒。浏览器直接读取 PDF，支持 Range、HEAD 和 ETag，不再先下载完整 Blob。
+
+macOS / Windows 发布流程通过 `scripts/prepare-libreoffice.sh` / `.ps1` 暂存并内置引擎与 Noto 中文字体，终端用户无需另行安装。开发环境可使用同一脚本准备引擎，Linux 部署需安装 LibreOffice。可使用 `INNO_LIBREOFFICE_PATH` 指定 `soffice` 可执行文件，或通过 `INNO_BUNDLED_TOOLS_DIR` 指向分支约定的引擎目录；查找顺序为显式配置、内置引擎、仓库 `vendor/libreoffice/<platform>-<arch>`、系统安装、PATH。缓存包含实际引擎版本与二进制时间戳，升级后自动重新生成 PDF。已确认 LibreOffice 26.8.0 的中文网格行距回归（tdf#171275，26.8.1 修复），预览拒绝该版本并提示升级，避免输出行距翻倍的 PDF。macOS 转换为无界面进程显式配置系统、用户、Microsoft Word 私有字体（安装时）和引擎字体目录；已有的 `FONTCONFIG_FILE` 配置优先保留。
+
+原文明确指定的字体优先；未指定的简体中文正文以宋体、华文宋体、Noto Serif 为回退顺序，衬线与无衬线字体分别保留。安装包包含 Noto Serif / Sans SC 及许可，不分发 Microsoft 字体。缺少原字体、文档未指定字体、转换器排版差异仍可能影响与 Word 的一致性；安装字体后需重启服务以重新建立字体版本。
+
 | 平台 | 安装命令 |
 |------|----------|
 | macOS | `brew install --cask libreoffice` |

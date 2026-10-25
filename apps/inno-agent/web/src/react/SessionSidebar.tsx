@@ -75,6 +75,7 @@ import type { SessionChannel, SessionMeta } from "../api/sessions.js";
 import { useStoreSnapshot, useTitleMarquee } from "./hooks.js";
 import { getLongPressHandlers } from "./ui/long-press.js";
 import { useSidebarPreview } from "./use-sidebar-preview.js";
+import { DesktopWorkbench } from "./DesktopWorkbench.js";
 
 const SidebarWorkspaceBrowser = lazy(() => import("./WorkspaceBrowser.js").then((module) => ({ default: module.WorkspaceBrowser })));
 type SidebarView = "messages" | "files";
@@ -873,6 +874,7 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, onPre
 		currentSessionId: sessionsStore.currentSessionId,
 		isLoading: sessionsStore.isLoading,
 		openingSessionId: sessionsStore.openingSessionId,
+		isWelcome: sessionsStore.isWelcomeView,
 		channelFilter: sessionsStore.channelFilter,
 		searchQuery: sessionsStore.searchQuery,
 		availableChannels: sessionsStore.availableChannels,
@@ -883,6 +885,7 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, onPre
 	}));
 	const wsActive = useStoreSnapshot(workspaceStore, () => ({
 		activeWorkspaceId: workspaceStore.activeWorkspaceId,
+		activeSurface: workspaceStore.activeSurface,
 	}));
 	const layout = useStoreSnapshot(appStore, () => ({ page: appStore.page, sidebarWidth: appStore.sidebarWidth, workspaceMode: appStore.workspaceMode, workspaceWidth: appStore.workspaceWidth }));
 	const { page } = layout;
@@ -2047,10 +2050,7 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, onPre
 							aria-hidden="true"
 							inert
 						/>
-						<div className="inno-desktop-workbench">
-							<main className="inno-desktop-chat-content">{chatContent}</main>
-							{workspaceContent}
-						</div>
+						<DesktopWorkbench mode={layout.workspaceMode} workspaceWidth={layout.workspaceWidth} conversationActive={wsActive.activeSurface === "conversation" && Boolean(state.currentSessionId) && !state.isWelcome} chatContent={chatContent} workspaceContent={workspaceContent} />
 					</div>
 				) : null}
 			</>

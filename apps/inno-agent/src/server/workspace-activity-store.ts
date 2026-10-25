@@ -1,6 +1,6 @@
 import { isAbsolute, relative, resolve } from "node:path";
-import { readJson, writeJson } from "../storage/file-store.js";
-import { isWithin } from "../utils/path-safety.js";
+import { readJson, readJsonAsync, writeJson } from "../storage/file-store.js";
+import { isWithin, resolveContainedPathAsync } from "../utils/path-safety.js";
 import { normalizeWorkspaceRelativePath, WORKSPACE_IGNORES } from "./file-helpers.js";
 import type { ChatAttachments } from "./attachments.js";
 import { attachmentsMetadataPath, type SessionAttachmentsMetadata } from "./attachments-store.js";
@@ -54,6 +54,32 @@ function writeMetadata(dataDir: string, metadata: WorkspaceActivityMetadata): vo
 
 export function resetWorkspaceActivityStoreForTests(): void {
 	cache = null;
+}
+
+/** Read-only projection of the existing activity owner, never a second registry.
+ * A recorded write describes tool activity, not proof of successful generation.
+ */
+export async function listWorkspaceWriteActivity(dataDir: string, workspaceId: string): Promise<{
+	files: Array<{ path: string; lastSeenAt: string }>;
+	trackingIncomplete: boolean;
+}> {
+	const metadataPath = await resolveContainedPathAsync(dataDir, "sessions/workspace-activity.json");
+	const disk = cache?.dataDir === dataDir ? cache.metadata : metadataPath ? await readJsonAsync<WorkspaceActivityMetadata>(metadataPath, {}) : {};
+	// Prefer a live write if the owner initialized while the async read was pending.
+	const metadata = cache?.dataDir === dataDir ? cache.metadata : disk;
+	const files = new Map<string, { path: string; lastSeenAt: string }>();
+	let trackingIncomplete = false;
+	for (const session of Object.values(metadata)) {
+		const entries = session.files?.filter((file) => file.workspaceId === workspaceId) ?? [];
+		if (entries.length && session.trackingIncomplete) trackingIncomplete = true;
+		for (const file of entries) {
+			if ((file.access !== "write" && file.access !== "read_write") || !Number.isFinite(Date.parse(file.lastSeenAt))) continue;
+			if (!file.path || file.path.startsWith("/") || /^[A-Za-z]:/.test(file.path) || file.path.split(/[\\/]/).includes("..")) continue;
+			const previous = files.get(file.path);
+			if (!previous || Date.parse(file.lastSeenAt) > Date.parse(previous.lastSeenAt)) files.set(file.path, { path: file.path, lastSeenAt: file.lastSeenAt });
+		}
+	}
+	return { files: [...files.values()].sort((a, b) => Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt)).slice(0, 40), trackingIncomplete };
 }
 
 /** Remove metadata for a deleted session without touching any workspace file. */

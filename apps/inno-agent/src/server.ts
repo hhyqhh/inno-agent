@@ -1,3 +1,4 @@
+import { warmWordPreviews, stopWordPreviews, closeWordPreviews } from "./office/word-preview.js";
 // Register source-map-support so that compiled JS stack traces and
 // pino-caller call sites map back to the original TS source locations.
 import "source-map-support/register.js";
@@ -1537,12 +1538,20 @@ installProcessFallbacks({
 const gracefulShutdown = createGracefulShutdownHandler({
 	server,
 	wss,
-	exit: (code) => process.exit(code),
+	exit: (code) => {
+		// Stop the resident renderer and remove its private profile on normal shutdown.
+		const deadline = setTimeout(() => process.exit(code), 1_000);
+		deadline.unref();
+		void closeWordPreviews().catch(() => undefined).finally(() => process.exit(code));
+	},
 });
+process.once("exit", stopWordPreviews);
 process.on("SIGTERM", gracefulShutdown);
 process.on("SIGINT", gracefulShutdown);
 
 server.listen(port, () => {
+	// Prewarm outside the request path; the HTTP server remains immediately usable.
+	void warmWordPreviews(paths.dataDir).catch(() => logger.debug("Word preview engine not prewarmed"));
 	console.log(`[inno-server] listening on http://localhost:${port}`);
 	console.log(`[inno-server] config: ${paths.configPath}`);
 });

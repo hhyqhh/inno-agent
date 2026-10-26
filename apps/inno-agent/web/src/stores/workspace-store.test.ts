@@ -16,7 +16,7 @@ const api = vi.hoisted(() => ({
 
 vi.mock("../api/workspace.js", () => api);
 
-import { workspaceStore, WorkspaceStoreImpl, WORKSPACE_START_TAB, previewTabKey } from "./workspace-store.js";
+import { workspaceStore, WorkspaceStoreImpl, isStartTab, isStartTabKey, previewTabKey } from "./workspace-store.js";
 import type { WorkspaceFileDetail, WorkspaceTree } from "../types/workspace.js";
 
 function fileDetail(path: string, content: string): WorkspaceFileDetail {
@@ -95,11 +95,37 @@ describe("workspace preview tabs", () => {
 	it("keeps a single start page separate from files and retains drafts", async () => {
 		await workspaceStore.selectFile("a.ts"); workspaceStore.startEditing(); workspaceStore.updateEditBuffer("draft");
 		workspaceStore.openStartPage(); workspaceStore.openStartPage();
-		expect(workspaceStore.previewTabs.map((tab) => tab.path)).toEqual(["a.ts", WORKSPACE_START_TAB]);
+		expect(workspaceStore.previewTabs.filter((tab) => !isStartTab(tab)).map((tab) => tab.path)).toEqual(["a.ts"]);
+		expect(workspaceStore.previewTabs.filter(isStartTab)).toHaveLength(1);
 		expect(workspaceStore.currentFile).toBeNull();
 		workspaceStore.activatePreview("a.ts");
 		expect(workspaceStore.editBuffer).toBe("draft");
 		expect(api.getWorkspaceFile).toHaveBeenCalledTimes(1);
+	});
+	it("opens a fresh start page per plus click while openStartPage reuses", () => {
+		workspaceStore.newStartPage(); workspaceStore.newStartPage();
+		expect(workspaceStore.previewTabs.filter(isStartTab)).toHaveLength(2);
+		expect(workspaceStore.previewTabs[0].path).not.toBe(workspaceStore.previewTabs[1].path);
+		expect(isStartTabKey(workspaceStore.activePreviewPath)).toBe(true);
+		workspaceStore.openStartPage();
+		expect(workspaceStore.previewTabs.filter(isStartTab)).toHaveLength(2);
+	});
+	it("navigates the active start tab in place when a file is opened from a start page", async () => {
+		await workspaceStore.selectFile("a.ts"); workspaceStore.startEditing(); workspaceStore.updateEditBuffer("draft");
+		workspaceStore.openStartPage();
+		await workspaceStore.selectFile("b.md", undefined, null, { replaceStartTab: true });
+		expect(workspaceStore.previewTabs.map((tab) => tab.path)).toEqual(["a.ts", "b.md"]);
+		expect(workspaceStore.activePreviewPath).toBe("b.md");
+		expect(workspaceStore.currentFile?.content).toBe("content of b.md");
+		expect(workspaceStore.previewTabs[0].editBuffer).toBe("draft");
+	});
+	it("retires the start page and reuses the open tab when the file is already open", async () => {
+		await workspaceStore.selectFile("a.ts");
+		workspaceStore.openStartPage();
+		await workspaceStore.selectFile("a.ts", undefined, null, { replaceStartTab: true });
+		expect(workspaceStore.previewTabs).toHaveLength(1);
+		expect(workspaceStore.activePreviewPath).toBe("a.ts");
+		expect(workspaceStore.previewTabs.filter(isStartTab)).toHaveLength(0);
 	});
 	it("records successful opens once per file, scoped to the owning workspace", async () => {
 		await workspaceStore.selectFile("a.ts"); await workspaceStore.selectFile("b.md"); workspaceStore.activatePreview("a.ts");
@@ -219,6 +245,27 @@ describe("workspace preview tabs", () => {
 		workspaceStore.closeAllPreviews();
 		expect(workspaceStore.previewTabs).toEqual([]);
 		expect(workspaceStore.activePreviewPath).toBeNull();
+	});
+
+	it("wordEditCloseGuard vetoes closing the protected tab and survives bulk closes", async () => {
+		await workspaceStore.selectFile("a.ts");
+		await workspaceStore.selectFile("b.md");
+		await workspaceStore.selectFile("docs/c.ts");
+		const guarded = previewTabKey({ path: "b.md", workspaceId: null });
+		workspaceStore.wordEditCloseGuard = (tabKey) => tabKey === guarded;
+		try {
+			workspaceStore.closePreview(guarded);
+			expect(workspaceStore.previewTabs.map((tab) => tab.path)).toEqual(["a.ts", "b.md", "docs/c.ts"]);
+			workspaceStore.closeOtherPreviews("docs/c.ts");
+			expect(workspaceStore.previewTabs.map((tab) => tab.path)).toEqual(["b.md", "docs/c.ts"]);
+			workspaceStore.closeAllPreviews();
+			expect(workspaceStore.previewTabs.map((tab) => tab.path)).toEqual(["b.md"]);
+			expect(workspaceStore.activePreviewPath).toBe(guarded);
+		} finally {
+			workspaceStore.wordEditCloseGuard = null;
+		}
+		workspaceStore.closePreview(guarded);
+		expect(workspaceStore.previewTabs).toEqual([]);
 	});
 
 	it("follows renames in open tabs, including the active path", async () => {

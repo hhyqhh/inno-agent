@@ -302,7 +302,9 @@ function MainApp() {
 		// Full mode is already the reading surface; selecting another file should
 		// not unexpectedly return the user to a split layout.
 		if (appStore.workspaceMode === "full") return;
-		if (isNarrow) {
+		// Electron can grow its native window before choosing a split layout.
+		// The narrow-browser shortcut previously skipped that expansion entirely.
+		if (isNarrow && !isDesktopWindow) {
 			appStore.setWorkspaceMode("full");
 			return;
 		}
@@ -315,7 +317,7 @@ function MainApp() {
 		// below already collapse it if (and only if) that is what makes the panel fit.
 		appStore.setWorkspaceWidth(previewWidth);
 		appStore.setWorkspaceMode("half");
-	}, [isNarrow, ensureWindowForPanel]);
+	}, [isNarrow, isDesktopWindow, ensureWindowForPanel]);
 
 	const openSearchResult = useCallback(async (result: SearchResult) => {
 		if (isNarrow) appStore.setSidebarCollapsed(true);

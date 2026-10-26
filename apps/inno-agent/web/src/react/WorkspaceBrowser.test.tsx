@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useDragDropManager } from "react-dnd";
 import { workspaceStore } from "../stores/workspace-store.js";
@@ -62,6 +62,7 @@ describe("Sidebar workspace browser", () => {
 
 	afterEach(() => {
 		cleanup();
+		delete document.documentElement.dataset.theme;
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
 	});
@@ -134,6 +135,18 @@ describe("Sidebar workspace browser", () => {
 		expect(container.querySelector(".inno-workspace-preview-pane")).toBeNull();
 		expect(container.querySelector(".inno-workspace-selection-card")).toBeNull();
 		expect(workspaceStore.loadTree).not.toHaveBeenCalled();
+	});
+
+	it.each(["light", "dark"])("omits the attachment drag hint on file hover in %s", async (theme) => {
+		document.documentElement.dataset.theme = theme;
+		const { container } = render(<InnoDndProvider><Browser /><Browser variant="workspace" /></InnoDndProvider>);
+		for (const row of container.querySelectorAll('[data-ws-path="report.md"]')) {
+			fireEvent.pointerMove(row, { pointerType: "mouse" });
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+			expect(screen.queryByRole("tooltip")).toBeNull();
+			expect(row.getAttribute("title")).toBeNull();
+			fireEvent.pointerLeave(row);
+		}
 	});
 
 	it.each(["sidebar", "workspace"] as const)("retains file attachment dragging in the %s browser", (variant) => {

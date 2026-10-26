@@ -33,7 +33,9 @@
 		"showcase:view": "node scripts/view-showcase-export.mjs",
 		"electron:build:mac:signed": "bash scripts/build-mac-signed.sh",
 		"electron:package:mac:signed": "node scripts/check-mac-signing.cjs && electron-builder --config build/electron-builder.mac-signed.cjs --mac dmg --arm64 --publish never && bash scripts/verify-mac-release.sh",
-		"test:mac-signing": "node --test scripts/check-mac-signing.test.cjs"
+		"test:mac-signing": "node --test scripts/check-mac-signing.test.cjs",
+		"postinstall": "node scripts/apply-betteroffice-justify-fix.mjs",
+		"test:betteroffice-justify-fix": "node --test scripts/apply-betteroffice-justify-fix.test.mjs"
 	},
 	"engines": {
 		"node": ">=20.6.0"

@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { workspaceStore, WORKSPACE_START_TAB, previewTabKey } from "../stores/workspace-store.js";
+import { workspaceStore, isStartTab, previewTabKey } from "../stores/workspace-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { WorkspaceStartPage } from "./WorkspaceStartPage.js";
 import { renderWithTooltipProvider as render } from "./test-utils.js";
@@ -37,7 +37,7 @@ describe("File start page", () => {
 		expect(within(modified).getAllByRole("button").map((button) => button.textContent)).toEqual([expect.stringContaining("newer.md"), expect.stringContaining("older.md")]);
 		fireEvent.click(screen.getByRole("button", { name: /draft.md/ }));
 		expect(workspaceStore.activePreviewPath).toBe(previewTabKey({ path: "draft.md", workspaceId: "current" })); expect(workspaceStore.editBuffer).toBe("unsaved draft");
-		expect(workspaceStore.previewTabs.some((tab) => tab.path === WORKSPACE_START_TAB)).toBe(true);
+		expect(workspaceStore.previewTabs.some(isStartTab)).toBe(true);
 	});
 	it("filters by path and provides a useful no-results state", () => {
 		render(<WorkspaceStartPage />);
@@ -50,7 +50,7 @@ describe("File start page", () => {
 		const select = vi.spyOn(workspaceStore, "selectFile").mockResolvedValue();
 		const reload = vi.spyOn(workspaceStore, "loadTree").mockResolvedValue();
 		workspaceStore.error = "network"; render(<WorkspaceStartPage />);
-		fireEvent.click(screen.getByRole("button", { name: /recent.ts/ })); expect(select).toHaveBeenCalledWith("recent.ts", undefined, "current");
+		fireEvent.click(screen.getByRole("button", { name: /recent.ts/ })); expect(select).toHaveBeenCalledWith("recent.ts", undefined, "current", { replaceStartTab: true });
 		expect(screen.getByRole("alert").textContent).toBe("workspaceStart.loadFailed");
 		fireEvent.click(screen.getByRole("button", { name: "workspaceStart.refresh" })); expect(reload).toHaveBeenCalledOnce();
 	});
@@ -59,7 +59,7 @@ describe("File start page", () => {
 		render(<WorkspaceStartPage />);
 		fireEvent.click(screen.getByRole("radio", { name: "workspaceStart.scopeAll" }));
 		fireEvent.click(screen.getByRole("button", { name: /private.md/ }));
-		expect(select).toHaveBeenCalledWith("private.md", undefined, "other");
+		expect(select).toHaveBeenCalledWith("private.md", undefined, "other", { replaceStartTab: true });
 		expect(workspaceStore.activeWorkspaceId).toBe("current");
 		expect(screen.getByText(/Other project/)).toBeTruthy();
 	});

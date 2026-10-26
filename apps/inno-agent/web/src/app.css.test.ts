@@ -60,3 +60,16 @@ describe("fullscreen preview toolbar layout", () => {
 		expect(strip).toContain("overflow-x: auto");
 	});
 });
+
+describe("word editor image mirror cursor", () => {
+	it("keeps behind-text image mirror runs from inheriting the header band pointer", async () => {
+		const appCss = await readFile(new URL("./app.css", import.meta.url), "utf8");
+		// A page-sized image run anchored in the header band inherits the band's
+		// cursor: pointer and shows a hand over body text. The run blankets the
+		// body, so it must carry the body content's text cursor (I-beam) instead
+		// of an arrow or hand; the rule must stay scoped to the embedded
+		// engine's mirror runs — no global override.
+		const rule = appCss.match(/\.inno-word-editor \.inno-betteroffice \.layout-run-image\s*\{([^}]*)\}/)?.[1] ?? "";
+		expect(rule).toContain("cursor: text");
+	});
+});

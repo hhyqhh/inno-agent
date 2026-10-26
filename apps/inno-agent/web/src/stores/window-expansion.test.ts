@@ -23,7 +23,7 @@ import { ensureWindowForPanel } from "./window-expansion.js";
 	});
 
 	it("falls back cleanly for a browser without the Electron bridge", async () => {
-		vi.stubGlobal("window", { innerWidth: 1200 });
+		vi.stubGlobal("window", { innerWidth: 960 });
 
 		await expect(ensureWindowForPanel("right", 640, "half")).resolves.toBe("unavailable");
 	});
@@ -31,7 +31,7 @@ import { ensureWindowForPanel } from "./window-expansion.js";
 	it("uses the shared resized width when making room to reopen the sidebar", async () => {
 		mocks.appStore.sidebarCollapsed = true;
 		mocks.appStore.sidebarWidth = 400;
-		const windowMock = { innerWidth: 1200, innoDesktop: { expandWindowWidth: vi.fn(async (_side: string, width: number) => {
+		const windowMock = { innerWidth: 960, innoDesktop: { expandWindowWidth: vi.fn(async (_side: string, width: number) => {
 			windowMock.innerWidth += width;
 			return true;
 		}) } };
@@ -40,9 +40,21 @@ import { ensureWindowForPanel } from "./window-expansion.js";
 		expect(windowMock.innoDesktop.expandWindowWidth).toHaveBeenCalledWith("left", 52);
 	});
 
+	it("grows the minimum desktop window by the requested file-preview width", async () => {
+		mocks.appStore.sidebarCollapsed = true;
+		const windowMock = { innerWidth: 612, innoDesktop: { expandWindowWidth: vi.fn(async (_side: string, width: number) => {
+			windowMock.innerWidth += width;
+			return true;
+		}) } };
+		vi.stubGlobal("window", windowMock);
+		await expect(ensureWindowForPanel("right", 560, "half")).resolves.toBe("ready");
+		expect(windowMock.innoDesktop.expandWindowWidth).toHaveBeenCalledWith("right", 560);
+		expect(windowMock.innerWidth).toBe(1172);
+	});
+
 	it("moves the window left when the right edge has no room", async () => {
 		const windowMock = {
-			innerWidth: 1200,
+			innerWidth: 960,
 			innoDesktop: {} as NonNullable<Window["innoDesktop"]>,
 		};
 		const expandWindowWidth = vi.fn(async (side: "left" | "right", additionalWidth: number) => {
@@ -66,14 +78,14 @@ import { ensureWindowForPanel } from "./window-expansion.js";
 		await expect(ensureWindowForPanel("right", 500, "half")).resolves.toBe("ready");
 		expect(getWindowWidthCapacity).toHaveBeenCalledWith("right");
 		expect(getWindowWidthCapacity).toHaveBeenCalledWith("left");
-		// 52px rail + 246px sidebar + 500px workspace + 800px chat - 1200px window.
+		// 52px rail + 246px sidebar + 500px workspace + 560px chat - 960px window.
 		expect(expandWindowWidth).toHaveBeenCalledWith("left", 398);
 	});
 
 	it("reserves the 52px rail when expanding a workspace from collapsed desktop state", async () => {
 		mocks.appStore.sidebarCollapsed = true;
 		const windowMock = {
-			innerWidth: 1_100,
+			innerWidth: 860,
 			innoDesktop: {} as NonNullable<Window["innoDesktop"]>,
 		};
 		const expandWindowWidth = vi.fn(async (_side: "left" | "right", additionalWidth: number) => {

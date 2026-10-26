@@ -2754,20 +2754,6 @@ inno-app-shell {
 	}
 }
 
-/* Keep conversation controls in two legible rows instead of letting the
-   non-shrinking model picker paint over permissions and attachments. */
-@media (max-width: 640px) {
-	.inno-composer--conversation .inno-composer-toolbar {
-		flex-wrap: wrap;
-	}
-
-	.inno-composer--conversation .inno-composer-toolbar > div {
-		width: 100%;
-		justify-content: space-between;
-		gap: 4px;
-	}
-}
-
 /* In phone landscape, the vertical navigation otherwise consumes almost
    all the drawer height, leaving session cards under sticky headers. */
 @media (max-width: 960px) and (max-height: 500px) {
@@ -4479,6 +4465,9 @@ inno-workspace-panel textarea {
    row beneath it. ChatCenter measures this root for the conversation bottom
    space, so the pills count toward the covered area. */
 .inno-composer {
+	/* Split panels can be narrow even in a wide window; respond to this column. */
+	container-type: inline-size;
+	min-width: 0;
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
@@ -8066,6 +8055,98 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 
 .inno-search-overlay:not([open]) { display: none; }
 
+/* DOCX editing is inline in the workspace preview pane: the pane owns the file
+   bar, the BetterOffice ribbon sits under it, and the document body scrolls
+   internally. The editor engine maps its own colors onto the theme tokens. */
+.inno-word-editor, .inno-word-editor .inno-betteroffice.oox-root {
+	--doc-surface: var(--inno-surface);
+	--doc-card: var(--inno-surface-raised);
+	--doc-bg: var(--inno-workspace-bg);
+	--doc-bg-subtle: var(--inno-surface-muted);
+	--doc-bg-hover: var(--inno-surface-muted);
+	--doc-bg-input: var(--inno-surface);
+	--doc-text: var(--inno-text);
+	--doc-text-muted: var(--inno-text-muted);
+	--doc-text-subtle: var(--inno-text-subtle);
+	--doc-border: var(--inno-border);
+	--doc-border-input: var(--inno-border-strong);
+	--doc-border-light: var(--inno-border);
+	--doc-primary: var(--inno-accent);
+	--doc-primary-light: var(--inno-accent-soft);
+	--doc-focus-ring: var(--inno-border-strong);
+	--doc-toggle-active-bg: var(--inno-surface-muted);
+	--doc-toggle-active-fg: var(--inno-text);
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	overflow: hidden;
+	background: var(--inno-workspace-bg);
+	color: var(--inno-text);
+	font-family: inherit;
+}
+.inno-word-save-state { display: flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--inno-text-subtle); font-size: var(--text-xs, 12px); }
+.inno-word-ribbon { flex-shrink: 0; min-width: 0; padding: 0 8px 12px; background: var(--inno-surface-muted); }
+.inno-word-ribbon .inno-ui-tabs { min-height: 36px; overflow-x: auto; }
+.inno-word-ribbon-panel { min-height: 76px; display: flex; align-items: center; overflow-x: auto; border: 1px solid var(--inno-border); border-radius: var(--radius-lg, 8px); background: var(--inno-surface); }
+.inno-word-editor .inno-word-ribbon .inno-word-toolbar { flex-wrap: nowrap; width: max-content; min-width: 100%; min-height: 68px; margin: 0; padding: 4px 8px; gap: 0; border-radius: 0; background: transparent; font-family: inherit; }
+.inno-word-ribbon-group { display: flex; align-items: center; align-self: stretch; gap: 8px; padding: 0 12px; }
+.inno-word-ribbon-group + .inno-word-ribbon-group { border-left: 1px solid var(--inno-border); }
+.inno-word-ribbon-stack { display: flex; flex-direction: column; gap: 4px; }
+.inno-word-ribbon-row { display: flex; align-items: center; gap: 4px; }
+.inno-word-editor .inno-word-font-select { width: 124px; height: 32px; flex-shrink: 0; }
+.inno-word-font-preview { flex-shrink: 0; font-size: var(--text-sm, 14px); line-height: 1; opacity: 0.75; }
+.inno-word-editor .inno-betteroffice { flex: 1; min-width: 0; min-height: 0; height: auto; }
+.inno-word-editor .inno-betteroffice .docx-toolbar { background: var(--inno-surface); color: var(--inno-text); }
+/* BetterOffice paints behind-text anchored images as pointer-interactive
+   mirror runs (.layout-run-image). A page-sized image anchored in the header
+   band inherits the band's cursor: pointer (header click-to-edit) and shows a
+   hand over every body position it blankets — hand cursors reported over
+   document text. Mirror runs are not links or buttons: give them the body
+   content's text cursor, which is what the engine's own `.layout-page-content`
+   carries, so hover over the blanket reads as typeable text. Real links keep
+   their styling, and image selection still works through the engine's
+   coordinate hit-test underneath. */
+.inno-word-editor .inno-betteroffice .layout-run-image { cursor: text; }
+.inno-word-notice { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 12px; padding: 8px 20px; border-bottom: 1px solid var(--inno-border); background: var(--inno-surface-muted); color: var(--inno-text-muted); font-size: var(--text-sm, 14px); }
+.inno-word-editor { position: relative; }
+/* The save confirmation renders inside the pane (Dialog scoped mode) instead of
+   the body top layer: the overlay anchors to the editor pane, so the mask and
+   the centered card follow the pane through half/full/resized layouts. Explicit
+   flex centering is required because Tailwind preflight resets the UA dialog
+   `margin: auto`; z-index stays above the engine's internal overlays (max 50). */
+.inno-word-confirm-dialog {
+	position: absolute;
+	inset: 0;
+	z-index: 60;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	max-width: none;
+	max-height: none;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: color-mix(in srgb, var(--inno-background) 65%, transparent);
+	color: var(--inno-text);
+}
+.inno-word-confirm-dialog:not([open]) { display: none; }
+.inno-word-confirm-card { width: min(480px, calc(100% - 32px)); border: 1px solid var(--inno-border); border-radius: var(--radius-xl, 12px); background: var(--inno-surface-raised); color: var(--inno-text); }
+
+/* The preview pane is the size container for the shared file bar: in narrow
+   panes (half/quarter layout, small windows) the bar collapses to icon-only
+   actions instead of pushing buttons out of the pane. Accessible names live
+   on the buttons, so hiding the text labels keeps them usable. */
+.inno-workspace-preview-pane { container-type: inline-size; }
+@container (max-width: 560px) {
+	.inno-workspace-filebar .inno-filebar-action-label { display: none; }
+}
+@container (max-width: 380px) {
+	.inno-workspace-filebar .inno-word-save-state { display: none; }
+}
+
 .inno-search-overlay::backdrop {
 	background: color-mix(in srgb, var(--inno-background) 65%, transparent);
 }
@@ -8348,5 +8429,52 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 	}
 	.inno-search-result-time {
 		display: none;
+	}
+}
+
+/* Fit controls to the chat column, not the window. Keep the normal single
+   row at the 560px chat minimum; forcing full-width groups there added an
+   unnecessary second row. Long model names yield space before controls wrap. */
+.inno-composer--conversation .inno-composer-toolbar > div:last-child {
+	min-width: 0;
+	flex-shrink: 1;
+}
+
+.inno-composer--conversation .inno-composer-model-trigger {
+	min-width: 0;
+	max-width: clamp(80px, 30cqi, 200px);
+	flex-shrink: 1;
+}
+
+@container (max-width: 400px) {
+	.inno-composer--conversation .inno-composer-toolbar {
+		flex-wrap: wrap;
+	}
+
+	.inno-composer--conversation .inno-composer-toolbar > div {
+		width: 100%;
+		min-width: 0;
+		justify-content: flex-start;
+		gap: 8px;
+	}
+
+	.inno-composer--conversation .inno-composer-toolbar > div:last-child {
+		justify-content: flex-end;
+	}
+}
+
+@container (max-width: 560px) {
+	.inno-composer-subrow {
+		flex-wrap: wrap;
+	}
+
+	.inno-composer-subrow > .flex-1 {
+		display: none;
+	}
+
+	.inno-composer-subrow > .inno-composer-model-trigger {
+		min-width: 0;
+		max-width: 100%;
+		margin-left: auto;
 	}
 }

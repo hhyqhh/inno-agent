@@ -19,6 +19,7 @@ import { applyWorkspaceCwd, getCurrentSessionId } from "../../agent/pi-runner.js
 import { streamRegistry } from "../../chat/stream-registry.js";
 import { logger } from "../../logger.js";
 import { getWordPdfPreview, WordPreviewError } from "../../office/word-preview.js";
+import type { WordDocumentService } from "../../office/word-document.js";
 import type { RuntimePaths } from "../../runtime.js";
 import { ensureDir } from "../../storage/file-store.js";
 import { isWithin } from "../../utils/path-safety.js";
@@ -45,6 +46,7 @@ import {
 import { servePdf } from "../pdf-response.js";
 import { listWorkspaceWriteActivity } from "../workspace-activity-store.js";
 import { json, matchRoute, readBody } from "../http-helpers.js";
+import { handleWordEditorRoutes } from "../word-editor-routes.js";
 
 /**
  * Server-owned dependencies the workspace routes touch. `workspaceRegistry`
@@ -52,6 +54,7 @@ import { json, matchRoute, readBody } from "../http-helpers.js";
  * (skillsDir default), so they are injected rather than imported.
  */
 export interface WorkspacesRouteContext {
+	wordEditor?: WordDocumentService;
 	workspaceRegistry: WorkspaceRegistry;
 	dataDir: string;
 	paths: RuntimePaths;
@@ -311,6 +314,7 @@ export async function handleWorkspacesRoutes(
 	url: string,
 	ctx: WorkspacesRouteContext,
 ): Promise<boolean> {
+	if (ctx.wordEditor && await handleWordEditorRoutes(req, res, method, url, ctx.wordEditor)) return true;
 	const {
 		workspaceRegistry,
 		dataDir,

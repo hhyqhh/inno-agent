@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { DragDropManager } from "dnd-core";
 import { Tree, type NodeRendererProps, type TreeApi, type CreateHandler, type RenameHandler, type DeleteHandler, type MoveHandler } from "react-arborist";
 import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, ExternalLink, FileCode2, Presentation, FileSpreadsheet, Copy, Check, ListChecks, Trash2, Search, ChevronRight } from "lucide-react";
-import { workspaceStore, WORKSPACE_START_TAB, type StreamingWorkspacePreview } from "../stores/workspace-store.js";
+import { workspaceStore, isStartTabKey, previewTabKey, type StreamingWorkspacePreview } from "../stores/workspace-store.js";
 import { WorkspaceStartPage } from "./WorkspaceStartPage.js";
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
@@ -21,6 +21,7 @@ import {
 	ContextMenu,
 	type ContextMenuItem,
 	Button,
+	Dialog,
 	IconButton,
 	Input,
 	Tooltip,
@@ -28,6 +29,8 @@ import {
 } from "./ui/index.js";
 import { getLongPressHandlers } from "./ui/long-press.js";
 import { FileName } from "./FileName.js";
+import { WorkspaceFileBar } from "./WorkspaceFileBar.js";
+import type { WordEditorHandle } from "./office/WordEditor.js";
 import { buildDragFilePanel, hiddenDragImage } from "./chat/smart-input/drag-utils.js";
 import { DEFAULT_UPLOAD_MAX_LABEL, getOversizedFiles } from "../utils/upload-limits.js";
 import "@earendil-works/pi-web-ui";
@@ -37,6 +40,7 @@ import "@earendil-works/pi-web-ui";
 const PptxPreview = lazy(() => import("./office/PptxPreview.js"));
 const DocxPreview = lazy(() => import("./office/DocxPreview.js"));
 const XlsxPreview = lazy(() => import("./office/XlsxPreview.js"));
+const WordEditor = lazy(() => import("./office/WordEditor.js"));
 
 const MAX_STREAMING_MARKDOWN_FORMAT_CHARS = 160_000;
 type PreviewFileHandler = (minimumWidth: number) => void | Promise<void>;
@@ -599,7 +603,12 @@ function isStreamingMarkdownPreview(preview: StreamingWorkspacePreview): boolean
 
 /* ---------- File Content Pane (preview + edit) ---------- */
 
-function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = false }: { onToggleSidebar?: () => void; sidebarOpen: boolean; emptyWhenUnselected?: boolean }) {
+interface WordEditingSession {
+	file: WorkspaceFileDetail;
+	workspaceId: string | null;
+}
+
+function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = false, wordEditing, onEditWord }: { onToggleSidebar?: () => void; sidebarOpen: boolean; emptyWhenUnselected?: boolean; wordEditing: WordEditingSession | null; onEditWord(file: WorkspaceFileDetail, workspaceId: string | null): void }) {
 	const { t } = useTranslation();
 	const state = useStoreSnapshot(workspaceStore, () => ({
 		file: workspaceStore.currentFile,
@@ -619,40 +628,38 @@ function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = f
 	if (state.streamingPreview) {
 		return <StreamingPreviewPane key={state.streamingPreview.id} preview={state.streamingPreview} onToggleSidebar={onToggleSidebar} sidebarOpen={sidebarOpen} />;
 	}
-	if (state.activePreviewPath === WORKSPACE_START_TAB) return <WorkspaceStartPage />;
+	if (isStartTabKey(state.activePreviewPath)) return <WorkspaceStartPage />;
 	if (emptyWhenUnselected && !state.activePreviewPath && !state.file) return null;
+	// While the inline DOCX editor owns this tab it also renders the shared file
+	// bar; a second bar underneath would duplicate the title and actions.
+	if (wordEditing) return null;
 
 	if (state.isEditing && state.file) {
 		const isMd = state.file.kind === "markdown";
 		return (
 			<div className="flex h-full flex-col">
-				{/* Editor toolbar */}
-				<div className="inno-workspace-content-toolbar flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
-					<div className="min-w-0">
-						<FileName name={state.file.name} className="text-sm font-medium" />
-						<div className="truncate text-[10px] text-[var(--inno-text-muted)]">{t("files.editing", "Editing")} · {state.file.path}</div>
-					</div>
-					<div className="flex items-center gap-1.5">
-						<Button
-							size="xs"
-							variant="primary"
-							disabled={state.isSaving}
-							onClick={() => void workspaceStore.saveFile()}
-						>
-							<Save size={12} />
-							{t("common.save", "Save")}
-						</Button>
-						<Button
-							size="xs"
-							variant="secondary"
-							disabled={state.isSaving}
-							onClick={() => workspaceStore.cancelEditing()}
-						>
-							<X size={12} />
-							{t("common.cancel", "Cancel")}
-						</Button>
-					</div>
-				</div>
+				<WorkspaceFileBar name={state.file.name} path={state.file.path} onToggleSidebar={onToggleSidebar} sidebarOpen={sidebarOpen}>
+					<Button
+						size="xs"
+						variant="primary"
+						aria-label={t("common.save", "Save")}
+						disabled={state.isSaving}
+						onClick={() => void workspaceStore.saveFile()}
+					>
+						<Save size={14} />
+						<span className="inno-filebar-action-label">{t("common.save", "Save")}</span>
+					</Button>
+					<Button
+						size="xs"
+						variant="secondary"
+						aria-label={t("common.cancel", "Cancel")}
+						disabled={state.isSaving}
+						onClick={() => workspaceStore.cancelEditing()}
+					>
+						<X size={14} />
+						<span className="inno-filebar-action-label">{t("common.cancel", "Cancel")}</span>
+					</Button>
+				</WorkspaceFileBar>
 				{/* Reusing CodeMirror across file tabs merges their undo histories.
 				    Remount both editor kinds per path; drafts remain owned by the store. */}
 				<div key={state.activePreviewPath} className="min-h-0 flex-1">
@@ -669,38 +676,22 @@ function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = f
 	// Read-only view
 	return (
 		<div className="flex h-full flex-col">
-			<div className="inno-workspace-content-toolbar flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
-				<div className="flex min-w-0 flex-1 items-center gap-2">
-					{onToggleSidebar ? <IconButton
+			<WorkspaceFileBar name={state.file?.name ?? t("preview.noFile", "No file selected")} path={state.file?.path} onToggleSidebar={onToggleSidebar} sidebarOpen={sidebarOpen}>
+				{state.file && state.fileWorkspaceId === state.workspaceId ? <RunButton filePath={state.file.path} /> : null}
+				{state.file?.format === "docx" ? <Button variant="ghost" size="xs" aria-label={t("common.edit", "Edit")} title={t("common.edit", "Edit")} disabled={state.isLoadingFile} onClick={() => onEditWord(state.file!, state.fileWorkspaceId)}>
+					<Pencil size={14} /><span className="inno-filebar-action-label">{t("common.edit", "Edit")}</span>
+				</Button> : null}
+				{canEdit && (
+					<Button
+						variant="secondary"
 						size="xs"
-						className="inno-workspace-pane-toggle shrink-0"
-						onClick={onToggleSidebar}
-						title={sidebarOpen ? t("common.collapseSidebar", "Collapse sidebar") : t("common.expandSidebar", "Expand sidebar")}
-						aria-label={sidebarOpen ? t("common.collapseSidebar", "Collapse sidebar") : t("common.expandSidebar", "Expand sidebar")}
+						onClick={() => workspaceStore.startEditing()}
 					>
-						{sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-					</IconButton> : null}
-					<div className="min-w-0">
-						{state.file ? <FileName name={state.file.name} className="text-sm font-medium" /> : <div className="text-sm font-medium">{t("preview.noFile", "No file selected")}</div>}
-						<div className="truncate text-[10px] text-[var(--inno-text-muted)]">
-							{state.file ? `${state.file.path} · ${formatSize(state.file.size)}` : t("preview.selectFile", "Select a file to preview")}
-						</div>
-					</div>
-				</div>
-				<div className="flex items-center gap-2">
-					{state.file && state.fileWorkspaceId === state.workspaceId ? <RunButton filePath={state.file.path} /> : null}
-					{canEdit && (
-						<Button
-							variant="secondary"
-							size="xs"
-							onClick={() => workspaceStore.startEditing()}
-						>
-							<Pencil size={12} />
-							{t("common.edit", "Edit")}
-						</Button>
-					)}
-				</div>
-			</div>
+						<Pencil size={12} />
+						<span className="inno-filebar-action-label">{t("common.edit", "Edit")}</span>
+					</Button>
+				)}
+			</WorkspaceFileBar>
 			<div className="workspace-scroll min-h-0 flex-1 overflow-auto">
 				{state.error ? <div className="p-4 text-sm text-[var(--inno-danger)]">{state.error}</div> : null}
 				{!state.error && state.file ? <Preview file={state.file} isLoading={state.isLoadingFile} /> : null}
@@ -771,7 +762,6 @@ function createWorkspaceDragImage(items: ReadonlyArray<WorkspaceDragItem>): HTML
 }
 
 function Node({ node, style, dragHandle, onPreviewFile, isSidebar = false }: NodeRendererProps<ArboristNode> & { onPreviewFile?: PreviewFileHandler; isSidebar?: boolean }) {
-	const { t } = useTranslation();
 	const rowRef = useRef<HTMLDivElement>(null);
 	const isDir = !node.isLeaf;
 	const isFileDragSource = node.isLeaf && !node.isEditing;
@@ -924,9 +914,7 @@ function Node({ node, style, dragHandle, onPreviewFile, isSidebar = false }: Nod
 			)}
 		</div>
 	);
-	return isFileDragSource
-		? <Tooltip label={t("chat.smartInput.dragToAttach", "拖到输入框添加到文件区")}>{row}</Tooltip>
-		: row;
+	return row;
 }
 
 /* ---------- Context Menu ---------- */
@@ -1081,6 +1069,19 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 	const [deleteConfirm, setDeleteConfirm] = useState<{ ids: string[] } | null>(null);
 	const [isDragOver, setIsDragOver] = useState(false);
 	const [uploadError, setUploadError] = useState("");
+	// Width changes unmount FileContentPane. Own the editor sessions here so
+	// resizing cannot discard an active document draft, and keep each file/
+	// workspace owner fixed. Every open document gets its own mounted editor
+	// instance keyed by tab key, so parallel drafts, undo histories and edit
+	// positions survive tab switches. Editors render inline in the preview pane.
+	const [wordSessions, setWordSessions] = useState<WordEditingSession[]>([]);
+	const wordSessionsRef = useRef<WordEditingSession[]>([]);
+	const wordEditorRefs = useRef(new Map<string, WordEditorHandle>());
+	// Closing a session's tab while it holds unsaved work routes through this
+	// confirmation instead of losing the draft. Switching tabs never closes a
+	// session, so tab activation alone never triggers it.
+	const [wordLeaveConfirm, setWordLeaveConfirm] = useState<null | { tabKey: string; name: string }>(null);
+	const [wordSaving, setWordSaving] = useState(false);
 	const uploadErrorTimerRef = useRef<number | null>(null);
 	const [multiSelectMode, setMultiSelectMode] = useState(false);
 	const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
@@ -1096,6 +1097,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 		isMutating: workspaceStore.isMutating,
 		activeWorkspaceId: workspaceStore.activeWorkspaceId,
 		fileWorkspaceId: workspaceStore.currentFileWorkspaceId,
+		activePreviewPath: workspaceStore.activePreviewPath,
 	}));
 	const wsState = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
@@ -1105,7 +1107,92 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 	}));
 	// Desktop file management lives in the left sidebar. Its right preview must
 	// stay visible at every width instead of reserving space for a duplicate tree.
-	const showContent = !isSidebar && (isPreview || !sidebarOpen || panelWidth >= CONTENT_REVEAL_WIDTH);
+	// Any active DOCX session pins the pane open: unmounting it would discard the draft.
+	const hasWordSessions = wordSessions.length > 0;
+	const showContent = !isSidebar && (isPreview || !sidebarOpen || panelWidth >= CONTENT_REVEAL_WIDTH || hasWordSessions);
+
+	// Each editor is visible only while its own tab is active; switching tabs
+	// keeps every session mounted (hidden, inert) so drafts survive round trips.
+	const activeWordSession = wordSessions.find((session) => previewTabKey({ path: session.file.path, workspaceId: session.workspaceId }) === state.activePreviewPath) ?? null;
+
+	// Every session mutation goes through these helpers so the ref mirror and
+	// the state stay in lockstep; the close guard reads the synchronous mirror.
+	const openWordSession = useCallback((session: WordEditingSession) => {
+		const key = previewTabKey({ path: session.file.path, workspaceId: session.workspaceId });
+		if (wordSessionsRef.current.some((current) => previewTabKey({ path: current.file.path, workspaceId: current.workspaceId }) === key)) return;
+		wordSessionsRef.current = [...wordSessionsRef.current, session];
+		setWordSessions(wordSessionsRef.current);
+	}, []);
+	const closeWordSession = useCallback((key: string) => {
+		const session = wordSessionsRef.current.find((current) => previewTabKey({ path: current.file.path, workspaceId: current.workspaceId }) === key);
+		if (!session) return;
+		wordSessionsRef.current = wordSessionsRef.current.filter((current) => current !== session);
+		setWordSessions(wordSessionsRef.current);
+		return session;
+	}, []);
+
+	const openEditWord = useCallback((file: WorkspaceFileDetail, workspaceId: string | null) => {
+		const key = previewTabKey({ path: file.path, workspaceId });
+		// Reopening a file reuses its running session and tab; a new document
+		// joins the existing sessions without touching their drafts.
+		openWordSession({ file, workspaceId });
+		if (workspaceStore.activePreviewPath !== key) workspaceStore.activatePreview(key);
+	}, [openWordSession]);
+
+	const closeWordEditor = useCallback((key: string) => {
+		const session = closeWordSession(key);
+		if (!session) return;
+		void workspaceStore.selectFile(session.file.path, () => true, session.workspaceId);
+	}, [closeWordSession]);
+
+	// One guard for the whole close family (closePreview/closeOther/toRight/all/
+	// deleteItem). A dirty session vetoes its own tab and raises the shared
+	// confirmation; clean sessions may close, and the unmount watcher ends them.
+	useEffect(() => {
+		if (!hasWordSessions) return;
+		workspaceStore.wordEditCloseGuard = (tabKey) => {
+			const session = wordSessionsRef.current.find((current) => previewTabKey({ path: current.file.path, workspaceId: current.workspaceId }) === tabKey);
+			if (!session || !wordEditorRefs.current.get(tabKey)?.isDirty()) return false;
+			setWordLeaveConfirm({ tabKey, name: session.file.name });
+			return true;
+		};
+		return () => { workspaceStore.wordEditCloseGuard = null; };
+	}, [hasWordSessions]);
+
+	// A clean session's tab can close without the guard (dirty closes are
+	// vetoed). When a tab disappears, end its session so the hidden editor
+	// does not linger for a file the user already closed.
+	useEffect(() => {
+		if (!hasWordSessions) return;
+		const endOrphanedSessions = () => {
+			let changed = false;
+			wordSessionsRef.current = wordSessionsRef.current.filter((session) => {
+				const orphaned = !workspaceStore.previewTabs.some((tab) => previewTabKey(tab) === previewTabKey({ path: session.file.path, workspaceId: session.workspaceId }));
+				changed = changed || orphaned;
+				return !orphaned;
+			});
+			if (changed) setWordSessions(wordSessionsRef.current);
+		};
+		endOrphanedSessions();
+		return workspaceStore.on("change", endOrphanedSessions);
+	}, [hasWordSessions]);
+
+	const finishWordLeave = useCallback(async (mode: "discard" | "save", tabKey: string) => {
+		if (mode === "save") {
+			setWordSaving(true);
+			let clean = false;
+			try { clean = (await wordEditorRefs.current.get(tabKey)?.save()) ?? false; } finally { setWordSaving(false); }
+			if (!clean) { setWordLeaveConfirm(null); return; }
+		}
+		// The session must leave the mirror before the close so the guard
+		// re-runs against a session that no longer exists and lets it through.
+		closeWordSession(tabKey);
+		setWordLeaveConfirm(null);
+		workspaceStore.closePreview(tabKey);
+		// Closing the last file tab returns to a start page instead of an empty
+		// pane — the same fallback the tab strip's close button applies.
+		if (!workspaceStore.previewTabs.length && !workspaceStore.streamingPreview) workspaceStore.openStartPage();
+	}, [closeWordSession]);
 
 	// Measure the panel width to decide whether the content pane fits.
 	useLayoutEffect(() => {
@@ -1668,8 +1755,65 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 			{/* --- Preview / Edit pane --- */}
 			{showContent ? (
 				<section className="inno-workspace-card inno-workspace-pane inno-workspace-preview-pane flex min-w-0 min-h-0 flex-col overflow-hidden rounded-xl">
-					<div className="flex min-h-0 flex-1 flex-col">
-						<FileContentPane onToggleSidebar={isPreview ? undefined : () => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} emptyWhenUnselected={isPreview} />
+					<div className="relative flex min-h-0 flex-1 flex-col">
+						<FileContentPane
+							onToggleSidebar={isPreview ? undefined : () => setSidebarOpen((v) => !v)}
+							sidebarOpen={sidebarOpen}
+							emptyWhenUnselected={isPreview}
+							wordEditing={activeWordSession}
+							onEditWord={openEditWord}
+						/>
+						{/* Inline DOCX editor layers, one per open document. Hidden (not
+						    unmounted) while another tab is active so every draft, undo
+						    history and edit position survives tab switches; `inert` keeps
+						    hidden engines from taking focus or shortcuts. */}
+						{wordSessions.map((session) => {
+							const key = previewTabKey({ path: session.file.path, workspaceId: session.workspaceId });
+							const tabActive = key === state.activePreviewPath;
+							return (
+								<div key={key} className={`absolute inset-0 flex flex-col ${tabActive ? "" : "invisible"}`} inert={!tabActive || undefined} aria-hidden={!tabActive || undefined}>
+									<Suspense fallback={<div role="status" className="flex flex-1 items-center justify-center text-sm text-[var(--inno-text-muted)]">{t("wordEditor.loading")}</div>}>
+										<WordEditor
+											ref={(handle) => { if (handle) wordEditorRefs.current.set(key, handle); else wordEditorRefs.current.delete(key); }}
+											file={session.file}
+											workspaceId={session.workspaceId}
+											active={tabActive}
+											onClose={() => closeWordEditor(key)}
+										/>
+									</Suspense>
+								</div>
+							);
+						})}
+						{/* DOCX leave confirmation: closing a session's tab while its
+						    editor holds unsaved work. Switching tabs never closes a
+						    session, so tab activation alone never reaches this dialog;
+						    the outcome ends only the confirmed file's session and tab.
+						    Rendered inside the preview pane (Dialog scoped
+						    mode) so the dialog and mask center on the document pane instead
+						    of the whole window; it sits outside the hidden editor layer so
+						    it stays visible when the editor tab is backgrounded. */}
+						{wordLeaveConfirm ? (
+							<Dialog scoped label={t("wordEditor.closeTitle")} className="inno-word-confirm-dialog" onClose={() => setWordLeaveConfirm(null)}>
+								<div className="inno-word-confirm-card flex flex-col gap-5 p-6">
+									<div>
+										<h2 className="text-base font-medium">{t("wordEditor.closeTitle")}</h2>
+										<p className="mt-2 text-sm text-[var(--inno-text-muted)]">{t("wordEditor.closeMessage")}</p>
+									</div>
+									<div className="flex flex-wrap justify-end gap-2">
+										<Button size="sm" onClick={() => setWordLeaveConfirm(null)}>
+											{t("wordEditor.continueEditing")}
+										</Button>
+										<Button size="sm" disabled={wordSaving} onClick={() => void finishWordLeave("discard", wordLeaveConfirm.tabKey)}>
+											{t("wordEditor.discard")}
+										</Button>
+										<Button variant="primary" size="sm" disabled={wordSaving} onClick={() => void finishWordLeave("save", wordLeaveConfirm.tabKey)}>
+											{wordSaving ? <Spinner size={14} /> : <Save size={14} />}
+											{t("wordEditor.saveAndClose")}
+										</Button>
+									</div>
+								</div>
+							</Dialog>
+						) : null}
 					</div>
 				</section>
 			) : null}

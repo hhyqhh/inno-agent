@@ -421,7 +421,9 @@ function openMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    minWidth: 800,
+    // Match the 560px chat minimum plus the persistent 52px desktop rail.
+    // The old native 800px floor blocked shrinking before renderer layout ran.
+    minWidth: 612,
     minHeight: 600,
     title: "Inno Agent",
     // Keep the macOS traffic lights, but let the renderer own the area below

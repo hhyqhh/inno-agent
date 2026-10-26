@@ -53,6 +53,9 @@ import { handleCheckInsRoutes } from "./server/routes/checkins.js";
 import { handleSettingsRoutes } from "./server/routes/settings.js";
 import { handleSkillsRoutes } from "./server/routes/skills.js";
 import { handleWorkspacesRoutes } from "./server/routes/workspaces.js";
+import { WordDocumentService } from "./office/word-document.js";
+import { createSystemFontService } from "./office/system-fonts.js";
+import { handleSystemFontRoutes } from "./server/routes/system.js";
 import { handleSessionsRoutes } from "./server/routes/sessions.js";
 import { handleSearchRoutes } from "./server/routes/search.js";
 import { handleLearnerRoutes } from "./server/routes/learner.js";
@@ -1185,7 +1188,16 @@ async function runQueueOpWithTimeout<T>(
 	}
 }
 
+const wordEditor = new WordDocumentService(dataDir, async (id) => {
+	const workspace = (await workspaceRegistry.listWorkspacesAsync()).find((entry) => entry.id === id);
+	return workspace ? workspaceRegistry.resolveWorkspaceDirAsync(workspace) : null;
+});
+
+const systemFonts = createSystemFontService();
 const { dispatch: dispatchRoutes } = createRouteDispatcher({
+	// --- System fonts (same-origin bytes for the DOCX editor) ---
+	system: (req, res, method, url) => handleSystemFontRoutes(req, res, method, url, systemFonts),
+
 	// --- Check-ins API ---
 	checkins: (req, res, method, url) => handleCheckInsRoutes(req, res, method, url, { checkInStore }),
 
@@ -1257,7 +1269,7 @@ const { dispatch: dispatchRoutes } = createRouteDispatcher({
 
 	// --- Workspace API + registry + session binding (extracted to server/routes/workspaces.ts) ---
 	workspaces: (req, res, method, url) => handleWorkspacesRoutes(req, res, method, url, {
-		workspaceRegistry, dataDir, paths,
+		workspaceRegistry, dataDir, paths, wordEditor,
 		installSkillZip, installSkillMarkdown, scheduleSkillsReload, importWorkspaceZip,
 		sessionFileFromId,
 		releaseQueueFromQuestionBlockedTurn, runQueueOpWithTimeout,

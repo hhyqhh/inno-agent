@@ -22,6 +22,7 @@ apps/*/web/dist/
 # Local agent / tooling outputs
 graphify-out/
 .claude/
+.tmp/
 
 # Icon build intermediates (keep icon.svg/icns/png)
 build/icon.iconset/

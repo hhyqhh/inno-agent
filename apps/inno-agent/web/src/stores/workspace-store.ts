@@ -50,12 +50,23 @@ export interface WorkspacePreviewTab extends FilePreviewState {
 }
 
 export function previewTabKey(tab: Pick<WorkspacePreviewTab, "path" | "workspaceId">): string {
-	return tab.path === WORKSPACE_START_TAB || !tab.workspaceId ? tab.path : JSON.stringify([tab.workspaceId, tab.path]);
+	if (isStartTabKey(tab.path)) return tab.path;
+	return !tab.workspaceId ? tab.path : JSON.stringify([tab.workspaceId, tab.path]);
 }
 
 // Workspace file paths are relative; this absolute key cannot collide with one.
+// It is also the prefix of every start-tab key: the tab strip's "+" mints a new
+// key (`<prefix>#<n>`) per click so multiple start pages can coexist.
 export const WORKSPACE_START_TAB = "/__inno_start__";
 export const WORKSPACE_CONVERSATION_TAB = "/__inno_conversation__";
+
+export function isStartTabKey(key: string | null | undefined): boolean {
+	return typeof key === "string" && key.startsWith(WORKSPACE_START_TAB);
+}
+
+export function isStartTab(tab: Pick<WorkspacePreviewTab, "path">): boolean {
+	return isStartTabKey(tab.path);
+}
 export interface RecentWorkspaceFile {
 	workspaceId: string | null;
 	path: string;
@@ -115,6 +126,12 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	isMutating = false;
 	error = "";
 	streamingPreview: StreamingWorkspacePreview | null = null;
+	/**
+	 * Installed by the DOCX editor host while a BetterOffice session may hold
+	 * unsaved work for its tab. Returning true vetoes the close; the host owns
+	 * the confirmation UI and completes (or abandons) the close itself.
+	 */
+	wordEditCloseGuard: ((tabKey: string) => boolean) | null = null;
 
 	/** The workspace currently shown in the panel. null → server default. */
 	activeWorkspaceId: string | null = null;
@@ -122,6 +139,7 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	private treeRequestId = 0;
 	private fileRequestId = 0;
 	private activityRequestId = 0;
+	private startTabSeq = 0;
 
 	private notifyPreview(): void {
 		this.previewTabs = [...this.previewTabs];
@@ -129,10 +147,21 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	}
 
 	openStartPage(): void {
-		if (!this.previewTabs.some((tab) => tab.path === WORKSPACE_START_TAB)) {
-			this.previewTabs = [...this.previewTabs, { ...emptyFilePreview(), path: WORKSPACE_START_TAB, name: "" }];
+		const startTabs = this.previewTabs.filter(isStartTab);
+		if (startTabs.length) {
+			// Panel-open entries reuse the most recent start page; duplicates come
+			// only from the tab strip's "+" via newStartPage().
+			this.activatePreview(previewTabKey(startTabs[startTabs.length - 1]));
+			return;
 		}
-		this.activatePreview(WORKSPACE_START_TAB);
+		this.newStartPage();
+	}
+
+	/** Mint a fresh start-page tab; the "+" button allows repeated start tabs. */
+	newStartPage(): void {
+		const key = `${WORKSPACE_START_TAB}#${++this.startTabSeq}`;
+		this.previewTabs = [...this.previewTabs, { ...emptyFilePreview(), path: key, name: "" }];
+		this.activatePreview(key);
 	}
 
 	private persistRecentFiles(): void {
@@ -157,6 +186,7 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	}
 
 	closePreview(path: string): void {
+		if (this.wordEditCloseGuard?.(path)) return;
 		const index = this.previewTabs.findIndex((tab) => previewTabKey(tab) === path);
 		if (index < 0) return;
 		this.previewTabs = this.previewTabs.filter((tab) => previewTabKey(tab) !== path);
@@ -170,7 +200,8 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	/** Close every tab except `path`; if the active tab was closed, fall back to `path`. */
 	closeOtherPreviews(path: string): void {
 		if (!this.previewTabs.some((tab) => previewTabKey(tab) === path)) return;
-		this.previewTabs = this.previewTabs.filter((tab) => previewTabKey(tab) === path);
+		// Guarded tabs survive the bulk close; only unvetoed tabs are removed.
+		this.previewTabs = this.previewTabs.filter((tab) => previewTabKey(tab) === path || !!this.wordEditCloseGuard?.(previewTabKey(tab)));
 		if (!this.previewTabs.some((tab) => previewTabKey(tab) === this.activePreviewPath)) this.activePreviewPath = path;
 		this.notifyPreview();
 	}
@@ -179,15 +210,19 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 	closePreviewsToRight(path: string): void {
 		const index = this.previewTabs.findIndex((tab) => previewTabKey(tab) === path);
 		if (index < 0 || index === this.previewTabs.length - 1) return;
-		this.previewTabs = this.previewTabs.slice(0, index + 1);
+		// Tabs up to `path` are never touched; later tabs close unless vetoed.
+		this.previewTabs = this.previewTabs.filter((tab, position) => position <= index || !!this.wordEditCloseGuard?.(previewTabKey(tab)));
 		if (!this.previewTabs.some((tab) => previewTabKey(tab) === this.activePreviewPath)) this.activePreviewPath = path;
 		this.notifyPreview();
 	}
 
 	closeAllPreviews(): void {
 		if (!this.previewTabs.length) return;
-		this.previewTabs = [];
-		this.activePreviewPath = null;
+		this.previewTabs = this.previewTabs.filter((tab) => !!this.wordEditCloseGuard?.(previewTabKey(tab)));
+		if (!this.previewTabs.some((tab) => previewTabKey(tab) === this.activePreviewPath)) {
+			const next = this.previewTabs[this.previewTabs.length - 1];
+			this.activePreviewPath = next ? previewTabKey(next) : null;
+		}
 		this.activeSurface = "preview";
 		this.notifyPreview();
 	}
@@ -272,13 +307,33 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 		}
 	}
 
-	async selectFile(path: string, isCurrent: () => boolean = () => true, ownerWorkspaceId: string | null = this.activeWorkspaceId): Promise<void> {
+	async selectFile(path: string, isCurrent: () => boolean = () => true, ownerWorkspaceId: string | null = this.activeWorkspaceId, options?: { replaceStartTab?: boolean }): Promise<void> {
 		if (!isCurrent()) return;
-		if (path === WORKSPACE_START_TAB) { this.openStartPage(); return; }
+		if (isStartTabKey(path)) { this.openStartPage(); return; }
 		this.activeSurface = "preview";
 		const workspaceId = ownerWorkspaceId ?? undefined;
 		const key = previewTabKey({ path, workspaceId });
-		let tab = this.previewTabs.find((item) => previewTabKey(item) === key);
+		let tab: WorkspacePreviewTab | undefined;
+		if (options?.replaceStartTab) {
+			// Opening a file from a start page navigates that tab in place
+			// (browser-style). If the file already has a tab, switch to it and
+			// retire the start page: tab keys are unique per file+workspace, so
+			// duplicate file tabs are not representable.
+			const startTab = this.previewTabs.find((item) => isStartTab(item) && previewTabKey(item) === this.activePreviewPath);
+			if (startTab) {
+				const existing = this.previewTabs.find((item) => previewTabKey(item) === key);
+				if (existing) {
+					this.previewTabs = this.previewTabs.filter((item) => item !== startTab);
+					tab = existing;
+				} else {
+					startTab.path = path;
+					startTab.name = path.split("/").pop() || path;
+					startTab.workspaceId = ownerWorkspaceId;
+					tab = startTab;
+				}
+			}
+		}
+		if (!tab) tab = this.previewTabs.find((item) => previewTabKey(item) === key);
 		if (!tab) {
 			tab = { ...emptyFilePreview(), path, workspaceId: ownerWorkspaceId, name: path.split("/").pop() || path };
 			this.previewTabs = [...this.previewTabs, tab];

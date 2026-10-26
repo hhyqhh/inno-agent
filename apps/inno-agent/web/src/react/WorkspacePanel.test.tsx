@@ -6,7 +6,7 @@ import { InnoDndProvider } from "./ui/dnd-backend.js";
 import { IconButton } from "./ui/index.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { terminalStore } from "../stores/terminal-store.js";
-import { workspaceStore, WORKSPACE_START_TAB } from "../stores/workspace-store.js";
+import { workspaceStore, isStartTabKey } from "../stores/workspace-store.js";
 import type { WorkspaceMode } from "../stores/app-store.js";
 import { DesktopWindowChrome } from "./DesktopWindowChrome.js";
 import { WorkspacePanel } from "./WorkspacePanel.js";
@@ -93,7 +93,7 @@ describe("Workspace header controls", () => {
 		const toolbar = toggle.closest(".inno-window-chrome") as HTMLElement;
 		fireEvent.click(toggle);
 		const close = screen.getByRole("button", { name: "workspace.collapseWorkspace" });
-		if (desktop) expect(workspaceStore.activePreviewPath).toBe(WORKSPACE_START_TAB);
+		if (desktop) expect(isStartTabKey(workspaceStore.activePreviewPath)).toBe(true);
 		expect(within(toolbar).getByRole("button", { name: "workspace.collapseWorkspace" })).toBe(toggle);
 		expect(close.getAttribute("aria-expanded")).toBe("true");
 		expect(close.closest(".inno-workspace-header")).toBeNull();

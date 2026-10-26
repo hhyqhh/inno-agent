@@ -240,7 +240,16 @@ export default defineConfig({
 			"/health": "http://127.0.0.1:3000",
 		},
 	},
+	worker: {
+		// BetterOffice 0.5.0 spawns its resident layout engine through
+		// `new Worker(new URL(...))`; code-splitting that worker requires ESM
+		// output (Vite's iife default cannot split chunks).
+		format: "es",
+	},
 	build: {
+		// DOCX's HarfBuzz WASM loader uses top-level await. The desktop shell
+		// and supported current browsers provide ES2022 module evaluation.
+		target: "es2022",
 		// The editor and office-preview dependencies are intentionally lazy-loaded
 		// and can produce large, standalone chunks. Keep the warning focused on
 		// accidental growth of the initial application payload.

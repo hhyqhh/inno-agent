@@ -19,7 +19,19 @@ description: >-
    - `要点`(3–5 条,每条一行)
    - `备注`(演讲者口播稿)
    - `视觉`(图表 / 配图 / 版式建议)
-4. **导出到工作区**:写成 Markdown 幻灯片文件,用 `---` 作为分页符,保存到当前工作区根目录(如 `deck.md`)。若环境具备 pptx 生成能力则同时产出 `.pptx`。
+4. **导出 pptx**:调用 `office_create_document`,path 以 `.pptx` 结尾,`slides` 传入幻灯片 DSL(见下),`accent` 给主题色(如 `#2563EB`)。同时把大纲与逐页内容写一份 Markdown 幻灯片(`---` 分页)到工作区,方便用户改稿。
+5. **版式校验**:生成后调用 `office_render_document`(format="png"),read 查看每页截图,检查文字溢出、错位、空白页;发现问题改 DSL 重新生成并复检,直到版式正常再交付。
+
+## 幻灯片 DSL(office_create_document 的 slides 参数)
+
+每页一个对象:`{ "layout": ..., "title": ..., ... }`,支持四种版式:
+
+- `title`:封面。字段:`title`、`subtitle`。
+- `section`:分节页(整幅主题色横幅)。字段:`title`。
+- `bullets`:标题 + 要点列表。字段:`title`、`bullets`(3–5 条字符串)。
+- `two_column`:标题 + 左右两栏。字段:`title`、`left`、`right`(各为字符串数组)。
+
+所有版式都可选 `notes`(演讲者备注口播稿)。页数多时先确认大纲再逐页展开。
 
 ## Markdown 幻灯片格式
 

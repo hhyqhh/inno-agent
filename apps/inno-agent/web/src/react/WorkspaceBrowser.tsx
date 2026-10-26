@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { DragDropManager } from "dnd-core";
 import { Tree, type NodeRendererProps, type TreeApi, type CreateHandler, type RenameHandler, type DeleteHandler, type MoveHandler } from "react-arborist";
 import { RefreshCw, FileText, FileType, Globe, File, FolderOpen, Folder, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Sparkles, Download, ExternalLink, FileCode2, Presentation, FileSpreadsheet, Copy, Check, ListChecks, Trash2, Search, ChevronRight } from "lucide-react";
-import { workspaceStore, WORKSPACE_START_TAB, type StreamingWorkspacePreview } from "../stores/workspace-store.js";
+import { workspaceStore, isStartTabKey, previewTabKey, type StreamingWorkspacePreview } from "../stores/workspace-store.js";
 import { WorkspaceStartPage } from "./WorkspaceStartPage.js";
 import { workspaceFileUrl, workspaceFolderZipUrl, triggerDownload } from "../api/workspace.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
@@ -28,12 +28,16 @@ import {
 } from "./ui/index.js";
 import { getLongPressHandlers } from "./ui/long-press.js";
 import { FileName } from "./FileName.js";
+import { WorkspaceFileBar } from "./WorkspaceFileBar.js";
+import { OfficeEditorSession, type OfficeSessionHandle } from "./office/OfficeEditorSession.js";
 import { buildDragFilePanel, hiddenDragImage } from "./chat/smart-input/drag-utils.js";
 import { DEFAULT_UPLOAD_MAX_LABEL, getOversizedFiles } from "../utils/upload-limits.js";
 import "@earendil-works/pi-web-ui";
 
 // Heavy office renderers are lazy-loaded so docx-preview / xlsx stay off the
 // critical path and only download when an office file is actually opened.
+// pptx/xlsx edit modes embed separate editor chunks (PPTist iframe /
+// Univer sheets).
 const PptxPreview = lazy(() => import("./office/PptxPreview.js"));
 const DocxPreview = lazy(() => import("./office/DocxPreview.js"));
 const XlsxPreview = lazy(() => import("./office/XlsxPreview.js"));
@@ -599,7 +603,7 @@ function isStreamingMarkdownPreview(preview: StreamingWorkspacePreview): boolean
 
 /* ---------- File Content Pane (preview + edit) ---------- */
 
-function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = false }: { onToggleSidebar?: () => void; sidebarOpen: boolean; emptyWhenUnselected?: boolean }) {
+function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = false, officeEditingActive, onEditOffice }: { onToggleSidebar?: () => void; sidebarOpen: boolean; emptyWhenUnselected?: boolean; officeEditingActive: boolean; onEditOffice(file: WorkspaceFileDetail, workspaceId: string | null): void }) {
 	const { t } = useTranslation();
 	const state = useStoreSnapshot(workspaceStore, () => ({
 		file: workspaceStore.currentFile,
@@ -619,40 +623,36 @@ function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = f
 	if (state.streamingPreview) {
 		return <StreamingPreviewPane key={state.streamingPreview.id} preview={state.streamingPreview} onToggleSidebar={onToggleSidebar} sidebarOpen={sidebarOpen} />;
 	}
-	if (state.activePreviewPath === WORKSPACE_START_TAB) return <WorkspaceStartPage />;
+	if (isStartTabKey(state.activePreviewPath)) return <WorkspaceStartPage />;
 	if (emptyWhenUnselected && !state.activePreviewPath && !state.file) return null;
+	if (officeEditingActive) return null;
 
 	if (state.isEditing && state.file) {
 		const isMd = state.file.kind === "markdown";
 		return (
 			<div className="flex h-full flex-col">
-				{/* Editor toolbar */}
-				<div className="inno-workspace-content-toolbar flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
-					<div className="min-w-0">
-						<FileName name={state.file.name} className="text-sm font-medium" />
-						<div className="truncate text-[10px] text-[var(--inno-text-muted)]">{t("files.editing", "Editing")} · {state.file.path}</div>
-					</div>
-					<div className="flex items-center gap-1.5">
-						<Button
-							size="xs"
-							variant="primary"
-							disabled={state.isSaving}
-							onClick={() => void workspaceStore.saveFile()}
-						>
-							<Save size={12} />
-							{t("common.save", "Save")}
-						</Button>
-						<Button
-							size="xs"
-							variant="secondary"
-							disabled={state.isSaving}
-							onClick={() => workspaceStore.cancelEditing()}
-						>
-							<X size={12} />
-							{t("common.cancel", "Cancel")}
-						</Button>
-					</div>
-				</div>
+				<WorkspaceFileBar name={state.file.name} path={state.file.path} onToggleSidebar={onToggleSidebar} sidebarOpen={sidebarOpen}>
+					<Button
+						size="xs"
+						variant="primary"
+						aria-label={t("common.save", "Save")}
+						disabled={state.isSaving}
+						onClick={() => void workspaceStore.saveFile()}
+					>
+						<Save size={14} />
+						<span className="inno-filebar-action-label">{t("common.save", "Save")}</span>
+					</Button>
+					<Button
+						size="xs"
+						variant="secondary"
+						aria-label={t("common.cancel", "Cancel")}
+						disabled={state.isSaving}
+						onClick={() => workspaceStore.cancelEditing()}
+					>
+						<X size={14} />
+						<span className="inno-filebar-action-label">{t("common.cancel", "Cancel")}</span>
+					</Button>
+				</WorkspaceFileBar>
 				{/* Reusing CodeMirror across file tabs merges their undo histories.
 				    Remount both editor kinds per path; drafts remain owned by the store. */}
 				<div key={state.activePreviewPath} className="min-h-0 flex-1">
@@ -669,38 +669,24 @@ function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = f
 	// Read-only view
 	return (
 		<div className="flex h-full flex-col">
-			<div className="inno-workspace-content-toolbar flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
-				<div className="flex min-w-0 flex-1 items-center gap-2">
-					{onToggleSidebar ? <IconButton
+			<WorkspaceFileBar name={state.file?.name ?? t("preview.noFile", "No file selected")} path={state.file?.path} onToggleSidebar={onToggleSidebar} sidebarOpen={sidebarOpen}>
+				{state.file && state.fileWorkspaceId === state.workspaceId ? <RunButton filePath={state.file.path} /> : null}
+				{state.file?.format === "pptx" || state.file?.format === "xlsx" ? (
+					<Button variant="ghost" size="xs" aria-label={t("common.edit", "Edit")} title={t("common.edit", "Edit")} disabled={state.isLoadingFile} onClick={() => onEditOffice(state.file!, state.fileWorkspaceId)}>
+						<Pencil size={14} /><span className="inno-filebar-action-label">{t("common.edit", "Edit")}</span>
+					</Button>
+				) : null}
+				{canEdit && (
+					<Button
+						variant="secondary"
 						size="xs"
-						className="inno-workspace-pane-toggle shrink-0"
-						onClick={onToggleSidebar}
-						title={sidebarOpen ? t("common.collapseSidebar", "Collapse sidebar") : t("common.expandSidebar", "Expand sidebar")}
-						aria-label={sidebarOpen ? t("common.collapseSidebar", "Collapse sidebar") : t("common.expandSidebar", "Expand sidebar")}
+						onClick={() => workspaceStore.startEditing()}
 					>
-						{sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-					</IconButton> : null}
-					<div className="min-w-0">
-						{state.file ? <FileName name={state.file.name} className="text-sm font-medium" /> : <div className="text-sm font-medium">{t("preview.noFile", "No file selected")}</div>}
-						<div className="truncate text-[10px] text-[var(--inno-text-muted)]">
-							{state.file ? `${state.file.path} · ${formatSize(state.file.size)}` : t("preview.selectFile", "Select a file to preview")}
-						</div>
-					</div>
-				</div>
-				<div className="flex items-center gap-2">
-					{state.file && state.fileWorkspaceId === state.workspaceId ? <RunButton filePath={state.file.path} /> : null}
-					{canEdit && (
-						<Button
-							variant="secondary"
-							size="xs"
-							onClick={() => workspaceStore.startEditing()}
-						>
-							<Pencil size={12} />
-							{t("common.edit", "Edit")}
-						</Button>
-					)}
-				</div>
-			</div>
+						<Pencil size={12} />
+						<span className="inno-filebar-action-label">{t("common.edit", "Edit")}</span>
+					</Button>
+				)}
+			</WorkspaceFileBar>
 			<div className="workspace-scroll min-h-0 flex-1 overflow-auto">
 				{state.error ? <div className="p-4 text-sm text-[var(--inno-danger)]">{state.error}</div> : null}
 				{!state.error && state.file ? <Preview file={state.file} isLoading={state.isLoadingFile} /> : null}
@@ -771,7 +757,6 @@ function createWorkspaceDragImage(items: ReadonlyArray<WorkspaceDragItem>): HTML
 }
 
 function Node({ node, style, dragHandle, onPreviewFile, isSidebar = false }: NodeRendererProps<ArboristNode> & { onPreviewFile?: PreviewFileHandler; isSidebar?: boolean }) {
-	const { t } = useTranslation();
 	const rowRef = useRef<HTMLDivElement>(null);
 	const isDir = !node.isLeaf;
 	const isFileDragSource = node.isLeaf && !node.isEditing;
@@ -924,9 +909,7 @@ function Node({ node, style, dragHandle, onPreviewFile, isSidebar = false }: Nod
 			)}
 		</div>
 	);
-	return isFileDragSource
-		? <Tooltip label={t("chat.smartInput.dragToAttach", "拖到输入框添加到文件区")}>{row}</Tooltip>
-		: row;
+	return row;
 }
 
 /* ---------- Context Menu ---------- */
@@ -1081,6 +1064,8 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 	const [deleteConfirm, setDeleteConfirm] = useState<{ ids: string[] } | null>(null);
 	const [isDragOver, setIsDragOver] = useState(false);
 	const [uploadError, setUploadError] = useState("");
+    const [officeSessions, setOfficeSessions] = useState<Array<{ file: WorkspaceFileDetail; workspaceId: string | null }>>([]);
+    const officeEditorRefs = useRef(new Map<string, OfficeSessionHandle>());
 	const uploadErrorTimerRef = useRef<number | null>(null);
 	const [multiSelectMode, setMultiSelectMode] = useState(false);
 	const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
@@ -1096,6 +1081,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 		isMutating: workspaceStore.isMutating,
 		activeWorkspaceId: workspaceStore.activeWorkspaceId,
 		fileWorkspaceId: workspaceStore.currentFileWorkspaceId,
+		activePreviewPath: workspaceStore.activePreviewPath,
 	}));
 	const wsState = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
@@ -1105,7 +1091,32 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 	}));
 	// Desktop file management lives in the left sidebar. Its right preview must
 	// stay visible at every width instead of reserving space for a duplicate tree.
-	const showContent = !isSidebar && (isPreview || !sidebarOpen || panelWidth >= CONTENT_REVEAL_WIDTH);
+	const showContent = !isSidebar && (isPreview || !sidebarOpen || panelWidth >= CONTENT_REVEAL_WIDTH || officeSessions.length > 0);
+
+    const startOfficeEdit = useCallback((file: WorkspaceFileDetail, workspaceId: string | null) => {
+        const key = previewTabKey({ path: file.path, workspaceId });
+        // Each tab owns one mounted engine; editing another file must not
+        // replace an existing engine or silently discard its draft.
+        setOfficeSessions((sessions) => sessions.some((session) => previewTabKey({ path: session.file.path, workspaceId: session.workspaceId }) === key)
+            ? sessions : [...sessions, { file, workspaceId }]);
+    }, []);
+    const closeOfficeEditor = useCallback((key: string) => {
+        setOfficeSessions((sessions) => sessions.filter((session) => previewTabKey({ path: session.file.path, workspaceId: session.workspaceId }) !== key));
+    }, []);
+    useEffect(() => {
+        if (isSidebar) return;
+        const guard = (key: string) => officeEditorRefs.current.get(key)?.requestCloseTab() ?? false;
+        workspaceStore.officeEditCloseGuard = guard;
+        return () => { if (workspaceStore.officeEditCloseGuard === guard) workspaceStore.officeEditCloseGuard = null; };
+    }, [isSidebar]);
+    useEffect(() => {
+        if (isSidebar) return;
+        const endOrphaned = () => setOfficeSessions((sessions) => {
+            const alive = sessions.filter((session) => workspaceStore.previewTabs.some((tab) => previewTabKey(tab) === previewTabKey({ path: session.file.path, workspaceId: session.workspaceId })));
+            return alive.length === sessions.length ? sessions : alive;
+        });
+        return workspaceStore.on("change", endOrphaned);
+    }, [isSidebar]);
 
 	// Measure the panel width to decide whether the content pane fits.
 	useLayoutEffect(() => {
@@ -1668,11 +1679,25 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 			{/* --- Preview / Edit pane --- */}
 			{showContent ? (
 				<section className="inno-workspace-card inno-workspace-pane inno-workspace-preview-pane flex min-w-0 min-h-0 flex-col overflow-hidden rounded-xl">
-					<div className="flex min-h-0 flex-1 flex-col">
-						<FileContentPane onToggleSidebar={isPreview ? undefined : () => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} emptyWhenUnselected={isPreview} />
-					</div>
-				</section>
-			) : null}
+					<div className="relative flex min-h-0 flex-1 flex-col">
+						<FileContentPane
+							onToggleSidebar={isPreview ? undefined : () => setSidebarOpen((v) => !v)}
+							sidebarOpen={sidebarOpen}
+							emptyWhenUnselected={isPreview}
+							officeEditingActive={officeSessions.some((session) => previewTabKey({ path: session.file.path, workspaceId: session.workspaceId }) === state.activePreviewPath)}
+							onEditOffice={startOfficeEdit}
+						/>
+                        {officeSessions.map((session) => {
+                            const key = previewTabKey({ path: session.file.path, workspaceId: session.workspaceId });
+                            return <OfficeEditorSession key={key}
+                                ref={(handle) => { if (handle) officeEditorRefs.current.set(key, handle); else officeEditorRefs.current.delete(key); }}
+                                file={session.file} workspaceId={session.workspaceId}
+                                active={key === state.activePreviewPath}
+                                onClose={() => closeOfficeEditor(key)} />;
+                        })}
+						</div>
+					</section>
+				) : null}
 
 			{/* Context Menu */}
 			{ctxMenu && <WorkspaceContextMenu state={ctxMenu} onClose={() => setCtxMenu(null)} treeRef={treeRef} workspaceId={state.activeWorkspaceId ?? undefined} />}

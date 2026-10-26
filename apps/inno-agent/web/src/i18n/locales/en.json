@@ -88,6 +88,7 @@
 		"half": "Half",
 		"full": "Full",
 		"resize": "Drag to resize",
+		"releaseToFullscreen": "Release to enter fullscreen",
 		"tabs": {
 			"notebook": "Notebook",
 			"preview": "Preview",
@@ -1450,5 +1451,22 @@
 	},
 	"welcome": {
 		"greeting": "What would you like to learn today?"
+	},
+	"officeEditor": {
+		"saving": "Saving…",
+		"unsaved": "Unsaved changes",
+		"saved": "Saved",
+		"save": "Save",
+		"saveShortcut": "Save (⌘ / Ctrl + S)",
+		"downloadCopy": "Download edited copy",
+		"back": "Back to preview",
+		"closeTitle": "Save document changes?",
+		"closeMessage": "Your changes have not been saved to the workspace.",
+		"continueEditing": "Keep editing",
+		"discard": "Leave without saving",
+		"saveAndClose": "Save copy and close",
+		"saveCopy": "Save edited copy",
+		"copySaved": "Copy saved",
+		"copyNotice": "Edits are saved as a new copy. Some objects and formatting may change during conversion; the original file is preserved."
 	}
 }

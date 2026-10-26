@@ -1978,6 +1978,24 @@ inno-app-shell {
 	transition-delay: 0s;
 }
 
+
+/* Action placement and heading clearance share one source. Reserving only
+   the action's right offset let the selector extend under its 32px hit area. */
+.app-layout--desktop.app-layout--chat .inno-window-chrome {
+	--inno-chat-action-width: 32px;
+	--inno-chat-action-right: calc(50px + var(--inno-window-chrome-control-size) + 16px);
+}
+
+.app-layout--desktop.app-layout--chat.app-layout--workspace-quarter .inno-window-chrome,
+.app-layout--desktop.app-layout--chat.app-layout--workspace-half .inno-window-chrome {
+	--inno-chat-action-right: calc(var(--workspace-w) + var(--inno-window-chrome-control-size) + 16px);
+}
+
+.app-layout--desktop.app-layout--chat.app-layout--workspace-full .inno-window-chrome {
+	--inno-chat-action-width: var(--inno-window-chrome-control-size);
+	--inno-chat-action-right: calc(16px + (var(--inno-window-chrome-control-size) + var(--inno-window-chrome-action-gap)) * 2);
+}
+
 .app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header {
 	position: absolute;
 	inset: 0 0 auto;
@@ -1997,7 +2015,7 @@ inno-app-shell {
 	min-height: var(--inno-window-chrome-height);
 	padding-left: calc(var(--inno-window-chrome-control-left) + var(--inno-window-chrome-control-size) * 3 + 16px);
 	padding-top: 10px;
-	padding-right: 56px;
+	padding-right: calc(var(--inno-chat-action-right) + var(--inno-chat-action-width) + 8px);
 	border-bottom: 0;
 	background: transparent;
 	backdrop-filter: none;
@@ -2020,37 +2038,19 @@ inno-app-shell {
 	padding-left: calc(var(--sidebar-w) + 16px);
 }
 
-.app-layout--desktop.app-layout--chat.app-layout--workspace-quarter .inno-window-chrome-chat-header > .inno-conversation-header,
-.app-layout--desktop.app-layout--chat.app-layout--workspace-half .inno-window-chrome-chat-header > .inno-conversation-header {
-	/* Beyond the panel width, keep the header clear of the terminal toggle and
-	   the small divider that sit just left of the chat/preview border. */
-	padding-right: calc(var(--workspace-w) + var(--inno-window-chrome-control-size) + 16px);
-}
-
-/* With the panel collapsed the terminal rests between the divider and the
-   panel toggle. Keep an 8px gap on each side of the terminal at every width. */
-.app-layout--desktop.app-layout--chat.app-layout--workspace-collapsed .inno-window-chrome-chat-header > .inno-conversation-header {
-	padding-right: calc(50px + var(--inno-window-chrome-control-size) + 16px);
-}
-
 .app-layout--desktop.app-layout--chat .inno-conversation-header-actions {
 	position: absolute;
 	top: calc(var(--inno-window-chrome-control-top) - 1px);
-	right: calc(50px + var(--inno-window-chrome-control-size) + 16px);
+	right: var(--inno-chat-action-right);
 	margin-left: 0;
 	transition: right var(--inno-dur-modal) var(--inno-ease-in-out);
-}
-
-.app-layout--desktop.app-layout--chat.app-layout--workspace-quarter .inno-conversation-header-actions,
-.app-layout--desktop.app-layout--chat.app-layout--workspace-half .inno-conversation-header-actions {
-	right: calc(var(--workspace-w) + var(--inno-window-chrome-control-size) + 16px);
 }
 
 .app-layout--desktop.app-layout--chat.app-layout--workspace-full .inno-conversation-header-actions {
 	/* All three full-view actions use the same hit area and stride. The old
 	   32px question button and independent offsets left uneven icon spacing. */
 	top: var(--inno-window-chrome-control-top);
-	right: calc(16px + (var(--inno-window-chrome-control-size) + var(--inno-window-chrome-action-gap)) * 2);
+	right: var(--inno-chat-action-right);
 }
 
 .app-layout--desktop.app-layout--chat.app-layout--workspace-full .inno-conversation-btw-control {
@@ -2274,6 +2274,35 @@ inno-app-shell {
 	transition: left var(--inno-dur-modal) var(--inno-ease-in-out), right var(--inno-dur-modal) var(--inno-ease-in-out), opacity var(--inno-dur-fast) ease, visibility 0s;
 }
 
+/* Toolbar geometry follows the live panel; the drag owner keeps it pinned
+   there while a ghost edge previews deferred expansion. Cancel restores inheritance. */
+.workspace-resizing .inno-window-chrome {
+	--workspace-w: var(--inno-workspace-drag-width, var(--inno-workspace-width));
+}
+
+/* Both the small divider (track left - 11px) and the drag line use the
+   measured edge, including the desktop shell's inset and deferred expansion. */
+.workspace-resizing .inno-window-chrome-preview-tabs {
+	left: calc(var(--inno-workspace-drag-left) + 11px);
+	transform: none !important;
+}
+
+.workspace-resizing .inno-window-chrome-preview-terminal {
+	right: calc(100% - var(--inno-workspace-drag-left) + 8px);
+}
+
+.workspace-resizing .app-layout--desktop.app-layout--chat .inno-window-chrome {
+	--inno-chat-action-right: calc(100% - var(--inno-workspace-drag-left) + var(--inno-window-chrome-control-size) + 16px);
+}
+
+.workspace-resizing .app-layout--desktop.app-layout--chat .inno-conversation-header-actions {
+	transition: none;
+}
+
+.workspace-resizing .app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header > .inno-conversation-header {
+	transition: none;
+}
+
 /* Tabs stay interactive (click to switch, right-click for the tab menu);
    only the blank strip around them drags the window. */
 .inno-window-chrome-preview-tabs button {
@@ -2302,10 +2331,18 @@ inno-app-shell {
 }
 
 .inno-window-chrome-chat-header .inno-conversation-workspace-control {
-	max-width: 320px;
+	min-width: 0;
+	max-width: min(320px, 100%);
+	flex-shrink: 1;
 	opacity: 1;
 	overflow: hidden;
 	transition: max-width var(--inno-dur-modal) var(--inno-ease-in-out), opacity var(--inno-dur-ui) ease;
+}
+
+.inno-window-chrome-chat-header .inno-conversation-heading {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
 }
 
 .app-layout--workspace-full .inno-window-chrome-chat-header .inno-conversation-workspace-control {
@@ -2751,20 +2788,6 @@ inno-app-shell {
 
 	.inno-composer-subrow::-webkit-scrollbar {
 		display: none;
-	}
-}
-
-/* Keep conversation controls in two legible rows instead of letting the
-   non-shrinking model picker paint over permissions and attachments. */
-@media (max-width: 640px) {
-	.inno-composer--conversation .inno-composer-toolbar {
-		flex-wrap: wrap;
-	}
-
-	.inno-composer--conversation .inno-composer-toolbar > div {
-		width: 100%;
-		justify-content: space-between;
-		gap: 4px;
 	}
 }
 
@@ -4479,6 +4502,9 @@ inno-workspace-panel textarea {
    row beneath it. ChatCenter measures this root for the conversation bottom
    space, so the pills count toward the covered area. */
 .inno-composer {
+	/* Split panels can be narrow even in a wide window; respond to this column. */
+	container-type: inline-size;
+	min-width: 0;
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
@@ -5708,19 +5734,19 @@ inno-workspace-panel textarea {
 
 .inno-ui-resize-handle::after {
 	position: absolute;
-	top: 12px;
+	top: 0;
 	right: 1px;
-	bottom: 12px;
+	bottom: 0;
 	width: 1px;
-	background: transparent;
+	opacity: 0;
 	content: "";
-	transition: background-color var(--inno-dur-fast) var(--inno-ease-out);
+	transition: opacity var(--inno-dur-fast) var(--inno-ease-out);
 }
 
 .inno-ui-resize-handle:hover::after,
 :root:not([data-inno-input-modality="pointer"]) .inno-ui-resize-handle:focus-visible::after,
 .inno-ui-resize-handle[data-resizing]::after {
-	background: var(--inno-border-strong);
+	opacity: 1;
 }
 
 /* Pointer capture focuses the splitter; Chromium can retain :focus-visible
@@ -6571,17 +6597,16 @@ inno-workspace-panel textarea {
 	content: "";
 	position: absolute;
 	left: 3px;
-	top: 12px;
-	bottom: 12px;
+	top: 0;
+	bottom: 0;
 	width: 1px;
-	background: transparent;
-	transition: background-color var(--inno-dur-fast) var(--inno-ease-out), box-shadow var(--inno-dur-fast) var(--inno-ease-out);
+	opacity: 0;
+	transition: opacity var(--inno-dur-fast) var(--inno-ease-out);
 }
 
 .workspace-resize-handle:hover::after,
 .workspace-resizing .workspace-resize-handle::after {
-	background: var(--inno-accent);
-	box-shadow: var(--inno-ring);
+	opacity: 1;
 }
 
 .workspace-resizing {
@@ -6596,23 +6621,8 @@ inno-workspace-panel textarea {
 	top: 0;
 	right: 0;
 	bottom: 0;
-	width: var(--inno-workspace-preview-width);
 	z-index: 999;
 	pointer-events: none;
-}
-
-.workspace-resize-preview::before {
-	content: "";
-	position: absolute;
-	left: 0;
-	top: 50%;
-	width: 7px;
-	height: 38px;
-	transform: translate(-50%, -50%);
-	border: 1px solid color-mix(in srgb, var(--inno-accent) 28%, var(--inno-border));
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--inno-surface) 94%, transparent);
-	box-shadow: 0 2px 10px rgba(31, 35, 40, 0.12), 0 0 0 2px color-mix(in srgb, var(--inno-accent) 5%, transparent);
 }
 
 .workspace-resize-preview::after {
@@ -6621,28 +6631,38 @@ inno-workspace-panel textarea {
 	left: 0;
 	top: 0;
 	bottom: 0;
-	width: 2px;
-	transform: translateX(-50%);
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--inno-accent) 32%, transparent);
+	width: 1px;
 }
 
-.workspace-resize-preview--limit::before {
-	border-color: color-mix(in srgb, var(--inno-danger) 72%, var(--inno-border));
-	box-shadow: 0 2px 10px rgba(220, 38, 38, 0.16), 0 0 0 2px color-mix(in srgb, var(--inno-danger) 10%, transparent);
+/* Hover and drag are the same boundary. Sharing the paint prevents the
+   solid, inset hover highlight from returning as soon as a drag ends. */
+.inno-ui-resize-handle::after,
+.workspace-resize-handle::after,
+.workspace-resize-preview::after {
+	background: linear-gradient(to bottom,
+		transparent 0%,
+		color-mix(in srgb, var(--inno-accent) 72%, transparent) 50%,
+		transparent 100%);
 }
 
-.workspace-resize-preview--limit::after {
-	background: var(--inno-danger);
-	box-shadow: 0 0 8px color-mix(in srgb, var(--inno-danger) 42%, transparent);
+/* Tooltip portals have their own stacking context; keep drag feedback above
+   the line even when viewport collision handling places it over the content. */
+.workspace-resize-tooltip {
+	z-index: 1000;
 }
 
-/* Hide the old edge while the ghost edge is active so the user sees one
- * unambiguous target position. During a normal resize the real edge remains
- * visible and the workspace follows the pointer directly. */
+.workspace-resize-tooltip-anchor {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 1px;
+	height: 1px;
+}
+
+/* Keep the panel's structural border visible when the preview moves beyond
+   its live bounds. Only suppress the duplicate hover paint during a drag. */
 .workspace-resize-preview-active .workspace-resize-handle::after {
-	background: transparent;
-	box-shadow: none;
+	opacity: 0;
 }
 
 
@@ -8066,6 +8086,42 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 
 .inno-search-overlay:not([open]) { display: none; }
 
+/* Shared save state and confirmation for PPTX/XLSX editor sessions. */
+.inno-office-save-state { display: flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--inno-text-subtle); font-size: var(--text-xs); }
+/* Native modal dialogs keep confirmation above engine overlays. Explicit flex
+   centering is required because preflight resets the default dialog margin. */
+.inno-office-confirm-dialog {
+	position: absolute;
+	inset: 0;
+	z-index: 60;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	max-width: none;
+	max-height: none;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: color-mix(in srgb, var(--inno-background) 65%, transparent);
+	color: var(--inno-text);
+}
+.inno-office-confirm-dialog:not([open]) { display: none; }
+.inno-office-confirm-card { width: min(480px, calc(100% - 32px)); border: 1px solid var(--inno-border); border-radius: var(--radius-xl, 12px); background: var(--inno-surface-raised); color: var(--inno-text); }
+
+/* The preview pane is the size container for the shared file bar: in narrow
+   panes (half/quarter layout, small windows) the bar collapses to icon-only
+   actions instead of pushing buttons out of the pane. Accessible names live
+   on the buttons, so hiding the text labels keeps them usable. */
+.inno-workspace-preview-pane { container-type: inline-size; }
+@container (max-width: 560px) {
+	.inno-workspace-filebar .inno-filebar-action-label { display: none; }
+}
+@container (max-width: 380px) {
+	.inno-workspace-filebar .inno-office-save-state { display: none; }
+}
+
 .inno-search-overlay::backdrop {
 	background: color-mix(in srgb, var(--inno-background) 65%, transparent);
 }
@@ -8348,5 +8404,52 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 	}
 	.inno-search-result-time {
 		display: none;
+	}
+}
+
+/* Fit controls to the chat column, not the window. Keep the normal single
+   row at the 560px chat minimum; forcing full-width groups there added an
+   unnecessary second row. Long model names yield space before controls wrap. */
+.inno-composer--conversation .inno-composer-toolbar > div:last-child {
+	min-width: 0;
+	flex-shrink: 1;
+}
+
+.inno-composer--conversation .inno-composer-model-trigger {
+	min-width: 0;
+	max-width: clamp(80px, 30cqi, 200px);
+	flex-shrink: 1;
+}
+
+@container (max-width: 400px) {
+	.inno-composer--conversation .inno-composer-toolbar {
+		flex-wrap: wrap;
+	}
+
+	.inno-composer--conversation .inno-composer-toolbar > div {
+		width: 100%;
+		min-width: 0;
+		justify-content: flex-start;
+		gap: 8px;
+	}
+
+	.inno-composer--conversation .inno-composer-toolbar > div:last-child {
+		justify-content: flex-end;
+	}
+}
+
+@container (max-width: 560px) {
+	.inno-composer-subrow {
+		flex-wrap: wrap;
+	}
+
+	.inno-composer-subrow > .flex-1 {
+		display: none;
+	}
+
+	.inno-composer-subrow > .inno-composer-model-trigger {
+		min-width: 0;
+		max-width: 100%;
+		margin-left: auto;
 	}
 }

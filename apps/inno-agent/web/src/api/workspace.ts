@@ -59,6 +59,24 @@ export async function saveWorkspaceFile(path: string, content: string, workspace
 	});
 }
 
+/** Save binary file bytes (WYSIWYG office editors) over the same PUT route. */
+export async function saveWorkspaceFileBinary(path: string, bytes: Blob | ArrayBuffer | Uint8Array, workspaceId?: string): Promise<{ path: string; saved: boolean; size: number; updatedAt: string }> {
+	let buf: ArrayBuffer;
+	if (bytes instanceof Blob) buf = await bytes.arrayBuffer();
+	else if (bytes instanceof Uint8Array) buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+	else buf = bytes;
+	let binary = "";
+	const view = new Uint8Array(buf);
+	const CHUNK = 0x8000;
+	for (let i = 0; i < view.length; i += CHUNK) {
+		binary += String.fromCharCode(...view.subarray(i, i + CHUNK));
+	}
+	return apiFetch("/api/workspace/file", {
+		method: "PUT",
+		body: JSON.stringify(withWorkspace({ path, contentBase64: btoa(binary), createOnly: true }, workspaceId)),
+	});
+}
+
 export async function uploadWorkspaceFiles(files: Array<{ path: string; dataBase64: string }>, workspaceId?: string): Promise<{ uploaded: WorkspaceTreeNode[] }> {
 	return apiFetch<{ uploaded: WorkspaceTreeNode[] }>("/api/workspace/upload", {
 		method: "POST",

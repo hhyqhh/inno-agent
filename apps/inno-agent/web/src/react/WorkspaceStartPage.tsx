@@ -63,7 +63,9 @@ export function WorkspaceStartPage() {
 			: { year: parsed.getFullYear() === now.getFullYear() ? undefined : "numeric", month: "short", day: "numeric" }).format(parsed);
 		return <time dateTime={parsed.toISOString()}>{text}</time>;
 	};
-	const open = (file: StartFile) => { void workspaceStore.selectFile(file.path, undefined, file.workspaceId); };
+	// The start page is rendered for the active start tab; opening a file from
+	// it navigates that tab in place instead of appending a new file tab.
+	const open = (file: StartFile) => { void workspaceStore.selectFile(file.path, undefined, file.workspaceId, { replaceStartTab: true }); };
 	const row = (file: StartFile, trailing: ReactNode, draft = false) => {
 		const directory = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) : t("workspaceStart.rootFolder");
 		const location = file.workspaceId !== state.workspaceId || scope === "all" ? `${workspaceName(file.workspaceId)} · ${directory}` : directory;

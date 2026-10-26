@@ -1,0 +1,54 @@
+import { createRef } from "react";
+import { act, cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import PptxEditor from "./PptxEditor.js";
+import type { OfficeEditorHandle } from "./office-editor-handle.js";
+import type { WorkspaceFileDetail } from "../../types/workspace.js";
+const file = { path: "deck.pptx", name: "deck.pptx", format: "pptx", url: "/deck" } as WorkspaceFileDetail;
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+async function setup() {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(3) }));
+    const ref = createRef<OfficeEditorHandle>();
+    const ready = vi.fn(); const dirty = vi.fn();
+    const mounted = render(<PptxEditor ref={ref} file={file} onReadyChange={ready} onInteract={dirty} />);
+    const frame = screen.getByTitle("deck.pptx") as HTMLIFrameElement;
+    const post = vi.spyOn(frame.contentWindow!, "postMessage");
+    const message = async (data: unknown, source: MessageEventSource | null = frame.contentWindow, origin = window.location.origin) => {
+        await act(async () => { window.dispatchEvent(new MessageEvent("message", { data, source, origin })); });
+    };
+    await message({ type: "pptist:ready" });
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: "pptist:load" }), window.location.origin, expect.any(Array));
+    return { ref, ready, dirty, message, post, mounted };
+}
+it("waits for import completion and accepts immediate real changes only from its iframe", async () => {
+    const { ready, dirty, message } = await setup();
+    expect(ready).not.toHaveBeenCalledWith(true);
+    await message({ type: "pptist:loaded" });
+    expect(ready).toHaveBeenCalledWith(true);
+    await message({ type: "pptist:change" }, window);
+    await message({ type: "pptist:change" }, null, "https://other.example");
+    expect(dirty).not.toHaveBeenCalled();
+    await message({ type: "pptist:change" });
+    expect(dirty).toHaveBeenCalledOnce();
+});
+it("correlates exports so a late timed-out response cannot satisfy a newer save", async () => {
+    const { ref, message, post } = await setup();
+    await message({ type: "pptist:loaded" });
+    vi.useFakeTimers();
+    const first = ref.current!.exportBytes().catch((error: Error) => error);
+    const firstId = (post.mock.calls.at(-1)![0] as { requestId: number }).requestId;
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(await first).toMatchObject({ message: "Export timed out" });
+    const second = ref.current!.exportBytes();
+    const secondId = (post.mock.calls.at(-1)![0] as { requestId: number }).requestId;
+    await message({ type: "pptist:exported", requestId: firstId, buffer: new Uint8Array([1]).buffer });
+    await message({ type: "pptist:exported", requestId: secondId, buffer: new Uint8Array([2]).buffer });
+    expect(await second).toEqual(new Uint8Array([2]));
+});
+it("rejects pending exports when the editor is unmounted", async () => {
+    const { ref, message, mounted } = await setup();
+    await message({ type: "pptist:loaded" });
+    const exported = ref.current!.exportBytes().catch((error: Error) => error);
+    mounted.unmount();
+    expect(await exported).toMatchObject({ message: "Editor closed" });
+});

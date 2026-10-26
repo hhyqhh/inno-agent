@@ -17,7 +17,9 @@ describe("fullscreen preview toolbar layout", () => {
 		expect(fullChatHeader).toContain("padding-right: 0");
 		expect(fullChatHeader).not.toContain("padding-right: calc(");
 		expect(fullTabs).toContain("right: calc(16px + (var(--inno-window-chrome-control-size) + var(--inno-window-chrome-action-gap)) * 3)");
-		expect(fullHeaderActions).toContain("right: calc(16px + (var(--inno-window-chrome-control-size) + var(--inno-window-chrome-action-gap)) * 2)");
+		expect(fullHeaderActions).toContain("right: var(--inno-chat-action-right)");
+        const fullActionGeometry = appCss.match(/\.app-layout--desktop\.app-layout--chat\.app-layout--workspace-full \.inno-window-chrome\s*\{([^}]*)\}/)?.[1] ?? "";
+        expect(fullActionGeometry).toContain("--inno-chat-action-right: calc(16px + (var(--inno-window-chrome-control-size) + var(--inno-window-chrome-action-gap)) * 2)");
 		expect(fullHeaderActions).toContain("top: var(--inno-window-chrome-control-top)");
 		const questionButton = appCss.match(/\.app-layout--desktop\.app-layout--chat\.app-layout--workspace-full \.inno-conversation-btw-control\s*\{([^}]*)\}/)?.[1] ?? "";
 		expect(questionButton).toContain("width: var(--inno-window-chrome-control-size)");

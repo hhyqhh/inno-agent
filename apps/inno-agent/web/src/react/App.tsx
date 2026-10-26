@@ -302,7 +302,9 @@ function MainApp() {
 		// Full mode is already the reading surface; selecting another file should
 		// not unexpectedly return the user to a split layout.
 		if (appStore.workspaceMode === "full") return;
-		if (isNarrow) {
+		// Electron can grow its native window before choosing a split layout.
+		// The narrow-browser shortcut previously skipped that expansion entirely.
+		if (isNarrow && !isDesktopWindow) {
 			appStore.setWorkspaceMode("full");
 			return;
 		}
@@ -315,7 +317,7 @@ function MainApp() {
 		// below already collapse it if (and only if) that is what makes the panel fit.
 		appStore.setWorkspaceWidth(previewWidth);
 		appStore.setWorkspaceMode("half");
-	}, [isNarrow, ensureWindowForPanel]);
+	}, [isNarrow, isDesktopWindow, ensureWindowForPanel]);
 
 	const openSearchResult = useCallback(async (result: SearchResult) => {
 		if (isNarrow) appStore.setSidebarCollapsed(true);
@@ -492,9 +494,10 @@ function MainApp() {
 						onNavigateForward={() => window.history.forward()}
 						onToggleWorkspace={toggleWorkspace}
 					/>
-					{/* Narrow viewports present the sidebar as an overlay drawer; the
-						scrim behind it dismisses the drawer on tap. */}
-					{isNarrow && !app.sidebarCollapsed ? (
+					{/* Only browser drawers need a dismiss scrim. Electron keeps its
+						desktop sidebar below the scrim's layer even at narrow widths,
+						so rendering it there would cover the sidebar and block clicks. */}
+					{!isDesktopWindow && isNarrow && !app.sidebarCollapsed ? (
 						<div
 							className="app-layout-scrim"
 							aria-hidden="true"

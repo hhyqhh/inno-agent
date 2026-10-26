@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { FileCode2, FileText, Image, LoaderCircle, Plus, Sparkles, FolderOpen, MessageSquare } from "lucide-react";
-import { workspaceStore, WORKSPACE_START_TAB, WORKSPACE_CONVERSATION_TAB, previewTabKey } from "../stores/workspace-store.js";
+import { workspaceStore, WORKSPACE_CONVERSATION_TAB, isStartTab, isStartTabKey, previewTabKey } from "../stores/workspace-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { appStore } from "../stores/app-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
@@ -37,7 +37,7 @@ export function WorkspacePreviewTabs() {
 		if (!workspaceStore.previewTabs.length && !workspaceStore.streamingPreview) {
 			// Only closing the final start page collapses the panel. Closing the
 			// final file returns to a useful start page, preserving the split view.
-			if (path === WORKSPACE_START_TAB) appStore.setWorkspaceMode("collapsed");
+			if (isStartTabKey(path)) appStore.setWorkspaceMode("collapsed");
 			else workspaceStore.openStartPage();
 		}
 		requestAnimationFrame(() => {
@@ -60,12 +60,12 @@ export function WorkspacePreviewTabs() {
 			const tab = state.tabs.find((item) => previewTabKey(item) === ctxMenu.path);
 			if (!tab) return [];
 			const index = state.tabs.indexOf(tab);
-			items.push({ label: t("files.closePreview", { name: tab.path === WORKSPACE_START_TAB ? t("workspaceStart.tab") : tab.name }), onSelect: () => close(previewTabKey(tab)) });
+			items.push({ label: t("files.closePreview", { name: isStartTab(tab) ? t("workspaceStart.tab") : tab.name }), onSelect: () => close(previewTabKey(tab)) });
 			if (state.tabs.length > 1) items.push({ label: t("files.closeOtherTabs"), onSelect: () => workspaceStore.closeOtherPreviews(previewTabKey(tab)) });
 			if (index < state.tabs.length - 1) items.push({ label: t("files.closeTabsToRight"), onSelect: () => workspaceStore.closePreviewsToRight(previewTabKey(tab)) });
 		}
 		if (state.tabs.length > 0) items.push({ label: t("files.closeAllTabs"), onSelect: () => {
-			const onlyStartPage = state.tabs.length === 1 && state.tabs[0].path === WORKSPACE_START_TAB;
+			const onlyStartPage = state.tabs.length === 1 && isStartTab(state.tabs[0]);
 			workspaceStore.closeAllPreviews();
 			if (!workspaceStore.streamingPreview) {
 				if (onlyStartPage) appStore.setWorkspaceMode("collapsed");
@@ -86,7 +86,7 @@ export function WorkspacePreviewTabs() {
 				onValueChange={(path) => {
 					if (path === WORKSPACE_CONVERSATION_TAB) { workspaceStore.setActiveSurface("conversation"); return; }
 					if (path === STREAMING_PREVIEW_TAB) { workspaceStore.setActiveSurface("preview"); return; }
-					if (path === WORKSPACE_START_TAB) { workspaceStore.openStartPage(); return; }
+					if (isStartTabKey(path)) { workspaceStore.activatePreview(path); return; }
 					// Switching loaded tabs keeps their previews stable. Explicit file
 					// opens use selectFile to revalidate content after external writes.
 					const tab = workspaceStore.previewTabs.find((tab) => previewTabKey(tab) === path);
@@ -96,7 +96,7 @@ export function WorkspacePreviewTabs() {
 				items={[
 					...(conversationTab ? [{ value: WORKSPACE_CONVERSATION_TAB, ariaLabel: title, title: `${t("nav.chat")} · ${title}`, label: <><MessageSquare size={14} /><span className="truncate">{title}</span></>, panelId: "workspace-conversation-panel", layoutId: "inno-conversation-title", className: "inno-workspace-conversation-tab" }] : []),
 					...state.tabs.map((tab) => {
-						const isStart = tab.path === WORKSPACE_START_TAB;
+						const isStart = isStartTab(tab);
 						const name = isStart ? t("workspaceStart.tab") : tab.name;
 						const Icon = tab.isLoading ? LoaderCircle : /\.(png|jpe?g|gif|webp|svg)$/i.test(tab.name) ? Image : /\.(tsx?|jsx?|py|json|css|sh|yaml|sql)$/i.test(tab.name) ? FileCode2 : FileText;
 						const dirty = tab.isEditing && tab.editBuffer !== (tab.file?.content ?? "");
@@ -115,7 +115,7 @@ export function WorkspacePreviewTabs() {
 					...(state.stream ? [{ value: STREAMING_PREVIEW_TAB, ariaLabel: state.stream.title, label: <><Sparkles size={14} /><span className="truncate">{state.stream.title}</span></>, close: { label: t("files.closePreview", { name: state.stream.title }), onClose: () => workspaceStore.clearStreamingPreview() }, onContextMenu: (event: MouseEvent) => openMenu(event, STREAMING_PREVIEW_TAB) }] : []),
 				]}
 			/>
-			<IconButton size="xs" className="shrink-0" title={t("workspaceStart.open")} aria-label={t("workspaceStart.open")} onClick={() => workspaceStore.openStartPage()}><Plus size={16} /></IconButton>
+			<IconButton size="xs" className="shrink-0" title={t("workspaceStart.open")} aria-label={t("workspaceStart.open")} onClick={() => workspaceStore.newStartPage()}><Plus size={16} /></IconButton>
 			{ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={menuItems()} onClose={() => setCtxMenu(null)} />}
 		</div>
 	);

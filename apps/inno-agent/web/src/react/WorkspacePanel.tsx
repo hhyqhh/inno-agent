@@ -1,11 +1,11 @@
-import { Component, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useDragDropManager } from "react-dnd";
 import type { DragDropManager } from "dnd-core";
 import { Maximize2, Minimize2, Terminal as TerminalIcon } from "lucide-react";
 import type { WorkspaceMode } from "../stores/app-store.js";
-import { getMaximumWorkspaceWidth, WORKSPACE_MAX_WIDTH, WORKSPACE_MIN_WIDTH, WORKSPACE_QUARTER_MIN_WIDTH } from "../stores/app-layout.js";
+import { getMaximumWorkspaceWidth, getSidebarLayoutWidth, WORKSPACE_MAX_WIDTH, WORKSPACE_MIN_WIDTH, WORKSPACE_QUARTER_MIN_WIDTH } from "../stores/app-layout.js";
 import { appStore } from "../stores/app-store.js";
 import { terminalStore } from "../stores/terminal-store.js";
 import { workspaceStore } from "../stores/workspace-store.js";
@@ -49,6 +49,8 @@ interface WorkspaceResizeStart {
 	clientX: number;
 	width: number;
 }
+
+const RESIZE_FULLSCREEN_THRESHOLD = 24;
 
 function clampResizeWidth(width: number, mode: WorkspaceMode, maxWidth: number): number {
 	const minWidth = mode === "quarter" ? WORKSPACE_QUARTER_MIN_WIDTH : WORKSPACE_MIN_WIDTH;
@@ -155,8 +157,11 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	const { t } = useTranslation();
 	const dndManager = useDragDropManager();
 	const [isResizing, setIsResizing] = useState(false);
-	const [resizeLimitReached, setResizeLimitReached] = useState(false);
-	const [resizePreviewWidth, setResizePreviewWidth] = useState<number | null>(null);
+	const [resizeDragWidth, setResizeDragWidth] = useState(width);
+	const panelRef = useRef<HTMLElement | null>(null);
+	const resizeBoundsRef = useRef({ top: 0, right: 0, bottom: 0, widthOffset: 0 });
+	const [resizeFullscreenReady, setResizeFullscreenReady] = useState(false);
+	const resizeRequestedWidthRef = useRef<number | null>(null);
 	const resizeStartRef = useRef<WorkspaceResizeStart | null>(null);
 	const resizePreviewWidthRef = useRef<number | null>(null);
 	const resizeMaxWidthRef = useRef(WORKSPACE_MAX_WIDTH);
@@ -195,11 +200,17 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 			if (!start || event.pointerId !== start.pointerId) return;
 			event.preventDefault();
 			const maxWidth = resizeMaxWidthRef.current;
+			// Clamping discards the overshoot; retain the pointer's requested width
+			// so crossing the split-view limit only enters fullscreen on release.
+			const requestedWidth = start.width + start.clientX - event.clientX;
+			resizeRequestedWidthRef.current = requestedWidth;
+			setResizeFullscreenReady(requestedWidth >= maxWidth + RESIZE_FULLSCREEN_THRESHOLD);
 			const nextWidth = clampResizeWidth(
-				start.width + start.clientX - event.clientX,
+				requestedWidth,
 				mode,
 				resizeMaxWidthRef.current,
 			);
+			setResizeDragWidth(nextWidth);
 			const directMaxWidth = Math.max(
 				start.width,
 				getMaximumWorkspaceWidth(window.innerWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop), appStore.sidebarWidth),
@@ -209,30 +220,30 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 				// window has room for it. The preview edge is only a fallback for
 				// widths that cannot be applied to the live layout yet.
 				resizePreviewWidthRef.current = null;
-				setResizeLimitReached(false);
-				setResizePreviewWidth(null);
 				onWidthChange(nextWidth);
 				return;
 			}
 			resizePreviewWidthRef.current = nextWidth;
-			setResizeLimitReached(nextWidth >= maxWidth);
-			setResizePreviewWidth(nextWidth);
 		};
 		const finishResize = (commit: boolean) => {
 			const start = resizeStartRef.current;
 			if (!start) return;
 			const nextWidth = commit ? resizePreviewWidthRef.current : null;
+			const fullscreen = commit && resizeRequestedWidthRef.current !== null
+				&& resizeRequestedWidthRef.current >= resizeMaxWidthRef.current + RESIZE_FULLSCREEN_THRESHOLD;
 			resizeStartRef.current = null;
+			resizeRequestedWidthRef.current = null;
 			resizePreviewWidthRef.current = null;
 			resizeMaxWidthRef.current = WORKSPACE_MAX_WIDTH;
-			setResizeLimitReached(false);
-			setResizePreviewWidth(null);
 			setIsResizing(false);
-			if (nextWidth !== null) void commitResize(nextWidth);
+			setResizeFullscreenReady(false);
+			if (fullscreen) onModeChange("full");
+			else if (nextWidth !== null) void commitResize(nextWidth);
 			else if (!commit) onWidthChange(start.width);
 		};
 		const handlePointerUp = (event: PointerEvent) => {
 			if (resizeStartRef.current?.pointerId !== event.pointerId) return;
+			handlePointerMove(event);
 			finishResize(true);
 		};
 		const handlePointerCancel = (event: PointerEvent) => {
@@ -258,7 +269,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 			window.removeEventListener("blur", handleWindowBlur);
 			window.removeEventListener("keydown", handleKeyDown);
 		};
-	}, [commitResize, isResizing, mode]);
+	}, [commitResize, isResizing, mode, onModeChange, onWidthChange]);
 
 	// Keep the workspace browser mounted after its first open. Collapsing the
 	// panel should hide it, not restart its tree/preview lifecycle on reopen.
@@ -268,6 +279,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	}, [mode, showFileTree, workspaceId]);
 
 	const startResize = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+		if (event.button !== 0 || resizeStartRef.current) return;
 		event.preventDefault();
 		// Invalidate a previous asynchronous commit if the user starts another
 		// resize before a host-window expansion has finished.
@@ -275,14 +287,22 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 		const layoutMaxWidth = getMaximumWorkspaceWidth(window.innerWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop), appStore.sidebarWidth);
 		const startWidth = clampResizeWidth(width, mode, Math.max(width, layoutMaxWidth));
 		resizeMaxWidthRef.current = Math.max(startWidth, layoutMaxWidth);
+		const bounds = panelRef.current?.getBoundingClientRect();
+		resizeBoundsRef.current = {
+			top: bounds?.top ?? 0,
+			right: bounds?.width ? window.innerWidth - bounds.right : 0,
+			bottom: bounds?.height ? window.innerHeight - bounds.bottom : 0,
+			widthOffset: bounds?.width ? startWidth - bounds.width : 0,
+		};
+		setResizeDragWidth(startWidth);
 		resizeStartRef.current = {
 			pointerId: event.pointerId,
 			clientX: event.clientX,
 			width: startWidth,
 		};
 		resizePreviewWidthRef.current = null;
-		setResizeLimitReached(false);
-		setResizePreviewWidth(null);
+		resizeRequestedWidthRef.current = null;
+		setResizeFullscreenReady(false);
 		setIsResizing(true);
 		if (event.currentTarget.setPointerCapture) {
 			event.currentTarget.setPointerCapture(event.pointerId);
@@ -310,23 +330,50 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 					),
 				);
 				const maxWidth = resizeMaxWidthRef.current;
-				setResizeLimitReached(
-					resizePreviewWidthRef.current !== null && resizePreviewWidthRef.current >= maxWidth,
-				);
+				setResizeFullscreenReady(resizeRequestedWidthRef.current !== null
+					&& resizeRequestedWidthRef.current >= maxWidth + RESIZE_FULLSCREEN_THRESHOLD);
 			});
 		}
 	}, [mode, width]);
 
 	const collapsed = mode === "collapsed";
 	const shouldMountContent = hasOpenedWorkspace || !collapsed;
-	const resizePreviewPortal = isResizing && resizePreviewWidth !== null && typeof document !== "undefined"
+	const displayWidth = isResizing ? resizeDragWidth - resizeBoundsRef.current.widthOffset : width;
+	const contentWidth = Math.max(1, window.innerWidth - getSidebarLayoutWidth(appStore.sidebarCollapsed, Boolean(window.innoDesktop), appStore.sidebarWidth));
+	const resizeLabel = resizeFullscreenReady ? t("workspace.releaseToFullscreen")
+		: `${t("workspace.resize")} (${Math.min(100, Math.round(displayWidth / contentWidth * 100))}%)`;
+	// Align hover and drag hints to the content's top edge. The hover hit target
+	// extends 3px beyond the drag anchor, so its right-side gap is 3px smaller.
+
+	useLayoutEffect(() => {
+		if (!isResizing) return;
+		const layout = panelRef.current?.closest<HTMLElement>(".app-layout");
+		// Beyond the live layout only the ghost edge moves. Keep the toolbar
+		// anchored to the existing file panel until release expands the window.
+		const deferred = resizePreviewWidthRef.current !== null;
+		const panelBounds = panelRef.current?.getBoundingClientRect();
+		const toolbarWidth = deferred && panelBounds
+			? panelBounds.width + resizeBoundsRef.current.widthOffset : resizeDragWidth;
+		layout?.style.setProperty("--inno-workspace-drag-width", `${toolbarWidth}px`);
+		const edgeX = deferred && panelBounds ? panelBounds.left
+			: window.innerWidth - resizeBoundsRef.current.right - displayWidth;
+		layout?.style.setProperty("--inno-workspace-drag-left", `${edgeX - (layout?.getBoundingClientRect().left ?? 0)}px`);
+		return () => {
+			layout?.style.removeProperty("--inno-workspace-drag-width");
+			layout?.style.removeProperty("--inno-workspace-drag-left");
+		};
+	}, [isResizing, resizeDragWidth, displayWidth, width]);
+
+	const resizePreviewPortal = isResizing
 		? createPortal(
 			<div
-				className={`workspace-resize-preview ${resizeLimitReached ? "workspace-resize-preview--limit" : ""}`}
-				aria-hidden="true"
-				style={{ "--inno-workspace-preview-width": `${resizePreviewWidth}px` } as React.CSSProperties}
-			/>,
-			document.body,
+				className="workspace-resize-preview"
+				style={{ width: displayWidth, top: resizeBoundsRef.current.top, right: resizeBoundsRef.current.right, bottom: resizeBoundsRef.current.bottom }}
+			>
+				<Tooltip label={resizeLabel} open side="right" align="start" contentClassName="workspace-resize-tooltip">
+					<span className="workspace-resize-tooltip-anchor" />
+				</Tooltip>
+			</div>, document.body,
 		)
 		: null;
 	useEffect(() => () => {
@@ -336,10 +383,10 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	}, [dndManager]);
 
 	return (
-		<aside id="workspace-preview" aria-hidden={collapsed || conversationActive || undefined} inert={collapsed || conversationActive || undefined} className={`workspace-panel inno-workspace-scope ${merged ? "workspace-panel--merged" : collapsed ? "" : "inno-desktop-panel-surface"} relative flex h-full min-h-0 min-w-0 flex-col ${resizePreviewWidth !== null ? "workspace-resize-preview-active" : ""} ${collapsed ? "overflow-visible border-l-0 bg-transparent" : "overflow-hidden border-l border-[var(--inno-border)] bg-[var(--inno-workspace-bg)]"}`}>
+		<aside ref={panelRef} id="workspace-preview" aria-hidden={collapsed || conversationActive || undefined} inert={collapsed || conversationActive || undefined} className={`workspace-panel inno-workspace-scope ${merged ? "workspace-panel--merged" : collapsed ? "" : "inno-desktop-panel-surface"} relative flex h-full min-h-0 min-w-0 flex-col ${isResizing ? "workspace-resize-preview-active" : ""} ${collapsed ? "overflow-visible border-l-0 bg-transparent" : "overflow-hidden border-l border-[var(--inno-border)] bg-[var(--inno-workspace-bg)]"}`}>
 			{resizePreviewPortal}
 			{mode === "half" || mode === "quarter" ? (
-				<Tooltip label={`${t("workspace.resize")} (${width}px)`}>
+				<Tooltip label={resizeLabel} side="right" align="start" sideOffset={3} contentClassName="workspace-resize-tooltip" open={isResizing ? false : undefined}>
 					<button
 						className="workspace-resize-handle"
 						role="separator"

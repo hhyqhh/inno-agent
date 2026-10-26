@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
-		"build": "tsc && vite build",
+		"build": "tsc && cross-env NODE_OPTIONS=--max-old-space-size=8192 vite build",
 		"preview": "vite preview"
 	},
 	"dependencies": {
@@ -37,6 +37,8 @@
 		"@streamdown/mermaid": "^1.0.2",
 		"@uiw/react-codemirror": "^4.25.10",
 		"@uiw/react-md-editor": "^4.1.1",
+		"@univerjs/preset-sheets-core": "^1.1.0",
+		"@univerjs/presets": "^1.1.0",
 		"@viz-js/viz": "^3.30.0",
 		"@xterm/addon-fit": "^0.10.0",
 		"@xterm/addon-web-links": "^0.11.0",
@@ -46,6 +48,7 @@
 		"cytoscape-cose-bilkent": "^4.1.0",
 		"docx-preview": "^0.3.7",
 		"echarts": "^6.1.0",
+		"exceljs": "4.4.0",
 		"highlight.js": "^11.11.1",
 		"i18next": "^26.2.0",
 		"lit": "^3.3.1",
@@ -70,6 +73,7 @@
 		"@types/plantuml-encoder": "^1.4.2",
 		"@types/react": "19.2.14",
 		"@types/react-dom": "19.2.3",
-		"@vitejs/plugin-react": "5.2.0"
+		"@vitejs/plugin-react": "5.2.0",
+		"cross-env": "^10.1.0"
 	}
 }

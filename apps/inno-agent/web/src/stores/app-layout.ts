@@ -1,7 +1,8 @@
 import type { WorkspaceMode } from "./app-store.js";
 
-/** The chat should remain usable while optional panels are visible. */
-export const CHAT_BASELINE_WIDTH = 800;
+// Panel fitting and window expansion share this minimum. Reserving 800px
+// prevented the center column from shrinking even though its content is fluid.
+export const CHAT_BASELINE_WIDTH = 560;
 export const SIDEBAR_WIDTH = 264;
 export const DESKTOP_SIDEBAR_RAIL_WIDTH = 52;
 export const DESKTOP_SIDEBAR_CONTENT_WIDTH = 246;

@@ -47,6 +47,10 @@ describe("desktop search IPC", () => {
 		return mocks.windows[1];
 	};
 
+	it("allows the native main window to shrink with the compact chat layout", () => {
+		expect(mocks.windows[0].options).toMatchObject({ minWidth: 612, minHeight: 600 });
+	});
+
 	it("accepts requests only from the main window and reuses the isolated search window", () => {
 		expect(mocks.handlers.get("inno-open-search-window")!({ sender: {} })).toBe(false);
 		const search = openSearch();

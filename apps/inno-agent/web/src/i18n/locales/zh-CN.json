@@ -88,6 +88,7 @@
 		"half": "半屏",
 		"full": "全屏",
 		"resize": "拖动以调整宽度",
+		"releaseToFullscreen": "松手进入全屏",
 		"tabs": {
 			"notebook": "笔记本",
 			"preview": "预览",
@@ -1449,5 +1450,22 @@
 	},
 	"welcome": {
 		"greeting": "今天想学点什么？"
+	},
+	"officeEditor": {
+		"saving": "正在保存…",
+		"unsaved": "未保存",
+		"saved": "已保存",
+		"save": "保存",
+		"saveShortcut": "保存（⌘ / Ctrl + S）",
+		"downloadCopy": "下载编辑副本",
+		"back": "返回预览",
+		"closeTitle": "保存文档修改？",
+		"closeMessage": "当前修改尚未保存到工作区。",
+		"continueEditing": "继续编辑",
+		"discard": "不保存退出",
+		"saveAndClose": "保存副本并关闭",
+		"saveCopy": "保存编辑副本",
+		"copySaved": "副本已保存",
+		"copyNotice": "编辑结果保存为新副本，转换可能改变部分对象和格式；原文件保留。"
 	}
 }

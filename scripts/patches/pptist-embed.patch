@@ -1,0 +1,198 @@
+diff --git a/src/embed.ts b/src/embed.ts
+new file mode 100644
+--- /dev/null
++++ b/src/embed.ts
+@@ -0,0 +1,56 @@
++/** Same-origin embed bridge. Import completion comes from the importer. */
++import useImport from '@/hooks/useImport'
++import useExport from '@/hooks/useExport'
++import { useSlidesStore } from '@/store'
++import { watch } from 'vue'
++
++declare global {
++  interface Window { __pptistCaptureExport?: (blob: Blob) => void; __pptistExportError?: (error: unknown) => void }
++}
++export function setupEmbed() {
++  const params = new URLSearchParams(location.search)
++  if (!params.has('embed')) return
++  const origin = window.location.origin
++  let loaded = false
++  let importing = false
++  const send = (data: Record<string, unknown>, transfer: Transferable[] = []) => window.parent.postMessage(data, origin, transfer)
++  const store = useSlidesStore()
++  // Immediate mutation reporting avoids the old 2.5s/800ms blind windows,
++  // where early edits or an immediate tab close silently lost a draft.
++  watch(() => [store.slides, store.theme, store.viewportSize, store.viewportRatio], () => {
++    if (loaded && !importing) send({ type: 'pptist:change' })
++  }, { deep: true, flush: 'sync' })
++  window.addEventListener('message', (event) => {
++    if (event.origin !== origin || event.source !== window.parent) return
++    const data = event.data
++    if (!data || typeof data !== 'object') return
++    if (data.type === 'pptist:load' && data.buffer instanceof ArrayBuffer && !importing) {
++      importing = true
++      loaded = false
++      const file = new File([data.buffer], data.name || 'deck.pptx')
++      useImport().importPPTXFile([file], {
++        cover: true,
++        onComplete: () => { importing = false; loaded = true; send({ type: 'pptist:loaded' }) },
++        onError: (error) => { importing = false; send({ type: 'pptist:error', error: String(error) }) },
++      })
++    }
++    if (data.type === 'pptist:export' && loaded && !window.__pptistCaptureExport) {
++      const requestId = data.requestId
++      window.__pptistExportError = (error) => {
++        window.__pptistCaptureExport = undefined
++        window.__pptistExportError = undefined
++        send({ type: 'pptist:error', requestId, error: String(error) })
++      }
++      window.__pptistCaptureExport = (blob) => {
++        window.__pptistCaptureExport = undefined
++        blob.arrayBuffer().then((buffer) => {
++          window.__pptistExportError = undefined
++          send({ type: 'pptist:exported', requestId, buffer }, [buffer])
++        }).catch((error) => window.__pptistExportError?.(error))
++      }
++      try { useExport().exportPPTX(store.slides, true, false) }
++      catch (error) { window.__pptistExportError?.(error) }
++    }
++  })
++  send({ type: 'pptist:ready' })
++}
+diff --git a/src/hooks/useImport.ts b/src/hooks/useImport.ts
+--- a/src/hooks/useImport.ts
++++ b/src/hooks/useImport.ts
+@@ -645,7 +645,7 @@
+   }
+ 
+   // 导入PPTX文件
+-  const importPPTXFile = (files: FileList | File[], options?: { cover?: boolean; fixedViewport?: boolean }) => {
++  const importPPTXFile = (files: FileList | File[], options?: { cover?: boolean; fixedViewport?: boolean; onComplete?: () => void; onError?: (error: unknown) => void }) => {
+     const defaultOptions = {
+       cover: false,
+       fixedViewport: false, 
+@@ -663,7 +663,9 @@
+     }
+     
+     const reader = new FileReader()
++    reader.onerror = () => { exporting.value = false; options?.onError?.(reader.error) }
+     reader.onload = async e => {
++      try {
+       let json = null
+       try {
+         json = await parse(e.target!.result as ArrayBuffer, {
+@@ -676,6 +678,7 @@
+       catch {
+         exporting.value = false
+         message.error('无法正确读取 / 解析该文件')
++        options?.onError?.(new Error('Unable to parse presentation'))
+         return
+       }
+ 
+@@ -1367,6 +1370,8 @@
+       else addSlidesFromData(slides)
+ 
+       exporting.value = false
++      options?.onComplete?.()
++      } catch (error) { exporting.value = false; options?.onError?.(error) }
+     }
+     reader.readAsArrayBuffer(file)
+   }
+diff --git a/src/hooks/useExport.ts b/src/hooks/useExport.ts
+--- a/src/hooks/useExport.ts
++++ b/src/hooks/useExport.ts
+@@ -605,18 +605,23 @@
+             const [startX, startY] = start
+             const [endX, endY] = end
+ 
+-            const originW = el.width / ((endX - startX) / ratioPx2Inch.value)
+-            const originH = el.height / ((endY - startY) / ratioPx2Inch.value)
++            // clip.range is 0-100 percent of the original image (same
++            // semantics as ImageStylePanel.vue), not canvas px — dividing it
++            // by ratioPx2Inch only lines up when the viewport is 1000px wide,
++            // and produces a wrong srcRect (partly missing image) for decks
++            // imported with any other slide width.
++            const originW = el.width / ((endX - startX) / 100)
++            const originH = el.height / ((endY - startY) / 100)
+ 
+             options.w = originW / ratioPx2Inch.value
+             options.h = originH / ratioPx2Inch.value
+ 
+             options.sizing = {
+               type: 'crop',
+-              x: startX / ratioPx2Inch.value * originW / ratioPx2Inch.value,
+-              y: startY / ratioPx2Inch.value * originH / ratioPx2Inch.value,
+-              w: (endX - startX) / ratioPx2Inch.value * originW / ratioPx2Inch.value,
+-              h: (endY - startY) / ratioPx2Inch.value * originH / ratioPx2Inch.value,
++              x: startX / 100 * originW / ratioPx2Inch.value,
++              y: startY / 100 * originH / ratioPx2Inch.value,
++              w: (endX - startX) / 100 * originW / ratioPx2Inch.value,
++              h: (endY - startY) / 100 * originH / ratioPx2Inch.value,
+             }
+           }
+ 
+@@ -999,6 +1004,16 @@
+     }
+ 
+     setTimeout(() => {
++      // Inno Agent embed bridge: hand the bytes to the host page instead of
++      // triggering a browser download when a capture hook is installed.
++      const capture = (window as unknown as { __pptistCaptureExport?: (blob: Blob) => void }).__pptistCaptureExport
++      if (capture) {
++        pptx.write({ outputType: 'blob' }).then(data => {
++          exporting.value = false
++          capture(data as Blob)
++        }).catch((error) => { exporting.value = false; window.__pptistExportError?.(error) })
++        return
++      }
+       pptx.writeFile({ fileName: `${title.value}.pptx` }).then(() => exporting.value = false).catch(() => {
+         exporting.value = false
+         message.error('导出失败')
+diff --git a/src/main.ts b/src/main.ts
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -6,11 +6,13 @@
+ import 'animate.css'
+ import '@/assets/styles/prosemirror.scss'
+ import '@/assets/styles/global.scss'
+-import '@/assets/styles/font.scss'
++// Embedded builds use installed fonts; avoid downloading 37MB of webfonts.
+ 
+ import Directive from '@/directive'
++import { setupEmbed } from './embed'
+ 
+ const app = createApp(App)
+ app.use(Directive)
+ app.use(createPinia())
+ app.mount('#app')
++setupEmbed()
+diff --git a/src/views/Editor/EditorHeader/index.vue b/src/views/Editor/EditorHeader/index.vue
+--- a/src/views/Editor/EditorHeader/index.vue
++++ b/src/views/Editor/EditorHeader/index.vue
+@@ -3,16 +3,6 @@
+     <div class="left">
+       <Popover trigger="click" placement="bottom-start" v-model:value="mainMenuVisible">
+         <template #content>
+-          <div class="main-menu">
+-            <div class="ai-menu" @click="openAIPPTDialog(); mainMenuVisible = false">
+-              <div class="icon"><i-custom:click /></div>
+-              <div class="aippt-content">
+-                <div class="aippt"><span>AIPPT</span></div>
+-                <div class="aippt-subtitle">输入一句话，智能生成演示文稿</div>
+-              </div>
+-            </div>
+-          </div>
+-          <Divider :margin="10" />
+           <div class="import-section">
+             <div class="import-label">导入文件</div>
+             <div class="import-grid">
+@@ -86,9 +76,6 @@
+           <div class="arrow-btn"><i-icon-park-outline:down class="arrow" /></div>
+         </Popover>
+       </div>
+-      <div class="menu-item" v-tooltip="'AI生成PPT'" @click="openAIPPTDialog(); mainMenuVisible = false">
+-        <span class="text ai">AI</span>
+-      </div>
+       <div class="menu-item" v-tooltip="'导出'" @click="setDialogForExport('pptx')">
+         <i-icon-park-outline:download class="icon" />
+       </div>

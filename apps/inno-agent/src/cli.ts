@@ -31,7 +31,7 @@ installFetchLogger();
 
 const parsed = parseRuntimeArgs(process.argv.slice(2));
 const paths = resolveRuntimePaths(parsed.options);
-applyRuntimeEnvironment(paths);
+await applyRuntimeEnvironment(paths);
 
 // Load config
 const config = loadConfig(paths.configPath);

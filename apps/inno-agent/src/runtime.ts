@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { prependLibreOfficeToPath } from "./office/engine-locator.js";
 
 export interface RuntimePaths {
 	codeDir: string;
@@ -139,7 +140,7 @@ export function resolveRuntimePaths(options: RuntimeCliOptions = {}): RuntimePat
 	};
 }
 
-export function applyRuntimeEnvironment(paths: RuntimePaths): void {
+export async function applyRuntimeEnvironment(paths: RuntimePaths): Promise<void> {
 	process.env.INNO_CONFIG_DIR = paths.configDir;
 	process.env.INNO_CONFIG_FILE = paths.configPath;
 	process.env.INNO_DATA_DIR = paths.dataDir;
@@ -148,4 +149,7 @@ export function applyRuntimeEnvironment(paths: RuntimePaths): void {
 	process.env.PI_CODING_AGENT_SESSION_DIR = paths.sessionDir;
 	// Redirect PI agent dir so pi-sandbox reads sandbox.json from configDir
 	process.env.PI_CODING_AGENT_DIR = paths.configDir;
+	// Await the shared lookup before any consumer snapshots PATH. A detached
+	// lookup raced the first document parse during startup.
+	await prependLibreOfficeToPath().catch(() => undefined);
 }

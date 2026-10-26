@@ -20,6 +20,7 @@ import { createL3Tools, formatRecallForPrompt, getL3Memory } from "../memory/l3/
 import { createPracticeTools } from "./practice-tools.js";
 import { createDocumentTools } from "./document-tools.js";
 import { createOcrTools } from "./ocr-tools.js";
+import { createOfficeTools } from "./office-tools.js";
 import { createTavilyTools } from "./tavily-tools.js";
 import { ensureWebAccessConfig, resolvePiAiJitiAliases } from "./web-access-config.js";
 import { ensurePermissionSystemConfig, INNO_WEB_AUTHORIZER_NAME, resolvePluginFile } from "./permission-system-config.js";
@@ -375,6 +376,17 @@ export function createInnoExtension(
 		const tavilyTools = createTavilyTools(configHolder);
 		for (const tool of tavilyTools) {
 			pi.registerTool(tool);
+		}
+
+		// 4d2. Register Office document tools (LibreOffice UNO headless engine).
+		// Default on (plugins.officeEngine.enabled !== false); each tool checks
+		// engine availability at call time, so machines without LibreOffice get
+		// a graceful error instead of a broken tool.
+		if (configHolder.current.plugins?.officeEngine?.enabled !== false) {
+			const officeTools = createOfficeTools(() => resolveActiveWorkspaceDir(paths, deps));
+			for (const tool of officeTools) {
+				pi.registerTool(tool);
+			}
 		}
 
 		// 4b. Register practice-lab tools (when workspace registry available)

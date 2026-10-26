@@ -264,12 +264,16 @@ Issues and PRs are welcome. Before opening a PR, run `npm run build` locally —
 Join the WeChat user group to ask questions, share use cases, and follow updates:
 
 <p align="center">
-  <img src="./docs/assets/wechat-community-qr-2026-10-08.jpg" alt="Inno Agent WeChat community group QR code" width="240" />
+  <img src="./docs/assets/wechat-community-qr-2026-10-19.jpg" alt="Inno Agent WeChat community group QR code" width="240" />
 </p>
 
 ## License
 
 [MIT](./LICENSE). This project depends on the Pi SDK (`@earendil-works/pi-*` packages by Mario Zechner), also MIT-licensed and consumed via npm.
+
+### Third-party licenses
+
+The preview-side WYSIWYG document editors include an **AGPL-3.0** component: [PPTist](https://github.com/pipipi-pikachu/PPTist) (pptx editing, vendored build staged by `scripts/prepare-pptist.sh`). Distributed builds of the web UI therefore carry AGPL obligations for that component; its source and our modifications are available in this repository (the pinned upstream commit plus `scripts/patches/pptist-embed.patch`). The xlsx editor ([Univer](https://github.com/dream-num/univer)) is Apache-2.0.
 
 ## Citation
 

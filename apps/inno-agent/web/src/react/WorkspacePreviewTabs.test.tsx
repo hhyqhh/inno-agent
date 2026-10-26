@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { workspaceStore, WORKSPACE_START_TAB, previewTabKey } from "../stores/workspace-store.js";
+import { workspaceStore, isStartTab, isStartTabKey, previewTabKey } from "../stores/workspace-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { appStore } from "../stores/app-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
@@ -92,15 +92,15 @@ describe("Workspace preview tab activation", () => {
 		expect(workspaceStore.previewTabs.map((tab) => tab.workspaceId)).toEqual(["one"]);
 		expect(workspaceStore.currentFileWorkspaceId).toBe("one");
 	});
-	it("opens one start tab with the plus button and preserves edited files", () => {
+	it("mints a fresh start page per plus click and preserves edited files", () => {
 		workspaceStore.previewTabs[0].isEditing = true;
 		workspaceStore.previewTabs[0].editBuffer = "unsaved draft";
 		render(<WorkspacePreviewTabs />);
 		fireEvent.click(screen.getByRole("button", { name: "workspaceStart.open" }));
 		fireEvent.click(screen.getByRole("button", { name: "workspaceStart.open" }));
-		expect(workspaceStore.previewTabs.filter((tab) => tab.path === WORKSPACE_START_TAB)).toHaveLength(1);
+		expect(workspaceStore.previewTabs.filter(isStartTab)).toHaveLength(2);
 		expect(workspaceStore.previewTabs[0].editBuffer).toBe("unsaved draft");
-		expect(workspaceStore.activePreviewPath).toBe(WORKSPACE_START_TAB);
+		expect(isStartTabKey(workspaceStore.activePreviewPath)).toBe(true);
 		expect(workspaceStore.selectFile).not.toHaveBeenCalled();
 	});
 	it("collapses only when closing the final start page", () => {
@@ -112,7 +112,7 @@ describe("Workspace preview tab activation", () => {
 		expect(workspaceStore.previewTabs).toHaveLength(2);
 		fireEvent.keyDown(screen.getByRole("tab", { name: "a.ts" }), { key: "Delete" });
 		fireEvent.keyDown(screen.getByRole("tab", { name: "b.ts" }), { key: "Delete" });
-		expect(workspaceStore.activePreviewPath).toBe(WORKSPACE_START_TAB);
+		expect(workspaceStore.activePreviewPath != null && isStartTabKey(workspaceStore.activePreviewPath)).toBe(true);
 		expect(collapse).not.toHaveBeenCalled();
 		fireEvent.keyDown(screen.getByRole("tab", { name: "workspaceStart.tab" }), { key: "Delete" });
 		expect(collapse).toHaveBeenCalledWith("collapsed");
@@ -176,8 +176,8 @@ describe("Workspace preview tab context menu", () => {
 		render(<WorkspacePreviewTabs />);
 		fireEvent.contextMenu(screen.getByRole("tab", { name: "c.ts" }));
 		fireEvent.click(screen.getByRole("menuitem", { name: "files.closeAllTabs" }));
-		expect(workspaceStore.previewTabs.map((tab) => tab.path)).toEqual([WORKSPACE_START_TAB]);
-		expect(workspaceStore.activePreviewPath).toBe(WORKSPACE_START_TAB);
+		expect(workspaceStore.previewTabs.filter(isStartTab)).toHaveLength(1);
+		expect(isStartTabKey(workspaceStore.activePreviewPath)).toBe(true);
 	});
 
 	it("offers only close-all over the streaming tab without touching file tabs", () => {

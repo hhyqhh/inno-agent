@@ -11,6 +11,7 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
+import { open, stat } from "node:fs/promises";
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative } from "node:path";
@@ -21,7 +22,7 @@ import { logger } from "../../logger.js";
 import { getWordPdfPreview, WordPreviewError } from "../../office/word-preview.js";
 import type { RuntimePaths } from "../../runtime.js";
 import { ensureDir } from "../../storage/file-store.js";
-import { isWithin } from "../../utils/path-safety.js";
+import { isWithin, resolveContainedPathAsync } from "../../utils/path-safety.js";
 import { TEMP_WORKSPACE_ID, type WorkspaceMeta, type WorkspaceRegistry } from "../../workspace/workspace-registry.js";
 import {
 	canonicalTreeRoot,
@@ -44,7 +45,7 @@ import {
 } from "../workspace-switch.js";
 import { servePdf } from "../pdf-response.js";
 import { listWorkspaceWriteActivity } from "../workspace-activity-store.js";
-import { json, matchRoute, readBody } from "../http-helpers.js";
+import { json, matchRoute, readBody, UPLOAD_MAX_BODY_BYTES } from "../http-helpers.js";
 
 /**
  * Server-owned dependencies the workspace routes touch. `workspaceRegistry`
@@ -585,20 +586,60 @@ export async function handleWorkspacesRoutes(
 	// --- Workspace Mutations API ---
 
 	if (method === "PUT" && url === "/api/workspace/file") {
-		const body = (await readBody(req)) as Record<string, unknown>;
+		// contentBase64 writes carry office-editor exports; base64 inflates by
+		// 4/3, so this endpoint shares the upload cap (192 MB wire ≈ 144 MB
+		// binary) instead of the chat/CRUD default.
+		const body = (await readBody(req, { maxBytes: UPLOAD_MAX_BODY_BYTES })) as Record<string, unknown>;
 		const wsId = workspaceIdFromBody(body);
 		const filePath = typeof body.path === "string" ? body.path.trim() : "";
+		// Binary writes (WYSIWYG office editors) send base64; text edits send content.
+		const contentBase64 = typeof body.contentBase64 === "string" ? body.contentBase64 : null;
 		const content = typeof body.content === "string" ? body.content : "";
 		if (!filePath) { json(res, 400, { error: "Missing path" }); return true; }
-		const fullPath = safeWorkspacePath(wsId, filePath);
-		if (!fullPath) { json(res, 400, { error: "Invalid path" }); return true; }
-		if (!existsSync(fullPath) || !statSync(fullPath).isFile()) {
-			json(res, 404, { error: "File not found" }); return true;
-		}
-		writeFileSync(fullPath, content, "utf-8");
-		const stat = statSync(fullPath);
-		json(res, 200, { path: filePath, saved: true, size: stat.size, updatedAt: stat.mtime.toISOString() });
-		return true;
+        const meta = (await workspaceRegistry.listWorkspacesAsync()).find((workspace) => workspace.id === wsId);
+        const root = meta ? await workspaceRegistry.resolveWorkspaceDirAsync(meta) : null;
+        const normalized = normalizeWorkspaceRelativePath(filePath);
+        const fullPath = root && !normalized.startsWith("/") && !/^[A-Za-z]:/.test(normalized)
+            ? await resolveContainedPathAsync(root, normalized) : null;
+        if (!fullPath) { json(res, 403, { error: "Path outside workspace" }); return true; }
+        if (contentBase64 !== null) {
+            // Office converters are lossy. Binary exports may only create a
+            // new copy; `wx` prevents races from overwriting an existing file.
+            if (body.createOnly !== true || !/\.(xlsx|pptx)$/i.test(filePath)) {
+                json(res, 400, { error: "Office exports must create a new .xlsx/.pptx copy" }); return true;
+            }
+            // Buffer.from accepts malformed base64 silently, including garbage
+            // suffixes. Validate the wire format before writing any bytes.
+            if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(contentBase64)) {
+                json(res, 400, { error: "Invalid base64 content" }); return true;
+            }
+            let output;
+            try { output = await open(fullPath, "wx"); }
+            catch (error) {
+                if ((error as NodeJS.ErrnoException).code === "EEXIST") { json(res, 409, { error: "File already exists" }); return true; }
+                if ((error as NodeJS.ErrnoException).code === "ENOENT") { json(res, 404, { error: "Folder not found" }); return true; }
+                throw error;
+            }
+            try { await output.writeFile(Buffer.from(contentBase64, "base64")); }
+            finally { await output.close(); }
+        } else {
+            // Open without truncation first so only existing regular files can
+            // be edited; asynchronous IO keeps large saves off the event loop.
+            let output;
+            try { output = await open(fullPath, "r+"); }
+            catch (error) {
+                if ((error as NodeJS.ErrnoException).code === "ENOENT") { json(res, 404, { error: "File not found" }); return true; }
+                throw error;
+            }
+            try {
+                if (!(await output.stat()).isFile()) { json(res, 404, { error: "File not found" }); return true; }
+                await output.writeFile(content, "utf-8");
+                await output.truncate(Buffer.byteLength(content, "utf-8"));
+            } finally { await output.close(); }
+        }
+        const info = await stat(fullPath);
+        json(res, 200, { path: filePath, saved: true, size: info.size, updatedAt: info.mtime.toISOString() });
+        return true;
 	}
 
 	if (method === "POST" && url === "/api/workspace/create") {

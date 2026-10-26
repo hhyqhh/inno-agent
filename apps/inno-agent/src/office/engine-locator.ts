@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { access, stat } from "node:fs/promises";
+import { access, realpath, stat } from "node:fs/promises";
 import { constants } from "node:fs";
-import { delimiter, dirname } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { resolveContainedPathAsync } from "../utils/path-safety.js";
@@ -53,7 +53,7 @@ export async function findSoffice(stagedRoot = fileURLToPath(new URL(`../../../.
 	return null;
 }
 
-export interface OfficeEngine { path: string; fingerprint: string }
+export interface OfficeEngine { path: string; fingerprint: string; version: string | null }
 const exec = promisify(execFile);
 
 export async function getOfficeEngine(): Promise<OfficeEngine> {
@@ -65,6 +65,63 @@ export async function getOfficeEngine(): Promise<OfficeEngine> {
 	// tdf#171275: 26.8.0 adds CJK extra leading even when Word's document
 	// grid already provides it. 26.8.1 fixes CalcAscent's SnapToGrid check.
 	if (/LibreOffice\s+26\.8\.0(?:\.|\s|$)/i.test(stdout)) throw new Error("WORD_ENGINE_INCOMPATIBLE");
+	const version = stdout.split("\n", 1)[0]?.trim() || null;
 	const info = await stat(path);
-	return { path, fingerprint: `${path}\0${stdout.trim()}\0${info.size}:${info.mtimeMs}` };
+	return { path, fingerprint: `${path}\0${stdout.trim()}\0${info.size}:${info.mtimeMs}`, version };
+}
+
+/**
+ * Prepend the resolved engine's directory to PATH so downstream consumers
+ * that do their own lookup — notably @llamaindex/liteparse, which shells out
+ * to `which soffice` — find the bundled/explicit copy too. Returns the applied
+ * soffice path, or null when no engine was found. Idempotent; called once from
+ * applyRuntimeEnvironment (awaited), never per request.
+ */
+export async function prependLibreOfficeToPath(): Promise<string | null> {
+	const soffice = await findSoffice();
+	if (!soffice) return null;
+	const dir = dirname(soffice);
+	const entries = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+	if (!entries.includes(dir)) {
+		process.env.PATH = [dir, ...entries].join(delimiter);
+	}
+	return soffice;
+}
+
+/**
+ * Locate the python interpreter that can drive UNO for a given soffice
+ * binary. The UNO bridge must run under LibreOffice's bundled python (it is
+ * the only interpreter with a matching pyuno):
+ *   - macOS:  <LibreOffice.app>/Contents/Resources/python (wrapper script
+ *     that sets PYTHONHOME/PYTHONPATH and execs the framework interpreter)
+ *   - win32:  <program>/python.exe next to soffice.exe
+ *   - linux:  <program>/python when present (distro packages usually ship
+ *     python3-uno for the system python instead — returns null there and the
+ *     caller may fall back to system python3 with PYTHONPATH set)
+ *
+ * macOS caveat: the bundled interpreter binary is signed with a launch
+ * constraint and can only be exec'd from LibreOffice's own processes until
+ * re-signed — scripts/prepare-libreoffice.sh re-signs it ad hoc at staging
+ * time. A user's own /Applications install is NOT re-signed, so the bridge
+ * may fail to spawn against system engines on macOS.
+ */
+export async function findOfficePython(sofficePath: string): Promise<string | null> {
+	const dir = dirname(await realpath(sofficePath).catch(() => sofficePath));
+	const candidates = process.platform === "darwin"
+		// MacOS/soffice -> Contents/Resources/python
+		? [join(dir, "..", "Resources", "python")]
+		: process.platform === "win32"
+			? [join(dir, "python.exe")]
+			: [join(dir, "python"), join(dir, "python3")];
+	for (const candidate of candidates) {
+		if (await executable(candidate)) return candidate;
+	}
+    if (process.platform === "linux") {
+        // Distro packages expose UNO to system python, not a bundled python.
+        for (const python of ["/usr/bin/python3", "python3"]) {
+            try { await exec(python, ["-c", "import uno"], { timeout: 5_000 }); return python; }
+            catch { /* try the next interpreter */ }
+        }
+    }
+    return null;
 }

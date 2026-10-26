@@ -1,4 +1,5 @@
 import { warmWordPreviews, stopWordPreviews, closeWordPreviews } from "./office/word-preview.js";
+import { killSharedUnoSidecar } from "./office/uno-sidecar.js";
 // Register source-map-support so that compiled JS stack traces and
 // pino-caller call sites map back to the original TS source locations.
 import "source-map-support/register.js";
@@ -106,7 +107,7 @@ installFetchLogger();
 
 const parsed = parseRuntimeArgs(process.argv.slice(2));
 const paths = resolveRuntimePaths(parsed.options);
-applyRuntimeEnvironment(paths);
+await applyRuntimeEnvironment(paths);
 
 // Port is resolved from CLI / env only — config.json is read lazily.
 const port = parsed.options.port
@@ -1538,6 +1539,9 @@ installProcessFallbacks({
 const gracefulShutdown = createGracefulShutdownHandler({
 	server,
 	wss,
+	// SIGTERM the UNO sidecar (its own handler shuts soffice down) before the
+	// servers close; closeWordPreviews then stops the resident renderer.
+	cleanup: () => killSharedUnoSidecar(),
 	exit: (code) => {
 		// Stop the resident renderer and remove its private profile on normal shutdown.
 		const deadline = setTimeout(() => process.exit(code), 1_000);

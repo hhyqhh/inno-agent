@@ -5,7 +5,7 @@ import { renderWithTooltipProvider as render } from "../test-utils.js";
 import DocxPreview from "./DocxPreview.js";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("../../api/workspace.js", () => ({ triggerDownload: vi.fn() }));
+vi.mock("./PdfPreview.js", () => ({ default: ({ url, name }: { url: string; name: string }) => <div title={name} data-url={url} /> }));
 
 const file: WorkspaceFileDetail = {
 	path: "report.docx", name: "report.docx", kind: "office", format: "docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -24,8 +24,8 @@ describe("Word PDF preview", () => {
 	it.each(["light", "dark"])("loads the PDF directly for range requests in %s mode", async (theme) => {
 		document.documentElement.dataset.theme = theme;
 		render(<DocxPreview file={file} />);
-		expect(screen.getByRole("status").textContent).toContain("preview.wordConverting");
-		await waitFor(() => expect(screen.getByTitle(file.name).getAttribute("src")).toBe(`${previewUrl}#view=FitH&zoom=page-width`));
+		expect(screen.getByRole("status").textContent).toContain("preview.wordOpening");
+		await waitFor(() => expect(screen.getByTitle(file.name).getAttribute("data-url")).toBe(previewUrl));
 		expect(fetch).toHaveBeenCalledWith(`${file.previewUrl}&metadata=1`, expect.objectContaining({ cache: "no-store" }));
 	});
 
@@ -55,6 +55,7 @@ describe("Word PDF preview", () => {
 		vi.mocked(fetch).mockResolvedValueOnce({ ok: false, json: async () => ({ code: "WORD_ENGINE_UNAVAILABLE" }) } as Response);
 		render(<DocxPreview file={file} />);
 		expect((await screen.findByRole("alert")).textContent).toContain("preview.wordEngineMissing");
+		expect(screen.queryByRole("button", { name: /download|print/i })).toBeNull();
 		fireEvent.click(screen.getByRole("button", { name: /preview.wordRetry/ }));
 		await screen.findByTitle(file.name);
 		expect(fetch).toHaveBeenCalledTimes(2);

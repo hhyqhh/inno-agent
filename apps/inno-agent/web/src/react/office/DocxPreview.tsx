@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import type { WorkspaceFileDetail } from "../../types/workspace.js";
-import { triggerDownload } from "../../api/workspace.js";
 import { Button, Spinner } from "../ui/index.js";
+import PdfPreview from "./PdfPreview.js";
 
 /** Fixed-page PDF keeps Word's paper geometry when the preview panel is resized. */
 export default function DocxPreview({ file }: { file: WorkspaceFileDetail }) {
@@ -39,7 +39,7 @@ export default function DocxPreview({ file }: { file: WorkspaceFileDetail }) {
 
 	if (result.key !== key) {
 		return <div role="status" className="flex h-full items-center justify-center gap-2 text-sm text-[var(--inno-text-muted)]">
-			<Spinner size={16} />{t("preview.wordConverting")}
+			<Spinner size={16} />{t("preview.wordOpening")}
 		</div>;
 	}
 	if (result.errorCode) {
@@ -47,17 +47,14 @@ export default function DocxPreview({ file }: { file: WorkspaceFileDetail }) {
 			: result.errorCode === "WORD_ENGINE_INCOMPATIBLE" ? "preview.wordEngineIncompatible"
 			: result.errorCode === "WORD_PREVIEW_BUSY" ? "preview.wordBusy"
 			: result.errorCode === "WORD_PREVIEW_TOO_LARGE" ? "preview.wordTooLarge" : "preview.docxFailed";
-		const downloadUrl = file.url ? `${file.url}${file.url.includes("?") ? "&" : "?"}download=1` : null;
 		return <div role="alert" className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-[var(--inno-text-muted)]">
 			<div className="font-medium text-[var(--inno-text)]">{file.name}</div>
 			<div>{t(messageKey)}</div>
 			<div className="flex flex-wrap justify-center gap-2">
 				<Button size="xs" onClick={() => setAttempt((value) => value + 1)}><RotateCcw size={14} />{t("preview.wordRetry")}</Button>
-				{downloadUrl ? <Button size="xs" onClick={() => triggerDownload(downloadUrl)}>
-					<Download size={14} />{t("files.download", "Download")}
-				</Button> : null}
 			</div>
 		</div>;
 	}
-	return <iframe title={file.name} src={`${result.url}#view=FitH&zoom=page-width`} className="h-full w-full border-0 bg-[var(--inno-surface-muted)]" />;
+	// The native browser PDF toolbar cannot inherit our theme or remove actions.
+	return <PdfPreview key={key} url={result.url} name={file.name} />;
 }

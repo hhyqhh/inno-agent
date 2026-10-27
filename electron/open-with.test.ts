@@ -27,3 +27,15 @@ it("propagates native failures so the menu can expose a usable default fallback"
 	native.run.mockImplementation((_cmd, _args, _options, callback) => callback(new Error("unavailable")));
 	await expect(listFileApplications("/work/a.docx", "darwin")).rejects.toThrow("unavailable");
 });
+
+it("preserves native PNG application icons and discards invalid image sources", async () => {
+ const icon = "data:image/png;base64,iVBORw0KGgo=";
+ native.run.mockImplementation((_cmd, _args, _options, callback) => callback(null, JSON.stringify([
+  { id: "/Apps/Word.app", name: "Word", isDefault: true, icon },
+  { id: "/Apps/Other.app", name: "Other", icon: "https://example.com/icon.png" },
+ ])));
+ expect(await listFileApplications("/work/a.docx", "darwin")).toEqual([
+  { id: "/Apps/Word.app", name: "Word", isDefault: true, icon },
+  { id: "/Apps/Other.app", name: "Other", isDefault: false },
+ ]);
+});

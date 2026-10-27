@@ -14,7 +14,20 @@ function run(argv) {
   for (let i = 0; i < urls.count; i++) {
     const path = ObjC.unwrap(urls.objectAtIndex(i).path);
     const name = ObjC.unwrap($.NSFileManager.defaultManager.displayNameAtPath(path)).replace(/\\.app$/i, '');
-    result.push({ id: path, name, isDefault: path === preferredPath });
+    let icon;
+    try {
+      // Electron getFileIcon resolves .app through its shared file type and
+      // returns the same generic icon. AppKit reads the actual bundle icon.
+      const image = $.NSImage.alloc.initWithSize($.NSMakeSize(32, 32));
+      image.lockFocus;
+      workspace.iconForFile(path).drawInRectFromRectOperationFraction(
+        $.NSMakeRect(0, 0, 32, 32), $.NSZeroRect, $.NSCompositingOperationCopy, 1);
+      image.unlockFocus;
+      const bitmap = $.NSBitmapImageRep.imageRepWithData(image.TIFFRepresentation);
+      const png = bitmap.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({}));
+      icon = "data:image/png;base64," + ObjC.unwrap(png.base64EncodedStringWithOptions(0));
+    } catch { /* A missing icon must not hide an otherwise usable application. */ }
+    result.push({ id: path, name, isDefault: path === preferredPath, ...(icon ? { icon } : {}) });
   }
   return JSON.stringify(result);
 }`;
@@ -36,7 +49,8 @@ export async function listFileApplications(filePath, platform = process.platform
   const unique = new Map();
   for (const entry of result) {
     if (entry && typeof entry.id === "string" && entry.id.startsWith("/") && entry.id.endsWith(".app") && typeof entry.name === "string") {
-      unique.set(entry.id, { id: entry.id, name: entry.name, isDefault: entry.isDefault === true });
+      unique.set(entry.id, { id: entry.id, name: entry.name, isDefault: entry.isDefault === true,
+        ...(typeof entry.icon === "string" && entry.icon.startsWith("data:image/png;base64,") ? { icon: entry.icon } : {}) });
     }
   }
   const apps = [...unique.values()].sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name));

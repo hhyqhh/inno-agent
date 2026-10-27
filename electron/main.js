@@ -134,6 +134,7 @@ ipcMain.handle("inno-workspace-file-applications", async (event, request) => {
     try { apps = await listFileApplications(path); }
     catch { apps = [{ id: "system-default", name: "", isDefault: true }]; unavailable = true; }
     const applications = await Promise.all(apps.map(async (entry) => {
+      if (entry.icon) return entry;
       try { return { ...entry, icon: (await app.getFileIcon(entry.id === "system-default" ? path : entry.id, { size: "small" })).toDataURL() }; }
       catch { return entry; }
     }));

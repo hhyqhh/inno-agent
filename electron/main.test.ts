@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	openPath: vi.fn(async () => ""),
 	listApps: vi.fn(),
+	fileIcon: vi.fn(),
 	openWith: vi.fn(),
 	reveal: vi.fn(),
 	windows: [] as any[],
@@ -28,7 +29,7 @@ vi.mock("electron", async () => {
 		setBackgroundColor = vi.fn(); close = vi.fn(() => { this.emit("closed"); });
 	}
 	return {
-		app: { isPackaged: false, commandLine: { appendSwitch: vi.fn() }, isReady: () => true,
+		app: { getFileIcon: mocks.fileIcon, isPackaged: false, commandLine: { appendSwitch: vi.fn() }, isReady: () => true,
 			whenReady: () => new Promise(() => {}), on: (name: string, fn: (...args: any[]) => void) => mocks.appHandlers.set(name, fn) },
 		BrowserWindow: Window, Tray: vi.fn(), Menu: {}, shell: { openPath: mocks.openPath, showItemInFolder: mocks.reveal }, dialog: {}, nativeImage: {}, screen: {},
 		ipcMain: {
@@ -49,6 +50,7 @@ describe("desktop search IPC", () => {
 		mocks.listApps.mockReset().mockResolvedValue([{ id: "/Applications/Word.app", name: "Word", isDefault: true }]);
 		mocks.openWith.mockReset().mockResolvedValue(undefined);
 		mocks.reveal.mockReset();
+		mocks.fileIcon.mockReset().mockRejectedValue(new Error("No file icon"));
 		mocks.appHandlers.clear(); mocks.handlers.clear(); mocks.listeners.clear();
 		await import("./main.js");
 		mocks.appHandlers.get("activate")!();
@@ -100,6 +102,15 @@ describe("desktop search IPC", () => {
 		expect(mocks.openWith).toHaveBeenCalledOnce();
 		expect(await mocks.handlers.get("inno-reveal-workspace-file")!(event, request)).toBe(true);
 		expect(mocks.reveal).toHaveBeenCalledExactlyOnceWith("/workspace/report.docx");
+	});
+	it("keeps native bundle icons instead of replacing them with a generic file icon", async () => {
+		vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ absolutePath: "/workspace/report.docx" }) })));
+		const icon = "data:image/png;base64,iVBORw0KGgo=";
+		mocks.listApps.mockResolvedValue([{ id: "/Applications/Word.app", name: "Word", isDefault: true, icon }]);
+		mocks.fileIcon.mockResolvedValue({ toDataURL: () => "generic-file-icon" });
+		const result: any = await mocks.handlers.get("inno-workspace-file-applications")!({ sender: mocks.windows[0].webContents }, { path: "report.docx" });
+		expect(result.applications[0].icon).toBe(icon);
+		expect(mocks.fileIcon).not.toHaveBeenCalled();
 	});
 	it("keeps default opening when enumeration fails and rejects foreign list/reveal requests", async () => {
 		vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ absolutePath: "/workspace/report.docx" }) })));

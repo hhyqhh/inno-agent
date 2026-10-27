@@ -28,6 +28,7 @@ import {
 } from "./ui/index.js";
 import { getLongPressHandlers } from "./ui/long-press.js";
 import { FileName } from "./FileName.js";
+import { WorkspaceOpenWithMenu } from "./WorkspaceOpenWithMenu.js";
 import { WorkspaceFileBar } from "./WorkspaceFileBar.js";
 import { OfficeEditorSession, type OfficeSessionHandle } from "./office/OfficeEditorSession.js";
 import { buildDragFilePanel, hiddenDragImage } from "./chat/smart-input/drag-utils.js";
@@ -671,6 +672,7 @@ function FileContentPane({ onToggleSidebar, sidebarOpen, emptyWhenUnselected = f
 		<div className="flex h-full flex-col">
 			<WorkspaceFileBar name={state.file?.name ?? t("preview.noFile", "No file selected")} path={state.file?.path} onToggleSidebar={onToggleSidebar} sidebarOpen={sidebarOpen}>
 				{state.file && state.fileWorkspaceId === state.workspaceId ? <RunButton filePath={state.file.path} /> : null}
+				{state.file ? <WorkspaceOpenWithMenu key={previewTabKey({ path: state.file.path, workspaceId: state.fileWorkspaceId })} path={state.file.path} workspaceId={state.fileWorkspaceId} disabled={state.isLoadingFile} /> : null}
 				{state.file?.format === "pptx" || state.file?.format === "xlsx" ? (
 					<Button variant="ghost" size="xs" aria-label={t("common.edit", "Edit")} title={t("common.edit", "Edit")} disabled={state.isLoadingFile} onClick={() => onEditOffice(state.file!, state.fileWorkspaceId)}>
 						<Pencil size={14} /><span className="inno-filebar-action-label">{t("common.edit", "Edit")}</span>

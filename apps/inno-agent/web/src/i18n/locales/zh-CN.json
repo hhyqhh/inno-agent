@@ -289,6 +289,16 @@
 		"selectPage": "选择一个页面进行预览"
 	},
 	"preview": {
+		"loadingApps": "正在读取应用…",
+		"appListFailed": "无法读取完整应用列表，仍可使用系统默认应用。",
+		"systemDefaultApp": "系统默认应用",
+		"defaultSuffix": "（默认）",
+		"revealInFinder": "在访达中显示",
+		"revealInExplorer": "在文件资源管理器中显示",
+		"revealInFiles": "在文件管理器中显示",
+		"downloadCopy": "下载副本",
+		"openWithApp": "使用其他应用打开",
+		"openWithAppFailed": "无法打开文件，请检查文件是否存在及默认应用设置。",
 		"workspace": "工作区",
 		"refresh": "刷新",
 		"loading": "正在加载工作区…",

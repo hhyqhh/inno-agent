@@ -289,6 +289,16 @@
 		"selectPage": "Select a page to preview"
 	},
 	"preview": {
+		"loadingApps": "Loading applications…",
+		"appListFailed": "Unable to load the full app list. You can still use the system default app.",
+		"systemDefaultApp": "System default app",
+		"defaultSuffix": " (Default)",
+		"revealInFinder": "Show in Finder",
+		"revealInExplorer": "Show in File Explorer",
+		"revealInFiles": "Show in file manager",
+		"downloadCopy": "Download a copy",
+		"openWithApp": "Open in another app",
+		"openWithAppFailed": "Unable to open the file. Check that it exists and a default app is configured.",
 		"workspace": "Workspace",
 		"refresh": "Refresh",
 		"loading": "Loading workspace…",

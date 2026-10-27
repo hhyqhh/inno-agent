@@ -1,14 +1,19 @@
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+	openPath: vi.fn(async () => ""),
+	listApps: vi.fn(),
+	openWith: vi.fn(),
+	reveal: vi.fn(),
 	windows: [] as any[],
 	appHandlers: new Map<string, (...args: any[]) => void>(),
 	handlers: new Map<string, (...args: any[]) => unknown>(),
 	listeners: new Map<string, (...args: any[]) => void>(),
 }));
+vi.mock("./open-with.js", () => ({ listFileApplications: mocks.listApps, openFileInApplication: mocks.openWith }));
 vi.mock("electron", async () => {
 	const { EventEmitter } = await import("node:events");
 	class Window extends EventEmitter {
@@ -25,7 +30,7 @@ vi.mock("electron", async () => {
 	return {
 		app: { isPackaged: false, commandLine: { appendSwitch: vi.fn() }, isReady: () => true,
 			whenReady: () => new Promise(() => {}), on: (name: string, fn: (...args: any[]) => void) => mocks.appHandlers.set(name, fn) },
-		BrowserWindow: Window, Tray: vi.fn(), Menu: {}, shell: {}, dialog: {}, nativeImage: {}, screen: {},
+		BrowserWindow: Window, Tray: vi.fn(), Menu: {}, shell: { openPath: mocks.openPath, showItemInFolder: mocks.reveal }, dialog: {}, nativeImage: {}, screen: {},
 		ipcMain: {
 			handle: (name: string, fn: (...args: any[]) => unknown) => mocks.handlers.set(name, fn),
 			on: (name: string, fn: (...args: any[]) => void) => mocks.listeners.set(name, fn),
@@ -33,11 +38,17 @@ vi.mock("electron", async () => {
 	};
 });
 
+afterEach(() => { vi.unstubAllGlobals(); });
+
 const result = { id: "workspace:one", category: "workspace", title: "One", subtitle: "one", snippet: "match", workspaceId: "one" };
 
 describe("desktop search IPC", () => {
 	beforeEach(async () => {
 		vi.resetModules(); mocks.windows.length = 0;
+		mocks.openPath.mockReset().mockResolvedValue("");
+		mocks.listApps.mockReset().mockResolvedValue([{ id: "/Applications/Word.app", name: "Word", isDefault: true }]);
+		mocks.openWith.mockReset().mockResolvedValue(undefined);
+		mocks.reveal.mockReset();
 		mocks.appHandlers.clear(); mocks.handlers.clear(); mocks.listeners.clear();
 		await import("./main.js");
 		mocks.appHandlers.get("activate")!();
@@ -46,6 +57,60 @@ describe("desktop search IPC", () => {
 		mocks.handlers.get("inno-open-search-window")!({ sender: mocks.windows[0].webContents }, "dark");
 		return mocks.windows[1];
 	};
+
+	it("opens the original file resolved in its owner workspace", async () => {
+		const fetchFile = vi.fn(async () => ({ ok: true, json: async () => ({ absolutePath: "/workspace/owner/report.docx" }) }));
+		vi.stubGlobal("fetch", fetchFile);
+		const opened = await mocks.handlers.get("inno-open-workspace-file")!({ sender: mocks.windows[0].webContents }, { path: "报告.docx", workspaceId: "owner" });
+		expect(opened).toBe(true);
+		const url = new URL(fetchFile.mock.calls[0][0] as string);
+		expect(url.pathname).toBe("/api/workspace/file-location");
+		expect(url.searchParams.get("workspaceId")).toBe("owner");
+		expect(url.searchParams.get("path")).toBe("报告.docx");
+		expect(mocks.openPath).toHaveBeenCalledExactlyOnceWith("/workspace/owner/report.docx");
+	});
+	it("rejects untrusted senders, invalid inputs, missing files and OS failures", async () => {
+		const fetchFile = vi.fn(); vi.stubGlobal("fetch", fetchFile);
+		const open = mocks.handlers.get("inno-open-workspace-file")!;
+		const trusted = { sender: mocks.windows[0].webContents };
+		expect(await open({ sender: {} }, { path: "a.txt" })).toBe(false);
+		for (const request of [null, {}, { path: "" }, { path: "a", workspaceId: 1 }]) expect(await open(trusted, request)).toBe(false);
+		expect(fetchFile).not.toHaveBeenCalled();
+		fetchFile.mockResolvedValueOnce({ ok: false });
+		expect(await open(trusted, { path: "missing.txt" })).toBe(false);
+		fetchFile.mockResolvedValueOnce({ ok: true, json: async () => ({ absolutePath: "relative.txt" }) });
+		expect(await open(trusted, { path: "a.txt" })).toBe(false);
+		expect(mocks.openPath).not.toHaveBeenCalled();
+		fetchFile.mockResolvedValue({ ok: true, json: async () => ({ absolutePath: "/workspace/a.txt" }) });
+		mocks.openPath.mockResolvedValue("No application");
+		expect(await open(trusted, { path: "a.txt" })).toBe(false);
+		fetchFile.mockRejectedValue(new Error("offline"));
+		expect(await open(trusted, { path: "a.txt" })).toBe(false);
+	});
+
+	it("lists applicable apps, opens a selected registered app, and reveals the original", async () => {
+		vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ absolutePath: "/workspace/report.docx" }) })));
+		const event = { sender: mocks.windows[0].webContents };
+		const request = { path: "report.docx", workspaceId: "owner" };
+		const result: any = await mocks.handlers.get("inno-workspace-file-applications")!(event, request);
+		expect(result.applications).toEqual([{ id: "/Applications/Word.app", name: "Word", isDefault: true }]);
+		expect(await mocks.handlers.get("inno-open-workspace-file")!(event, { ...request, applicationId: "/Applications/Word.app" })).toBe(true);
+		expect(mocks.openWith).toHaveBeenCalledExactlyOnceWith("/workspace/report.docx", "/Applications/Word.app");
+		expect(await mocks.handlers.get("inno-open-workspace-file")!(event, { ...request, applicationId: "/unregistered/Evil.app" })).toBe(false);
+		expect(mocks.openWith).toHaveBeenCalledOnce();
+		expect(await mocks.handlers.get("inno-reveal-workspace-file")!(event, request)).toBe(true);
+		expect(mocks.reveal).toHaveBeenCalledExactlyOnceWith("/workspace/report.docx");
+	});
+	it("keeps default opening when enumeration fails and rejects foreign list/reveal requests", async () => {
+		vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ absolutePath: "/workspace/report.docx" }) })));
+		mocks.listApps.mockRejectedValue(new Error("native list unavailable"));
+		const request = { path: "report.docx" }; const event = { sender: mocks.windows[0].webContents };
+		expect(await mocks.handlers.get("inno-workspace-file-applications")!({ sender: {} }, request)).toBeNull();
+		expect(await mocks.handlers.get("inno-reveal-workspace-file")!({ sender: {} }, request)).toBe(false);
+		const result: any = await mocks.handlers.get("inno-workspace-file-applications")!(event, request);
+		expect(result).toMatchObject({ unavailable: true, applications: [{ id: "system-default", isDefault: true }] });
+		expect(await mocks.handlers.get("inno-open-workspace-file")!(event, request)).toBe(true);
+	});
 
 	it("allows the native main window to shrink with the compact chat layout", () => {
 		expect(mocks.windows[0].options).toMatchObject({ minWidth: 612, minHeight: 600 });
@@ -115,6 +180,14 @@ describe("desktop preload bridge", () => {
 		expect(navigate).toHaveBeenCalledExactlyOnceWith(result);
 		expect(ipc.send).toHaveBeenCalledExactlyOnceWith("inno-search-open-result", result);
 		unsubscribe(); expect(ipc.listenerCount("inno-search-navigate")).toBe(0);
+	});
+	it("validates workspace-file requests before forwarding to the main process", async () => {
+		const { ipc, api } = bridge(); ipc.invoke.mockResolvedValue(true);
+		expect(await api.openWorkspaceFile("", "owner")).toBe(false);
+		expect(await api.openWorkspaceFile("a.docx", 42)).toBe(false);
+		expect(ipc.invoke).not.toHaveBeenCalled();
+		expect(await api.openWorkspaceFile("a.docx", "owner")).toBe(true);
+		expect(ipc.invoke).toHaveBeenCalledExactlyOnceWith("inno-open-workspace-file", { path: "a.docx", workspaceId: "owner", applicationId: undefined });
 	});
 	it("filters fullscreen notifications and removes the listener on cleanup", () => {
 		const { ipc, api } = bridge(); const update = vi.fn();

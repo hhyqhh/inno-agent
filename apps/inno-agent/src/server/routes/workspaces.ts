@@ -333,6 +333,29 @@ export async function handleWorkspacesRoutes(
 		return true;
 	}
 
+	if (method === "GET" && url.split("?")[0] === "/api/workspace/file-location") {
+		const workspaceId = workspaceIdFromQuery(url);
+		const requestedPath = new URL(url, "http://localhost").searchParams.get("path") ?? "";
+		if (!requestedPath) { json(res, 400, { error: "Missing path" }); return true; }
+		const workspace = (await workspaceRegistry.listWorkspacesAsync()).find((entry) => entry.id === workspaceId);
+		if (!workspace) { json(res, 404, { error: "Workspace not found" }); return true; }
+		const root = await workspaceRegistry.resolveWorkspaceDirAsync(workspace);
+		const normalized = normalizeWorkspaceRelativePath(requestedPath);
+		const fullPath = root && !normalized.startsWith("/") && !/^[A-Za-z]:/.test(normalized)
+			? await resolveContainedPathAsync(root, normalized) : null;
+		if (!fullPath) { json(res, 403, { error: "Path outside workspace" }); return true; }
+		try {
+			if (!(await stat(fullPath)).isFile()) { json(res, 404, { error: "File not found" }); return true; }
+		} catch (error) {
+			if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+				json(res, 404, { error: "File not found" }); return true;
+			}
+			throw error;
+		}
+		json(res, 200, { absolutePath: fullPath });
+		return true;
+	}
+
 	// safeWorkspacePath closed over server.ts's module-level workspaceRegistry;
 	// rebind it to the injected registry here so the route bodies stay verbatim.
 	// safeJoinReal (not plain safeJoin): a symlink planted inside the workspace

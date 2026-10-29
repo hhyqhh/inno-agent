@@ -75,7 +75,7 @@ export async function getOfficeEngine(): Promise<OfficeEngine> {
  * that do their own lookup — notably @llamaindex/liteparse, which shells out
  * to `which soffice` — find the bundled/explicit copy too. Returns the applied
  * soffice path, or null when no engine was found. Idempotent; called once from
- * applyRuntimeEnvironment (fire-and-forget), never per request.
+ * applyRuntimeEnvironment (awaited), never per request.
  */
 export async function prependLibreOfficeToPath(): Promise<string | null> {
 	const soffice = await findSoffice();
@@ -116,5 +116,12 @@ export async function findOfficePython(sofficePath: string): Promise<string | nu
 	for (const candidate of candidates) {
 		if (await executable(candidate)) return candidate;
 	}
-	return null;
+    if (process.platform === "linux") {
+        // Distro packages expose UNO to system python, not a bundled python.
+        for (const python of ["/usr/bin/python3", "python3"]) {
+            try { await exec(python, ["-c", "import uno"], { timeout: 5_000 }); return python; }
+            catch { /* try the next interpreter */ }
+        }
+    }
+    return null;
 }

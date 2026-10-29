@@ -25,7 +25,7 @@ it("renders the requested page batch with a total count for checking the rest", 
 	const result = await renderPdfToPngs(join(directory, "report.pdf"), output, { startPage: 3, maxPages: 2 });
 	expect(result.totalPages).toBe(7);
 	expect(mocks.getPage.mock.calls).toEqual([[2], [3]]);
-	expect(await readdir(output)).toEqual(["report-p2.png", "report-p3.png"]);
+	expect(await readdir(output)).toEqual(["report-p3.png", "report-p4.png"]);
 	expect(await readFile(result.paths[0]!)).toEqual(Buffer.from([1, 2, 3]));
 	expect(mocks.destroy).toHaveBeenCalledOnce();
 });

@@ -20,7 +20,7 @@
  *   office_close_document  — release the document handle.
  *
  * All file access is constrained to the active workspace via
- * checkWorkspaceMutationPath.
+ * the shared asynchronous contained-path resolver.
  */
 
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
@@ -29,7 +29,6 @@ import { resolveContainedPathAsync } from "../utils/path-safety.js";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { logger } from "../logger.js";
-import { checkWorkspaceMutationPath } from "./workspace-path-guard.js";
 import { getOfficeEngine, type OfficeEngine } from "../office/engine-locator.js";
 import { getUnoSidecar, type UnoCallResult } from "../office/uno-sidecar.js";
 
@@ -74,17 +73,22 @@ function formatFailure(step: string, res: UnoCallResult): string {
 }
 
 export function createOfficeTools(getWorkspaceDir: () => string): ToolDefinition[] {
-	function resolveWorkspacePath(filePath: string): { path: string } | { error: string } {
-		const workspaceDir = getWorkspaceDir();
-		const check = checkWorkspaceMutationPath(workspaceDir, filePath);
-		if (!check.allowed || !check.resolvedPath) {
-			return {
-				error:
-					`路径不在当前工作区内，已拒绝：${filePath}。` +
-					"请使用当前工作区内的相对路径或工作区内的绝对路径。",
-			};
-		}
-		return { path: check.resolvedPath };
+	async function resolveWorkspacePath(filePath: string): Promise<{ path: string } | { error: string }> {
+		const resolvedPath = filePath.trim() ? await resolveContainedPathAsync(getWorkspaceDir(), filePath) : null;
+		if (!resolvedPath) return { error: `路径不在当前工作区内，已拒绝：${filePath}。请使用当前工作区内的路径。` };
+		return { path: resolvedPath };
+	}
+
+	// The process-wide sidecar is shared across sessions. A docId alone must
+	// never authorize edits/close after a session or workspace switch.
+	const owned = new Map<string, { workspace: string; path: string }>();
+	async function checkHandle(docId: string): Promise<boolean> {
+		const entry = owned.get(docId);
+		return !!entry && entry.workspace === getWorkspaceDir()
+			&& !!(await resolveContainedPathAsync(entry.workspace, entry.path));
+	}
+	function handleRejected() {
+		return textResult("文档句柄不属于当前会话/工作区，请在当前工作区重新打开文档。", { error: "handle_rejected" });
 	}
 
 	const engineStatus = defineTool({
@@ -145,7 +149,7 @@ export function createOfficeTools(getWorkspaceDir: () => string): ToolDefinition
 				path: string; html?: string; slides?: Record<string, unknown>[];
 				accent?: string; sheets?: Record<string, unknown>[];
 			};
-			const resolved = resolveWorkspacePath(String(rawPath ?? ""));
+			const resolved = await resolveWorkspacePath(String(rawPath ?? ""));
 			if ("error" in resolved) return textResult(resolved.error, { error: "path_rejected" });
 			const ext = /\.([a-z]+)$/i.exec(resolved.path)?.[1]?.toLowerCase() ?? "";
 			let spec: Record<string, unknown>;
@@ -171,7 +175,7 @@ export function createOfficeTools(getWorkspaceDir: () => string): ToolDefinition
 			const created = await sidecar.call<{ created: string; kind: string }>(
 				"create", { path: resolved.path, spec });
 			if (!created.ok) return textResult(formatFailure("create", created), { error: created.error });
-			logger.info({ path: resolved.path, kind: created.result!.kind }, "office_create_document: created");
+			logger.info({ kind: created.result!.kind }, "office_create_document: created");
 			return textResult(
 				`已生成 ${created.result!.kind} 文档：${rawPath}。`,
 				{ created: created.result!.created, kind: created.result!.kind },
@@ -192,9 +196,10 @@ export function createOfficeTools(getWorkspaceDir: () => string): ToolDefinition
 		}),
 		async execute(_toolCallId, params) {
 			const { path: rawPath, readOnly } = params as { path: string; readOnly?: boolean };
-			const resolved = resolveWorkspacePath(String(rawPath ?? ""));
+			const resolved = await resolveWorkspacePath(String(rawPath ?? ""));
 			if ("error" in resolved) return textResult(resolved.error, { error: "path_rejected" });
 			const sidecar = getUnoSidecar();
+			const workspace = getWorkspaceDir();
 			const opened = await sidecar.call<{ docId: string; kind: string; path: string }>(
 				"open", { path: resolved.path, readOnly: readOnly === true });
 			if (!opened.ok) return textResult(formatFailure("open", opened), { error: opened.error });
@@ -204,7 +209,8 @@ export function createOfficeTools(getWorkspaceDir: () => string): ToolDefinition
 				return textResult(formatFailure("inspect", outline), { error: outline.error });
 			}
 			const { docId, kind } = opened.result!;
-			logger.info({ docId, kind, path: resolved.path }, "office_open_document: opened");
+			owned.set(docId, { workspace, path: resolved.path });
+			logger.info({ docId, kind }, "office_open_document: opened");
 			return textResult(
 				`已打开 ${kind} 文档（docId: ${docId}）。结构大纲：\n` +
 				JSON.stringify(outline.result, null, 2),
@@ -233,11 +239,19 @@ export function createOfficeTools(getWorkspaceDir: () => string): ToolDefinition
 				docId: string; ops: Record<string, unknown>[]; save?: boolean; saveAs?: string;
 			};
 			if (!docId) return textResult("缺少 docId。", { error: "missing_doc_id" });
+			if (!(await checkHandle(docId))) return handleRejected();
 			if (!Array.isArray(ops) || ops.length === 0) {
 				return textResult("ops 为空：至少需要一个原子操作。", { error: "empty_ops" });
 			}
 			if (ops.length > 100) {
 				return textResult("单次最多 100 个操作，请分批提交。", { error: "too_many_ops" });
+			}
+			// Validate save-as before applying any edit, so rejection is side-effect free.
+			let target: string | undefined;
+			if (saveAs) {
+				const resolved = await resolveWorkspacePath(saveAs);
+				if ("error" in resolved) return textResult(resolved.error, { error: "path_rejected" });
+				target = resolved.path;
 			}
 			const sidecar = getUnoSidecar();
 			const edited = await sidecar.call<{ results: { op: string; ok: boolean; error?: string }[] }>(
@@ -249,13 +263,8 @@ export function createOfficeTools(getWorkspaceDir: () => string): ToolDefinition
 
 			let saveNote = "";
 			if (failed.length === 0 && (save === true || saveAs)) {
-				let target: string | undefined;
-				if (saveAs) {
-					const resolved = resolveWorkspacePath(String(saveAs));
-					if ("error" in resolved) return textResult(resolved.error, { error: "path_rejected" });
-					target = resolved.path;
-				}
 				const saved = await sidecar.call("save", target ? { docId, path: target } : { docId });
+				if (saved.ok && target) owned.get(docId)!.path = target;
 				saveNote = saved.ok
 					? `\n已保存：${(saved.result as { saved: string }).saved}`
 					: `\n保存失败：${saved.error}`;
@@ -294,7 +303,7 @@ export function createOfficeTools(getWorkspaceDir: () => string): ToolDefinition
 			const { path: rawPath, mode, format, maxPages, startPage, outDir } = params as {
 				path: string; mode?: "check" | "export"; format?: "pdf" | "png"; maxPages?: number; startPage?: number; outDir?: string;
 			};
-			const resolved = resolveWorkspacePath(String(rawPath ?? ""));
+			const resolved = await resolveWorkspacePath(String(rawPath ?? ""));
 			if ("error" in resolved) return textResult(resolved.error, { error: "path_rejected" });
 			const checking = mode !== "export";
 			let temporaryDir: string | undefined;
@@ -308,7 +317,7 @@ export function createOfficeTools(getWorkspaceDir: () => string): ToolDefinition
 					if (!prefix) throw new Error("无法创建排版检查临时目录");
 					outputDir = temporaryDir = await mkdtemp(prefix);
 				} else {
-					const dir = resolveWorkspacePath(outDir?.trim() || ".");
+					const dir = await resolveWorkspacePath(outDir?.trim() || ".");
 					if ("error" in dir) return textResult(dir.error, { error: "path_rejected" });
 					outputDir = dir.path;
 					await mkdir(outputDir, { recursive: true });
@@ -362,9 +371,11 @@ export function createOfficeTools(getWorkspaceDir: () => string): ToolDefinition
 		async execute(_toolCallId, params) {
 			const { docId } = params as { docId: string };
 			if (!docId) return textResult("缺少 docId。", { error: "missing_doc_id" });
+			if (!(await checkHandle(docId))) return handleRejected();
 			const sidecar = getUnoSidecar();
 			const closed = await sidecar.call("close", { docId });
 			if (!closed.ok) return textResult(formatFailure("close", closed), { error: closed.error });
+			owned.delete(docId);
 			return textResult(`已关闭文档 ${docId}。`, { closed: docId });
 		},
 	});

@@ -59,6 +59,8 @@ export class UnoSidecar {
 	private pending = new Map<number, PendingCall>();
 	/** Serializes calls: a queued call starts only after the previous reply. */
 	private queue: Promise<unknown> = Promise.resolve();
+	private queued = 0;
+	private stopped = false;
 
 	/** Base port for the UNO socket; offset per restart to dodge TIME_WAIT. */
 	private port = 20073 + (process.pid % 100) * 10;
@@ -96,8 +98,9 @@ export class UnoSidecar {
 
 	private async start(): Promise<void> {
 		const { soffice, python } = await this.resolveRuntime();
+		if (this.stopped) throw new Error("UNO sidecar is closed");
 		this.port += 1;
-		logger.info({ soffice, python, port: this.port }, "uno-sidecar: starting bridge");
+		logger.info({ port: this.port }, "uno-sidecar: starting bridge");
 		const proc = spawn(python, [BRIDGE_SCRIPT, "--soffice", soffice, "--port", String(this.port)], {
 			stdio: ["pipe", "pipe", "pipe"],
 			windowsHide: true,
@@ -106,11 +109,15 @@ export class UnoSidecar {
 		this.ready = false;
 
 		proc.stderr?.on("data", (chunk) => {
-			logger.debug({ line: String(chunk).trim() }, "uno-bridge stderr");
+			logger.debug({ bytes: chunk.length }, "uno-bridge stderr received");
 		});
 		proc.on("exit", (code, signal) => {
 			logger.warn({ code, signal }, "uno-bridge exited");
-			this.handleExit();
+			// An old process may exit after its replacement has already started.
+			if (this.proc === proc) this.handleExit();
+		});
+		proc.stdin?.on("error", () => {
+			if (this.proc === proc) { proc.kill(); this.handleExit(); }
 		});
 
 		this.reader = createInterface({ input: proc.stdout! });
@@ -121,6 +128,13 @@ export class UnoSidecar {
 				settled = true;
 				rejectReady(new Error(`uno-bridge did not become ready within ${START_TIMEOUT_MS}ms`));
 			}, START_TIMEOUT_MS);
+			// spawn errors emit `error`, without necessarily emitting `exit`.
+			proc.once("error", (error) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				rejectReady(new UnoEngineUnavailableError(`UNO bridge spawn failed: ${error.message}`));
+			});
 			proc.once("exit", (code, signal) => {
 				if (settled) return;
 				settled = true;
@@ -136,16 +150,20 @@ export class UnoSidecar {
 				try {
 					msg = JSON.parse(line);
 				} catch {
-					logger.warn({ line }, "uno-bridge: non-JSON stdout line");
+					logger.warn("uno-bridge: non-JSON stdout line");
 					return;
 				}
 				if (msg.type === "ready") {
+					if (settled || this.proc !== proc) return;
+					settled = true;
 					clearTimeout(timer);
 					this.ready = true;
 					resolveReady();
 					return;
 				}
 				if (msg.type === "error") {
+					if (settled) return;
+					settled = true;
 					clearTimeout(timer);
 					rejectReady(new UnoEngineUnavailableError(String(msg.error)));
 					return;
@@ -161,6 +179,7 @@ export class UnoSidecar {
 		this.ready = false;
 		this.proc = null;
 		this.reader?.removeAllListeners();
+		this.reader?.close();
 		this.reader = null;
 		const error = wasReady
 			? "LibreOffice 引擎进程意外退出，已打开的文档句柄失效。请重新打开文档后重试。"
@@ -187,12 +206,13 @@ export class UnoSidecar {
 	}
 
 	private async ensureStarted(): Promise<void> {
+		if (this.stopped) throw new Error("UNO sidecar is closed");
 		if (this.ready && this.proc) return;
 		if (!this.starting) {
 			this.starting = this.start()
 				.catch((err) => {
 					this.proc?.kill();
-					this.proc = null;
+					this.handleExit();
 					throw err;
 				})
 				.finally(() => {
@@ -208,6 +228,10 @@ export class UnoSidecar {
 	 * message straight through to the model.
 	 */
 	call<T = unknown>(cmd: string, payload: Record<string, unknown> = {}): Promise<UnoCallResult<T>> {
+		// Count queued requests too; serialized calls only ever put one item
+		// in `pending`, so checking that map did not bound the actual queue.
+		if (this.queued >= MAX_PENDING) return Promise.resolve({ ok: false, error: "UNO bridge 请求队列已满，请稍后再试。" });
+		this.queued++;
 		const run = async (): Promise<UnoCallResult<T>> => {
 			try {
 				await this.ensureStarted();
@@ -220,8 +244,12 @@ export class UnoSidecar {
 			return await new Promise<UnoCallResult<T>>((resolveCall) => {
 				const id = this.nextId++;
 				const timer = setTimeout(() => {
+					// A timed-out UNO operation can still be running. Retire that
+					// process before another queued edit can use its uncertain state.
 					this.pending.delete(id);
-					resolveCall({ ok: false, error: `UNO 调用 ${cmd} 超时（${CALL_TIMEOUT_MS / 1000}s）` });
+					this.proc?.kill();
+					this.handleExit();
+					resolveCall({ ok: false, error: `UNO 调用 ${cmd} 超时，文档句柄已失效，请重新打开。` });
 				}, CALL_TIMEOUT_MS);
 				this.pending.set(id, { id, resolve: resolveCall as (v: UnoCallResult) => void, timer });
 				try {
@@ -233,7 +261,7 @@ export class UnoSidecar {
 				}
 			});
 		};
-		const result = this.queue.then(run, run);
+		const result = this.queue.then(run, run).finally(() => { this.queued--; });
 		this.queue = result.catch(() => undefined);
 		return result as Promise<UnoCallResult<T>>;
 	}
@@ -255,9 +283,9 @@ export class UnoSidecar {
 	 * own signal handler shuts soffice down) without waiting for a reply.
 	 */
 	killSync(): void {
+		this.stopped = true;
 		const proc = this.proc;
-		this.proc = null;
-		this.ready = false;
+		this.handleExit();
 		if (!proc) return;
 		try {
 			proc.kill("SIGTERM");

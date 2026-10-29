@@ -62,8 +62,8 @@ export async function renderPdfToPngs(
 			const png = await page.render({
 				scale,
 				render: async ({ data, width, height }) => {
-					// pdfium emits BGRA; sharp expects channel-count matching the raw
-					// buffer, so declare 4 channels and let the PNG encoder drop alpha.
+					// PDFium exposes zero-based pages and RGBA bytes (the real raster
+					// test checks red pixels); keep one-based filenames for callers.
 					const out = await sharp(Buffer.from(data.buffer, data.byteOffset, data.byteLength), {
 						raw: { width, height, channels: 4 },
 					})
@@ -73,7 +73,7 @@ export async function renderPdfToPngs(
 					return new Uint8Array(out);
 				},
 			});
-			const outPath = await resolveContainedPathAsync(outDir, `${stem}-p${page.number}.png`);
+			const outPath = await resolveContainedPathAsync(outDir, `${stem}-p${page.number + 1}.png`);
 			if (!outPath) throw new Error("Invalid rendered page path");
 			await writeFile(outPath, png.data);
 			written.push(outPath);

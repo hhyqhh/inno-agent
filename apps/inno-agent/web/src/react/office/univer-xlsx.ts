@@ -83,6 +83,7 @@ export interface UniverCell {
 	v?: string | number | boolean;
 	t?: number;
 	f?: string;
+    p?: { body?: { dataStream?: string } };
 	s?: UniverStyle | string;
 }
 
@@ -209,7 +210,10 @@ export function excelJsToUniver(workbook: ExcelJS.Workbook, name: string): Unive
 	const sheetOrder: string[] = [];
 	workbook.worksheets.forEach((ws, i) => {
 		const id = `sheet-${i + 1}`;
-		const rowCount = Math.min(ws.rowCount, MAX_ROWS);
+		if (ws.rowCount > MAX_ROWS || ws.columnCount > MAX_COLS) {
+            throw new Error(`Workbook exceeds editor limits (${MAX_ROWS} rows / ${MAX_COLS} columns). The original file is unchanged.`);
+        }
+        const rowCount = ws.rowCount;
 		const columnCount = Math.min(Math.max(ws.columnCount, 1), MAX_COLS);
 		const cellData: Record<number, Record<number, UniverCell>> = {};
 		for (let r = 1; r <= rowCount; r++) {
@@ -238,12 +242,12 @@ export function excelJsToUniver(workbook: ExcelJS.Workbook, name: string): Unive
 							out.v = result ? 1 : 0;
 							out.t = T_BOOLEAN;
 						}
-					} else if (raw instanceof Date) {
-						const text = staticText(cell, raw);
-						if (text != null) {
-							out.v = text;
-							out.t = T_FORCE_STRING;
-						}
+                    } else if (raw instanceof Date) {
+                        // Dates are numeric Excel values, including fractional
+                        // days. Flattening them to strings breaks date formulas.
+                        out.v = raw.getTime() / 86_400_000 + 25569;
+                        if (out.v < 61) out.v--;
+                        out.t = T_NUMBER;
 					} else {
 						// richText / hyperlink / formulaError / sharedFormula — flatten.
 						const text = staticText(cell, raw);
@@ -357,7 +361,11 @@ export function univerToExcelJs(snapshot: UniverWorkbookData, name: string): Exc
 					if (cell.t === T_BOOLEAN) result = Boolean(cell.v);
 					else if (typeof cell.v === "number" || typeof cell.v === "string") result = cell.v;
 					target.value = result === undefined ? { formula } : { formula, result };
-				} else if (cell.t === T_BOOLEAN) {
+				} else if (typeof cell.p?.body?.dataStream === "string") {
+                    // Univer stores rich cell input in a document body. Keep
+                    // its text even when the formatting subset is unsupported.
+                    target.value = cell.p.body.dataStream.replace(/\r\n$/, "");
+                } else if (cell.t === T_BOOLEAN) {
 					target.value = Boolean(cell.v);
 				} else if (cell.v != null) {
 					target.value = cell.v;

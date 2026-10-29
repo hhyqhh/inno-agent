@@ -11,7 +11,7 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { stat } from "node:fs/promises";
+import { open, stat } from "node:fs/promises";
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative } from "node:path";
@@ -619,24 +619,31 @@ export async function handleWorkspacesRoutes(
 		const contentBase64 = typeof body.contentBase64 === "string" ? body.contentBase64 : null;
 		const content = typeof body.content === "string" ? body.content : "";
 		if (!filePath) { json(res, 400, { error: "Missing path" }); return true; }
-		const fullPath = safeWorkspacePath(wsId, filePath);
-		if (!fullPath) { json(res, 400, { error: "Invalid path" }); return true; }
-		if (!existsSync(fullPath) || !statSync(fullPath).isFile()) {
-			json(res, 404, { error: "File not found" }); return true;
+		// Large Office saves must not block streaming requests. Resolve the same
+		// contained path as reads, validate base64 before opening without truncation.
+		const meta = (await workspaceRegistry.listWorkspacesAsync()).find((workspace) => workspace.id === wsId);
+		const root = meta ? await workspaceRegistry.resolveWorkspaceDirAsync(meta) : null;
+		const normalized = normalizeWorkspaceRelativePath(filePath);
+		const fullPath = root && !normalized.startsWith("/") && !/^[A-Za-z]:/.test(normalized)
+			? await resolveContainedPathAsync(root, normalized) : null;
+		if (!fullPath) { json(res, 403, { error: "Path outside workspace" }); return true; }
+		if (contentBase64 !== null && !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(contentBase64)) {
+			json(res, 400, { error: "Invalid base64 content" }); return true;
 		}
-		if (contentBase64 !== null) {
-			let bytes: Buffer;
-			try {
-				bytes = Buffer.from(contentBase64, "base64");
-			} catch {
-				json(res, 400, { error: "Invalid base64 content" }); return true;
-			}
-			writeFileSync(fullPath, bytes);
-		} else {
-			writeFileSync(fullPath, content, "utf-8");
+		let output;
+		try { output = await open(fullPath, "r+"); }
+		catch (error) {
+			if (["ENOENT", "EISDIR", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) { json(res, 404, { error: "File not found" }); return true; }
+			throw error;
 		}
-		const stat = statSync(fullPath);
-		json(res, 200, { path: filePath, saved: true, size: stat.size, updatedAt: stat.mtime.toISOString() });
+		try {
+			if (!(await output.stat()).isFile()) { json(res, 404, { error: "File not found" }); return true; }
+			const bytes = contentBase64 !== null ? Buffer.from(contentBase64, "base64") : Buffer.from(content, "utf-8");
+			await output.writeFile(bytes);
+			await output.truncate(bytes.length);
+			const info = await output.stat();
+			json(res, 200, { path: filePath, saved: true, size: info.size, updatedAt: info.mtime.toISOString() });
+		} finally { await output.close(); }
 		return true;
 	}
 

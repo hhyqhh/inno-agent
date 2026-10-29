@@ -28,6 +28,7 @@ import sys
 import tempfile
 import time
 import traceback
+import shutil
 import uuid
 
 import uno
@@ -148,6 +149,8 @@ class OfficeEngine:
                 self.proc.wait(timeout=10)
             except Exception:
                 self.proc.kill()
+                self.proc.wait(timeout=5)
+        shutil.rmtree(self.profile_dir, ignore_errors=True)
 
     # ── documents ──────────────────────────────────────────────────────────
     @staticmethod
@@ -161,6 +164,10 @@ class OfficeEngine:
         return None
 
     def open(self, path, read_only=False):
+        # Canonical paths keep a single component owner, including symlink aliases.
+        path = os.path.realpath(path)
+        if any(entry["path"] == path for entry in self.docs.values()):
+            raise ValueError("document already open; close its existing handle first")
         if not os.path.isfile(path):
             raise FileNotFoundError(path)
         props = [prop("Hidden", True)]
@@ -199,11 +206,20 @@ class OfficeEngine:
         filter_name = SAVE_FILTERS.get((entry["kind"], ext))
         if filter_name is None:
             raise ValueError(f"no save filter for kind={entry['kind']} ext={ext}")
-        component.storeToURL(file_url(path), (prop("FilterName", filter_name),))
+        # Save-as must retarget later in-place saves and preserve existing files.
+        path = os.path.realpath(path)
+        component.storeAsURL(file_url(path), (prop("FilterName", filter_name), prop("Overwrite", False)))
+        entry["path"] = path
         return {"saved": path}
 
     def convert(self, path, target, out_dir):
-        entry_id = self.open(path, read_only=True)["docId"]
+        # Render the existing owner so unsaved edits are included without a
+        # competing component that could close or overwrite the original.
+        path = os.path.realpath(path)
+        entry_id = next((key for key, entry in self.docs.items() if entry["path"] == path), None)
+        temporary = entry_id is None
+        if temporary:
+            entry_id = self.open(path, read_only=True)["docId"]
         try:
             entry = self._doc(entry_id)
             ext = "." + target.lstrip(".").lower()
@@ -219,7 +235,8 @@ class OfficeEngine:
                 file_url(out_path), (prop("FilterName", filter_name),))
             return {"output": out_path}
         finally:
-            self.close(entry_id)
+            if temporary:
+                self.close(entry_id)
 
     # ── creation (generation pipeline) ─────────────────────────────────────
     def create(self, path, spec):
@@ -232,6 +249,9 @@ class OfficeEngine:
                shape-by-shape on a 16:9 canvas.
         sheet: spec = {"sheets": [{"name": str, "rows": [[cell...]]}]}
         """
+        # Generation promises a new document; never truncate an existing target.
+        if os.path.lexists(path):
+            raise FileExistsError("create requires a new target path")
         ext = os.path.splitext(path)[1].lower()
         if ext in (".docx", ".odt"):
             kind, component = "doc", self._create_doc_from_html(spec.get("html") or "")
@@ -274,29 +294,33 @@ class OfficeEngine:
             raise ValueError("sheet creation needs spec.sheets")
         component = self.desktop.loadComponentFromURL(
             "private:factory/scalc", "_blank", 0, (prop("Hidden", True),))
-        sheets = component.Sheets
-        for i, sheet_spec in enumerate(sheets_spec):
-            name = str(sheet_spec.get("name") or f"Sheet{i + 1}")[:31]
-            if i == 0:
-                sheet = sheets.getByIndex(0)
-                sheet.Name = name
-            else:
-                sheets.insertNewByName(name, i)
-                sheet = sheets.getByName(name)
-            rows = sheet_spec.get("rows") or []
-            for r, row in enumerate(rows):
-                for c, value in enumerate(row):
-                    cell = sheet.getCellByPosition(c, r)
-                    if isinstance(value, (int, float)) and not isinstance(value, bool):
-                        cell.setValue(value)
-                    else:
-                        cell.setString("" if value is None else str(value))
-            # Bold header row when the sheet has one.
-            if rows:
-                header = sheet.getCellRangeByPosition(0, 0, max(len(rows[0]) - 1, 0), 0)
-                header.CharWeight = 150.0  # com.sun.star.awt.FontWeight.BOLD
-                header.CharWeightAsian = 150.0
-        return component
+        try:
+            sheets = component.Sheets
+            for i, sheet_spec in enumerate(sheets_spec):
+                name = str(sheet_spec.get("name") or f"Sheet{i + 1}")[:31]
+                if i == 0:
+                    sheet = sheets.getByIndex(0)
+                    sheet.Name = name
+                else:
+                    sheets.insertNewByName(name, i)
+                    sheet = sheets.getByName(name)
+                rows = sheet_spec.get("rows") or []
+                for r, row in enumerate(rows):
+                    for c, value in enumerate(row):
+                        cell = sheet.getCellByPosition(c, r)
+                        if isinstance(value, (int, float)) and not isinstance(value, bool):
+                            cell.setValue(value)
+                        else:
+                            cell.setString("" if value is None else str(value))
+                # Bold header row when the sheet has one.
+                if rows:
+                    header = sheet.getCellRangeByPosition(0, 0, max(len(rows[0]) - 1, 0), 0)
+                    header.CharWeight = 150.0  # com.sun.star.awt.FontWeight.BOLD
+                    header.CharWeightAsian = 150.0
+            return component
+        except Exception:
+            component.close(False)
+            raise
 
     # slide deck ------------------------------------------------------------
     def _create_slide_deck(self, spec):
@@ -306,13 +330,17 @@ class OfficeEngine:
         accent = parse_color(spec.get("accent"), 0x2563EB)
         component = self.desktop.loadComponentFromURL(
             "private:factory/simpress", "_blank", 0, (prop("Hidden", True),))
-        pages = component.getDrawPages()
-        for i, slide in enumerate(slides_spec):
-            page = pages.getByIndex(0) if i == 0 else pages.insertNewByIndex(i)
-            page.Width = SLIDE_W
-            page.Height = SLIDE_H
-            self._fill_slide(component, page, slide, accent)
-        return component
+        try:
+            pages = component.getDrawPages()
+            for i, slide in enumerate(slides_spec):
+                page = pages.getByIndex(0) if i == 0 else pages.insertNewByIndex(i)
+                page.Width = SLIDE_W
+                page.Height = SLIDE_H
+                self._fill_slide(component, page, slide, accent)
+            return component
+        except Exception:
+            component.close(False)
+            raise
 
     def _fill_slide(self, doc, page, slide, accent):
         layout = slide.get("layout", "bullets")
@@ -414,8 +442,8 @@ class OfficeEngine:
                 continue
 
 
-def handle(engine, request):
-
+    # These methods belong to OfficeEngine: a stray top-level handle() here
+    # nested every inspection/edit method and made all such RPC calls fail.
     # ── inspection (schema-on-demand outline) ──────────────────────────────
     def inspect(self, doc_id):
         entry = self._doc(doc_id)

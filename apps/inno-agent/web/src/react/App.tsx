@@ -318,6 +318,9 @@ function MainApp() {
 		// below already collapse it if (and only if) that is what makes the panel fit.
 		appStore.setWorkspaceWidth(previewWidth);
 		appStore.setWorkspaceMode("half");
+		// Native shrinking must not maximize a split, but an explicit file-open
+		// still needs a reading surface when the display cannot fit any split.
+		if (appStore.workspaceMode === "collapsed") appStore.setWorkspaceMode("full");
 	}, [isNarrow, isDesktopWindow, ensureWindowForPanel]);
 
 	const openSearchResult = useCallback(async (result: SearchResult) => {

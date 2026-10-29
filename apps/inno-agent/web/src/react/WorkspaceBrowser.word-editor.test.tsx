@@ -19,7 +19,9 @@ const lifecycle = vi.hoisted(() => ({
 	save: vi.fn((_instanceId?: string) => Promise.resolve(true)),
 }));
 vi.mock("@earendil-works/pi-web-ui", () => ({}));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string, fallback?: string) => fallback ?? key }) }));
+// Interpolation options are objects, not fallback strings. Returning them as
+// children hid an uncaught React error when save-and-close opened StartPage.
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string, fallback?: unknown) => typeof fallback === "string" ? fallback : key }) }));
 vi.mock("./office/DocxPreview.js", () => ({ default: () => <div>Document preview</div> }));
 vi.mock("./office/WordEditor.js", () => ({
 	default: forwardRef(function MockedWordEditor({ file, workspaceId, active, onClose }: { file: WorkspaceFileDetail; workspaceId: string | null; active?: boolean; onClose(): void }, ref) {

@@ -79,6 +79,22 @@ afterEach(() => {
 const itOnDarwin = process.platform === "darwin" ? it : it.skip;
 
 describe("UnoSidecar", () => {
+    itOnDarwin("reports interpreter spawn failures without an unhandled error", async () => {
+        writeFileSync(join(fakePythonDir, "python"), "#!/missing-inno-python-interpreter\n");
+        const sidecar = new UnoSidecar();
+        const result = await sidecar.call("ping");
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain("spawn failed");
+        sidecar.killSync();
+    });
+    itOnDarwin("does not restart a stopped sidecar for queued calls", async () => {
+        const sidecar = new UnoSidecar();
+        await sidecar.call("ping");
+        const pending = sidecar.call("slow");
+        sidecar.killSync();
+        expect((await pending).ok).toBe(false);
+        expect((await sidecar.call("ping")).ok).toBe(false);
+    });
 	itOnDarwin("round-trips a call through the fake bridge", async () => {
 		const sidecar = new UnoSidecar();
 		const res = await sidecar.call("ping");

@@ -61,6 +61,13 @@ afterEach(() => {
 	rmSync(workspace, { recursive: true, force: true });
 });
 
+async function openOwned() {
+	callMock.mockResolvedValueOnce({ ok: true, result: { docId: "d1", kind: "doc", path: join(workspace, "report.docx") } });
+	callMock.mockResolvedValueOnce({ ok: true, result: { kind: "doc", paragraphs: [] } });
+	await run("office_open_document", { path: "report.docx" });
+	callMock.mockClear();
+}
+
 describe("office tools", () => {
 	it("registers the six-tool surface", () => {
 		expect(tools.map((t) => t.name)).toEqual([
@@ -132,12 +139,14 @@ describe("office tools", () => {
 	});
 
 	it("rejects empty op batches", async () => {
+		await openOwned();
 		const res = await run("office_edit_document", { docId: "d1", ops: [] });
 		expect(textOf(res)).toContain("ops 为空");
 		expect(callMock).not.toHaveBeenCalled();
 	});
 
 	it("saves only when every op succeeds", async () => {
+		await openOwned();
 		callMock.mockResolvedValueOnce({
 			ok: true,
 			result: { results: [{ op: "replace_text", ok: true }] },
@@ -152,6 +161,7 @@ describe("office tools", () => {
 	});
 
 	it("skips saving when any op failed", async () => {
+		await openOwned();
 		callMock.mockResolvedValueOnce({
 			ok: true,
 			result: {
@@ -171,6 +181,7 @@ describe("office tools", () => {
 	});
 
 	it("save-as rejects paths outside the workspace", async () => {
+		await openOwned();
 		callMock.mockResolvedValueOnce({
 			ok: true,
 			result: { results: [{ op: "replace_text", ok: true }] },
@@ -184,8 +195,9 @@ describe("office tools", () => {
 	});
 
 	it("closes documents and surfaces engine errors as text", async () => {
+		await openOwned();
 		callMock.mockResolvedValueOnce({ ok: false, error: "unknown docId d9" });
-		const res = await run("office_close_document", { docId: "d9" });
+		const res = await run("office_close_document", { docId: "d1" });
 		expect(textOf(res)).toContain("unknown docId d9");
 	});
 
@@ -198,7 +210,7 @@ describe("office tools", () => {
 		});
 		renderMock.mockImplementationOnce(async (_pdf, outDir, options) => {
 			expect(options).toMatchObject({ startPage: 3, maxPages: 5 });
-			const path = join(outDir, "report-p2.png");
+			const path = join(outDir, "report-p3.png");
 			writeFileSync(path, "page-image");
 			return { paths: [path], totalPages: 8 };
 		});
@@ -244,13 +256,35 @@ describe("office tools", () => {
 			return { ok: true, result: { output: join(outDir, "report.pdf") } };
 		});
 		renderMock.mockImplementationOnce(async (_pdf, outDir) => {
-			const path = join(outDir, "report-p0.png");
+			const path = join(outDir, "report-p1.png");
 			writeFileSync(path, "image");
 			return { paths: [path], totalPages: 1 };
 		});
 		const result = await run("office_render_document", { path: "report.docx", mode: "export", format: "png" });
-		expect(result.details).toHaveProperty("pages", [join(workspace, "report-p0.png")]);
-		expect(readdirSync(workspace)).toEqual(["report-p0.png"]);
+		expect(result.details).toHaveProperty("pages", [join(workspace, "report-p1.png")]);
+		expect(readdirSync(workspace)).toEqual(["report-p1.png"]);
 		expect(existsSync(temporaryDir)).toBe(false);
 	});
+    it("rejects foreign handles before calling the shared sidecar", async () => {
+        const result = await run("office_edit_document", { docId: "foreign", ops: [{ op: "set_cell", cell: "A1", value: "x" }], save: true });
+        expect(result.details).toMatchObject({ error: "handle_rejected" });
+        expect(callMock).not.toHaveBeenCalled();
+    });
+    it("rejects a previously owned handle after changing workspace", async () => {
+        await openOwned();
+        const original = workspace;
+        workspace = join(workspace, "another-workspace");
+        try {
+            const result = await run("office_edit_document", { docId: "d1", ops: [{ op: "set_cell" }], save: true });
+            expect(result.details).toMatchObject({ error: "handle_rejected" });
+            expect(callMock).not.toHaveBeenCalled();
+        } finally { workspace = original; }
+    });
+    it("rejects a save-as escape before making any edit", async () => {
+        await openOwned();
+        const result = await run("office_edit_document", { docId: "d1", ops: [{ op: "set_cell" }], saveAs: "/outside.xlsx" });
+        expect(result.details).toMatchObject({ error: "path_rejected" });
+        expect(callMock).not.toHaveBeenCalled();
+    });
+
 });

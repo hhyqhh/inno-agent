@@ -21,12 +21,17 @@ interface UniverHandles {
 
 const XlsxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function XlsxEditor({ file, onReadyChange, onInteract }, ref) {
 	const { i18n } = useTranslation();
+	// Locale changes must not recreate the engine and discard its draft.
+	const language = useRef(i18n.language).current;
+	const callbacks = useRef({ onReadyChange, onInteract });
+	callbacks.current = { onReadyChange, onInteract };
 	const hostRef = useRef<HTMLDivElement | null>(null);
 	const handlesRef = useRef<UniverHandles | null>(null);
 	const [error, setError] = useState("");
 
 	useEffect(() => {
 		let cancelled = false;
+		callbacks.current.onReadyChange?.(false);
 		setError("");
 		(async () => {
 			try {
@@ -41,7 +46,7 @@ const XlsxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function Xl
 
 				const { createUniver, LocaleType, UniverInstanceType, CommandType } = await import("@univerjs/presets");
 				const { UniverSheetsCorePreset } = await import("@univerjs/preset-sheets-core");
-				const localeKey = i18n.language.startsWith("zh") ? LocaleType.ZH_CN : LocaleType.EN_US;
+				const localeKey = language.startsWith("zh") ? LocaleType.ZH_CN : LocaleType.EN_US;
 				const localePack = localeKey === LocaleType.ZH_CN
 					? (await import("@univerjs/preset-sheets-core/locales/zh-CN")).default
 					: (await import("@univerjs/preset-sheets-core/locales/en-US")).default;
@@ -58,24 +63,18 @@ const XlsxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function Xl
 					],
 				});
 				univer.createUnit(UniverInstanceType.UNIVER_SHEET, snapshot as never);
-				// Real dirty signal: only engine mutations (cell edits, row/col
-				// changes, sheet ops) mark the document, mirroring PPTist's
-				// pptist:change. Selection, scroll and zoom are operations and
-				// stay clean. Engine-internal mutations are filtered by id:
-				// (1) the settle timer covers the mutations Univer dispatches
-				// while building the unit right after createUnit; (2) the async
-				// formula-engine initial pass fires formula.mutation.* seconds
-				// after open; (3) creating the hidden cell-edit doc unit fires
-				// doc.mutation.rich-text-editing during editor init. All real
-				// cell input lands through sheet.mutation.set-range-values, so
-				// ignoring those two id families loses no user edits.
-				let armed = false;
-				const settleTimer = setTimeout(() => { armed = true; }, 300);
+				// Theme changes update the mounted engine and retain its draft.
+				const syncTheme = () => univerAPI.toggleDarkMode(document.documentElement.dataset.theme === "dark");
+				syncTheme();
+				const themeObserver = new MutationObserver(syncTheme);
+				themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+				// Unit creation is complete; immediately track subsequent sheet edits.
+				// A timer here discarded real edits made just after opening a workbook.
 				const dirtyDisposable = univerAPI.addEvent(univerAPI.Event.CommandExecuted, (eventParams) => {
 					const isUserMutation = eventParams.type === CommandType.MUTATION
 						&& !eventParams.id.startsWith("formula.mutation.")
 						&& !eventParams.id.startsWith("doc.mutation.");
-					if (armed && isUserMutation) onInteract?.();
+					if (isUserMutation) callbacks.current.onInteract?.();
 				});
 				handlesRef.current = {
 					save: () => {
@@ -83,13 +82,13 @@ const XlsxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function Xl
 						return (workbook?.save() ?? null) as UniverWorkbookData | null;
 					},
 					dispose: () => {
-						clearTimeout(settleTimer);
+						themeObserver.disconnect();
 						dirtyDisposable.dispose();
 						try { univerAPI.dispose(); } catch { /* best effort */ }
 						try { univer.dispose(); } catch { /* best effort */ }
 					},
 				};
-				if (!cancelled) onReadyChange?.(true);
+				if (!cancelled) callbacks.current.onReadyChange?.(true);
 			} catch (err) {
 				if (!cancelled) setError(err instanceof Error ? err.message : String(err));
 			}
@@ -99,7 +98,7 @@ const XlsxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function Xl
 			handlesRef.current?.dispose();
 			handlesRef.current = null;
 		};
-	}, [file.url, file.name, i18n.language, onReadyChange]);
+	}, [file.url, file.name, language]);
 
 	useImperativeHandle(ref, () => ({
 		save: async () => {

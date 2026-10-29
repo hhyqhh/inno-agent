@@ -25,106 +25,110 @@ index 660741ef..34a2a1a8 100644
      slidesStore.setSlides(slides)
 diff --git a/src/embed.ts b/src/embed.ts
 new file mode 100644
-index 00000000..9c9d8ec2
 --- /dev/null
 +++ b/src/embed.ts
-@@ -0,0 +1,91 @@
-+/**
-+ * Embed bridge for Inno Agent (patched into vendored PPTist).
-+ *
-+ * When the URL carries ?embed=1 the app talks postMessage with the host page:
-+ *   host → iframe  { type: 'pptist:load', buffer: ArrayBuffer, name }   load pptx bytes
-+ *   host → iframe  { type: 'pptist:export' }                            export current deck
-+ *   iframe → host  { type: 'pptist:ready' }                             sent once on boot
-+ *   iframe → host  { type: 'pptist:loaded' }                            import finished
-+ *   iframe → host  { type: 'pptist:change' }                            deck mutated by the user
-+ *   iframe → host  { type: 'pptist:exported', buffer: ArrayBuffer }     pptx bytes
-+ * All traffic is same-origin (the bundle is served from the same app).
-+ */
+@@ -0,0 +1,58 @@
++/** Same-origin embed bridge. Import completion comes from the importer. */
 +import useImport from '@/hooks/useImport'
 +import useExport from '@/hooks/useExport'
 +import { useSlidesStore } from '@/store'
-+import { storeToRefs } from 'pinia'
 +import { watch } from 'vue'
 +import { nanoid } from 'nanoid'
 +
 +declare global {
-+  interface Window {
-+    __pptistCaptureExport?: (blob: Blob) => void
-+  }
++  interface Window { __pptistCaptureExport?: (blob: Blob) => void; __pptistExportError?: (error: unknown) => void }
 +}
-+
 +export function setupEmbed() {
 +  const params = new URLSearchParams(location.search)
 +  if (!params.has('embed')) return
-+
-+  // Embedded mode never shows the bundled demo deck: start from a single
-+  // blank slide so the sample pages can't flash up before the host posts
-+  // the real file (or linger there if loading fails).
-+  useSlidesStore().setSlides([{ id: nanoid(10), elements: [] }])
-+
-+  // Host origin: explicit parentOrigin param (cross-origin embedding/tests),
-+  // otherwise same-origin.
-+  const origin = params.get('parentOrigin') || window.location.origin
-+
-+  window.addEventListener('message', (e) => {
-+    if (e.origin !== origin && e.origin !== window.location.origin) return
-+    const data = e.data
++  const origin = window.location.origin
++  let loaded = false
++  let importing = false
++  const send = (data: Record<string, unknown>, transfer: Transferable[] = []) => window.parent.postMessage(data, origin, transfer)
++  const store = useSlidesStore()
++  store.setSlides([{ id: nanoid(10), elements: [] }])
++  // Immediate mutation reporting avoids the old 2.5s/800ms blind windows,
++  // where early edits or an immediate tab close silently lost a draft.
++  watch(() => [store.slides, store.theme, store.viewportSize, store.viewportRatio], () => {
++    if (loaded && !importing) send({ type: 'pptist:change' })
++  }, { deep: true, flush: 'sync' })
++  window.addEventListener('message', (event) => {
++    if (event.origin !== origin || event.source !== window.parent) return
++    const data = event.data
 +    if (!data || typeof data !== 'object') return
-+
-+    if (data.type === 'pptist:load' && data.buffer) {
-+      const file = new File([data.buffer], data.name || 'deck.pptx', {
-+        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
++    if (data.type === 'pptist:load' && data.buffer instanceof ArrayBuffer && !importing) {
++      importing = true
++      loaded = false
++      const file = new File([data.buffer], data.name || 'deck.pptx')
++      useImport().importPPTXFile([file], {
++        cover: true,
++        onComplete: () => { importing = false; loaded = true; send({ type: 'pptist:loaded' }) },
++        onError: (error) => { importing = false; send({ type: 'pptist:error', error: String(error) }) },
 +      })
-+      const { importPPTXFile } = useImport()
-+      importPPTXFile([file], { cover: true })
-+      // The importer is async but uninstrumented. The first slides write marks
-+      // the import finished; the importer keeps draining for a moment, so
-+      // change reports only start after a settle window, debounced to merge
-+      // continuous edits. Watching the slides array (deep) ignores view state
-+      // like the active slide index — paging around is not an edit.
-+      const slidesStore = useSlidesStore()
-+      const { slides } = storeToRefs(slidesStore)
-+      let imported = false
-+      let loadedAt = 0
-+      let timer: ReturnType<typeof setTimeout> | undefined
-+      watch(slides, () => {
-+        if (!imported) {
-+          imported = true
-+          loadedAt = Date.now()
-+          window.parent.postMessage({ type: 'pptist:loaded' }, origin)
-+          return
-+        }
-+        if (Date.now() - loadedAt < 2500) return
-+        if (timer) clearTimeout(timer)
-+        timer = setTimeout(() => {
-+          timer = undefined
-+          window.parent.postMessage({ type: 'pptist:change' }, origin)
-+        }, 800)
-+      }, { deep: true })
 +    }
-+
-+    if (data.type === 'pptist:export') {
-+      const slidesStore = useSlidesStore()
-+      const { slides } = storeToRefs(slidesStore)
-+      const { exportPPTX } = useExport()
-+      window.__pptistCaptureExport = (blob: Blob) => {
++    if (data.type === 'pptist:export' && loaded && !window.__pptistCaptureExport) {
++      const requestId = data.requestId
++      window.__pptistExportError = (error) => {
++        window.__pptistCaptureExport = undefined
++        window.__pptistExportError = undefined
++        send({ type: 'pptist:error', requestId, error: String(error) })
++      }
++      window.__pptistCaptureExport = (blob) => {
 +        window.__pptistCaptureExport = undefined
 +        blob.arrayBuffer().then((buffer) => {
-+          window.parent.postMessage({ type: 'pptist:exported', buffer }, origin, [buffer])
-+        })
++          window.__pptistExportError = undefined
++          send({ type: 'pptist:exported', requestId, buffer }, [buffer])
++        }).catch((error) => window.__pptistExportError?.(error))
 +      }
-+      exportPPTX(slides.value, true, false)
++      try { useExport().exportPPTX(store.slides, true, false) }
++      catch (error) { window.__pptistExportError?.(error) }
 +    }
 +  })
-+
-+  window.parent.postMessage({ type: 'pptist:ready' }, origin)
++  send({ type: 'pptist:ready' })
 +}
+diff --git a/src/hooks/useImport.ts b/src/hooks/useImport.ts
+--- a/src/hooks/useImport.ts
++++ b/src/hooks/useImport.ts
+@@ -645,7 +645,7 @@
+   }
+ 
+   // 导入PPTX文件
+-  const importPPTXFile = (files: FileList | File[], options?: { cover?: boolean; fixedViewport?: boolean }) => {
++  const importPPTXFile = (files: FileList | File[], options?: { cover?: boolean; fixedViewport?: boolean; onComplete?: () => void; onError?: (error: unknown) => void }) => {
+     const defaultOptions = {
+       cover: false,
+       fixedViewport: false, 
+@@ -663,7 +663,9 @@
+     }
+     
+     const reader = new FileReader()
++    reader.onerror = () => { exporting.value = false; options?.onError?.(reader.error) }
+     reader.onload = async e => {
++      try {
+       let json = null
+       try {
+         json = await parse(e.target!.result as ArrayBuffer, {
+@@ -676,6 +678,7 @@
+       catch {
+         exporting.value = false
+         message.error('无法正确读取 / 解析该文件')
++        options?.onError?.(new Error('Unable to parse presentation'))
+         return
+       }
+ 
+@@ -1367,6 +1370,8 @@
+       else addSlidesFromData(slides)
+ 
+       exporting.value = false
++      options?.onComplete?.()
++      } catch (error) { exporting.value = false; options?.onError?.(error) }
+     }
+     reader.readAsArrayBuffer(file)
+   }
 diff --git a/src/hooks/useExport.ts b/src/hooks/useExport.ts
-index 4c74ffb8..ac55bc2f 100644
 --- a/src/hooks/useExport.ts
 +++ b/src/hooks/useExport.ts
-@@ -605,18 +605,23 @@ export default () => {
+@@ -605,18 +605,23 @@
              const [startX, startY] = start
              const [endX, endY] = end
  
@@ -154,7 +158,7 @@ index 4c74ffb8..ac55bc2f 100644
              }
            }
  
-@@ -999,6 +1004,16 @@ export default () => {
+@@ -999,6 +1004,16 @@
      }
  
      setTimeout(() => {
@@ -165,18 +169,21 @@ index 4c74ffb8..ac55bc2f 100644
 +        pptx.write({ outputType: 'blob' }).then(data => {
 +          exporting.value = false
 +          capture(data as Blob)
-+        }).catch(() => { exporting.value = false })
++        }).catch((error) => { exporting.value = false; window.__pptistExportError?.(error) })
 +        return
 +      }
        pptx.writeFile({ fileName: `${title.value}.pptx` }).then(() => exporting.value = false).catch(() => {
          exporting.value = false
          message.error('导出失败')
 diff --git a/src/main.ts b/src/main.ts
-index c18fad99..cb7065d1 100644
 --- a/src/main.ts
 +++ b/src/main.ts
-@@ -9,8 +9,10 @@ import '@/assets/styles/global.scss'
- import '@/assets/styles/font.scss'
+@@ -6,11 +6,13 @@
+ import 'animate.css'
+ import '@/assets/styles/prosemirror.scss'
+ import '@/assets/styles/global.scss'
+-import '@/assets/styles/font.scss'
++// Embedded builds use installed fonts; avoid downloading 37MB of webfonts.
  
  import Directive from '@/directive'
 +import { setupEmbed } from './embed'
@@ -217,28 +224,3 @@ index ad6ea2a1..2dd3511a 100644
        <div class="menu-item" v-tooltip="'导出'" @click="setDialogForExport('pptx')">
          <i-icon-park-outline:download class="icon" />
        </div>
-diff --git a/src/views/Editor/Toolbar/common/RichTextBase.vue b/src/views/Editor/Toolbar/common/RichTextBase.vue
-index 6f31fb2b..d411c03c 100644
---- a/src/views/Editor/Toolbar/common/RichTextBase.vue
-+++ b/src/views/Editor/Toolbar/common/RichTextBase.vue
-@@ -124,19 +124,8 @@
-     </ButtonGroup>
- 
-     <ButtonGroup class="row" passive>
--      <Popover trigger="click" v-model:value="AIPopoverVisible" style="width: 25%;">
--        <template #content>
--          <PopoverMenuItem center @click="execAI('美化改写')">美化</PopoverMenuItem>
--          <PopoverMenuItem center @click="execAI('扩写丰富')">扩写</PopoverMenuItem>
--          <PopoverMenuItem center @click="execAI('精简提炼')">精简</PopoverMenuItem>
--        </template>
--        <CheckboxButton
--          first
--          style="width: 100%;"
--          v-tooltip="'AI辅助'"
--        ><span :class="{ 'ai-loading': isAIWriting }">{{ isAIWriting ? '' : 'AI' }}</span></CheckboxButton>
--      </Popover>
-       <CheckboxButton
-+        first
-         style="flex: 1;"
-         v-tooltip="'清除格式'"
-         @click="emitRichTextCommand('clear')"

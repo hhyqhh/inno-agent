@@ -140,7 +140,7 @@ export function resolveRuntimePaths(options: RuntimeCliOptions = {}): RuntimePat
 	};
 }
 
-export function applyRuntimeEnvironment(paths: RuntimePaths): void {
+export async function applyRuntimeEnvironment(paths: RuntimePaths): Promise<void> {
 	process.env.INNO_CONFIG_DIR = paths.configDir;
 	process.env.INNO_CONFIG_FILE = paths.configPath;
 	process.env.INNO_DATA_DIR = paths.dataDir;
@@ -149,11 +149,7 @@ export function applyRuntimeEnvironment(paths: RuntimePaths): void {
 	process.env.PI_CODING_AGENT_SESSION_DIR = paths.sessionDir;
 	// Redirect PI agent dir so pi-sandbox reads sandbox.json from configDir
 	process.env.PI_CODING_AGENT_DIR = paths.configDir;
-	// Put the resolved LibreOffice engine (bundled in desktop installers,
-	// INNO_LIBREOFFICE_PATH override, or system install) on PATH so downstream
-	// consumers that locate it themselves (e.g. @llamaindex/liteparse shells
-	// out to `which soffice`) pick up the same copy. Fire-and-forget: the
-	// async lookup lands within the first moments of boot, well before any
-	// document work happens; applyRuntimeEnvironment stays synchronous.
-	void prependLibreOfficeToPath().catch(() => undefined);
+	// Await the shared lookup before any consumer snapshots PATH. A detached
+	// lookup raced the first document parse during startup.
+	await prependLibreOfficeToPath().catch(() => undefined);
 }

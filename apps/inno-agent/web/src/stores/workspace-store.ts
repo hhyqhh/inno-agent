@@ -516,9 +516,19 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 		}
 	}
 
+    private guardFileMutation(path: string, workspaceId: string | null): boolean {
+        // Relocating a tab changes its key and unmounts its Office engine.
+        // Ask the draft owner before the filesystem mutation, while both the
+        // original file and the mounted engine still exist.
+        return this.previewTabs.some((tab) => (tab.workspaceId ?? null) === workspaceId
+            && (tab.path === path || tab.path.startsWith(`${path}/`))
+            && !!this.wordEditCloseGuard?.(previewTabKey(tab)));
+    }
+
 	async renameItem(oldPath: string, newName: string): Promise<void> {
 		// Navigation may change while a mutation is pending; update only its owner.
 		const workspaceId = this.activeWorkspaceId;
+		if (this.guardFileMutation(oldPath, workspaceId)) return;
 		const parts = oldPath.split("/");
 		parts[parts.length - 1] = newName;
 		const newPath = parts.join("/");
@@ -538,6 +548,7 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 
 	async deleteItem(path: string): Promise<void> {
 		const workspaceId = this.activeWorkspaceId;
+		if (this.guardFileMutation(path, workspaceId)) return;
 		this.isMutating = true;
 		this.emit("change", undefined);
 		try {
@@ -558,6 +569,7 @@ export class WorkspaceStoreImpl extends EventEmitter<WorkspaceStoreEvents> {
 
 	async moveItem(sourcePath: string, targetDir: string): Promise<void> {
 		const workspaceId = this.activeWorkspaceId;
+		if (this.guardFileMutation(sourcePath, workspaceId)) return;
 		this.isMutating = true;
 		this.emit("change", undefined);
 		try {

@@ -463,4 +463,19 @@ describe("workspace preview tabs", () => {
 		expect(workspaceStore.streamingPreview).toBeNull();
 		expect(workspaceStore.activePreviewPath).toBe("a.ts");
 	});
+    it("guards rename, move and delete before mutating a dirty Office file", async () => {
+        const store = new WorkspaceStoreImpl();
+        store.activeWorkspaceId = "owner";
+        api.getWorkspaceFile.mockResolvedValue(fileDetail("folder/a.xlsx", ""));
+        await store.selectFile("folder/a.xlsx");
+        store.wordEditCloseGuard = vi.fn().mockReturnValue(true);
+        api.renameWorkspaceItem.mockClear(); api.moveWorkspaceItem.mockClear(); api.deleteWorkspaceItem.mockClear();
+        await store.renameItem("folder/a.xlsx", "b.xlsx");
+        await store.moveItem("folder", "elsewhere");
+        await store.deleteItem("folder");
+        expect(api.renameWorkspaceItem).not.toHaveBeenCalled();
+        expect(api.moveWorkspaceItem).not.toHaveBeenCalled();
+        expect(api.deleteWorkspaceItem).not.toHaveBeenCalled();
+        expect(store.wordEditCloseGuard).toHaveBeenCalledTimes(3);
+    });
 });

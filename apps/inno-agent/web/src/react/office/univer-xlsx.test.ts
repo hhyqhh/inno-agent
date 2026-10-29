@@ -136,13 +136,32 @@ describe("univer-xlsx converter", () => {
 		expect(reparsed.getWorksheet("第二个")!.getCell("A1").value).toBe("二");
 	});
 
-	it("caps huge ranges", async () => {
+	it("rejects huge ranges without silently dropping data", async () => {
 		const wb = new ExcelJS.Workbook();
 		const ws = wb.addWorksheet("big");
 		ws.getCell("ZZ100000").value = "x";
-		const snapshot = excelJsToUniver(wb, "big.xlsx");
-		const sheet = snapshot.sheets[snapshot.sheetOrder[0]];
-		expect(sheet.rowCount).toBeLessThanOrEqual(5000);
-		expect(sheet.columnCount).toBeGreaterThanOrEqual(26);
+		expect(() => excelJsToUniver(wb, "big.xlsx")).toThrow("exceeds editor limits");
 	});
+    it("preserves numeric dates and fractional days across real xlsx serialization", async () => {
+        const wb = new ExcelJS.Workbook();
+        wb.properties.date1904 = true;
+        const ws = wb.addWorksheet("Dates");
+        const date = new Date("2026-10-26T12:00:00Z");
+        ws.getCell("A1").value = date;
+        ws.getCell("A1").numFmt = "yyyy-mm-dd hh:mm";
+        const snapshot = excelJsToUniver(wb, "dates.xlsx");
+        expect(typeof snapshot.sheets["sheet-1"].cellData[0][0].v).toBe("number");
+        const bytes = await univerSnapshotToXlsxBytes(snapshot, "dates.xlsx");
+        const back = new ExcelJS.Workbook();
+        await back.xlsx.load(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+        expect(back.getWorksheet("Dates")!.getCell("A1").value).toEqual(date);
+    });
+    it("keeps text entered as a rich Univer cell", async () => {
+        const wb = await workbookFromRows([["old"]]);
+        const snapshot = excelJsToUniver(wb, "rich.xlsx");
+        snapshot.sheets["sheet-1"].cellData[0][0] = { p: { body: { dataStream: "new rich text\r\n" } } };
+        const back = univerToExcelJs(snapshot, "rich.xlsx");
+        expect(back.worksheets[0].getCell("A1").value).toBe("new rich text");
+    });
+
 });

@@ -1,4 +1,10 @@
 {
+  "officeEditor": {
+    "overwriteTitle": "备份并覆盖原文件？",
+    "overwriteNotice": "此编辑器可能丢失图表、图片及部分格式。保存前会在同一文件夹创建原文件的 .backup- 备份；备份失败时不会覆盖。是否继续？",
+    "confirmOverwrite": "备份并覆盖",
+    "backupSaved": "原文件备份："
+  },
 	"workspaceStart": {
 		"tab": "起始页",
 		"open": "打开文件起始页",

@@ -10,7 +10,6 @@
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { saveWorkspaceFileBinary } from "../../api/workspace.js";
 import { excelJsToUniver, univerSnapshotToXlsxBytes, type UniverWorkbookData } from "./univer-xlsx.js";
 import type { OfficeEditorHandle, OfficeEditorProps } from "./office-editor-handle.js";
 
@@ -101,19 +100,10 @@ const XlsxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function Xl
 	}, [file.url, file.name, language]);
 
 	useImperativeHandle(ref, () => ({
-		save: async () => {
-			try {
-				const snapshot = handlesRef.current?.save();
-				if (!snapshot) throw new Error("No workbook snapshot");
-				const bytes = await univerSnapshotToXlsxBytes(snapshot, file.name);
-				const query = file.url?.split("?")[1] ?? "";
-				const wsId = new URLSearchParams(query).get("workspaceId") ?? undefined;
-				await saveWorkspaceFileBinary(file.path, bytes, wsId);
-				return true;
-			} catch (err) {
-				setError(err instanceof Error ? err.message : "Save failed");
-				return false;
-			}
+		exportBytes: async () => {
+			const snapshot = handlesRef.current?.save();
+			if (!snapshot) throw new Error("No workbook snapshot");
+			return univerSnapshotToXlsxBytes(snapshot, file.name);
 		},
 	}), [file.path, file.url, file.name]);
 

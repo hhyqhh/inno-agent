@@ -32,7 +32,7 @@ import { FileName } from "./FileName.js";
 import { WorkspaceOpenWithMenu } from "./WorkspaceOpenWithMenu.js";
 import { WorkspaceFileBar } from "./WorkspaceFileBar.js";
 import type { WordEditorHandle } from "./office/WordEditor.js";
-import type { OfficeEditorHandle } from "./office/office-editor-handle.js";
+import { OfficeEditorSession, type OfficeSessionHandle } from "./office/OfficeEditorSession.js";
 import { buildDragFilePanel, hiddenDragImage } from "./chat/smart-input/drag-utils.js";
 import { DEFAULT_UPLOAD_MAX_LABEL, getOversizedFiles } from "../utils/upload-limits.js";
 import "@earendil-works/pi-web-ui";
@@ -42,10 +42,8 @@ import "@earendil-works/pi-web-ui";
 // pptx/xlsx/docx edit modes embed separate editor chunks (PPTist iframe /
 // Univer sheets / Univer docs).
 const PptxPreview = lazy(() => import("./office/PptxPreview.js"));
-const PptxEditor = lazy(() => import("./office/PptxEditor.js"));
 const DocxPreview = lazy(() => import("./office/DocxPreview.js"));
 const XlsxPreview = lazy(() => import("./office/XlsxPreview.js"));
-const XlsxEditor = lazy(() => import("./office/XlsxEditor.js"));
 const WordEditor = lazy(() => import("./office/WordEditor.js"));
 
 const MAX_STREAMING_MARKDOWN_FORMAT_CHARS = 160_000;
@@ -1100,18 +1098,9 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 	// session, so tab activation alone never triggers it.
 	const [wordLeaveConfirm, setWordLeaveConfirm] = useState<null | { tabKey: string; name: string }>(null);
 	const [wordSaving, setWordSaving] = useState(false);
-	// pptx/xlsx WYSIWYG edit session. Mirrors the DOCX session architecture:
-	// a stable container owns the editor so switching tabs hides it (drafts
-	// in the engine survive) and only closing the tab can end it — through the
-	// same unsaved-work confirmation when the file bar shows 未保存.
-	const [officeSession, setOfficeSession] = useState<null | { file: WorkspaceFileDetail; workspaceId: string | null }>(null);
-	const officeEditorRef = useRef<OfficeEditorHandle | null>(null);
-	const officeSaveBusy = useRef(false);
-	const [officeReady, setOfficeReady] = useState(false);
-	const [officeSaving, setOfficeSaving] = useState(false);
-	const [officeSavedAt, setOfficeSavedAt] = useState<Date | null>(null);
-	const [officeDirty, setOfficeDirty] = useState(false);
-	const [officeLeaveConfirm, setOfficeLeaveConfirm] = useState(false);
+	// One mounted session per tab retains independent Office drafts.
+	const [officeSessions, setOfficeSessions] = useState<WordEditingSession[]>([]);
+	const officeEditorRefs = useRef(new Map<string, OfficeSessionHandle>());
 	const uploadErrorTimerRef = useRef<number | null>(null);
 	const [multiSelectMode, setMultiSelectMode] = useState(false);
 	const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
@@ -1139,7 +1128,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 	// stay visible at every width instead of reserving space for a duplicate tree.
 	// Any active DOCX session pins the pane open: unmounting it would discard the draft.
 	const hasWordSessions = wordSessions.length > 0;
-	const showContent = !isSidebar && (isPreview || !sidebarOpen || panelWidth >= CONTENT_REVEAL_WIDTH || hasWordSessions);
+	const showContent = !isSidebar && (isPreview || !sidebarOpen || panelWidth >= CONTENT_REVEAL_WIDTH || hasWordSessions || officeSessions.length > 0);
 
 	// Each editor is visible only while its own tab is active; switching tabs
 	// keeps every session mounted (hidden, inert) so drafts survive round trips.
@@ -1211,51 +1200,13 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 	}, [closeWordSession]);
 
 	const startOfficeEdit = useCallback((file: WorkspaceFileDetail, workspaceId: string | null) => {
-		setOfficeSession({ file, workspaceId });
+		const key = previewTabKey({ path: file.path, workspaceId });
+		setOfficeSessions((sessions) => sessions.some((session) => previewTabKey({ path: session.file.path, workspaceId: session.workspaceId }) === key)
+			? sessions : [...sessions, { file, workspaceId }]);
 	}, []);
-
-	// Ref-based mutex: two click events in the same tick both read the stale
-	// officeSaving state before React re-renders, so the state flag alone
-	// cannot stop a double fire.
-	const saveOffice = useCallback(async () => {
-		if (officeSaveBusy.current || !officeEditorRef.current) return false;
-		officeSaveBusy.current = true;
-		setOfficeSaving(true);
-		try {
-			const clean = await officeEditorRef.current.save();
-			if (clean) {
-				setOfficeSavedAt(new Date());
-				setOfficeDirty(false);
-			}
-			return clean;
-		} finally {
-			officeSaveBusy.current = false;
-			setOfficeSaving(false);
-		}
+	const closeOfficeEditor = useCallback((key: string) => {
+		setOfficeSessions((sessions) => sessions.filter((session) => previewTabKey({ path: session.file.path, workspaceId: session.workspaceId }) !== key));
 	}, []);
-
-	const markOfficeDirty = useCallback(() => setOfficeDirty(true), []);
-
-	const closeOfficeEditor = useCallback(() => {
-		setOfficeSession(null);
-		setOfficeDirty(false);
-		setOfficeSavedAt(null);
-		setOfficeReady(false);
-	}, []);
-
-	// Leaving edit mode (返回预览) or closing the tab with unsaved changes
-	// routes through the DOCX-style confirmation; the editor keeps no drafts
-	// past unmount, so "discard" really loses the changes.
-	const finishOfficeLeave = useCallback(async (mode: "discard" | "save") => {
-		if (mode === "save") {
-			const clean = await saveOffice();
-			if (!clean) { setOfficeLeaveConfirm(false); return; }
-		}
-		setOfficeLeaveConfirm(false);
-		closeOfficeEditor();
-	}, [saveOffice, closeOfficeEditor]);
-
-	const officeSessionTabKey = officeSession ? previewTabKey({ path: officeSession.file.path, workspaceId: officeSession.workspaceId }) : null;
 
 	// One guard for the whole close family (closePreview/closeOther/toRight/all/
 	// deleteItem). A dirty session vetoes its own tab and raises the shared
@@ -1268,30 +1219,19 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 				setWordLeaveConfirm({ tabKey, name: session.file.name });
 				return true;
 			}
-			if (officeSession && officeSessionTabKey === tabKey && officeDirty) {
-				setOfficeLeaveConfirm(true);
-				return true;
-			}
+			if (officeEditorRefs.current.get(tabKey)?.requestCloseTab()) return true;
 			return false;
 		};
 		return () => { workspaceStore.wordEditCloseGuard = null; };
-	}, [hasWordSessions, officeSession, officeSessionTabKey, officeDirty]);
+	}, [hasWordSessions]);
 
-	// A clean office session's tab can close without the guard; when its tab
-	// disappears (closed from elsewhere, e.g. 关闭其他), end the session so the
-	// hidden editor does not linger for a file the user already closed.
-	const officeSessionRef = useRef(officeSession);
-	officeSessionRef.current = officeSession;
 	useEffect(() => {
-		const endOrphanedOffice = () => {
-			const current = officeSessionRef.current;
-			if (!current) return;
-			const alive = workspaceStore.previewTabs.some((tab) => previewTabKey(tab) === previewTabKey({ path: current.file.path, workspaceId: current.workspaceId }));
-			if (!alive) closeOfficeEditor();
-		};
-		endOrphanedOffice();
+		const endOrphanedOffice = () => setOfficeSessions((sessions) => {
+			const retained = sessions.filter((session) => workspaceStore.previewTabs.some((tab) => previewTabKey(tab) === previewTabKey({ path: session.file.path, workspaceId: session.workspaceId })));
+			return retained.length === sessions.length ? sessions : retained;
+		});
 		return workspaceStore.on("change", endOrphanedOffice);
-	}, [closeOfficeEditor]);
+	}, []);
 
 	// Measure the panel width to decide whether the content pane fits.
 	useLayoutEffect(() => {
@@ -1861,7 +1801,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 							emptyWhenUnselected={isPreview}
 							wordEditing={activeWordSession}
 							onEditWord={openEditWord}
-							officeEditingActive={!!officeSession && officeSessionTabKey === state.activePreviewPath}
+							officeEditingActive={officeSessions.some((session) => previewTabKey({ path: session.file.path, workspaceId: session.workspaceId }) === state.activePreviewPath)}
 							onEditOffice={startOfficeEdit}
 						/>
 						{/* Inline DOCX editor layers, one per open document. Hidden (not
@@ -1885,37 +1825,11 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 								</div>
 							);
 						})}
-						{/* pptx/xlsx edit layer: same hidden-tab-container pattern as the
-						    DOCX editors above — switching tabs keeps the engine (and the
-						    unsaved state) alive, only closing the tab ends the session. The
-						    shared file bar rides on the layer, exactly like WordEditor's. */}
-						{officeSession ? (
-							<div className={`absolute inset-0 flex flex-col ${officeSessionTabKey === state.activePreviewPath ? "" : "invisible"}`} inert={officeSessionTabKey !== state.activePreviewPath || undefined} aria-hidden={officeSessionTabKey !== state.activePreviewPath || undefined}>
-								<WorkspaceFileBar name={officeSession.file.name} path={officeSession.file.path}>
-									<span role="status" className="inno-word-save-state">{officeSaving
-										? <><Spinner size={14} />{t("wordEditor.saving")}</>
-										: officeDirty
-											? t("wordEditor.unsaved")
-											: officeSavedAt
-												? <><Check size={14} />{t("wordEditor.saved")}</>
-												: null}</span>
-									<Button variant="ghost" size="xs" aria-label={t("wordEditor.save")} title={t("wordEditor.saveShortcut")} disabled={!officeReady || officeSaving} onClick={() => void saveOffice()}>
-										<Save size={14} /><span className="inno-filebar-action-label">{t("wordEditor.save")}</span>
-									</Button>
-									<Button variant="ghost" size="xs" aria-label={t("wordEditor.downloadCopy")} title={t("wordEditor.downloadCopy")} disabled={!officeReady || officeSaving} onClick={() => triggerDownload(workspaceFileUrl(officeSession.file.path, officeSession.workspaceId ?? undefined, true))}>
-										<Download size={14} /><span className="inno-filebar-action-label">{t("wordEditor.downloadCopy")}</span>
-									</Button>
-									<Button variant="ghost" size="xs" aria-label={t("wordEditor.back")} title={t("wordEditor.back")} disabled={officeSaving} onClick={() => (officeDirty ? setOfficeLeaveConfirm(true) : closeOfficeEditor())}>
-										<X size={14} /><span className="inno-filebar-action-label">{t("wordEditor.back")}</span>
-									</Button>
-								</WorkspaceFileBar>
-								<Suspense fallback={<div role="status" className="flex flex-1 items-center justify-center gap-2 text-sm text-[var(--inno-text-muted)]"><Spinner size={18} />{t("preview.loadingFile")}</div>}>
-									{officeSession.file.format === "pptx"
-										? <PptxEditor ref={officeEditorRef} file={officeSession.file} onReadyChange={setOfficeReady} onInteract={markOfficeDirty} />
-										: <XlsxEditor ref={officeEditorRef} file={officeSession.file} onReadyChange={setOfficeReady} onInteract={markOfficeDirty} />}
-								</Suspense>
-							</div>
-						) : null}
+						{officeSessions.map((session) => {
+							const key = previewTabKey({ path: session.file.path, workspaceId: session.workspaceId });
+							return <OfficeEditorSession key={key} ref={(handle) => { if (handle) officeEditorRefs.current.set(key, handle); else officeEditorRefs.current.delete(key); }}
+								file={session.file} workspaceId={session.workspaceId} active={key === state.activePreviewPath} onClose={() => closeOfficeEditor(key)} />;
+						})}
 						{/* DOCX leave confirmation: closing a session's tab while its
 						    editor holds unsaved work. Switching tabs never closes a
 						    session, so tab activation alone never reaches this dialog;
@@ -1946,31 +1860,7 @@ export function WorkspaceBrowser({ onPreviewFile, dndManager, variant = "workspa
 									</div>
 								</Dialog>
 							) : null}
-							{/* pptx/xlsx leave confirmation: same DOCX-style unsaved-work
-							    dialog, raised by the close guard or the 返回预览 action while
-							    the file bar shows 未保存. */}
-							{officeLeaveConfirm ? (
-								<Dialog scoped label={t("wordEditor.closeTitle")} className="inno-word-confirm-dialog" onClose={() => setOfficeLeaveConfirm(false)}>
-									<div className="inno-word-confirm-card flex flex-col gap-5 p-6">
-										<div>
-											<h2 className="text-base font-medium">{t("wordEditor.closeTitle")}</h2>
-											<p className="mt-2 text-sm text-[var(--inno-text-muted)]">{t("wordEditor.closeMessage")}</p>
-										</div>
-										<div className="flex flex-wrap justify-end gap-2">
-											<Button size="sm" onClick={() => setOfficeLeaveConfirm(false)}>
-												{t("wordEditor.continueEditing")}
-											</Button>
-											<Button size="sm" disabled={officeSaving} onClick={() => void finishOfficeLeave("discard")}>
-												{t("wordEditor.discard")}
-											</Button>
-											<Button variant="primary" size="sm" disabled={officeSaving} onClick={() => void finishOfficeLeave("save")}>
-												{officeSaving ? <Spinner size={14} /> : <Save size={14} />}
-												{t("wordEditor.saveAndClose")}
-											</Button>
-										</div>
-									</div>
-								</Dialog>
-							) : null}
+
 						</div>
 					</section>
 				) : null}

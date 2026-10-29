@@ -1,0 +1,41 @@
+import { forwardRef, useImperativeHandle, useState } from "react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { useDragDropManager } from "react-dnd";
+import { renderWithTooltipProvider as render } from "./test-utils.js";
+import { WorkspaceBrowser } from "./WorkspaceBrowser.js";
+import { InnoDndProvider } from "./ui/dnd-backend.js";
+import { workspaceStore, previewTabKey } from "../stores/workspace-store.js";
+import type { WorkspaceFileDetail } from "../types/workspace.js";
+vi.mock("@earendil-works/pi-web-ui", () => ({}));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string, fallback?: string) => fallback || key }) }));
+vi.mock("./office/OfficeEditorSession.js", () => ({ OfficeEditorSession: forwardRef(function Fake({ file, active }: any, ref) {
+    const [draft, setDraft] = useState("");
+    useImperativeHandle(ref, () => ({ requestCloseTab: () => draft !== "" }), [draft]);
+    return <input data-active={active} aria-label={file.path} value={draft} onChange={(event) => setDraft(event.target.value)} />;
+}) }));
+vi.mock("./office/XlsxPreview.js", () => ({ default: () => <div>Workbook preview</div> }));
+function Browser() { return <WorkspaceBrowser variant="preview" dndManager={useDragDropManager()} />; }
+afterEach(() => { cleanup(); workspaceStore.wordEditCloseGuard = null; workspaceStore.previewTabs = []; workspaceStore.activePreviewPath = null; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+it("keeps distinct mounted drafts when editing a second file and switching back", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    vi.spyOn(workspaceStore, "loadTree").mockResolvedValue();
+    workspaceStore.activeWorkspaceId = "owner";
+    workspaceStore.streamingPreview = null;
+    const files = ["first.xlsx", "second.xlsx"].map((path) => ({ path, name: path, format: "xlsx", kind: "office", url: "/file", size: 1, updatedAt: "now" } as WorkspaceFileDetail));
+    workspaceStore.previewTabs = files.map((file) => ({ path: file.path, name: file.name, workspaceId: "owner", file, isLoading: false, isEditing: false, editBuffer: "", isSaving: false, error: "", requestId: 0 }));
+    const keys = workspaceStore.previewTabs.map(previewTabKey);
+    workspaceStore.activePreviewPath = keys[0];
+    render(<InnoDndProvider><Browser /></InnoDndProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("first.xlsx"), { target: { value: "retained first draft" } });
+    act(() => workspaceStore.activatePreview(keys[1]));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("second.xlsx"), { target: { value: "second draft" } });
+    act(() => workspaceStore.activatePreview(keys[0]));
+    expect((screen.getByLabelText("first.xlsx") as HTMLInputElement).value).toBe("retained first draft");
+    expect((screen.getByLabelText("second.xlsx") as HTMLInputElement).value).toBe("second draft");
+    act(() => workspaceStore.closePreview(keys[0]));
+    expect(workspaceStore.previewTabs).toHaveLength(2);
+});

@@ -2,11 +2,9 @@ import { createRef } from "react";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import PptxEditor from "./PptxEditor.js";
-import { saveWorkspaceFileBinary } from "../../api/workspace.js";
 import type { OfficeEditorHandle } from "./office-editor-handle.js";
 import type { WorkspaceFileDetail } from "../../types/workspace.js";
 
-vi.mock("../../api/workspace.js", () => ({ saveWorkspaceFileBinary: vi.fn(async () => ({ saved: true })) }));
 const file = { path: "deck.pptx", name: "deck.pptx", format: "pptx", url: "/deck?workspaceId=owner" } as WorkspaceFileDetail;
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 async function setup() {
@@ -38,23 +36,20 @@ it("does not let a late timed-out export satisfy the next save", async () => {
 	const { ref, message, post } = await setup();
 	await message({ type: "pptist:loaded" });
 	vi.useFakeTimers();
-	const first = ref.current!.save();
+	const first = ref.current!.exportBytes().catch((error) => error);
 	const firstId = (post.mock.calls.at(-1)![0] as { requestId: number }).requestId;
 	await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
-	expect(await first).toBe(false);
-	const second = ref.current!.save();
+	expect(await first).toBeInstanceOf(Error);
+	const second = ref.current!.exportBytes();
 	const secondId = (post.mock.calls.at(-1)![0] as { requestId: number }).requestId;
 	await message({ type: "pptist:exported", requestId: firstId, buffer: new Uint8Array([1]).buffer });
-	expect(saveWorkspaceFileBinary).not.toHaveBeenCalled();
 	await message({ type: "pptist:exported", requestId: secondId, buffer: new Uint8Array([2]).buffer });
-	expect(await second).toBe(true);
-	expect(saveWorkspaceFileBinary).toHaveBeenCalledExactlyOnceWith("deck.pptx", new Uint8Array([2]), "owner");
+	expect(await second).toEqual(new Uint8Array([2]));
 });
 it("settles a pending save when the editor is unmounted", async () => {
 	const { ref, message, mounted } = await setup();
 	await message({ type: "pptist:loaded" });
-	const saved = ref.current!.save();
+	const saved = ref.current!.exportBytes().catch((error) => error);
 	mounted.unmount();
-	expect(await saved).toBe(false);
-	expect(saveWorkspaceFileBinary).not.toHaveBeenCalled();
+	expect(await saved).toBeInstanceOf(Error);
 });

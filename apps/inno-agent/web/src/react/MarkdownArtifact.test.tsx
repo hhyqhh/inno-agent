@@ -64,7 +64,9 @@ describe("MarkdownArtifact", () => {
 
 	it("opens only one tools menu for a fullscreen Mermaid diagram", async () => {
 		const { getByRole } = render(<MarkdownArtifact content={"```mermaid\nflowchart LR\nA --> B\n```"} />);
-		await waitFor(() => expect(getByRole("button", { name: "更多" })).not.toBeNull());
+		// The Mermaid renderer is a separate lazy chunk. A cold worktree must
+		// finish importing it before this toolbar-interaction assertion.
+		await waitFor(() => expect(getByRole("button", { name: "更多" })).not.toBeNull(), { timeout: 5_000 });
 		fireEvent.pointerDown(getByRole("button", { name: "更多" }), { button: 0, pointerType: "mouse" });
 		fireEvent.click(getByRole("menuitem", { name: "全屏查看" }));
 		const dialog = getByRole("dialog", { name: "Mermaid 全屏查看" });

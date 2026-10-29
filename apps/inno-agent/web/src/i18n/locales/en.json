@@ -1,4 +1,10 @@
 {
+  "officeEditor": {
+    "overwriteTitle": "Back up and overwrite the original?",
+    "overwriteNotice": "This editor may lose charts, images, and some formatting. Before saving, a .backup- copy of the original will be created in the same folder. If backup fails, the original will not be overwritten. Continue?",
+    "confirmOverwrite": "Back up and overwrite",
+    "backupSaved": "Original backup:"
+  },
 	"workspaceStart": {
 		"tab": "Start",
 		"open": "Open file start page",

@@ -1,13 +1,8 @@
 import type { WorkspaceFileDetail } from "../../types/workspace.js";
 
-/**
- * Imperative surface the file bar uses to drive a preview-pane office
- * editor (pptx/xlsx): the shared WorkspaceFileBar owns the Save / back-to-
- * preview actions, the editor owns engine state. `save` reports whether the
- * workbook/deck actually made it to the workspace.
- */
+/** Engines export drafts; OfficeEditorSession alone confirms and persists them. */
 export interface OfficeEditorHandle {
-	save: () => Promise<boolean>;
+	exportBytes: () => Promise<Uint8Array>;
 }
 
 export interface OfficeEditorProps {

@@ -1,6 +1,8 @@
 import { execFile, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import {
+	constants as fsConstants,
 	existsSync,
 	mkdirSync,
 	readdirSync,
@@ -11,7 +13,7 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { open, stat } from "node:fs/promises";
+import { copyFile, open, stat } from "node:fs/promises";
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative } from "node:path";
@@ -52,6 +54,19 @@ import { json, matchRoute, readBody, UPLOAD_MAX_BODY_BYTES } from "../http-helpe
  * is the live singleton; the skill installers close over server module state
  * (skillsDir default), so they are injected rather than imported.
  */
+// The PUT route owns Office backups and writes. Serialize saves to one file
+// so a second request backs up the completed prior save, never partial bytes.
+const pendingFileSaves = new Map<string, Promise<void>>();
+async function serializeFileSave(path: string, write: () => Promise<void>): Promise<void> {
+    const prior = pendingFileSaves.get(path) ?? Promise.resolve();
+    const saving = prior.then(write);
+    const settled = saving.then(() => {}, () => {});
+    pendingFileSaves.set(path, settled);
+    try { await saving; } finally {
+        if (pendingFileSaves.get(path) === settled) pendingFileSaves.delete(path);
+    }
+}
+
 export interface WorkspacesRouteContext {
 	workspaceRegistry: WorkspaceRegistry;
 	dataDir: string;
@@ -630,20 +645,41 @@ export async function handleWorkspacesRoutes(
 		if (contentBase64 !== null && !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(contentBase64)) {
 			json(res, 400, { error: "Invalid base64 content" }); return true;
 		}
-		let output;
-		try { output = await open(fullPath, "r+"); }
-		catch (error) {
-			if (["ENOENT", "EISDIR", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) { json(res, 404, { error: "File not found" }); return true; }
-			throw error;
+		const needsOfficeBackup = contentBase64 !== null && [".xlsx", ".pptx"].includes(extname(fullPath).toLowerCase());
+		if (needsOfficeBackup && body.confirmOverwrite !== true) {
+			json(res, 409, { error: "Confirm the format-loss warning before overwriting", code: "OFFICE_OVERWRITE_CONFIRMATION_REQUIRED" }); return true;
 		}
-		try {
-			if (!(await output.stat()).isFile()) { json(res, 404, { error: "File not found" }); return true; }
-			const bytes = contentBase64 !== null ? Buffer.from(contentBase64, "base64") : Buffer.from(content, "utf-8");
-			await output.writeFile(bytes);
-			await output.truncate(bytes.length);
-			const info = await output.stat();
-			json(res, 200, { path: filePath, saved: true, size: info.size, updatedAt: info.mtime.toISOString() });
-		} finally { await output.close(); }
+		await serializeFileSave(fullPath, async () => {
+			let output;
+			try { output = await open(fullPath, "r+"); }
+			catch (error) {
+				if (["ENOENT", "EISDIR", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) { json(res, 404, { error: "File not found" }); return; }
+				throw error;
+			}
+			try {
+				if (!(await output.stat()).isFile()) { json(res, 404, { error: "File not found" }); return; }
+				let backupPath: string | undefined;
+				if (needsOfficeBackup) {
+					const extension = extname(normalized);
+					backupPath = `${normalized.slice(0, -extension.length)}.backup-${Date.now()}-${randomUUID()}${extension}`;
+					const backupFile = await resolveContainedPathAsync(root!, backupPath);
+					// XLSX/PPTX conversion drops unsupported content. A unique,
+					// exclusive byte-for-byte backup must succeed before any write.
+					try {
+						if (!backupFile) throw new Error("Invalid backup path");
+						await copyFile(fullPath, backupFile, fsConstants.COPYFILE_EXCL);
+					} catch {
+						logger.warn("Office backup failed; overwrite cancelled");
+						json(res, 500, { error: "Backup failed. The original file was not overwritten.", code: "OFFICE_BACKUP_FAILED" }); return;
+					}
+				}
+				const bytes = contentBase64 !== null ? Buffer.from(contentBase64, "base64") : Buffer.from(content, "utf-8");
+				await output.writeFile(bytes);
+				await output.truncate(bytes.length);
+				const info = await output.stat();
+				json(res, 200, { path: filePath, saved: true, size: info.size, updatedAt: info.mtime.toISOString(), ...(backupPath ? { backupPath } : {}) });
+			} finally { await output.close(); }
+		});
 		return true;
 	}
 

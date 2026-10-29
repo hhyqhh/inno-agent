@@ -1,6 +1,5 @@
 /** PPTist bridge with correlated exports and deterministic teardown. */
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { saveWorkspaceFileBinary } from "../../api/workspace.js";
 import type { OfficeEditorHandle, OfficeEditorProps } from "./office-editor-handle.js";
 
 interface PendingExport {
@@ -69,9 +68,8 @@ const PptxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function Pp
     }, [file.url, file.name, origin]);
 
     useImperativeHandle(ref, () => ({
-        save: async () => {
-            if (!loaded || pending.current) return false;
-            try {
+        exportBytes: async () => {
+            if (!loaded || pending.current) throw new Error("Editor is not ready");
             // A request id prevents an export that arrived after its timeout
             // from satisfying a later save with the wrong document bytes.
             const bytes = await new Promise<Uint8Array>((resolve, reject) => {
@@ -84,13 +82,7 @@ const PptxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function Pp
                 pending.current = { id, timer, resolve, reject };
                 iframe.current?.contentWindow?.postMessage({ type: "pptist:export", requestId: id }, origin);
             });
-            const wsId = new URL(file.url ?? "", window.location.href).searchParams.get("workspaceId") ?? undefined;
-            const result = await saveWorkspaceFileBinary(file.path, bytes, wsId);
-            return result.saved;
-            } catch (err) {
-                setError(err instanceof Error ? err.message : "Save failed");
-                return false;
-            }
+            return bytes;
         },
     }), [loaded, origin, file.path, file.url]);
 

@@ -132,6 +132,9 @@ export function DesktopWindowChrome({
 			) : null}
 			{isDesktopWindow && showWorkspaceControl && workspaceMode ? (
 				<>
+					{/* A sibling plate can sit below every moving control; painting it
+					    on the tab track covered the earlier question/terminal buttons. */}
+					<div className="inno-window-chrome-drag-plate" aria-hidden="true" />
 					<div className="inno-window-chrome-preview-terminal">{terminalControl}</div>
 					<motion.div layout={hasOpenConversation ? "position" : false} layoutDependency={`${workspaceMode}:${sidebarCollapsed}`} transition={transition} className="inno-window-chrome-preview-tabs">
 						{/* A single moving track keeps the separator and tabs together

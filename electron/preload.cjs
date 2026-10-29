@@ -32,6 +32,15 @@ function isSearchResult(value) {
 }
 
 contextBridge.exposeInMainWorld("innoDesktop", {
+  resizeWindow(action, edge) {
+    if (!["start", "update", "end", "cancel"].includes(action)) return;
+    if (action === "start" && !["n", "s", "e", "w", "ne", "nw", "se", "sw"].includes(edge)) return;
+    ipcRenderer.send("inno-resize-window", { action, edge: action === "start" ? edge : undefined });
+  },
+	setThemePreference(preference) {
+		if (!["light", "dark", "system"].includes(preference)) return Promise.resolve(null);
+		return ipcRenderer.invoke("inno-set-theme-preference", preference);
+	},
   setCloseDialogCopy(copy) {
     if (isCloseDialogCopy(copy)) {
       ipcRenderer.send("inno-close-dialog-copy", copy);

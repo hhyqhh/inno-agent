@@ -58,6 +58,7 @@ import {
 	Settings as SettingsIcon,
 	Sun,
 	Moon,
+	Monitor,
 	Languages,
 } from "lucide-react";
 import { appStore, type AppPage } from "../stores/app-store.js";
@@ -775,7 +776,7 @@ function NavItem({
 function SidebarUserMenu({ compact = false }: { compact?: boolean }) {
 	const { t, i18n } = useTranslation();
 	const [open, setOpen] = useState(false);
-	const theme = useStoreSnapshot(themeStore, () => themeStore.current);
+	const theme = useStoreSnapshot(themeStore, () => themeStore.preference);
 
 	return (
 		<DropdownMenu open={open} onOpenChange={setOpen}>
@@ -795,12 +796,12 @@ function SidebarUserMenu({ compact = false }: { compact?: boolean }) {
 			</DropdownMenuTrigger>
 			<DropdownMenuContent side={compact ? "right" : "top"} align={compact ? "end" : "start"} sideOffset={6} aria-label={t("nav.settings")} className="inno-sidebar-user-menu">
 				<DropdownMenuLabel>{t("nav.theme")}</DropdownMenuLabel>
-				<DropdownMenuRadioGroup value={theme} onValueChange={(value) => void themeStore.save(value as "light" | "dark")}>
-					{(["light", "dark"] as const).map((id) => (
+				<DropdownMenuRadioGroup value={theme} onValueChange={(value) => void themeStore.save(value as "light" | "dark" | "system")}>
+					{(["light", "dark", "system"] as const).map((id) => (
 						<DropdownMenuOptionItem
 							key={id}
 							value={id}
-							icon={id === "light" ? <Sun size={14} /> : <Moon size={14} />}
+							icon={id === "system" ? <Monitor size={14} /> : id === "light" ? <Sun size={14} /> : <Moon size={14} />}
 							label={t(`settings.themeOptions.${id}`)}
 							className="inno-sidebar-user-menu-option"
 							onSelect={(event) => event.preventDefault()}

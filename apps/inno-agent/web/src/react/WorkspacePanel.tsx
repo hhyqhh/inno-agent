@@ -1,5 +1,5 @@
-import { Component, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { Component, lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { createPortal, flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useDragDropManager } from "react-dnd";
 import type { DragDropManager } from "dnd-core";
@@ -133,7 +133,9 @@ class WorkspaceContentErrorBoundary extends Component<
 	}
 }
 
-function WorkspaceBrowserContent({ retryKey, onPreviewFile, dndManager, showFileTree }: { retryKey: number; onPreviewFile: WorkspacePanelProps["onPreviewFile"]; dndManager: DragDropManager; showFileTree: boolean }) {
+// Drag tooltip updates must not reconcile the file tree and office editor.
+// Their own store subscriptions still deliver content/selection changes.
+const WorkspaceBrowserContent = memo(function WorkspaceBrowserContent({ retryKey, onPreviewFile, dndManager, showFileTree }: { retryKey: number; onPreviewFile: WorkspacePanelProps["onPreviewFile"]; dndManager: DragDropManager; showFileTree: boolean }) {
 	const Browser = useMemo(
 		() => lazy(() => import("./WorkspaceBrowser.js").then((mod) => ({ default: mod.WorkspaceBrowser }))),
 		[retryKey],
@@ -143,7 +145,7 @@ function WorkspaceBrowserContent({ retryKey, onPreviewFile, dndManager, showFile
 			<Browser variant={showFileTree ? "workspace" : "preview"} onPreviewFile={onPreviewFile} dndManager={dndManager} />
 		</Suspense>
 	);
-}
+});
 
 function WorkspaceContentFallback() {
 	return (
@@ -159,16 +161,69 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	const [isResizing, setIsResizing] = useState(false);
 	const [resizeDragWidth, setResizeDragWidth] = useState(width);
 	const panelRef = useRef<HTMLElement | null>(null);
+	const layoutRef = useRef<HTMLElement | null>(null);
+	const resizePreviewRef = useRef<HTMLDivElement | null>(null);
 	const resizeBoundsRef = useRef({ top: 0, right: 0, bottom: 0, widthOffset: 0 });
 	const [resizeFullscreenReady, setResizeFullscreenReady] = useState(false);
 	const resizeRequestedWidthRef = useRef<number | null>(null);
 	const resizeStartRef = useRef<WorkspaceResizeStart | null>(null);
 	const resizePreviewWidthRef = useRef<number | null>(null);
+	const resizeLiveWidthRef = useRef<number | null>(null);
 	const resizeMaxWidthRef = useRef(WORKSPACE_MAX_WIDTH);
 	const resizeCommitGenerationRef = useRef(0);
 	const [contentRetryKey, setContentRetryKey] = useState(0);
 	const [hasOpenedWorkspace, setHasOpenedWorkspace] = useState(mode !== "collapsed");
 	const retryContent = useCallback(() => setContentRetryKey((key) => key + 1), []);
+
+	// CSS owns transient drag widths. Calling onWidthChange on every frame
+	// notified the whole App and synchronously persisted localStorage, on top
+	// of the office engine's resize work. Commit through the existing owner
+	// only on release; toolbar, panel and chat still follow the live CSS width.
+	const writeDragGeometry = useCallback((nextDragWidth: number) => {
+		const layout = layoutRef.current;
+		if (!layout) return;
+		const displayWidth = nextDragWidth - resizeBoundsRef.current.widthOffset;
+		const edgeX = window.innerWidth - resizeBoundsRef.current.right - displayWidth;
+		// Read the root before invalidating its layout. Previously this read
+		// separated two geometry writes, forcing an extra layout before the
+		// controls' required post-position measurement below.
+		const layoutLeft = layout.getBoundingClientRect().left;
+		layout.style.setProperty("--inno-workspace-drag-width", `${nextDragWidth}px`);
+		layout.style.setProperty("--inno-workspace-live-width", `${resizeLiveWidthRef.current ?? nextDragWidth}px`);
+		layout.style.setProperty("--inno-workspace-drag-left", `${edgeX - layoutLeft}px`);
+		layout.toggleAttribute("data-workspace-resize-overlay", resizePreviewWidthRef.current !== null);
+		const preview = resizePreviewRef.current;
+		if (preview) preview.style.width = `${displayWidth}px`;
+		// Measure the controls without changing the tab track's layout. Padding
+		// the track to paint a plate both covered its earlier siblings and let
+		// long tab lists run into the fixed window buttons (the narrow case).
+		// Only a deferred preview crosses the actual chat boundary; CSS reveals
+		// the sibling plate then. These reads follow this frame's position write.
+		{
+			let clusterLeft = edgeX - 4;
+			for (const el of layout.querySelectorAll<HTMLElement>(".inno-conversation-header-actions, .inno-window-chrome-preview-terminal")) {
+				const rect = el.getBoundingClientRect();
+				if (rect.width > 0) clusterLeft = Math.min(clusterLeft, rect.left - 4);
+			}
+			const track = layout.querySelector<HTMLElement>(".inno-window-chrome-preview-tabs");
+			const newTab = track?.querySelector<HTMLElement>(".inno-workspace-tabs > button");
+			const trackRight = track?.getBoundingClientRect().right ?? edgeX + 11;
+			const clusterRight = Math.min(newTab?.getBoundingClientRect().right ?? trackRight, trackRight) + 4;
+			layout.style.setProperty("--inno-drag-plate-left", `${clusterLeft - layoutLeft}px`);
+			layout.style.setProperty("--inno-drag-plate-width", `${Math.max(0, clusterRight - clusterLeft)}px`);
+		}
+	}, []);
+
+	const clearDragGeometry = useCallback(() => {
+		const layout = layoutRef.current;
+		if (!layout) return;
+		layout.removeAttribute("data-workspace-resize-overlay");
+		layout.style.removeProperty("--inno-workspace-drag-width");
+		layout.style.removeProperty("--inno-workspace-live-width");
+		layout.style.removeProperty("--inno-workspace-drag-left");
+		layout.style.removeProperty("--inno-drag-plate-left");
+		layout.style.removeProperty("--inno-drag-plate-width");
+	}, []);
 
 	const terminalOpen = useStoreSnapshot(terminalStore, () => terminalStore.isOpen);
 	const fileCount = useStoreSnapshot(workspaceStore, () => countTreeFiles(workspaceStore.tree?.children));
@@ -179,18 +234,36 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 
 	const commitResize = useCallback(async (nextWidth: number) => {
 		const generation = ++resizeCommitGenerationRef.current;
-		// When the current chat column is already at its baseline width, the
-		// renderer cannot fit a wider workspace without first making more room.
-		// Electron can expand the host window; browser builds safely fall back to
-		// the existing fitPanelLayout constraint inside onWidthChange.
-		await ensureWindowForPanel("right", nextWidth, mode);
-		// The host-window resize can emit a second renderer resize event after
-		// ensureWindowForPanel resolves. Commit after those fit passes settle so
-		// the requested workspace width is not overwritten by the old width.
-		await waitForWindowLayoutToSettle();
-		if (generation !== resizeCommitGenerationRef.current) return;
-		onWidthChange(nextWidth);
-	}, [mode, onWidthChange]);
+		try {
+			// Growing right cancelled the panel's leftward move. Keep the native
+			// right edge anchored so the released preview is also the body landing.
+			await ensureWindowForPanel("right", nextWidth, mode, { preserveRightEdge: true });
+			// Native expansion may emit a second resize/fit event. Keep the preview
+			// visible throughout, then commit the real DOM before removing it;
+			// clearing on pointerup previously exposed the old body for these frames.
+			await waitForWindowLayoutToSettle();
+			if (generation !== resizeCommitGenerationRef.current) return;
+			writeDragGeometry(nextWidth);
+			flushSync(() => onWidthChange(nextWidth));
+		} finally {
+			if (generation === resizeCommitGenerationRef.current) {
+				resizePreviewWidthRef.current = null;
+				resizeLiveWidthRef.current = null;
+				clearDragGeometry();
+				setIsResizing(false);
+			}
+		}
+	}, [clearDragGeometry, mode, onWidthChange, writeDragGeometry]);
+
+	// A pending native resize must not commit into a closed/replaced panel.
+	useEffect(() => {
+		resizeStartRef.current = null;
+		resizePreviewWidthRef.current = null;
+		resizeLiveWidthRef.current = null;
+		clearDragGeometry();
+		setIsResizing(false);
+		return () => { resizeCommitGenerationRef.current += 1; };
+	}, [clearDragGeometry, mode]);
 
 	useEffect(() => {
 		if (!isResizing) return;
@@ -204,8 +277,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 			}
 		};
 		// Pointer events arrive at the input device's rate, faster than frames;
-		// apply at most one layout update per frame so the drag cannot stack
-		// whole-app renders on every event. The release lands on the pointer's
+		// apply at most one local layout update per frame. The release lands on the pointer's
 		// final position synchronously.
 		const applyMove = (clientX: number) => {
 			frame = 0;
@@ -217,25 +289,24 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 			const requestedWidth = start.width + start.clientX - clientX;
 			resizeRequestedWidthRef.current = requestedWidth;
 			setResizeFullscreenReady(requestedWidth >= maxWidth + RESIZE_FULLSCREEN_THRESHOLD);
-			const nextWidth = clampResizeWidth(
-				requestedWidth,
-				mode,
-				resizeMaxWidthRef.current,
-			);
-			setResizeDragWidth(nextWidth);
+			const nextWidth = clampResizeWidth(requestedWidth, mode, maxWidth);
 			const directMaxWidth = Math.max(
 				start.width,
 				getMaximumWorkspaceWidth(window.innerWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop), appStore.sidebarWidth),
 			);
-			if (nextWidth <= directMaxWidth) {
+			const deferred = nextWidth > directMaxWidth;
+			if (deferred) {
+				// The preview edge is the fallback for widths that cannot be
+				// applied to the live layout yet.
+				resizePreviewWidthRef.current = nextWidth;
+			} else {
 				// Keep the workspace attached to the pointer while the current
-				// window has room for it. The preview edge is only a fallback for
-				// widths that cannot be applied to the live layout yet.
+				// window has room for it.
 				resizePreviewWidthRef.current = null;
-				onWidthChange(nextWidth);
-				return;
+				resizeLiveWidthRef.current = nextWidth;
 			}
-			resizePreviewWidthRef.current = nextWidth;
+			writeDragGeometry(nextWidth);
+			setResizeDragWidth(nextWidth);
 		};
 		const handlePointerMove = (event: PointerEvent) => {
 			const start = resizeStartRef.current;
@@ -248,18 +319,28 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 			cancelPendingMove();
 			const start = resizeStartRef.current;
 			if (!start) return;
-			const nextWidth = commit ? resizePreviewWidthRef.current : null;
+			const deferredWidth = commit ? resizePreviewWidthRef.current : null;
+			const nextWidth = resizeLiveWidthRef.current ?? start.width;
 			const fullscreen = commit && resizeRequestedWidthRef.current !== null
 				&& resizeRequestedWidthRef.current >= resizeMaxWidthRef.current + RESIZE_FULLSCREEN_THRESHOLD;
 			resizeStartRef.current = null;
 			resizeRequestedWidthRef.current = null;
-			resizePreviewWidthRef.current = null;
 			resizeMaxWidthRef.current = WORKSPACE_MAX_WIDTH;
-			setIsResizing(false);
 			setResizeFullscreenReady(false);
-			if (fullscreen) onModeChange("full");
-			else if (nextWidth !== null) void commitResize(nextWidth);
-			else if (!commit) onWidthChange(start.width);
+			if (!fullscreen && deferredWidth !== null) {
+				// The gesture ended, but its geometry stays until commitResize has
+				// handed it to the real panel. Further pointer moves are ignored.
+				void commitResize(deferredWidth);
+			} else {
+				if (commit) flushSync(() => {
+					onWidthChange(nextWidth);
+					if (fullscreen) onModeChange("full");
+				});
+				resizePreviewWidthRef.current = null;
+				resizeLiveWidthRef.current = null;
+				clearDragGeometry();
+				setIsResizing(false);
+			}
 		};
 		const handlePointerUp = (event: PointerEvent) => {
 			if (resizeStartRef.current?.pointerId !== event.pointerId) return;
@@ -275,6 +356,19 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if (event.key === "Escape") finishResize(false);
 		};
+		const handleWindowResize = () => {
+			// Left expansion moves the window origin. Recompute local coordinates
+			// so toolbar, preview and the stationary screen-space right edge agree.
+			if (!resizeStartRef.current && resizePreviewWidthRef.current !== null) {
+				const targetWidth = resizePreviewWidthRef.current;
+				// Let the body catch up as native space becomes available rather
+				// than leaving it frozen until the entire expansion has finished.
+				resizeLiveWidthRef.current = Math.min(targetWidth, getMaximumWorkspaceWidth(
+					window.innerWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop), appStore.sidebarWidth,
+				));
+				writeDragGeometry(targetWidth);
+			}
+		};
 
 		document.body.classList.add("workspace-resizing");
 		window.addEventListener("pointermove", handlePointerMove);
@@ -282,16 +376,21 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 		window.addEventListener("pointercancel", handlePointerCancel);
 		window.addEventListener("blur", handleWindowBlur);
 		window.addEventListener("keydown", handleKeyDown);
+		window.addEventListener("resize", handleWindowResize);
 		return () => {
 			cancelPendingMove();
 			document.body.classList.remove("workspace-resizing");
+			// Unmounting mid-drag must not strand the vars on the layout root;
+			// regular endings already cleared them in finishResize.
+			clearDragGeometry();
 			window.removeEventListener("pointermove", handlePointerMove);
 			window.removeEventListener("pointerup", handlePointerUp);
 			window.removeEventListener("pointercancel", handlePointerCancel);
 			window.removeEventListener("blur", handleWindowBlur);
 			window.removeEventListener("keydown", handleKeyDown);
+			window.removeEventListener("resize", handleWindowResize);
 		};
-	}, [commitResize, isResizing, mode, onModeChange, onWidthChange]);
+	}, [clearDragGeometry, commitResize, isResizing, mode, onModeChange, onWidthChange, writeDragGeometry]);
 
 	// Keep the workspace browser mounted after its first open. Collapsing the
 	// panel should hide it, not restart its tree/preview lifecycle on reopen.
@@ -307,7 +406,8 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 		// resize before a host-window expansion has finished.
 		resizeCommitGenerationRef.current += 1;
 		const layoutMaxWidth = getMaximumWorkspaceWidth(window.innerWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop), appStore.sidebarWidth);
-		const startWidth = clampResizeWidth(width, mode, Math.max(width, layoutMaxWidth));
+		const liveWidth = resizeLiveWidthRef.current ?? width;
+		const startWidth = clampResizeWidth(liveWidth, mode, Math.max(liveWidth, layoutMaxWidth));
 		resizeMaxWidthRef.current = Math.max(startWidth, layoutMaxWidth);
 		const bounds = panelRef.current?.getBoundingClientRect();
 		resizeBoundsRef.current = {
@@ -316,6 +416,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 			bottom: bounds?.height ? window.innerHeight - bounds.bottom : 0,
 			widthOffset: bounds?.width ? startWidth - bounds.width : 0,
 		};
+		layoutRef.current = panelRef.current?.closest<HTMLElement>(".app-layout") ?? null;
 		setResizeDragWidth(startWidth);
 		resizeStartRef.current = {
 			pointerId: event.pointerId,
@@ -323,26 +424,24 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 			width: startWidth,
 		};
 		resizePreviewWidthRef.current = null;
+		resizeLiveWidthRef.current = startWidth;
 		resizeRequestedWidthRef.current = null;
+		writeDragGeometry(startWidth);
 		setResizeFullscreenReady(false);
 		setIsResizing(true);
 		if (event.currentTarget.setPointerCapture) {
 			event.currentTarget.setPointerCapture(event.pointerId);
 		}
 
-		// On desktop, include the amount of host-window space that can still be
-		// expanded on either edge. The commit uses the right edge first and moves
-		// the window left when the right edge is already at the display boundary.
+		// A splitter release anchors the native right edge. Only left-side room
+		// is usable; counting right-side room offered a preview the body could
+		// never reach without jumping back when the window grew to the right.
 		const getWindowWidthCapacity = window.innoDesktop?.getWindowWidthCapacity;
 		if (getWindowWidthCapacity) {
-			void Promise.all([
-				getWindowWidthCapacity("right").catch(() => 0),
-				getWindowWidthCapacity("left").catch(() => 0),
-			]).then(([rightCapacity, leftCapacity]) => {
+			void getWindowWidthCapacity("left").catch(() => 0).then((leftCapacity) => {
 				const active = resizeStartRef.current;
 				if (!active || active.pointerId !== event.pointerId) return;
 				const expandedViewportWidth = window.innerWidth
-					+ Math.max(0, Math.round(rightCapacity))
 					+ Math.max(0, Math.round(leftCapacity));
 				resizeMaxWidthRef.current = Math.min(
 					WORKSPACE_MAX_WIDTH,
@@ -356,7 +455,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 					&& resizeRequestedWidthRef.current >= maxWidth + RESIZE_FULLSCREEN_THRESHOLD);
 			});
 		}
-	}, [mode, width]);
+	}, [mode, width, writeDragGeometry]);
 
 	const collapsed = mode === "collapsed";
 	// The document engine (WordEditor stays mounted through collapse) relayouts
@@ -419,27 +518,13 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	// Align hover and drag hints to the content's top edge. The hover hit target
 	// extends 3px beyond the drag anchor, so its right-side gap is 3px smaller.
 
-	useLayoutEffect(() => {
-		if (!isResizing) return;
-		const layout = panelRef.current?.closest<HTMLElement>(".app-layout");
-		layout?.toggleAttribute("data-workspace-resize-overlay", resizePreviewWidthRef.current !== null);
-		// The panel can defer its width until the host window expands. Using its
-		// old bounds here stranded the tabs while the drag edge kept moving;
-		// toolbar and preview must always share the same measured drag geometry.
-		layout?.style.setProperty("--inno-workspace-drag-width", `${resizeDragWidth}px`);
-		const edgeX = window.innerWidth - resizeBoundsRef.current.right - displayWidth;
-		layout?.style.setProperty("--inno-workspace-drag-left", `${edgeX - (layout?.getBoundingClientRect().left ?? 0)}px`);
-		return () => {
-			layout?.removeAttribute("data-workspace-resize-overlay");
-			layout?.style.removeProperty("--inno-workspace-drag-width");
-			layout?.style.removeProperty("--inno-workspace-drag-left");
-		};
-	}, [isResizing, resizeDragWidth, displayWidth, width]);
-
 	const resizePreviewPortal = isResizing
 		? createPortal(
 			<div
+				ref={resizePreviewRef}
 				className="workspace-resize-preview"
+				// The width below is re-applied by writeDragGeometry every pointer
+				// frame; this style prop only seeds the first paint after mount.
 				style={{ width: displayWidth, top: resizeBoundsRef.current.top, right: resizeBoundsRef.current.right, bottom: resizeBoundsRef.current.bottom }}
 			>
 				<Tooltip label={resizeLabel} open side="right" align="start" contentClassName="workspace-resize-tooltip">
@@ -463,7 +548,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 						className="workspace-resize-handle"
 						role="separator"
 						aria-orientation="vertical"
-						aria-valuenow={width}
+						aria-valuenow={isResizing ? resizeDragWidth : width}
 						aria-valuemin={mode === "quarter" ? WORKSPACE_QUARTER_MIN_WIDTH : WORKSPACE_MIN_WIDTH}
 						aria-valuemax={getMaximumWorkspaceWidth(typeof window === "undefined" ? 1440 : window.innerWidth, appStore.sidebarCollapsed, mode, Boolean(window.innoDesktop), appStore.sidebarWidth)}
 						aria-label={t("workspace.resize") ?? ""}

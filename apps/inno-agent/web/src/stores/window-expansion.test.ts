@@ -107,4 +107,40 @@ import { ensureWindowForPanel } from "./window-expansion.js";
 		await expect(ensureWindowForPanel("right", 500, "half")).resolves.toBe("ready");
 		expect(expandWindowWidth).toHaveBeenCalledWith("right", 252);
 	});
+
+	it("lands a released splitter at the preview's screen position even with space on both sides", async () => {
+		mocks.appStore.sidebarCollapsed = true;
+		let windowLeft = 400;
+		const viewport = {
+			innerWidth: 1200,
+			innoDesktop: {
+				getWindowWidthCapacity: vi.fn(async () => 400),
+				expandWindowWidth: vi.fn(async (side: "left" | "right", width: number) => {
+					viewport.innerWidth += width;
+					if (side === "left") windowLeft -= width;
+					return true;
+				}),
+			},
+		};
+		vi.stubGlobal("window", viewport);
+		const requestedWidth = 768;
+		const releaseScreenX = windowLeft + viewport.innerWidth - requestedWidth;
+		await expect(ensureWindowForPanel("right", requestedWidth, "half", { preserveRightEdge: true })).resolves.toBe("ready");
+		expect(viewport.innoDesktop.expandWindowWidth).toHaveBeenCalledExactlyOnceWith("left", 180);
+		expect(windowLeft + viewport.innerWidth - requestedWidth).toBe(releaseScreenX);
+	});
+
+	it("does not spend right-side space on a splitter position that needs left-side room", async () => {
+		mocks.appStore.sidebarCollapsed = true;
+		const viewport = {
+			innerWidth: 1200,
+			innoDesktop: {
+				getWindowWidthCapacity: vi.fn(async (side: "left" | "right") => side === "left" ? 0 : 400),
+				expandWindowWidth: vi.fn(),
+			},
+		};
+		vi.stubGlobal("window", viewport);
+		await expect(ensureWindowForPanel("right", 768, "half", { preserveRightEdge: true })).resolves.toBe("unavailable");
+		expect(viewport.innoDesktop.expandWindowWidth).not.toHaveBeenCalled();
+	});
 });

@@ -842,7 +842,10 @@
 			"en": "English"
 		},
 		"theme": "Theme",
+		"followSystem": "Follow system",
+		"followSystemDesc": "Automatically switch between light and dark with your system appearance",
 		"themeOptions": {
+			"system": "Follow system",
 			"light": "Light",
 			"dark": "Dark"
 		},

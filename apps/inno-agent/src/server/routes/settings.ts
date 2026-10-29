@@ -706,7 +706,7 @@ export async function handleSettingsRoutes(
 		const theme = typeof body.theme === "string" ? body.theme.trim() : "";
 		// Legacy values (warm/ocean/innospark) stay accepted so older clients do
 		// not break; the web UI normalizes them to "light" on read.
-		const ALLOWED_THEMES = ["light", "dark", "warm", "ocean", "innospark"];
+		const ALLOWED_THEMES = ["light", "dark", "system", "warm", "ocean", "innospark"];
 		if (!ALLOWED_THEMES.includes(theme)) {
 			json(res, 400, { error: `Invalid theme. Allowed: ${ALLOWED_THEMES.join(", ")}` });
 			return true;

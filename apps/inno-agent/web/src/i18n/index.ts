@@ -21,6 +21,8 @@ type CloseDialogCopy = {
 };
 
 type DesktopBridge = {
+	resizeWindow?(action: "start" | "update" | "end" | "cancel", edge?: "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw"): void;
+	setThemePreference?(preference: "light" | "dark" | "system"): Promise<"light" | "dark" | null>;
 	setCloseDialogCopy(copy: CloseDialogCopy): void;
 	expandWindowWidth(side: "left" | "right", additionalWidth: number): Promise<boolean>;
 	getWindowWidthCapacity(side: "left" | "right"): Promise<number>;

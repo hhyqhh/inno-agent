@@ -102,7 +102,7 @@ function QuestionTab({
 
 	return (
 		<div className="min-w-0 space-y-3">
-			<markdown-block className="text-sm font-medium text-[var(--inno-text)]" content={normalizeMarkdownMath(q.question)} />
+			<markdown-block className="text-xs font-medium text-[var(--inno-text)]" content={normalizeMarkdownMath(q.question)} />
 
 			<div className={hasPreview ? "grid min-w-0 gap-3 @min-[480px]:grid-cols-2" : "min-w-0"}>
 				<div className="min-w-0 space-y-1.5" role="group" aria-label={t(isMulti ? "question.multiSelect" : "question.singleSelect")}>

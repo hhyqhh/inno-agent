@@ -1,5 +1,39 @@
 import { describe, expect, it, vi } from "vitest";
 import { appStore, pageFromSearch } from "./app-store.js";
+import { fitPanelLayout } from "./app-layout.js";
+
+describe("desktop window shrinking", () => {
+	it.each([1, 7, 48])("never maximizes the preview during repeated %ipx native resize steps", (step) => {
+		const previous = { mode: appStore.workspaceMode, width: appStore.workspaceWidth, collapsed: appStore.sidebarCollapsed };
+		const viewport = { innerWidth: 1200, innoDesktop: {}, localStorage: { setItem: vi.fn() } };
+		vi.stubGlobal("window", viewport);
+		try {
+			appStore.workspaceMode = "half";
+			appStore.workspaceWidth = 520;
+			appStore.sidebarCollapsed = true;
+			// Follow App's resize fitting path, including the half -> quarter
+			// mode update which previously re-entered the browser-only fallback.
+			for (let width = 1200; width >= 612; width -= step) {
+				viewport.innerWidth = width;
+				const fitted = fitPanelLayout(width, appStore.sidebarCollapsed, appStore.workspaceMode, appStore.workspaceWidth, true);
+				if (!fitted) appStore.setWorkspaceMode("collapsed");
+				else {
+					if (fitted.workspaceMode !== appStore.workspaceMode) appStore.setWorkspaceMode(fitted.workspaceMode);
+					if (fitted.workspaceWidth !== appStore.workspaceWidth) appStore.setWorkspaceWidth(fitted.workspaceWidth);
+				}
+				expect(appStore.workspaceMode, `viewport ${width}`).not.toBe("full");
+			}
+			expect(appStore.workspaceMode).toBe("collapsed");
+			appStore.setWorkspaceMode("full");
+			expect(appStore.workspaceMode).toBe("full");
+		} finally {
+			appStore.workspaceMode = previous.mode;
+			appStore.workspaceWidth = previous.width;
+			appStore.sidebarCollapsed = previous.collapsed;
+			vi.unstubAllGlobals();
+		}
+	});
+});
 
 describe("pageFromSearch", () => {
 	it("defaults to chat when no params are present", () => {

@@ -157,9 +157,9 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 		let nextWorkspaceMode = mode;
 		let nextWorkspaceWidth = this.workspaceWidth;
 		if (typeof window !== "undefined") {
-			// Narrow viewports have no room for a side-by-side panel: every call
-			// site gets the full-width overlay instead of a refused/squeezed split.
-			nextWorkspaceMode = resolveWorkspaceModeForViewport(nextWorkspaceMode, window.innerWidth);
+			// Browser narrow screens use an overlay. Native windows keep the
+			// fitted split or close it; shrinking the window is not a maximize action.
+			nextWorkspaceMode = resolveWorkspaceModeForViewport(nextWorkspaceMode, window.innerWidth, Boolean(window.innoDesktop));
 			const fitted = fitPanelLayout(
 				window.innerWidth,
 				nextSidebarCollapsed,

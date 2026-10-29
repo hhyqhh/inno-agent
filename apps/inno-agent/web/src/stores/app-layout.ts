@@ -134,8 +134,11 @@ export function canOpenWorkspaceBesideSidebar(viewportWidth: number, workspaceWi
  * At narrow widths there is no room for a side-by-side panel, so half/quarter
  * requests become the full-width overlay instead of being refused.
  */
-export function resolveWorkspaceModeForViewport(mode: WorkspaceMode, viewportWidth: number): WorkspaceMode {
-	if (viewportWidth > CHAT_ONLY_BP) return mode;
+export function resolveWorkspaceModeForViewport(mode: WorkspaceMode, viewportWidth: number, isDesktopWindow = false): WorkspaceMode {
+	// Native window shrinking can downgrade half to quarter before reaching
+	// the minimum width. Reapplying that mode must not invoke the browser's
+	// mobile overlay fallback and unexpectedly maximize the desktop preview.
+	if (isDesktopWindow || viewportWidth > CHAT_ONLY_BP) return mode;
 	if (mode === "half" || mode === "quarter") return "full";
 	return mode;
 }

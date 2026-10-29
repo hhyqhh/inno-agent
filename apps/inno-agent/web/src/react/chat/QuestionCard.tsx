@@ -26,7 +26,7 @@ export function QuestionCard({ questions, activeTab, onTabChange, isAnswered, co
 							value: String(index), ariaLabel: question.header,
 							label: <>{question.header}{isAnswered(index) ? <Check size={14} aria-hidden="true" /> : null}</>,
 						}))} />
-				) : <span className="min-w-0 text-sm font-medium text-[var(--inno-text-muted)]">{questions[activeTab].header}</span>}
+				) : <span className="min-w-0 text-xs font-medium text-[var(--inno-text-muted)]">{questions[activeTab].header}</span>}
 				<div className="ml-auto flex shrink-0 items-center gap-2 text-xs">
 					{completed ? <span className="text-[var(--inno-accent)]">{t("question.answered")}</span> : null}
 					<span className="tabular-nums text-[var(--inno-text-subtle)]">{activeTab + 1} / {questions.length}</span>

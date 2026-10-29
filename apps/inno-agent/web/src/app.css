@@ -1230,6 +1230,41 @@ select:focus-visible {
 	}
 }
 
+/* The native resize border is difficult to hit. Supplement it with a small,
+   transparent inner strip; no-drag prevents the titlebar's move region from
+   swallowing top/corner pointer events. The center stays pointer-transparent. */
+.inno-window-resize-targets {
+	position: fixed;
+	inset: 0;
+	z-index: 1100;
+	pointer-events: none;
+}
+.inno-window-resize-target {
+	position: absolute;
+	pointer-events: auto;
+	-webkit-app-region: no-drag;
+}
+.inno-window-resize-target--n,
+.inno-window-resize-target--s { left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
+.inno-window-resize-target--n { top: 0; }
+.inno-window-resize-target--s { bottom: 0; }
+.inno-window-resize-target--e,
+.inno-window-resize-target--w { top: 12px; bottom: 12px; width: 6px; cursor: ew-resize; }
+.inno-window-resize-target--e { right: 0; }
+.inno-window-resize-target--w { left: 0; }
+.inno-window-resize-target--ne,
+.inno-window-resize-target--nw,
+.inno-window-resize-target--se,
+.inno-window-resize-target--sw { width: 12px; height: 12px; }
+.inno-window-resize-target--ne { top: 0; right: 0; cursor: nesw-resize; }
+.inno-window-resize-target--nw { top: 0; left: 0; cursor: nwse-resize; }
+.inno-window-resize-target--se { bottom: 0; right: 0; cursor: nwse-resize; }
+.inno-window-resize-target--sw { bottom: 0; left: 0; cursor: nesw-resize; }
+body[data-window-resizing], body[data-window-resizing] * {
+	cursor: var(--inno-window-resize-cursor) !important;
+	user-select: none !important;
+}
+
 /* Three-column layout */
 inno-app-shell {
 	height: 100vh;
@@ -2332,6 +2367,17 @@ inno-app-shell {
 	--workspace-w: var(--inno-workspace-drag-width, var(--inno-workspace-width));
 }
 
+/* Keep live geometry local while dragging, including native expansion after
+   release. The global width is committed/persisted once at handoff. A deferred
+   preview can move ahead of the body's live width until native room exists. */
+.workspace-resizing .app-layout {
+	--workspace-w: var(--inno-workspace-live-width, var(--inno-workspace-width));
+}
+
+.workspace-resizing .app-layout--desktop.app-layout--chat .inno-desktop-workbench > .inno-desktop-chat-content {
+	width: max(0px, calc(100% - var(--workspace-w) + 3px));
+}
+
 /* Both the small divider (track left - 11px) and the drag line use the
    measured edge, including the desktop shell's inset and deferred expansion. */
 .workspace-resizing .inno-window-chrome-preview-tabs {
@@ -2349,39 +2395,72 @@ inno-app-shell {
 
 /* A deferred drag is an overlay, not additional header layout. Reserving its
    requested width kept squeezing the conversation title before the window
-   could expand. Keep its live clearance and ghost the moving controls above it. */
+   could expand. Keep its live clearance; the translucent plate on the tab
+   track below carries the moving controls over whatever title remains. */
 .workspace-resizing .app-layout--desktop.app-layout--chat[data-workspace-resize-overlay] .inno-window-chrome {
-	--inno-chat-title-clearance: calc(var(--inno-workspace-width) + var(--inno-window-chrome-control-size) + 16px);
+	--inno-chat-title-clearance: calc(var(--inno-workspace-live-width, var(--inno-workspace-width)) + var(--inno-window-chrome-control-size) + 16px);
 }
 
-.workspace-resizing [data-workspace-resize-overlay] .inno-window-chrome-preview-tabs,
-.workspace-resizing [data-workspace-resize-overlay] .inno-window-chrome-preview-terminal,
-.workspace-resizing [data-workspace-resize-overlay] .inno-conversation-header-actions {
+/* Moving controls stay above the independent plate, including the question
+   action rendered through the conversation-header portal. */
+.workspace-resizing .inno-window-chrome-preview-tabs,
+.workspace-resizing .inno-window-chrome-preview-terminal,
+.workspace-resizing .inno-window-chrome-preview-fullscreen,
+.workspace-resizing .inno-window-chrome-workspace-button,
+.workspace-resizing .inno-conversation-header-actions {
 	z-index: 3;
 }
 
-/* The glass belongs between the title and the moving controls. Putting it
-   inside an opacity < 1 tab track composites both text layers together and
-   makes that track a backdrop root, preventing the blur from masking the title. */
-.workspace-resizing [data-workspace-resize-overlay] .inno-window-chrome-chat-header {
+/* The shared conversation header carries z-index: 5 for the browser layout.
+   During a drag that level floats the whole title row above the plate and
+   the moving controls. Drop it to tree order so the plate covers it; the
+   trailing actions keep their z-index: 3 lift above the plate because this
+   header no longer creates a stacking context. */
+.workspace-resizing .app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header {
 	z-index: auto;
 }
 
-.workspace-resizing [data-workspace-resize-overlay] .inno-window-chrome::after {
-	content: "";
+.workspace-resizing .app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header > .inno-conversation-header {
+	z-index: auto;
+}
+
+/* Painting on the tab track hid same-level siblings and changed its width.
+   A separate, non-interactive surface sits between the title and controls,
+   measured through the new-tab button so short lists leave no blank slab.
+   Keep the normal track's right inset so narrow/multiple tabs still scroll
+   before reaching the fixed maximize and workspace-toggle buttons. */
+.inno-window-chrome-drag-plate {
+	display: none;
 	position: absolute;
-	top: 0;
-	height: var(--inno-window-chrome-height);
-	left: calc(var(--inno-workspace-drag-left) - var(--inno-window-chrome-control-size) - 16px - var(--inno-chat-action-width, 32px) - 4px);
-	right: calc(16px + var(--inno-window-chrome-control-size) * 2 + 12px);
+	top: calc(var(--inno-window-chrome-control-top) - 1px);
+	left: var(--inno-drag-plate-left);
+	width: var(--inno-drag-plate-width);
+	height: calc(var(--inno-window-chrome-control-size) + 2px);
 	z-index: 2;
-	background: color-mix(in srgb, var(--inno-window-chrome-bg, var(--inno-desktop-base-bg)) 90%, transparent);
-	/* Standard last: Lightning CSS otherwise retains only the WebKit alias,
-	   leaving the production Chromium renderer without any backdrop blur. */
+	pointer-events: none;
+	background: color-mix(in srgb, var(--inno-window-chrome-bg, var(--inno-desktop-base-bg)) 80%, transparent);
+	border: 0;
+	border-radius: var(--radius-md);
+	box-shadow: none;
 	-webkit-backdrop-filter: blur(6px);
 	backdrop-filter: blur(6px);
-	border-radius: var(--radius-md);
-	pointer-events: none;
+	/* Fade the plate's own surface and blur together so its rectangular edge
+	   disappears without adding a shadow or softening the controls above it.
+	   The theme text color supplies opaque alpha only, not a visible color. */
+	-webkit-mask-image:
+		linear-gradient(to right, transparent, var(--inno-text) 8px, var(--inno-text) calc(100% - 8px), transparent),
+		linear-gradient(to bottom, transparent, var(--inno-text) 4px, var(--inno-text) calc(100% - 4px), transparent);
+	mask-image:
+		linear-gradient(to right, transparent, var(--inno-text) 8px, var(--inno-text) calc(100% - 8px), transparent),
+		linear-gradient(to bottom, transparent, var(--inno-text) 4px, var(--inno-text) calc(100% - 4px), transparent);
+	-webkit-mask-composite: source-in;
+	mask-composite: intersect;
+}
+
+/* A live resize moves the actual boundary and needs no overlay. Reveal the
+   plate only when the preview crosses into chat while host expansion waits. */
+.workspace-resizing .app-layout[data-workspace-resize-overlay] .inno-window-chrome-drag-plate {
+	display: block;
 }
 
 .workspace-resizing .app-layout--desktop.app-layout--chat .inno-conversation-header-actions {

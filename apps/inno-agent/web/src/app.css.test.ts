@@ -59,4 +59,18 @@ describe("fullscreen preview toolbar layout", () => {
 		expect(strip).toContain("flex: 0 1 auto");
 		expect(strip).toContain("overflow-x: auto");
 	});
+
+	it("tracks the split edge at pointer rate during a live drag", async () => {
+		const appCss = await readFile(new URL("./app.css", import.meta.url), "utf8");
+		// The rendered panel border must consume the pointer-driven width while
+		// the layout can apply it; deferred native expansion can advance the
+		// live body separately from the requested preview width.
+		const liveLayout = appCss.match(/\.workspace-resizing \.app-layout\s*\{([^}]*)\}/)?.[1] ?? "";
+		expect(liveLayout).toContain("--workspace-w: var(--inno-workspace-live-width");
+		// The chat boundary is sized inline by React through a px var; during a
+		// drag it must read the same pointer-rate width or its edge trails the
+		// strip and drag line by a frame.
+		const chatContent = appCss.match(/\.workspace-resizing \.app-layout--desktop\.app-layout--chat \.inno-desktop-workbench > \.inno-desktop-chat-content\s*\{([^}]*)\}/)?.[1] ?? "";
+		expect(chatContent).toContain("width: max(0px, calc(100% - var(--workspace-w) + 3px))");
+	});
 });

@@ -842,7 +842,10 @@
 			"en": "English"
 		},
 		"theme": "主题",
+		"followSystem": "跟随系统",
+		"followSystemDesc": "随系统外观自动切换浅色和深色模式",
 		"themeOptions": {
+			"system": "跟随系统",
 			"light": "浅色",
 			"dark": "深色"
 		},

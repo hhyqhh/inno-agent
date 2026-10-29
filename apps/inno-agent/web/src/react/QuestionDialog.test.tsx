@@ -31,6 +31,8 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 it("uses a labelled multiline answer and keyboard-accessible question tabs", () => {
 	render(<QuestionDialog pending={pending} />);
+	expect(document.querySelector('markdown-block[content="希望如何处理页数？"]')?.classList.contains("text-xs")).toBe(true);
+	expect(screen.getByRole("radio", { name: "缩减题量" }).closest("label")?.classList.contains("text-xs")).toBe(true);
 	const input = screen.getByRole("textbox", { name: "question.customAnswer" });
 	expect(input.tagName).toBe("TEXTAREA");
 	expect(input.getAttribute("rows")).toBe("1");
@@ -89,10 +91,13 @@ it("can dismiss the questionnaire from the shared footer action", () => {
 });
 
 it("keeps historical answers visible and read-only", () => {
-	render(<AnsweredQuestionCard questionnaire={{ questions: pending.params.questions, result: {
+	render(<AnsweredQuestionCard questionnaire={{ questions: pending.params.questions.slice(0, 1), result: {
 		cancelled: false, answers: [{ questionIndex: 0, question: "希望如何处理页数？", kind: "option", answer: "保留三页" }],
 	} }} />);
+	expect(screen.getByText("页数取舍").classList.contains("text-xs")).toBe(true);
+	expect(document.querySelector('markdown-block[content="希望如何处理页数？"]')?.classList.contains("text-xs")).toBe(true);
 	const option = screen.getByRole("radio", { name: "保留三页" }) as HTMLInputElement;
+	expect(option.closest("label")?.classList.contains("text-xs")).toBe(true);
 	expect(option.checked).toBe(true);
 	expect(option.disabled).toBe(true);
 });

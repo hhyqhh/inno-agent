@@ -1,5 +1,6 @@
 import { listFileApplications, openFileInApplication } from "./open-with.js";
-import { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, ipcMain, screen } from "electron";
+import { getWindowResizeBounds, WINDOW_RESIZE_EDGES } from "./window-resize.js";
+import { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, nativeTheme, ipcMain, screen } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { createServer as createNetServer } from "node:net";
@@ -69,6 +70,53 @@ let tray = null;
 let isQuitting = false;
 let isCloseDialogOpen = false;
 let pendingSearchNavigation = null;
+let windowResize = null;
+
+// Native resize borders are very narrow. The renderer's transparent inner
+// hit strip forwards gestures here; it never owns or supplies window bounds.
+// Read the real screen cursor so resizing left/top is stable as the content
+// origin moves, and CSS zoom/display scaling cannot compound the delta.
+ipcMain.on("inno-resize-window", (event, request) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
+    || !request || !["start", "update", "end", "cancel"].includes(request.action)) return;
+  if (request.action === "cancel") { windowResize = null; return; }
+  if (mainWindow.isFullScreen() || mainWindow.isMaximized() || !mainWindow.isResizable()) {
+    windowResize = null;
+    return;
+  }
+  if (request.action === "start") {
+    if (!WINDOW_RESIZE_EDGES.includes(request.edge)) return;
+    windowResize = { bounds: mainWindow.getBounds(), point: screen.getCursorScreenPoint(), edge: request.edge };
+    return;
+  }
+  if (!windowResize) return;
+  const point = screen.getCursorScreenPoint();
+  mainWindow.setBounds(getWindowResizeBounds(
+    windowResize.bounds, windowResize.edge,
+    { x: point.x - windowResize.point.x, y: point.y - windowResize.point.y },
+    mainWindow.getMinimumSize(), mainWindow.getMaximumSize(),
+  ), false);
+  if (request.action === "end") windowResize = null;
+});
+// The renderer's default is light. Leaving nativeTheme on its system default
+// gave a light app macOS's dark window outline when the OS was dark.
+// The existing renderer preference owner updates this through the bridge.
+nativeTheme.themeSource = "light";
+
+function syncWindowBackgrounds() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setBackgroundColor(nativeTheme.shouldUseDarkColors ? "#202020" : "#f8fafd");
+  if (searchWindow && !searchWindow.isDestroyed()) searchWindow.setBackgroundColor(nativeTheme.shouldUseDarkColors ? "#171717" : "#f5f7fa");
+}
+nativeTheme.on("updated", syncWindowBackgrounds);
+
+ipcMain.handle("inno-set-theme-preference", (event, preference) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
+    || !["light", "dark", "system"].includes(preference)) return null;
+  nativeTheme.themeSource = preference;
+  syncWindowBackgrounds();
+  return nativeTheme.shouldUseDarkColors ? "dark" : "light";
+});
+
 let closeDialogCopy = {
   title: "关闭 Inno Agent",
   message: "要如何关闭 Inno Agent？",
@@ -294,6 +342,7 @@ function isWindowExpansionRequest(value) {
 
 ipcMain.handle("inno-expand-window-width", (event, request) => {
   if (!isWindowExpansionRequest(request)
+    || windowResize
     || !mainWindow
     || mainWindow.isDestroyed()
     || event.sender !== mainWindow.webContents) {
@@ -486,7 +535,7 @@ function openMainWindow() {
     // them so the app no longer gets the separate native title-bar strip.
     titleBarStyle: process.platform === "darwin" ? "hidden" : undefined,
     trafficLightPosition: process.platform === "darwin" ? { x: 16, y: 18 } : undefined,
-    backgroundColor: "#0f1117",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#202020" : "#f8fafd",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -496,8 +545,13 @@ function openMainWindow() {
   });
 
   mainWindow.on("enter-full-screen", () => {
+    windowResize = null;
     if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("inno-full-screen-change", true);
   });
+  mainWindow.on("blur", () => { windowResize = null; });
+  mainWindow.on("maximize", () => { windowResize = null; });
+  mainWindow.webContents.on("render-process-gone", () => { windowResize = null; });
+  mainWindow.webContents.on("did-start-loading", () => { windowResize = null; });
   mainWindow.on("leave-full-screen", () => {
     if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("inno-full-screen-change", false);
   });
@@ -549,7 +603,7 @@ function openMainWindow() {
       quitApplication();
     }
   });
-  mainWindow.on("closed", () => { mainWindow = null; });
+  mainWindow.on("closed", () => { windowResize = null; mainWindow = null; });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     // Only http(s) may leave the app — file://, smb:// and custom schemes
     // handed to shell.openExternal can trigger OS-level handlers (issue #162).

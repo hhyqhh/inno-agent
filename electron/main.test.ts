@@ -1,9 +1,12 @@
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { nativeTheme } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+	systemDark: true,
+	cursor: { x: 100, y: 100 },
 	openPath: vi.fn(async () => ""),
 	listApps: vi.fn(),
 	fileIcon: vi.fn(),
@@ -25,13 +28,19 @@ vi.mock("electron", async () => {
 		});
 		constructor(public options: any) { super(); mocks.windows.push(this); }
 		loadURL = vi.fn(); show = vi.fn(); focus = vi.fn(); restore = vi.fn();
-		isDestroyed = () => false; isMinimized = () => false; isFullScreen = () => true;
+		isDestroyed = () => false; isMinimized = () => false;
+		isFullScreen = vi.fn(() => false); isMaximized = vi.fn(() => false); isResizable = vi.fn(() => true);
+		bounds = { x: 100, y: 80, width: 1200, height: 800 };
+		getBounds = () => this.bounds;
+		setBounds = vi.fn((bounds) => { this.bounds = bounds; });
+		getMinimumSize = () => [612, 600]; getMaximumSize = () => [0, 0];
 		setBackgroundColor = vi.fn(); close = vi.fn(() => { this.emit("closed"); });
 	}
 	return {
 		app: { getFileIcon: mocks.fileIcon, isPackaged: false, commandLine: { appendSwitch: vi.fn() }, isReady: () => true,
 			whenReady: () => new Promise(() => {}), on: (name: string, fn: (...args: any[]) => void) => mocks.appHandlers.set(name, fn) },
-		BrowserWindow: Window, Tray: vi.fn(), Menu: {}, shell: { openPath: mocks.openPath, showItemInFolder: mocks.reveal }, dialog: {}, nativeImage: {}, screen: {},
+		nativeTheme: Object.defineProperty(Object.assign(new EventEmitter(), { themeSource: "system" }), "shouldUseDarkColors", { get() { return this.themeSource === "dark" || (this.themeSource === "system" && mocks.systemDark); } }),
+		BrowserWindow: Window, Tray: vi.fn(), Menu: {}, shell: { openPath: mocks.openPath, showItemInFolder: mocks.reveal }, dialog: {}, nativeImage: {}, screen: { getCursorScreenPoint: () => ({ ...mocks.cursor }) },
 		ipcMain: {
 			handle: (name: string, fn: (...args: any[]) => unknown) => mocks.handlers.set(name, fn),
 			on: (name: string, fn: (...args: any[]) => void) => mocks.listeners.set(name, fn),
@@ -46,6 +55,7 @@ const result = { id: "workspace:one", category: "workspace", title: "One", subti
 describe("desktop search IPC", () => {
 	beforeEach(async () => {
 		vi.resetModules(); mocks.windows.length = 0;
+		mocks.systemDark = true; mocks.cursor = { x: 100, y: 100 }; nativeTheme.removeAllListeners();
 		mocks.openPath.mockReset().mockResolvedValue("");
 		mocks.listApps.mockReset().mockResolvedValue([{ id: "/Applications/Word.app", name: "Word", isDefault: true }]);
 		mocks.openWith.mockReset().mockResolvedValue(undefined);
@@ -123,6 +133,75 @@ describe("desktop search IPC", () => {
 		expect(await mocks.handlers.get("inno-open-workspace-file")!(event, request)).toBe(true);
 	});
 
+	it("resizes from the real screen cursor, uses the final release point, and stops afterwards", () => {
+		const main = mocks.windows[0]; const event = { sender: main.webContents };
+		const resize = mocks.listeners.get("inno-resize-window")!;
+		resize(event, { action: "start", edge: "nw" });
+		mocks.cursor = { x: 120, y: 130 };
+		resize(event, { action: "update", x: 99999, y: 99999 });
+		expect(main.setBounds).toHaveBeenLastCalledWith({ x: 120, y: 110, width: 1180, height: 770 }, false);
+		mocks.cursor = { x: 130, y: 140 };
+		resize(event, { action: "end" });
+		expect(main.setBounds).toHaveBeenLastCalledWith({ x: 130, y: 120, width: 1170, height: 760 }, false);
+		resize(event, { action: "update" });
+		expect(main.setBounds).toHaveBeenCalledTimes(2);
+	});
+
+	it.each(["blur", "maximize", "enter-full-screen", "render-process-gone", "did-start-loading"])("drops the current resize after %s", (eventName) => {
+		const main = mocks.windows[0]; const event = { sender: main.webContents };
+		const resize = mocks.listeners.get("inno-resize-window")!;
+		resize(event, { action: "start", edge: "e" });
+		if (eventName === "render-process-gone" || eventName === "did-start-loading") main.webContents.emit(eventName);
+		else main.emit(eventName);
+		resize(event, { action: "update" });
+		expect(main.setBounds).not.toHaveBeenCalled();
+	});
+
+	it("rejects foreign/invalid gestures and leaves maximized or fullscreen windows alone", () => {
+		const main = mocks.windows[0]; const event = { sender: main.webContents };
+		const resize = mocks.listeners.get("inno-resize-window")!;
+		resize({ sender: {} }, { action: "start", edge: "e" });
+		resize(event, { action: "update" });
+		for (const request of [null, {}, { action: "bogus" }, { action: "start", edge: "bogus" }]) resize(event, request);
+		for (const flag of ["isFullScreen", "isMaximized"]) {
+			main[flag].mockReturnValue(true);
+			resize(event, { action: "start", edge: "e" });
+			main[flag].mockReturnValue(false);
+			resize(event, { action: "update" });
+		}
+		resize(event, { action: "start", edge: "e" });
+		resize(event, { action: "cancel" });
+		resize(event, { action: "update" });
+		expect(main.setBounds).not.toHaveBeenCalled();
+	});
+
+	it("matches light content with a light native frame even when the OS is dark", () => {
+		const main = mocks.windows[0];
+		expect(nativeTheme.themeSource).toBe("light");
+		expect(main.options.backgroundColor).toBe("#f8fafd");
+		const setTheme = mocks.handlers.get("inno-set-theme-preference")!;
+		expect(setTheme({ sender: main.webContents }, "dark")).toBe("dark");
+		expect(main.setBackgroundColor).toHaveBeenLastCalledWith("#202020");
+		expect(setTheme({ sender: main.webContents }, "light")).toBe("light");
+		expect(nativeTheme.themeSource).toBe("light");
+		expect(main.setBackgroundColor).toHaveBeenLastCalledWith("#f8fafd");
+	});
+
+	it("follows OS appearance updates for native surfaces and rejects foreign theme changes", () => {
+		const main = mocks.windows[0]; const search = openSearch();
+		const setTheme = mocks.handlers.get("inno-set-theme-preference")!;
+		expect(setTheme({ sender: main.webContents }, "system")).toBe("dark");
+		expect(nativeTheme.themeSource).toBe("system");
+		mocks.systemDark = false;
+		nativeTheme.emit("updated");
+		expect(main.setBackgroundColor).toHaveBeenLastCalledWith("#f8fafd");
+		expect(search.setBackgroundColor).toHaveBeenLastCalledWith("#f5f7fa");
+		expect(setTheme({ sender: search.webContents }, "dark")).toBeNull();
+		expect(setTheme({ sender: {} }, "dark")).toBeNull();
+		expect(setTheme({ sender: main.webContents }, "invalid")).toBeNull();
+		expect(nativeTheme.themeSource).toBe("system");
+	});
+
 	it("allows the native main window to shrink with the compact chat layout", () => {
 		expect(mocks.windows[0].options).toMatchObject({ minWidth: 612, minHeight: 600 });
 	});
@@ -180,6 +259,26 @@ describe("desktop preload bridge", () => {
 		});
 		return { ipc, api };
 	}
+	it("validates the edge resize protocol before sending native commands", () => {
+		const { ipc, api } = bridge();
+		api.resizeWindow("bogus"); api.resizeWindow("start", "bogus");
+		expect(ipc.send).not.toHaveBeenCalled();
+		for (const edge of ["n", "s", "e", "w", "ne", "nw", "se", "sw"]) {
+			api.resizeWindow("start", edge);
+			expect(ipc.send).toHaveBeenLastCalledWith("inno-resize-window", { action: "start", edge });
+		}
+		api.resizeWindow("end");
+		expect(ipc.send).toHaveBeenLastCalledWith("inno-resize-window", { action: "end", edge: undefined });
+	});
+	it("forwards only the three supported theme preferences", async () => {
+		const { ipc, api } = bridge(); ipc.invoke.mockResolvedValue("dark");
+		expect(await api.setThemePreference("invalid")).toBeNull();
+		expect(ipc.invoke).not.toHaveBeenCalled();
+		for (const preference of ["light", "dark", "system"]) {
+			expect(await api.setThemePreference(preference)).toBe("dark");
+			expect(ipc.invoke).toHaveBeenLastCalledWith("inno-set-theme-preference", preference);
+		}
+	});
 	it("validates search payloads in both directions and releases navigation subscriptions", () => {
 		const { ipc, api } = bridge(); const navigate = vi.fn();
 		const unsubscribe = api.onSearchNavigation(navigate);

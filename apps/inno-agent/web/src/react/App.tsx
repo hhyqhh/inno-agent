@@ -4,7 +4,8 @@ import { LayoutGroup } from "motion/react";
 import { useTranslation } from "react-i18next";
 import { appStore, pageFromSearch, type AppPage, type WorkspaceMode } from "../stores/app-store.js";
 import { settingsStore } from "../stores/settings-store.js";
-import { themeStore, type ThemeId } from "../stores/theme-store.js";
+import { themeStore } from "../stores/theme-store.js";
+import { DesktopWindowResizeHandles } from "./DesktopWindowResizeHandles.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { chatStore } from "../stores/chat-store.js";
@@ -168,8 +169,8 @@ function MainApp() {
 		// localStorage is the instant source (FOWT prevention); backend keeps
 		// theme consistent across devices.
 		const unsubscribe = settingsStore.on("change", () => {
-			const remote = settingsStore.settings?.ui?.theme as ThemeId | undefined;
-			if (remote && remote !== themeStore.current) {
+			const remote = settingsStore.settings?.ui?.theme;
+			if (remote && remote !== themeStore.preference) {
 				themeStore.apply(remote);
 			}
 		});
@@ -438,6 +439,7 @@ function MainApp() {
 
 	return (
 		<LayoutGroup id="inno-workbench">
+			<DesktopWindowResizeHandles disabled={isMacFullScreen} />
 			<InnoDndProvider>
 				<div
 					className={`app-layout app-layout--${isDesktopWindow ? "desktop" : "browser"}${isWindowsDesktop ? " app-layout--windows" : ""}${isMacFullScreen ? " app-layout--macos-fullscreen" : ""}${chatVisible ? " app-layout--chat" : ""} app-layout--sidebar-${app.sidebarCollapsed ? "collapsed" : "expanded"} app-layout--workspace-${layoutWorkspaceMode}`}

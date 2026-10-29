@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithTooltipProvider as render } from "./test-utils.js";
@@ -9,14 +9,18 @@ import { terminalStore } from "../stores/terminal-store.js";
 import { workspaceStore, isStartTabKey } from "../stores/workspace-store.js";
 import type { WorkspaceMode } from "../stores/app-store.js";
 import { appStore } from "../stores/app-store.js";
-import { getSidebarLayoutWidth, getEffectiveWorkspaceWidth } from "../stores/app-layout.js";
+import { getSidebarLayoutWidth, getEffectiveWorkspaceWidth, getMaximumWorkspaceWidth } from "../stores/app-layout.js";
 import { DesktopWindowChrome } from "./DesktopWindowChrome.js";
 import { WorkspacePanel } from "./WorkspacePanel.js";
 import { WorkspacePreviewTabs } from "./WorkspacePreviewTabs.js";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+const previewRenders = vi.hoisted(() => vi.fn());
 vi.mock("./WorkspaceBrowser.js", () => ({
-	WorkspaceBrowser: ({ variant }: { variant: string }) => <article aria-label="File preview" data-variant={variant}>Preview content</article>,
+	WorkspaceBrowser: ({ variant }: { variant: string }) => {
+		previewRenders();
+		return <article aria-label="File preview" data-variant={variant}>Preview content</article>;
+	},
 }));
 
 function Layout({ desktop = true, terminal = false }: { desktop?: boolean; terminal?: boolean }) {
@@ -117,6 +121,9 @@ describe("Workspace header controls", () => {
 		const track = tab.closest(".inno-window-chrome-preview-tabs")!;
 		const separator = track.querySelector(".inno-window-chrome-preview-divider");
 		expect(separator?.parentElement).toBe(track);
+		const plate = document.querySelector(".inno-window-chrome-drag-plate")!;
+		expect(plate.parentElement).toBe(track.parentElement);
+		expect(plate.getAttribute("aria-hidden")).toBe("true");
 		expect(screen.getByRole("button", { name: "workspaceStart.open" }).closest(".inno-window-chrome-preview-tabs")).toBe(track);
 		fireEvent.click(screen.getByRole("button", { name: "workspace.full" }));
 		expect(screen.getByRole("tab", { name: "workspaceStart.tab" })).toBe(tab);
@@ -245,8 +252,9 @@ describe("Workspace drag to fullscreen", () => {
 		expect(screen.getByText("workspace.releaseToFullscreen").textContent).toBe("workspace.releaseToFullscreen");
 		expect(screen.getAllByRole("tooltip")).toHaveLength(1);
 		expect(onModeChange).not.toHaveBeenCalled();
-		expect(onWidthChange).toHaveBeenLastCalledWith(max);
+		expect(onWidthChange).not.toHaveBeenCalled();
 		resizePointer(window, "pointerup", edge - 24);
+		expect(onWidthChange).toHaveBeenCalledExactlyOnceWith(max);
 		expect(onModeChange).toHaveBeenCalledExactlyOnceWith("full");
 		expect(screen.queryByText("workspace.releaseToFullscreen")).toBeNull();
 		expect(document.body.classList.contains("workspace-resizing")).toBe(false);
@@ -269,6 +277,24 @@ describe("Workspace drag to fullscreen", () => {
 		expect(layout.style.getPropertyValue("--inno-workspace-drag-width")).toBe("");
 		expect(layout.style.getPropertyValue("--inno-workspace-drag-left")).toBe("");
 		expect(screen.queryByRole("tooltip")).toBeNull();
+	});
+
+	it("updates live geometry without committing width until release", async () => {
+		const { layout, onWidthChange } = startDrag();
+		const preview = document.querySelector<HTMLElement>(".workspace-resize-preview")!;
+		resizePointer(window, "pointermove", 760);
+		await flushFrame();
+		expect(layout.style.getPropertyValue("--inno-workspace-drag-left")).toBe("760px");
+		expect(preview.style.width).toBe("560px");
+		expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("560px");
+		expect(screen.getByRole("separator", { name: "workspace.resize" }).getAttribute("aria-valuenow")).toBe("560");
+		expect(onWidthChange).not.toHaveBeenCalled();
+		// Release can arrive before the last animation frame. Commit its actual
+		// pointer position, then remove the CSS override without a width snap.
+		resizePointer(window, "pointermove", 780);
+		resizePointer(window, "pointerup", 790);
+		expect(onWidthChange).toHaveBeenCalledExactlyOnceWith(530);
+		expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("");
 	});
 
 	it("keeps hover and drag hints on the same side aligned with the content top", async () => {
@@ -335,7 +361,7 @@ describe("Workspace drag to fullscreen", () => {
 		else resizePointer(window, cancel, edge - 30);
 		resizePointer(window, "pointerup", edge - 30);
 		expect(onModeChange).not.toHaveBeenCalled();
-		expect(onWidthChange).toHaveBeenLastCalledWith(520);
+		expect(onWidthChange).not.toHaveBeenCalled();
 		expect(screen.queryByText("workspace.releaseToFullscreen")).toBeNull();
 	});
 
@@ -348,7 +374,7 @@ describe("Workspace drag to fullscreen", () => {
 		expect(onModeChange).toHaveBeenCalledExactlyOnceWith("full");
 	});
 
-	it("measures the threshold against the desktop's expanded window capacity", async () => {
+	it("measures the threshold against the desktop's left-side expansion capacity", async () => {
 		vi.stubGlobal("innoDesktop", { getWindowWidthCapacity: vi.fn().mockResolvedValue(100) });
 		const { edge, max, onModeChange, layout } = startDrag();
 		await act(async () => { await Promise.resolve(); });
@@ -358,13 +384,23 @@ describe("Workspace drag to fullscreen", () => {
 		expect(layout.style.getPropertyValue("--inno-workspace-drag-width")).toBe(`${max + 24}px`);
 		expect(layout.style.getPropertyValue("--inno-workspace-drag-left")).toBe(`${edge - 24}px`);
 		expect(document.querySelector<HTMLElement>(".workspace-resize-preview")!.style.width).toBe(`${max + 24}px`);
-		const expandedMax = Math.min(920, max + 200);
+		const expandedMax = Math.min(920, max + 100);
 		const expandedEdge = 800 - (expandedMax - 520);
 		resizePointer(window, "pointermove", expandedEdge - 24);
 		await flushFrame();
 		expect(screen.getByText("workspace.releaseToFullscreen")).toBeTruthy();
 		expect(layout.style.getPropertyValue("--inno-workspace-drag-left")).toBe(`${expandedEdge}px`);
 		resizePointer(window, "pointerup", expandedEdge - 24);
+		expect(onModeChange).toHaveBeenCalledExactlyOnceWith("full");
+	});
+
+	it("does not offer deferred widths from right-side room that would move the release landing", async () => {
+		const capacity = vi.fn(async (side: "left" | "right") => side === "left" ? 0 : 400);
+		vi.stubGlobal("innoDesktop", { getWindowWidthCapacity: capacity });
+		const { edge, onModeChange } = startDrag();
+		await act(async () => { await Promise.resolve(); });
+		expect(capacity).toHaveBeenCalledExactlyOnceWith("left");
+		resizePointer(window, "pointerup", edge - 24);
 		expect(onModeChange).toHaveBeenCalledExactlyOnceWith("full");
 	});
 
@@ -379,6 +415,10 @@ describe("Workspace drag to fullscreen", () => {
 			const previewX = window.innerWidth - parseFloat(preview.style.right) - parseFloat(preview.style.width);
 			expect(Number.parseFloat(layout.style.getPropertyValue("--inno-workspace-drag-left"))).toBe(previewX);
 			expect(layout.hasAttribute("data-workspace-resize-overlay")).toBe(clientX < edge);
+			// Without toolbar controls mounted, the plate still backs the divider
+			// with 4px padding and follows the same edge through reversal.
+			expect(Number.parseFloat(layout.style.getPropertyValue("--inno-drag-plate-left"))).toBe(previewX - 4);
+			expect(layout.style.getPropertyValue("--inno-drag-plate-width")).toBe("19px");
 		}
 		expect(layout.style.getPropertyValue("--inno-workspace-drag-width")).toBe("540px");
 		resizePointer(window, "pointermove", edge - 24);
@@ -386,6 +426,230 @@ describe("Workspace drag to fullscreen", () => {
 		expect(layout.hasAttribute("data-workspace-resize-overlay")).toBe(true);
 		fireEvent.keyDown(window, { key: "Escape" });
 		expect(layout.style.getPropertyValue("--inno-workspace-drag-left")).toBe("");
+		expect(layout.style.getPropertyValue("--inno-drag-plate-left")).toBe("");
+		expect(layout.style.getPropertyValue("--inno-drag-plate-width")).toBe("");
 		expect(layout.hasAttribute("data-workspace-resize-overlay")).toBe(false);
+	});
+
+	it("backs the real question/terminal widths and stops after the plus before fixed window controls", async () => {
+		vi.stubGlobal("innoDesktop", { getWindowWidthCapacity: vi.fn().mockResolvedValue(100) });
+		const { edge, layout } = startDrag();
+		await act(async () => { await Promise.resolve(); });
+		const question = document.createElement("div");
+		question.className = "inno-conversation-header-actions";
+		const terminal = document.createElement("div");
+		terminal.className = "inno-window-chrome-preview-terminal";
+		const track = document.createElement("div");
+		track.className = "inno-window-chrome-preview-tabs";
+		track.innerHTML = '<div class="inno-workspace-tabs"><div role="tablist"></div><button>+</button></div>';
+		layout.append(question, terminal, track);
+		vi.spyOn(layout, "getBoundingClientRect").mockReturnValue(new DOMRect(20, 0, 1380, 800));
+		vi.spyOn(question, "getBoundingClientRect").mockReturnValue(new DOMRect(430, 9, 90, 30));
+		vi.spyOn(terminal, "getBoundingClientRect").mockReturnValue(new DOMRect(530, 10, 28, 28));
+		vi.spyOn(track, "getBoundingClientRect").mockReturnValue(new DOMRect(580, 10, 720, 28));
+		const plus = track.querySelector("button")!;
+		const plusBounds = vi.spyOn(plus, "getBoundingClientRect").mockReturnValue(new DOMRect(810, 10, 28, 28));
+		resizePointer(window, "pointermove", edge - 24);
+		await flushFrame();
+		expect(layout.hasAttribute("data-workspace-resize-overlay")).toBe(true);
+		expect(layout.style.getPropertyValue("--inno-drag-plate-left")).toBe("406px");
+		expect(layout.style.getPropertyValue("--inno-drag-plate-width")).toBe("416px");
+		// Even if a long list overflows, the plate stops at the track's fixed
+		// right inset instead of painting under maximize/collapse.
+		plusBounds.mockReturnValue(new DOMRect(1290, 10, 28, 28));
+		resizePointer(window, "pointermove", edge - 24);
+		await flushFrame();
+		expect(layout.style.getPropertyValue("--inno-drag-plate-width")).toBe("878px");
+		resizePointer(window, "pointermove", 800);
+		await flushFrame();
+		expect(layout.hasAttribute("data-workspace-resize-overlay")).toBe(false);
+		resizePointer(window, "pointercancel", 800);
+		expect(layout.style.getPropertyValue("--inno-drag-plate-width")).toBe("");
+	});
+});
+
+describe("Workspace resize render and persistence cost", () => {
+	const initialState = { width: appStore.workspaceWidth, mode: appStore.workspaceMode, sidebarCollapsed: appStore.sidebarCollapsed };
+	const initialTheme = document.documentElement.getAttribute("data-theme");
+	beforeEach(() => {
+		appStore.workspaceWidth = 520;
+		appStore.workspaceMode = "half";
+		appStore.sidebarCollapsed = true;
+		vi.stubGlobal("innerWidth", 1400);
+		vi.stubGlobal("innoDesktop", undefined);
+		vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+	});
+	afterEach(() => {
+		cleanup();
+		appStore.workspaceWidth = initialState.width;
+		appStore.workspaceMode = initialState.mode;
+		appStore.sidebarCollapsed = initialState.sidebarCollapsed;
+		if (initialTheme === null) document.documentElement.removeAttribute("data-theme");
+		else document.documentElement.setAttribute("data-theme", initialTheme);
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	function PersistentLayout() {
+		const width = useStoreSnapshot(appStore, () => appStore.workspaceWidth);
+		const commit = useCallback((next: number) => appStore.setWorkspaceWidth(next), []);
+		const mode = useCallback((next: WorkspaceMode) => appStore.setWorkspaceMode(next), []);
+		return <div className="app-layout" data-width={width}><InnoDndProvider><WorkspacePanel
+			mode="half" width={width} onModeChange={mode} onWidthChange={commit} onPreviewFile={vi.fn()}
+		/></InnoDndProvider></div>;
+	}
+
+	it.each(["light", "dark"])("keeps repeated moves out of app renders, editor renders and storage (%s)", async (theme) => {
+		document.documentElement.setAttribute("data-theme", theme);
+		const view = render(<PersistentLayout />);
+		await screen.findByRole("article", { name: "File preview" });
+		const layout = view.container.firstElementChild as HTMLElement;
+		const handle = screen.getByRole("separator", { name: "workspace.resize" });
+		const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {});
+		const notify = vi.fn();
+		const unsubscribe = appStore.on("change", notify);
+		try {
+			resizePointer(handle, "pointerdown", 800);
+			const renders = previewRenders.mock.calls.length;
+			for (let x = 792; x >= 704; x -= 8) {
+				resizePointer(window, "pointermove", x);
+				await flushFrame();
+			}
+			expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("616px");
+			expect(layout.getAttribute("data-width")).toBe("520");
+			expect(previewRenders).toHaveBeenCalledTimes(renders);
+			expect(notify).not.toHaveBeenCalled();
+			expect(storage).not.toHaveBeenCalled();
+			resizePointer(window, "pointerup", 700);
+			expect(layout.getAttribute("data-width")).toBe("620");
+			expect(notify).toHaveBeenCalledTimes(1);
+			expect(storage).toHaveBeenCalledExactlyOnceWith("inno.workspaceWidth", "620");
+			expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("");
+		} finally { unsubscribe(); }
+	});
+
+	it.each(["Escape", "pointercancel", "blur"])("restores stored geometry without saving cancelled moves (%s)", async (cancel) => {
+		const view = render(<PersistentLayout />);
+		const layout = view.container.firstElementChild as HTMLElement;
+		const handle = screen.getByRole("separator", { name: "workspace.resize" });
+		const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {});
+		resizePointer(handle, "pointerdown", 800);
+		resizePointer(window, "pointermove", 700);
+		await flushFrame();
+		if (cancel === "Escape") fireEvent.keyDown(window, { key: "Escape" });
+		else if (cancel === "blur") fireEvent.blur(window);
+		else resizePointer(window, cancel, 700);
+		resizePointer(window, "pointerup", 700);
+		expect(layout.getAttribute("data-width")).toBe("520");
+		expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("");
+		expect(storage).not.toHaveBeenCalled();
+	});
+});
+
+describe("Workspace deferred resize handoff", () => {
+	const savedSidebar = appStore.sidebarCollapsed;
+	beforeEach(() => {
+		appStore.sidebarCollapsed = true;
+		vi.stubGlobal("innerWidth", 1200);
+		vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+	});
+	afterEach(() => {
+		cleanup();
+		appStore.sidebarCollapsed = savedSidebar;
+		vi.unstubAllGlobals();
+	});
+
+	function HandoffLayout({ onCommit }: { onCommit: (width: number) => void }) {
+		const [width, setWidth] = useState(588);
+		const changeMode = useCallback(() => {}, []);
+		const commit = useCallback((nextWidth: number) => {
+			setWidth(Math.min(nextWidth, getMaximumWorkspaceWidth(window.innerWidth, true, "half", true)));
+			onCommit(nextWidth);
+		}, [onCommit]);
+		return <div className="app-layout" data-width={width}><InnoDndProvider><WorkspacePanel mode="half" width={width}
+			onModeChange={changeMode} onWidthChange={commit} onPreviewFile={vi.fn()} /></InnoDndProvider></div>;
+	}
+
+	function startHandoff(onCommit = vi.fn()) {
+		let resolveExpansion!: (expanded: boolean) => void;
+		const expand = vi.fn(() => new Promise<boolean>((resolve) => { resolveExpansion = resolve; }));
+		vi.stubGlobal("innoDesktop", { getWindowWidthCapacity: vi.fn(async () => 300), expandWindowWidth: expand });
+		const view = render(<HandoffLayout onCommit={onCommit} />);
+		const layout = view.container.firstElementChild as HTMLElement;
+		const handle = screen.getByRole("separator", { name: "workspace.resize" });
+		vi.spyOn(handle.closest("aside")!, "getBoundingClientRect").mockReturnValue(new DOMRect(612, 48, 585, 700));
+		resizePointer(handle, "pointerdown", 612);
+		return { layout, expand, onCommit, resolveExpansion: (value: boolean) => resolveExpansion(value), unmount: view.unmount };
+	}
+
+	it.each(["light", "dark"])("holds the preview through native expansion and hands off to the body without a release jump (%s)", async (theme) => {
+		const previousTheme = document.documentElement.getAttribute("data-theme");
+		document.documentElement.setAttribute("data-theme", theme);
+		try {
+			const { layout, expand, onCommit, resolveExpansion } = startHandoff();
+			await act(async () => { await Promise.resolve(); });
+			resizePointer(window, "pointermove", 432);
+			await flushFrame();
+			const preview = document.querySelector<HTMLElement>(".workspace-resize-preview")!;
+			expect(layout.getAttribute("data-width")).toBe("588");
+			expect(layout.style.getPropertyValue("--inno-workspace-drag-left")).toBe("432px");
+			resizePointer(window, "pointerup", 432);
+			await act(async () => { await Promise.resolve(); });
+			expect(expand).toHaveBeenCalledExactlyOnceWith("left", 180);
+			expect(document.querySelector(".workspace-resize-preview")).toBe(preview);
+			expect(layout.hasAttribute("data-workspace-resize-overlay")).toBe(true);
+			// Native left growth changes renderer-local X, while screen-space X
+			// stays at release. The body uses each newly available increment.
+			vi.stubGlobal("innerWidth", 1290);
+			fireEvent.resize(window);
+			expect(layout.style.getPropertyValue("--inno-workspace-drag-left")).toBe("522px");
+			expect(layout.getAttribute("data-width")).toBe("588");
+			expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("678px");
+			vi.stubGlobal("innerWidth", 1380);
+			fireEvent.resize(window);
+			expect(layout.getAttribute("data-width")).toBe("588");
+			expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("768px");
+			expect(onCommit).not.toHaveBeenCalled();
+			expect(layout.style.getPropertyValue("--inno-workspace-drag-left")).toBe("612px");
+			expect(document.body.classList.contains("workspace-resizing")).toBe(true);
+			await act(async () => { resolveExpansion(true); });
+			await flushFrame();
+			await flushFrame();
+			expect(onCommit).toHaveBeenCalledExactlyOnceWith(768);
+			expect(layout.getAttribute("data-width")).toBe("768");
+			expect(document.querySelector(".workspace-resize-preview")).toBeNull();
+			expect(layout.style.getPropertyValue("--inno-workspace-drag-left")).toBe("");
+			expect(document.body.classList.contains("workspace-resizing")).toBe(false);
+		} finally {
+			if (previousTheme === null) document.documentElement.removeAttribute("data-theme");
+			else document.documentElement.setAttribute("data-theme", previousTheme);
+		}
+	});
+
+	it("cleans up the held preview if native expansion fails", async () => {
+		const { layout, resolveExpansion } = startHandoff();
+		await act(async () => { await Promise.resolve(); });
+		resizePointer(window, "pointerup", 432);
+		await flushFrame();
+		await act(async () => { resolveExpansion(false); });
+		await flushFrame();
+		await flushFrame();
+		expect(layout.getAttribute("data-width")).toBe("588");
+		expect(document.querySelector(".workspace-resize-preview")).toBeNull();
+		expect(layout.hasAttribute("data-workspace-resize-overlay")).toBe(false);
+	});
+
+	it("does not let an old native expansion commit after the panel unmounts", async () => {
+		const { unmount, onCommit, resolveExpansion } = startHandoff();
+		await act(async () => { await Promise.resolve(); });
+		resizePointer(window, "pointerup", 432);
+		await flushFrame();
+		unmount();
+		vi.stubGlobal("innerWidth", 1380);
+		await act(async () => { resolveExpansion(true); });
+		await flushFrame();
+		await flushFrame();
+		expect(onCommit).not.toHaveBeenCalled();
+		expect(document.body.classList.contains("workspace-resizing")).toBe(false);
 	});
 });

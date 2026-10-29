@@ -30,7 +30,7 @@ export function OptionRow({
 }) {
 	return (
 		<label
-			className={`flex w-full min-w-0 items-start gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${readOnly ? "cursor-default" : "cursor-pointer"} ${
+			className={`flex w-full min-w-0 items-start gap-2.5 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${readOnly ? "cursor-default" : "cursor-pointer"} ${
 				selected
 					? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-text)]"
 					: `border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text)] ${readOnly ? "opacity-60" : "hover:border-[var(--inno-border-strong)] hover:bg-[var(--inno-surface-muted)]"}`
@@ -64,7 +64,7 @@ export function AnsweredQuestionCard({ questionnaire }: { questionnaire: Answere
 		<QuestionCard questions={questionnaire.questions} activeTab={activeTab} onTabChange={setActiveTab}
 			isAnswered={(index) => questionnaire.result.answers.some((item) => item.questionIndex === index)} completed>
 			<div className="min-w-0 space-y-3">
-				<markdown-block className="text-sm font-medium text-[var(--inno-text)]" content={normalizeMarkdownMath(question.question)} />
+				<markdown-block className="text-xs font-medium text-[var(--inno-text)]" content={normalizeMarkdownMath(question.question)} />
 				<div className="space-y-1.5">
 					{question.options.map((option) => (
 						<OptionRow key={option.label} label={option.label} description={option.description}

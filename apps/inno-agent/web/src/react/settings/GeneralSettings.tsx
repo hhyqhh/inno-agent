@@ -6,39 +6,43 @@ import { setLocale } from "../../i18n/index.js";
 import { useStoreSnapshot } from "../hooks.js";
 import type { WindowCloseBehavior } from "../../types/settings.js";
 import { SettingsSection, SettingsCard, SettingsRow } from "./primitives.js";
-import { Select, SelectContent, SelectOption, SelectTrigger, SelectValue, Switch, Tooltip } from "../ui/index.js";
+import { Select, SelectContent, SelectOption, SelectTrigger, SelectValue, Switch, Button } from "../ui/index.js";
 
 function ThemePicker() {
 	const { t } = useTranslation();
-	const state = useStoreSnapshot(themeStore, () => ({ current: themeStore.current }));
+	const state = useStoreSnapshot(themeStore, () => ({ current: themeStore.current, preference: themeStore.preference }));
 	return (
 		<div className="flex flex-wrap gap-2">
 			{THEME_IDS.map((id) => {
 				const active = state.current === id;
 				return (
-					<Tooltip key={id} label={t(`settings.themeOptions.${id}`)}>
-						<button
-							type="button"
-							aria-label={t(`settings.themeOptions.${id}`)}
-							aria-pressed={active}
-							onClick={() => void themeStore.save(id)}
-							className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border py-1.5 pl-2 pr-3.5 text-xs transition-colors ${
-								active
-									? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] font-medium text-[var(--inno-accent)]"
-									: "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:border-[var(--inno-border-strong)] hover:text-[var(--inno-text)]"
-							}`}
-						>
-							<span
-								className="h-4 w-4 rounded-full border border-[var(--inno-border-strong)]"
-								style={{ backgroundColor: THEME_PREVIEW_COLORS[id] }}
-							/>
-							{t(`settings.themeOptions.${id}`)}
-						</button>
-					</Tooltip>
+					<Button
+						key={id}
+						variant={active ? "primary" : "secondary"}
+						size="xs"
+						shape="pill"
+						aria-label={t(`settings.themeOptions.${id}`)}
+						aria-pressed={active}
+						disabled={state.preference === "system"}
+						onClick={() => void themeStore.save(id)}
+					>
+						<span className="h-4 w-4 rounded-full border border-[var(--inno-border-strong)]" style={{ backgroundColor: THEME_PREVIEW_COLORS[id] }} />
+						{t(`settings.themeOptions.${id}`)}
+					</Button>
 				);
 			})}
 		</div>
 	);
+}
+
+function FollowSystemToggle() {
+	const { t } = useTranslation();
+	const followsSystem = useStoreSnapshot(themeStore, () => themeStore.preference === "system");
+	return <Switch
+		checked={followsSystem}
+		aria-label={t("settings.followSystem")}
+		onChange={(enabled) => void themeStore.save(enabled ? "system" : themeStore.current)}
+	/>;
 }
 
 function LanguageSelect() {
@@ -174,12 +178,13 @@ export function GeneralSettings() {
 	return (
 		<>
 			<SettingsSection title={t("settings.tabs.general")} description={t("settings.sections.general.desc", "外观与语言偏好")}>
-			<SettingsCard>
+			<SettingsCard className="space-y-4">
 				<SettingsRow
 					label={t("settings.theme")}
 					description={t("settings.sections.general.themeDesc", "选择界面配色主题")}
 					control={<ThemePicker />}
 				/>
+				<SettingsRow label={t("settings.followSystem")} description={t("settings.followSystemDesc")} control={<FollowSystemToggle />} />
 			</SettingsCard>
 			<SettingsCard>
 				<SettingsRow

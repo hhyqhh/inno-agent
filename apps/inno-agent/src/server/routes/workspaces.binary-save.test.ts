@@ -46,7 +46,7 @@ describe("workspace in-place saves", () => {
     it("allows only one concurrent creator of a copy destination", async () => {
         const results = await Promise.all(["YQ==", "Yg=="].map(contentBase64 => put({ path: "copy.xlsx", contentBase64, createOnly: true })));
         expect(results.map(r => r.status).sort()).toEqual([200, 409]);
-        expect(await readFile(join(root, "copy.xlsx"), "utf8")).toBe("a");
+        expect(await readFile(join(root, "copy.xlsx"), "utf8")).toBe(["a", "b"][results.findIndex(r => r.status === 200)]);
     });
 
 	it("requires confirmation and backs up exact original bytes before each overwrite", async () => {
@@ -55,13 +55,19 @@ describe("workspace in-place saves", () => {
 		await writeFile(join(root, path), original);
 		expect((await put({ path, contentBase64: "eA==" })).status).toBe(409);
 		expect(await readFile(join(root, path))).toEqual(original);
-		const results = await Promise.all(["first", "second"].map((value) => put({ path, contentBase64: Buffer.from(value).toString("base64"), confirmOverwrite: true })));
+		const values = ["first", "second"];
+		const results = await Promise.all(values.map((value) => put({ path, contentBase64: Buffer.from(value).toString("base64"), confirmOverwrite: true })));
 		expect(results.map((result) => result.status)).toEqual([200, 200]);
 		const backups = results.map((result) => JSON.parse(result.body).backupPath);
 		expect(backups[0]).not.toBe(backups[1]);
-		expect(await readFile(join(root, backups[0]))).toEqual(original);
-		expect(await readFile(join(root, backups[1]), "utf8")).toBe("first");
-		expect(await readFile(join(root, path), "utf8")).toBe("second");
+		// Request-body/path resolution is asynchronous: concurrent requests can
+		// reach the save queue in either order. Verify the complete backup chain,
+		// rather than assuming Promise.all's input order is execution order.
+		const backupBytes = await Promise.all(backups.map((backup) => readFile(join(root, backup))));
+		const first = backupBytes.findIndex(bytes => bytes.equals(original));
+		expect(first).toBeGreaterThanOrEqual(0);
+		expect(backupBytes[1 - first].toString("utf8")).toBe(values[first]);
+		expect(await readFile(join(root, path), "utf8")).toBe(values[1 - first]);
 	});
     it("refuses to overwrite a source changed since it was imported", async () => {
         await writeFile(join(root, "budget.xlsx"), "new external edit");

@@ -11,6 +11,7 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
+import { stat } from "node:fs/promises";
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative } from "node:path";
@@ -19,10 +20,9 @@ import { applyWorkspaceCwd, getCurrentSessionId } from "../../agent/pi-runner.js
 import { streamRegistry } from "../../chat/stream-registry.js";
 import { logger } from "../../logger.js";
 import { getWordPdfPreview, WordPreviewError } from "../../office/word-preview.js";
-import type { WordDocumentService } from "../../office/word-document.js";
 import type { RuntimePaths } from "../../runtime.js";
 import { ensureDir } from "../../storage/file-store.js";
-import { isWithin } from "../../utils/path-safety.js";
+import { isWithin, resolveContainedPathAsync } from "../../utils/path-safety.js";
 import { TEMP_WORKSPACE_ID, type WorkspaceMeta, type WorkspaceRegistry } from "../../workspace/workspace-registry.js";
 import {
 	canonicalTreeRoot,
@@ -45,8 +45,7 @@ import {
 } from "../workspace-switch.js";
 import { servePdf } from "../pdf-response.js";
 import { listWorkspaceWriteActivity } from "../workspace-activity-store.js";
-import { json, matchRoute, readBody } from "../http-helpers.js";
-import { handleWordEditorRoutes } from "../word-editor-routes.js";
+import { json, matchRoute, readBody, UPLOAD_MAX_BODY_BYTES } from "../http-helpers.js";
 
 /**
  * Server-owned dependencies the workspace routes touch. `workspaceRegistry`
@@ -54,7 +53,6 @@ import { handleWordEditorRoutes } from "../word-editor-routes.js";
  * (skillsDir default), so they are injected rather than imported.
  */
 export interface WorkspacesRouteContext {
-	wordEditor?: WordDocumentService;
 	workspaceRegistry: WorkspaceRegistry;
 	dataDir: string;
 	paths: RuntimePaths;
@@ -314,7 +312,6 @@ export async function handleWorkspacesRoutes(
 	url: string,
 	ctx: WorkspacesRouteContext,
 ): Promise<boolean> {
-	if (ctx.wordEditor && await handleWordEditorRoutes(req, res, method, url, ctx.wordEditor)) return true;
 	const {
 		workspaceRegistry,
 		dataDir,
@@ -333,6 +330,29 @@ export async function handleWorkspacesRoutes(
 		const workspaces = await workspaceRegistry.listWorkspacesAsync();
 		if (!workspaces.some((workspace) => workspace.id === workspaceId)) { json(res, 404, { error: "Workspace not found" }); return true; }
 		json(res, 200, await listWorkspaceWriteActivity(dataDir, workspaceId));
+		return true;
+	}
+
+	if (method === "GET" && url.split("?")[0] === "/api/workspace/file-location") {
+		const workspaceId = workspaceIdFromQuery(url);
+		const requestedPath = new URL(url, "http://localhost").searchParams.get("path") ?? "";
+		if (!requestedPath) { json(res, 400, { error: "Missing path" }); return true; }
+		const workspace = (await workspaceRegistry.listWorkspacesAsync()).find((entry) => entry.id === workspaceId);
+		if (!workspace) { json(res, 404, { error: "Workspace not found" }); return true; }
+		const root = await workspaceRegistry.resolveWorkspaceDirAsync(workspace);
+		const normalized = normalizeWorkspaceRelativePath(requestedPath);
+		const fullPath = root && !normalized.startsWith("/") && !/^[A-Za-z]:/.test(normalized)
+			? await resolveContainedPathAsync(root, normalized) : null;
+		if (!fullPath) { json(res, 403, { error: "Path outside workspace" }); return true; }
+		try {
+			if (!(await stat(fullPath)).isFile()) { json(res, 404, { error: "File not found" }); return true; }
+		} catch (error) {
+			if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+				json(res, 404, { error: "File not found" }); return true;
+			}
+			throw error;
+		}
+		json(res, 200, { absolutePath: fullPath });
 		return true;
 	}
 
@@ -589,9 +609,14 @@ export async function handleWorkspacesRoutes(
 	// --- Workspace Mutations API ---
 
 	if (method === "PUT" && url === "/api/workspace/file") {
-		const body = (await readBody(req)) as Record<string, unknown>;
+		// contentBase64 writes carry office-editor exports; base64 inflates by
+		// 4/3, so this endpoint shares the upload cap (192 MB wire ≈ 144 MB
+		// binary) instead of the chat/CRUD default.
+		const body = (await readBody(req, { maxBytes: UPLOAD_MAX_BODY_BYTES })) as Record<string, unknown>;
 		const wsId = workspaceIdFromBody(body);
 		const filePath = typeof body.path === "string" ? body.path.trim() : "";
+		// Binary writes (WYSIWYG office editors) send base64; text edits send content.
+		const contentBase64 = typeof body.contentBase64 === "string" ? body.contentBase64 : null;
 		const content = typeof body.content === "string" ? body.content : "";
 		if (!filePath) { json(res, 400, { error: "Missing path" }); return true; }
 		const fullPath = safeWorkspacePath(wsId, filePath);
@@ -599,7 +624,17 @@ export async function handleWorkspacesRoutes(
 		if (!existsSync(fullPath) || !statSync(fullPath).isFile()) {
 			json(res, 404, { error: "File not found" }); return true;
 		}
-		writeFileSync(fullPath, content, "utf-8");
+		if (contentBase64 !== null) {
+			let bytes: Buffer;
+			try {
+				bytes = Buffer.from(contentBase64, "base64");
+			} catch {
+				json(res, 400, { error: "Invalid base64 content" }); return true;
+			}
+			writeFileSync(fullPath, bytes);
+		} else {
+			writeFileSync(fullPath, content, "utf-8");
+		}
 		const stat = statSync(fullPath);
 		json(res, 200, { path: filePath, saved: true, size: stat.size, updatedAt: stat.mtime.toISOString() });
 		return true;

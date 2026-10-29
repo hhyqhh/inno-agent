@@ -58,6 +58,9 @@ const ACTIONABLE_SYSTEM_EVENTS = new Set(["auto_retry_start", "auto_retry_end"])
  */
 export function isTraceStepVisible(step: ChatTraceStep): boolean {
 	if (step.kind !== "system") return true;
+	// Settlement is internal bookkeeping, not a chat card. Its normal
+	// { aborted: false } detail otherwise matches the error keyword filter.
+	if (step.eventType?.toLowerCase() === "agent_settled") return false;
 	if (step.workspaceChanges?.length) return true;
 	if (step.status === "error") return true;
 	const eventType = step.eventType?.toLowerCase();

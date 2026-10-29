@@ -244,6 +244,9 @@ export function MarkdownFullscreenDialog({
 			aria-label={ariaLabel ?? title}
 			className={`inno-markdown-fullscreen${hasMacWindowControls ? " is-macos-window" : ""}`}
 		>
+			{/* A horizontal inset still puts tools in the native traffic-light row.
+			    Reserve the existing window-chrome height for every fullscreen viewer. */}
+			{hasMacWindowControls ? <div className="inno-markdown-fullscreen-titlebar" aria-hidden="true" /> : null}
 			<div className="inno-markdown-fullscreen-header">
 				<span className="inno-markdown-fullscreen-title">{title}</span>
 				<div className="inno-markdown-fullscreen-actions">

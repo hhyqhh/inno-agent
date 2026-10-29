@@ -232,12 +232,16 @@ npm run server
 扫码加入微信用户群,提问、分享使用场景、关注更新:
 
 <p align="center">
-  <img src="./docs/assets/wechat-community-qr-2026-10-08.jpg" alt="Inno Agent 微信社区群二维码" width="240" />
+  <img src="./docs/assets/wechat-community-qr-2026-10-19.jpg" alt="Inno Agent 微信社区群二维码" width="240" />
 </p>
 
 ## 许可证
 
 [MIT](./LICENSE)。本项目依赖 Pi SDK(`@earendil-works/pi-*`,作者 Mario Zechner),同为 MIT 许可,经 npm 引入。
+
+### 第三方许可
+
+预览侧 WYSIWYG 文档编辑器包含一个 **AGPL-3.0** 组件:[PPTist](https://github.com/pipipi-pikachu/PPTist)(pptx 编辑,经 `scripts/prepare-pptist.sh` 暂存 vendored 构建)。因此分发版 Web UI 对该组件承担 AGPL 义务;其源码与我们的修改在本仓库可得(钉住的 upstream commit 加 `scripts/patches/pptist-embed.patch`)。xlsx 编辑器 [Univer](https://github.com/dream-num/univer) 为 Apache-2.0。
 
 ## 引用
 

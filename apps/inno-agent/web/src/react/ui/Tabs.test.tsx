@@ -1,8 +1,24 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { SegmentedControl, Tabs } from "./Tabs.js";
+import { renderWithTooltipProvider } from "../test-utils.js";
 
 afterEach(cleanup);
+
+it.each([false, true])("shows only the close hint when hovering a closable tab's close icon (from tab=%s)", async (fromTab) => {
+	renderWithTooltipProvider(<Tabs id="preview" ariaLabel="Previews" value="start" onValueChange={vi.fn()}
+		items={[{ value: "start", label: "Start page", title: "Start page", close: { label: "Close preview", onClose: vi.fn() } }]} />);
+	const tab = screen.getByRole("tab", { name: "Start page" });
+	if (fromTab) {
+		fireEvent.pointerMove(tab, { pointerType: "mouse" });
+		expect((await screen.findByRole("tooltip")).textContent).toBe("Start page");
+	}
+	fireEvent.pointerMove(tab.querySelector("[data-inno-tab-close] svg")!, { pointerType: "mouse" });
+	await waitFor(() => {
+		expect(screen.getAllByRole("tooltip")).toHaveLength(1);
+		expect(screen.getByRole("tooltip").textContent).toBe("Close preview");
+	});
+});
 
 it("passes right-clicks on a tab trigger to the item's context menu handler", () => {
 	const onContextMenu = vi.fn();

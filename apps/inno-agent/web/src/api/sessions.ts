@@ -67,9 +67,10 @@ export async function getSession(id: string): Promise<SessionDetail> {
 	return apiFetch<SessionDetail>(`/api/sessions/${encodeURIComponent(id)}`);
 }
 
-export async function activateSession(id: string): Promise<SessionActivationResult> {
+export async function activateSession(id: string, signal?: AbortSignal): Promise<SessionActivationResult> {
 	return apiFetch<SessionActivationResult>(`/api/sessions/${encodeURIComponent(id)}/activate`, {
 		method: "POST",
+		signal,
 	});
 }
 

@@ -28,6 +28,8 @@ export interface GracefulShutdownOptions {
 		clients: Iterable<{ close(code: number, reason: string): void }>;
 		close(callback: () => void): unknown;
 	};
+	/** Synchronous best-effort cleanup (child processes) before servers close. */
+	cleanup?: () => void;
 	exit: (code: number) => void;
 	exitTimeoutMs?: number;
 }
@@ -47,6 +49,10 @@ export function createGracefulShutdownHandler(
 			return;
 		}
 		state.shuttingDown = true;
+
+		// Kill managed child processes (e.g. the UNO sidecar) before the
+		// servers close so nothing lingers past the exit deadline.
+		try { options.cleanup?.(); } catch { /* best effort */ }
 
 		// SSE can keep server.close() pending forever. Leave two seconds before
 		// Docker's default ten-second stop deadline rather than waiting for it.

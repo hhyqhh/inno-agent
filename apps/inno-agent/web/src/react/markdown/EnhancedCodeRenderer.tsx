@@ -295,7 +295,7 @@ function CodeToolbar({
 					onOpenChange={onMoreOpenChange}
 					label={t("markdown.moreTools", "更多")}
 				>
-						{expandable ? (
+						{expandable && !isFullscreen ? (
 							<ToolbarMenuItem label={expanded ? t("markdown.collapseCode", "折叠代码") : t("markdown.expandCode", "展开代码")} onClick={onExpand}>
 								{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
 							</ToolbarMenuItem>
@@ -374,7 +374,9 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 
 	const renderToolbar = (toolbarMoreId: string, isFullscreen = false) => toolbarEnabled ? (
 		<CodeToolbar
-			moreOpen={moreOpen}
+			// Only the active viewer owns the menu: both inline and fullscreen
+			// toolbars stay mounted, otherwise two portaled menus open together.
+			moreOpen={moreOpen && isFullscreen === fullscreen}
 			moreId={toolbarMoreId}
 			editing={editing}
 			canRun={canRun}
@@ -407,16 +409,17 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 		codeBlockMaxHeight: expanded ? Infinity : streamdownContext.codeBlockMaxHeight,
 	}), [expanded, streamdownContext]);
 
-	const renderedCode = (forceExpanded = false, withToolbar = true) => (
-		<StreamdownContext.Provider value={forceExpanded ? { ...resolvedContext, codeBlockMaxHeight: Infinity } : resolvedContext}>
-			<div data-inno-code-block="" data-inno-content-block="code" data-wrap={wrapped ? "true" : "false"} className={wrapped ? "inno-code-wrap" : ""}>
+	const renderedCode = (isFullscreen = false) => (
+		<StreamdownContext.Provider value={isFullscreen ? { ...resolvedContext, codeBlockMaxHeight: Infinity } : resolvedContext}>
+			<div data-inno-code-block="" data-inno-content-block="code" data-wrap={wrapped ? "true" : "false"} className={`${wrapped ? "inno-code-wrap" : ""}${isFullscreen ? " inno-code-fullscreen" : ""}`}>
 				<CodeBlockContainer dir="ltr" language={language || "text"} isIncomplete={isIncomplete}>
-					<div data-streamdown="code-block-header" data-language={language || "text"} className="inno-markdown-content-header">
+					{/* The fullscreen dialog already owns the language and tools header. */}
+					{!isFullscreen ? <div data-streamdown="code-block-header" data-language={language || "text"} className="inno-markdown-content-header">
 						<span className="inno-markdown-content-title">{language || "text"}</span>
 						{isIncomplete ? <span className="inno-markdown-content-status"><span className="inno-markdown-content-status-dot" />{t("markdown.generating", "生成中")}</span> : null}
-						{withToolbar ? renderToolbar(forceExpanded ? fullscreenMoreId : moreId, forceExpanded) : null}
-					</div>
-					<StableCodeBlockBody code={source} language={language || "text"} onOverflowChange={forceExpanded ? undefined : setCodeOverflowing} />
+						{renderToolbar(moreId)}
+					</div> : null}
+					<StableCodeBlockBody code={source} language={language || "text"} onOverflowChange={isFullscreen ? undefined : setCodeOverflowing} />
 				</CodeBlockContainer>
 			</div>
 		</StreamdownContext.Provider>
@@ -442,7 +445,7 @@ export function EnhancedCodeRenderer({ code, language, isIncomplete }: CustomRen
 				onClose={() => setFullscreen(false)}
 				actions={toolbarEnabled ? renderToolbar(fullscreenMoreId, true) : null}
 			>
-				{renderedCode(true, false)}
+				{renderedCode(true)}
 			</MarkdownFullscreenDialog>
 		</Fragment>
 	);

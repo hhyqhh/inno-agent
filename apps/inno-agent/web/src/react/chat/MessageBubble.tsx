@@ -1,15 +1,16 @@
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { X, AlertTriangle, FileCode2, History, BookmarkPlus, BookOpen, Check, Copy, Pencil, RotateCcw, TerminalSquare } from "lucide-react";
+import { AlertTriangle, FileCode2, History, BookmarkPlus, BookOpen, Check, Copy, Pencil, RotateCcw, TerminalSquare } from "lucide-react";
 import type { AttachmentBinding, AttachmentRef, ChatMessage, ChatToolRecord, ChatTraceStep } from "../../types/chat.js";
 import { splitContentByBindings } from "../../utils/attachment-render.js";
 import { answeredQuestionnaireFromTool, buildAnsweredQuestionnaireTimeline } from "../../utils/questionnaire.js";
 import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
 import { KIND_LABEL_KEYS } from "./smart-input/kinds.js";
 import { MarkdownArtifact } from "../MarkdownArtifact.js";
+import { MarkdownFullscreenDialog } from "../markdown/shared.js";
 import { AnsweredQuestionCard } from "./AnsweredQuestionCard.js";
 import { FileName } from "../FileName.js";
 import { FileTypeIcon } from "../FileTypeIcon.js";
@@ -157,31 +158,19 @@ function AgentCommandMessageContent({ command, args, onOpenSkill }: AgentCommand
 }
 
 function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
-	useEffect(() => {
-		const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-		window.addEventListener("keydown", handler);
-		return () => window.removeEventListener("keydown", handler);
-	}, [onClose]);
-
-	return createPortal(
-		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-			onClick={onClose}
-		>
-			<img
-				src={src}
-				alt="enlarged"
-				className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
-				onClick={(e) => e.stopPropagation()}
-			/>
-			<button
-				className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/40"
-				onClick={onClose}
-			>
-				<X size={16} />
-			</button>
-		</div>,
-		document.body,
+	const { t } = useTranslation();
+	// Use the same titlebar reservation as the other fullscreen viewers; the
+	// previous top-4 close button overlapped native macOS window chrome.
+	return (
+		<MarkdownFullscreenDialog open title={t("markdown.imagePreview", "图片预览")} closeLabel={t("markdown.exitFullscreen", "退出全屏")} onClose={onClose}>
+			<div className="inno-fullscreen-image" onClick={onClose}>
+				<img
+					src={src}
+					alt={t("markdown.imagePreview", "图片预览")}
+					onClick={(e) => e.stopPropagation()}
+				/>
+			</div>
+		</MarkdownFullscreenDialog>
 	);
 }
 
@@ -509,7 +498,7 @@ export function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; c
 	);
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, showChannel, collapseUserToFirstLine = false, resolveAttachmentUrl, onOpenAttachment, onOpenSkill, onEdit, showRetry, showActions = true, answeredQuestionnaires: suppliedQuestionnaires, animateEntry = true, liveBodies = false, onRetry }: {
+export const MessageBubble = memo(function MessageBubble({ message, showChannel, collapseUserToFirstLine = false, resolveAttachmentUrl, onOpenAttachment, onOpenSkill, onEdit, showRetry, showActions = true, answeredQuestionnaires: suppliedQuestionnaires, animateEntry = true, liveBodies = false, resultContent, onRetry }: {
 	message: ChatMessage;
 	showChannel?: boolean;
 	/** Render user messages as their first line only (job-prompt turns in
@@ -536,6 +525,8 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 	/** Keep the live stream's markdown DOM shape for text bodies so the
 	 *  finalize swap does not relayout the content. */
 	liveBodies?: boolean;
+	/** Final assistant deliverables, above the message's time and actions. */
+	resultContent?: ReactNode;
 	onRetry?: () => void;
 }) {
 	const { t, i18n } = useTranslation();
@@ -684,6 +675,8 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 		);
 	}
 
+	// Let the shared questionnaire card own its width. The old percentage
+	// limit on this parent made archived cards narrower than pending cards.
 	return (
 		<motion.div
 			className="flex justify-start"
@@ -691,7 +684,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 			animate={{ opacity: 1 }}
 			transition={{ duration: 0.25, ease: "easeOut" }}
 		>
-			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : hasAnsweredQuestionnaire ? "w-full max-w-[76%]" : "max-w-[78%]"} max-md:max-w-full ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-0 py-0 text-[14px] leading-[1.75] text-[var(--inno-text)]`}>
+			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : resultContent || hasAnsweredQuestionnaire ? "w-full max-w-full" : "max-w-[78%]"} max-md:max-w-full ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-0 py-0 text-[14px] leading-[1.75] text-[var(--inno-text)]`}>
 				{showChannel && message.channel ? (
 					<div className="mb-1"><ChannelBadge channel={message.channel} /></div>
 				) : null}
@@ -718,6 +711,9 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 						<ErrorBlock error={message.error} />
 					</div>
 				) : null}
+				{/* The action row is positioned at this bubble's bottom; cards outside
+				    the bubble previously appeared below its time instead of above it. */}
+				{resultContent}
 				{showActions ? <div className="inno-message-actions">
 					<IconButton
 						size="xs"

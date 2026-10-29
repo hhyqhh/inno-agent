@@ -149,7 +149,13 @@ export function Tabs<Value extends string>({
 						<span className="inno-ui-tabs__label">{item.label}</span>
 						{item.close ? (
 							<Tooltip label={item.close.label}>
-								<span data-inno-tab-close="" aria-hidden="true" className="inno-ui-tabs__close">
+								<span data-inno-tab-close="" aria-hidden="true" className="inno-ui-tabs__close"
+									onPointerMove={(event) => {
+										// The close hint is nested in the tab hint. Bubbling this
+										// move arms both Radix triggers and opens overlapping hints.
+										event.stopPropagation();
+									}}
+								>
 									<X size={12} />
 								</span>
 							</Tooltip>

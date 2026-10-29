@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -7,6 +7,7 @@ import {
 	ChevronRight,
 	CircleAlert,
 	Clock3,
+	Copy,
 	FileText,
 	LoaderCircle,
 	Puzzle,
@@ -17,7 +18,7 @@ import {
 import type { ChatTraceStep, ChatTraceStepKind, ChatTraceStepStatus } from "../../types/chat.js";
 import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
 import { MarkdownArtifact } from "../MarkdownArtifact.js";
-import { Tooltip } from "../ui/index.js";
+import { Button, IconButton, TabPanel, Tabs, Tooltip, getTabTriggerId } from "../ui/index.js";
 import { AnsweredQuestionCard } from "./AnsweredQuestionCard.js";
 import {
 	isOpenStatus,
@@ -59,6 +60,8 @@ export interface AgentTraceTimelineProps {
 
 function formatDuration(durationMs: number | undefined, t: TFunction): string {
 	if (durationMs === undefined) return "";
+	// Rounded sub-second durations used to read as “持续了 0 秒”.
+	if (durationMs < 1_000) return t("chat.trace.durationLessThanSecond", "<1 秒");
 	const seconds = Math.max(0, Math.round(durationMs / 1000));
 	return t("chat.trace.durationSeconds", "{{seconds}} 秒", { seconds });
 }
@@ -150,10 +153,18 @@ function localizedStepTitle(step: ChatTraceStep, t: TFunction): string {
 
 function toolSummary(step: ChatTraceStep, t: TFunction): string {
 	const toolName = step.toolName?.trim() || localizedStepTitle(step, t);
+	const officeActions: Record<string, string> = {
+		office_create_document: t("chat.trace.tools.officeCreate", "创建文档"),
+		office_open_document: t("chat.trace.tools.officeOpen", "打开文档"),
+		office_edit_document: t("chat.trace.tools.officeEdit", "编辑文档"),
+		office_render_document: t("chat.trace.tools.officeRender", "检查文档排版"),
+		office_close_document: t("chat.trace.tools.officeClose", "关闭文档"),
+		office_engine_status: t("chat.trace.tools.officeStatus", "检查文档引擎"),
+	};
 	const target = firstTarget(step.args) ?? firstTarget(step.argsText);
 	const live = step.status === "running" ? liveToolText(step.partialResult) : undefined;
 	return [
-		toolName,
+		officeActions[toolName] ?? toolName,
 		target ? compactText(target, 120) : undefined,
 		live && live !== target ? live : undefined,
 	].filter(Boolean).join(" · ") || t("chat.trace.tool", "工具");
@@ -264,6 +275,110 @@ function DetailPayload({ label, value }: { label: string; value: unknown }) {
 	);
 }
 
+/** Measure wrapping as well as newlines so narrow chat columns also get a
+ * full-text action. Re-measure streaming text without pinning its height. */
+function TraceTextPreview({ text, thinking = false, t }: { text: string; thinking?: boolean; t: TFunction }) {
+	const id = useId();
+	const body = useRef<HTMLDivElement>(null);
+	const [expanded, setExpanded] = useState(false);
+	const [overflows, setOverflows] = useState(false);
+	useLayoutEffect(() => {
+		const element = body.current;
+		if (!element || expanded) return;
+		const measure = () => setOverflows(element.scrollHeight > element.clientHeight + 1);
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(element);
+		return () => observer.disconnect();
+	}, [text, expanded]);
+	return (
+		<div className="inno-trace-text-preview">
+			<div ref={body} id={id} className={`inno-trace-readable ${thinking ? "inno-trace-thinking" : ""} ${expanded ? "is-expanded" : "is-clipped"}`}>
+				{thinking ? <MarkdownArtifact content={text} compact /> : text}
+			</div>
+			{overflows || expanded ? (
+				<Button variant="ghost" size="xs" aria-expanded={expanded} aria-controls={id} onClick={() => setExpanded(!expanded)}>
+					{expanded ? t("chat.trace.details.collapseText", "收起全文") : t("chat.trace.details.expandText", "展开全文")}
+				</Button>
+			) : null}
+		</div>
+	);
+}
+
+function RawToolPayload({ step, t }: { step: ChatTraceStep; t: TFunction }) {
+	const id = useId();
+	const entries = [
+		{ value: "arguments", label: t("chat.trace.details.arguments", "参数"), content: safeJson(step.args ?? step.argsText) },
+		{ value: "partial", label: t("chat.trace.details.partialResult", "实时结果"), content: safeJson(step.partialResult) },
+		{ value: "result", label: step.isError || step.status === "error" ? t("chat.trace.details.error", "错误") : t("chat.trace.details.result", "结果"), content: safeJson(step.result) },
+		{ value: "question", label: t("chat.trace.details.question", "提问"), content: safeJson(step.questionParams) },
+	].filter((entry) => Boolean(entry.content));
+	const [selected, setSelected] = useState("arguments");
+	const [full, setFull] = useState(false);
+	const [copyStatus, setCopyStatus] = useState("");
+	const active = entries.find((entry) => entry.value === selected) ?? entries[0];
+	useEffect(() => { setCopyStatus(""); }, [active?.value, active?.content]);
+	useEffect(() => { setFull(false); }, [active?.value]);
+	if (!active) return null;
+	const copy = async () => {
+		try {
+			await navigator.clipboard.writeText(active.content);
+			setCopyStatus(t("chat.trace.details.copied", "已复制"));
+		} catch {
+			setCopyStatus(t("chat.trace.details.copyFailed", "复制失败，请选择文本复制"));
+		}
+	};
+	return (
+		<div className="inno-trace-raw-panel">
+			<div className="inno-trace-raw-toolbar">
+				<Tabs id={id} value={active.value} onValueChange={setSelected} items={entries} size="compact" ariaLabel={t("chat.trace.details.rawData", "原始数据")} />
+				<div className="inno-trace-raw-actions">
+					<IconButton size="xs" aria-label={t("chat.trace.details.copy", "复制原始数据")} title={t("chat.trace.details.copy", "复制原始数据")} onClick={copy}><Copy size={14} /></IconButton>
+					<Button variant="ghost" size="xs" aria-expanded={full} aria-controls={`${id}-panel`} onClick={() => setFull(!full)}>
+						{full ? t("chat.trace.details.collapseText", "收起全文") : t("chat.trace.details.expandText", "展开全文")}
+					</Button>
+				</div>
+			</div>
+			{copyStatus ? <span className="inno-trace-copy-status" role="status">{copyStatus}</span> : null}
+			<TabPanel id={`${id}-panel`} labelledBy={getTabTriggerId(id, active.value)}>
+				<pre className={`inno-trace-payload ${full ? "is-expanded" : ""}`}>{active.content}</pre>
+			</TabPanel>
+		</div>
+	);
+}
+
+function ToolTraceDetails({ step, t }: { step: ChatTraceStep; t: TFunction }) {
+	const id = useId();
+	const [showRaw, setShowRaw] = useState(false);
+	// Prefer the final output: retaining partial and final JSON side by side
+	// duplicated tool output and made a single expanded row fill the chat.
+	const output = step.result ?? step.partialResult;
+	const isError = step.isError || step.status === "error";
+	// Error-only objects may have no content[].text; keep their actual
+	// diagnostic visible without making the user open the raw-data panel.
+	const text = textFromToolPayload(output) ?? (isError && output != null ? safeJson(output) : undefined);
+	const hasPayload = [step.args, step.argsText, step.partialResult, step.result, step.questionParams].some((value) => value != null && value !== "");
+	return (
+		<div className={`inno-trace-tool-details ${isError ? "has-error" : ""}`}>
+			{text?.trim() ? <div>
+				<div className="inno-trace-detail-label">{isError ? t("chat.trace.details.error", "错误") : step.result != null ? t("chat.trace.details.result", "结果") : t("chat.trace.details.partialResult", "实时结果")}</div>
+				<TraceTextPreview text={text} t={t} />
+			</div> : <span className="inno-trace-empty">{output != null ? t("chat.trace.details.structuredResult", "返回了结构化数据，可查看原始数据") : t("chat.trace.details.noResult", "暂无结果")}</span>}
+			{step.workspaceChanges?.length ? <ul className="inno-trace-change-list" aria-label={t("chat.trace.details.workspaceChanges", "工作区变化")}>
+				{step.workspaceChanges.map((change) => <li key={`${change.change}:${change.path}`}>{workspaceChangeLabel(change.change, t)} · {change.path}</li>)}
+			</ul> : null}
+			{hasPayload ? <div className="inno-trace-raw-disclosure">
+				<Button variant="ghost" size="xs" aria-expanded={showRaw} aria-controls={id} onClick={() => setShowRaw(!showRaw)}>
+					<ChevronRight size={14} className={`inno-trace-chevron ${showRaw ? "is-open" : ""}`} aria-hidden="true" />
+					{t("chat.trace.details.rawData", "原始数据")}
+				</Button>
+				{step.toolName ? <code className="inno-trace-tool-name">{step.toolName}</code> : null}
+			</div> : null}
+			{showRaw ? <div id={id}><RawToolPayload step={step} t={t} /></div> : null}
+		</div>
+	);
+}
+
 function workspaceChangeLabel(change: string, t: TFunction): string {
 	const key = {
 		created: "chat.trace.workspaceChanges.created",
@@ -276,7 +391,7 @@ function workspaceChangeLabel(change: string, t: TFunction): string {
 function TraceDetails({ step, onOpenSkill, t }: { step: ChatTraceStep; onOpenSkill?: (skillName: string) => void; t: TFunction }) {
 	if (step.kind === "thinking") {
 		return step.text
-			? <pre className="inno-trace-thinking">{step.text}</pre>
+			? <TraceTextPreview text={step.text} thinking t={t} />
 			: <span className="inno-trace-empty">{t("chat.trace.details.noThinkingText", "暂无思考文本")}</span>;
 	}
 	if (step.kind === "progress") {
@@ -285,22 +400,7 @@ function TraceDetails({ step, onOpenSkill, t }: { step: ChatTraceStep; onOpenSki
 			: <span className="inno-trace-empty">{t("chat.trace.details.noProgressText", "暂无进度文本")}</span>;
 	}
 	if (step.kind === "tool") {
-		return (
-			<div className="inno-trace-tool-details">
-				<DetailPayload label={t("chat.trace.details.arguments", "参数")} value={step.args ?? step.argsText} />
-				<DetailPayload label={t("chat.trace.details.partialResult", "实时结果")} value={step.partialResult} />
-				<DetailPayload label={step.isError ? t("chat.trace.details.error", "错误") : t("chat.trace.details.result", "结果")} value={step.result} />
-				{step.questionParams ? <DetailPayload label={t("chat.trace.details.question", "提问")} value={step.questionParams} /> : null}
-				{step.workspaceChanges?.length ? (
-					<div className="inno-trace-detail-block">
-						<div className="inno-trace-detail-label">{t("chat.trace.details.workspaceChanges", "工作区变化")}</div>
-						<ul className="inno-trace-change-list">
-							{step.workspaceChanges.map((change) => <li key={`${change.change}:${change.path}`}>{workspaceChangeLabel(change.change, t)} · {change.path}</li>)}
-						</ul>
-					</div>
-				) : null}
-			</div>
-		);
+		return <ToolTraceDetails step={step} t={t} />;
 	}
 	if (step.kind === "skill") {
 		return (
@@ -372,8 +472,11 @@ function TraceRow({ step, now, isCurrentLiveStep, expanded, onToggle, t, onOpenS
 	const isFullLineShimmer = isShimmering && step.kind === "tool";
 	const isSystem = step.kind === "system";
 	const isLive = isOpenStatus(step.status);
+	// Failed tools retain kind="tool"; checking kind alone painted their
+	// error icon with the success color even though the row said “失败”.
+	const isError = step.kind === "error" || step.status === "error" || step.isError;
 	return (
-		<div className={`inno-trace-row ${isSystem ? "is-system" : ""} ${step.kind === "error" ? "is-error" : ""} ${isLive ? "is-live" : ""}`}>
+		<div className={`inno-trace-row ${isSystem ? "is-system" : ""} ${isError ? "is-error" : ""} ${isLive ? "is-live" : ""}`}>
 			<button
 				type="button"
 				className="inno-trace-row-toggle"

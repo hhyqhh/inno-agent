@@ -314,6 +314,12 @@ export interface InnoConfig {
 	 *   managed via the `defaultTools` entry in PI's settings.json
 	 *   (`syncCodemodeDefaultTools` in pi-runner.ts) and takes effect on
 	 *   restart, like computer use.
+	 * - `officeEngine` (LibreOffice UNO headless): registers the
+	 *   office_* document tools (open / atomic edit / render to PDF).
+	 *   Default ON. The tools self-check engine availability at call time
+	 *   (bundled copy in desktop installers, else system LibreOffice), so
+	 *   enabling this on a machine without LibreOffice only adds graceful
+	 *   error messages, not failures.
 	 */
 	plugins?: {
 		todo?: { enabled?: boolean };
@@ -321,6 +327,7 @@ export interface InnoConfig {
 		permissionSystem?: { enabled?: boolean; mode?: PermissionPolicyMode };
 		computerUse?: { enabled?: boolean };
 		codemode?: { enabled?: boolean };
+		officeEngine?: { enabled?: boolean };
 	};
 }
 

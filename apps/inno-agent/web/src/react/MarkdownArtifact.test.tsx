@@ -62,6 +62,39 @@ describe("MarkdownArtifact", () => {
 		expect(container.querySelector(".inno-markdown-code-fallback")).toBeNull();
 	});
 
+	it("opens only one tools menu for a fullscreen Mermaid diagram", async () => {
+		const { getByRole } = render(<MarkdownArtifact content={"```mermaid\nflowchart LR\nA --> B\n```"} />);
+		await waitFor(() => expect(getByRole("button", { name: "更多" })).not.toBeNull());
+		fireEvent.pointerDown(getByRole("button", { name: "更多" }), { button: 0, pointerType: "mouse" });
+		fireEvent.click(getByRole("menuitem", { name: "全屏查看" }));
+		const dialog = getByRole("dialog", { name: "Mermaid 全屏查看" });
+		fireEvent.pointerDown(dialog.querySelector<HTMLButtonElement>('button[aria-label="更多"]')!, { button: 0, pointerType: "mouse" });
+		expect(document.querySelectorAll('[role="menu"]')).toHaveLength(1);
+		expect(getByRole("menu").textContent).not.toContain("全屏查看");
+	});
+
+	it("uses one language header in fullscreen and restores the inline code on exit", async () => {
+		const { container, getByRole } = render(<MarkdownArtifact content={"```python\nprint(1)\n```"} />);
+		await waitFor(() => expect(container.querySelector('[data-inno-code-block]')).not.toBeNull());
+		fireEvent.pointerDown(getByRole("button", { name: "更多" }), { button: 0, pointerType: "mouse" });
+		fireEvent.click(getByRole("menuitem", { name: "全屏查看" }));
+		const dialog = getByRole("dialog", { name: "代码全屏查看" });
+		expect(dialog.querySelector(".inno-markdown-fullscreen-title")?.textContent).toBe("python");
+		expect(dialog.querySelector('[data-streamdown="code-block-header"]')).toBeNull();
+		expect(dialog.querySelector('.inno-code-fullscreen [data-inno-code-body]')?.textContent).toContain("print(1)");
+		expect(dialog.querySelector('button[aria-label="运行代码"]')).not.toBeNull();
+		fireEvent.pointerDown(dialog.querySelector<HTMLButtonElement>('button[aria-label="更多"]')!, { button: 0, pointerType: "mouse" });
+		expect(document.querySelectorAll('[role="menu"]')).toHaveLength(1);
+		expect(document.querySelector('[role="menu"]')?.textContent).not.toContain("全屏查看");
+		fireEvent.keyDown(document, { key: "Escape" });
+		// Escape also exits the fullscreen viewer. Reopen to exercise its button.
+		fireEvent.pointerDown(getByRole("button", { name: "更多" }), { button: 0, pointerType: "mouse" });
+		fireEvent.click(getByRole("menuitem", { name: "全屏查看" }));
+		fireEvent.click(getByRole("dialog").querySelector<HTMLButtonElement>('button[aria-label="退出全屏"]')!);
+		expect(container.querySelector('[data-streamdown="code-block-header"]')?.textContent).toContain("python");
+		expect(container.querySelector('[data-inno-code-body]')?.textContent).toContain("print(1)");
+	});
+
 	it("keeps an HTML artifact when it is followed by an SVG artifact", async () => {
 		const source = [
 			"这是两个独立的代码块，可以分别直接运行。",

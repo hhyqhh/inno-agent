@@ -5,6 +5,9 @@ import { basename, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
 import { defineConfig, type Plugin, type ResolvedConfig } from "vite";
+import { patchWordEditorMath } from "./src/react/office/word-editor-math-compat.js";
+import { patchWordEditorRendering } from "./src/react/office/word-editor-render-compat.js";
+import { patchWordEditorVml } from "./src/react/office/word-editor-vml-compat.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const monoRoot = resolve(__dirname, "../../..");
@@ -128,7 +131,8 @@ export default defineConfig({
 	optimizeDeps: {
 		// Serve mini-lit as plain ESM so patchMiniLitMarkedPlugin's transform
 		// hook sees MarkdownBlock.js in dev mode (prebundled deps skip transforms).
-		exclude: ["@mariozechner/mini-lit"],
+		// Keep the pinned math projector visible to the compatibility transform.
+		exclude: ["@mariozechner/mini-lit", "@docx-editor.dev/core", "@docx-editor.dev/react"],
 		// mini-lit is deliberately excluded, but both it and pi-web-ui import
 		// highlight.js. Its ESM facade default-imports a CommonJS core module;
 		// serving that facade raw makes browsers fail with "does not provide an
@@ -148,6 +152,9 @@ export default defineConfig({
 		],
 	},
 	plugins: [
+		{ name: "inno-docx-vml-compat", enforce: "pre", transform: async (code, id) => { const patched = await patchWordEditorVml(code, id); return patched === null ? null : { code: patched, map: null }; } },
+		{ name: "inno-docx-render-compat", enforce: "pre", transform: (code, id) => { const patched = patchWordEditorRendering(code, id); return patched === null ? null : { code: patched, map: null }; } },
+		{ name: "inno-docx-math-compat", enforce: "pre", transform: (code, id) => { const patched = patchWordEditorMath(code, id); return patched === null ? null : { code: patched, map: null }; } },
 		stubLmStudioPlugin,
 		patchMiniLitMarkedPlugin,
 		react(),

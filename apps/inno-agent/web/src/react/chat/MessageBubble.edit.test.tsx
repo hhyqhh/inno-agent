@@ -23,6 +23,15 @@ const plainUserMessage: ChatMessage = {
 };
 
 describe("MessageBubble edit and resend", () => {
+	it("opens attached images in the shared fullscreen viewer and closes with Escape", () => {
+		const { container } = render(<MessageBubble message={{ ...plainUserMessage, images: [{ previewUrl: "data:image/png;base64,AA==", mimeType: "image/png" }] }} />);
+		fireEvent.click(container.querySelector('img[alt="attached"]')!);
+		const dialog = screen.getByRole("dialog", { name: "markdown.imagePreview" });
+		expect(dialog.querySelector(".inno-fullscreen-image img")?.getAttribute("src")).toBe("data:image/png;base64,AA==");
+		expect(dialog.querySelector('button[aria-label="markdown.exitFullscreen"]')).not.toBeNull();
+		fireEvent.keyDown(document, { key: "Escape" });
+		expect(screen.queryByRole("dialog")).toBeNull();
+	});
 	it("offers a plain Web user message for editing", () => {
 		const onEdit = vi.fn();
 		render(<MessageBubble message={plainUserMessage} onEdit={onEdit} />);

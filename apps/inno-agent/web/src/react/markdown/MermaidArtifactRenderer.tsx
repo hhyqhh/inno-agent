@@ -370,7 +370,8 @@ export function MermaidArtifactRenderer({ code, isIncomplete }: CustomRendererPr
 			view={view}
 			zoom={zoom}
 			isFullscreen={isFullscreen}
-			moreOpen={moreOpen}
+			// Keep the background toolbar from opening a second portaled menu.
+			moreOpen={moreOpen && isFullscreen === fullscreen}
 			moreId={id}
 			onViewChange={setView}
 			onZoomChange={(delta) => setZoom((value) => clampMermaidZoom(value + delta))}

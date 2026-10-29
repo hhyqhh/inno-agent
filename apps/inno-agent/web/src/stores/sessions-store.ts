@@ -65,6 +65,7 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	/** When set, a new session should be pre-bound to this workspace (set from the sidebar). */
 	preselectedWorkspaceId: string | null = null;
 	private _openRequestId = 0;
+	private _activationController: AbortController | null = null;
 	/** Set when a queue-backed op (create/activate) got a 409 session_busy:
 	 *  another session's turn holds the shared prompt queue. The UI offers to
 	 *  stop that turn and retry. */
@@ -205,6 +206,8 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 
 	async openSession(id: string, options: { historyMode?: HistoryMode } = {}): Promise<void> {
 		const requestId = ++this._openRequestId;
+		this._activationController?.abort();
+		this._activationController = null;
 		const prevSessionId = this.currentSessionId;
 
 		// Track background sessions: if the previous session was still streaming,
@@ -281,19 +284,20 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 			this._messageCache.set(id, session.messages);
 			chatStore.loadHistory(session.messages, id);
 
-			// The context-usage endpoint reads the active runtime, so let the
-			// activation finish before publishing the completed session view. This
-			// prevents the first usage request after a switch from being mistaken
-			// for a session with no usage.
-			try {
-				await withTimeout(activateSession(id), 15_000, "激活会话超时");
+			// History is disk-backed and must render while the Agent initializes.
+			// Publish runtime-dependent usage only after activation, and ignore a
+			// late completion after the user has navigated to another conversation.
+			const activation = new AbortController();
+			this._activationController = activation;
+			void activateSession(id, activation.signal).then(() => {
 				if (requestId === this._openRequestId && this.currentSessionId === id) {
 					this.contextUsageRevision += 1;
 					this.emit("change", undefined);
 				}
-			} catch (err) {
+			}).catch((err) => {
+				if (activation.signal.aborted) return;
 				console.warn(`[sessions] failed to activate ${id}: ${err instanceof Error ? err.message : String(err)}`);
-			}
+			});
 
 			this._backgroundRunningSessions.delete(id);
 			if (chatStatus.stream && ["queued", "running"].includes(chatStatus.stream.status)) {
@@ -338,6 +342,8 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 	/** Apply a browser back/forward navigation to the welcome page. */
 	showWelcomeFromHistory(): void {
 		this._openRequestId++;
+		this._activationController?.abort();
+		this._activationController = null;
 		this.currentSessionId = null;
 		this.openingSessionId = null;
 		this.pendingNewSession = true;
@@ -370,6 +376,8 @@ export class SessionsStoreImpl extends EventEmitter<SessionsStoreEvents> {
 		// clobber the new-session state (load old messages into it, or leave
 		// isLoadingHistory stuck on). Matches showWelcomeFromHistory.
 		this._openRequestId++;
+		this._activationController?.abort();
+		this._activationController = null;
 		chatStore.setLoadingHistory(false);
 		if (this.currentSessionId && chatStore.isSending) {
 			this._backgroundRunningSessions.add(this.currentSessionId);

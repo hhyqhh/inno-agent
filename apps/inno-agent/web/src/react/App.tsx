@@ -494,9 +494,10 @@ function MainApp() {
 						onNavigateForward={() => window.history.forward()}
 						onToggleWorkspace={toggleWorkspace}
 					/>
-					{/* Narrow viewports present the sidebar as an overlay drawer; the
-						scrim behind it dismisses the drawer on tap. */}
-					{isNarrow && !app.sidebarCollapsed ? (
+					{/* Only browser drawers need a dismiss scrim. Electron keeps its
+						desktop sidebar below the scrim's layer even at narrow widths,
+						so rendering it there would cover the sidebar and block clicks. */}
+					{!isDesktopWindow && isNarrow && !app.sidebarCollapsed ? (
 						<div
 							className="app-layout-scrim"
 							aria-hidden="true"

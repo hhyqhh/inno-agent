@@ -1,227 +1,198 @@
-import { forwardRef, useEffect, useImperativeHandle, type ReactNode } from "react";
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderView, screen, waitFor } from "@testing-library/react";
+import { createRef, forwardRef, useEffect, useImperativeHandle, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "../../api/client.js";
+import type { DocxEditorProps } from "@docx-editor.dev/react";
 import type { WorkspaceFileDetail } from "../../types/workspace.js";
-import { renderWithTooltipProvider as render } from "../test-utils.js";
-import WordEditor from "./WordEditor.js";
+import { themeStore } from "../../stores/theme-store.js";
+import { WordEditor, type WordEditorHandle } from "./WordEditor.js";
+import { TooltipProvider } from "../ui/index.js";
 
-const mocks = vi.hoisted(() => ({ open: vi.fn(), prepare: vi.fn(), mathPrepare: vi.fn(), mathRestore: vi.fn(), repair: vi.fn(), save: vi.fn(), serialize: vi.fn(), flush: vi.fn(), validate: vi.fn(), nativeSave: null as null | (() => Promise<void>), download: vi.fn(), theme: { current: "light", on: () => () => {} } }));
-vi.mock("../../api/word-editor.js", () => ({ openWordDocument: mocks.open, saveWordDocument: mocks.save, downloadWordCopy: mocks.download }));
-vi.mock("../../stores/theme-store.js", () => ({ themeStore: mocks.theme }));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string, values?: { time?: string }) => values?.time ? `${key} ${values.time}` : key, i18n: { language: "zh-CN" } }) }));
-vi.mock("./validate-word-export.js", () => ({ validateWordExport: mocks.validate }));
-vi.mock("./repair-word-export.js", () => ({ repairWordExport: mocks.repair }));
-vi.mock("./prepare-vml.js", () => ({ prepareVml: mocks.prepare }));
-vi.mock("./prepare-math.js", () => ({ createMathSession: mocks.mathPrepare }));
-vi.mock("./WordRibbon.js", () => ({ WordRibbon: () => <div>Ribbon</div> }));
-vi.mock("@betteroffice/docx-react", () => ({
- configureDefaultFonts: vi.fn(),
- LocaleProvider: ({ i18n, children }: { i18n?: { _lang?: string }; children: ReactNode }) => (
-  <div data-testid="word-locale-provider" data-locale={i18n?._lang ?? "en"}>{children}</div>
- ),
- DocxEditor: forwardRef(({ onFirstPagePainted, onChange, onSaveRequest }: { onFirstPagePainted: () => void; onChange: () => void; onSaveRequest: () => Promise<void> }, ref) => {
-  useImperativeHandle(ref, () => ({ save: mocks.serialize, flushPendingInput: mocks.flush }));
-  useEffect(() => { onFirstPagePainted(); }, []);
-  mocks.nativeSave = onSaveRequest;
-  return <div data-testid="word-canvas"><button onClick={onChange}>Type in document</button></div>;
- }),
-}));
-const file: WorkspaceFileDetail = { path: "report.docx", name: "report.docx", kind: "office", format: "docx", mimeType: "", size: 100, updatedAt: "v1" };
-const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
-beforeEach(() => {
-	mocks.open.mockResolvedValue({ bytes: new Uint8Array([1, 2]), version: "v1" });
-	mocks.prepare.mockImplementation((bytes: Uint8Array) => ({ bytes, converted: 0, unsupported: 0 }));
-	mocks.mathRestore.mockImplementation((buffer: ArrayBuffer) => buffer);
-	mocks.mathPrepare.mockImplementation(async (bytes: Uint8Array) => ({ bytes, converted: 0, unsupported: 0, restore: mocks.mathRestore }));
-	mocks.flush.mockResolvedValue(undefined);
-	mocks.serialize.mockResolvedValue(new Uint8Array([3, 4]).buffer);
-	mocks.repair.mockImplementation((buffer: ArrayBuffer) => buffer);
-	mocks.save.mockResolvedValue({ version: "v2", savedAt: "2026-10-25T08:00:00Z" }); mocks.theme.current = "light";
-	Object.defineProperties(HTMLDialogElement.prototype, { show: { configurable: true, value: function(this: HTMLDialogElement) { this.open = true; } }, showModal: { configurable: true, value: function(this: HTMLDialogElement) { this.open = true; } }, close: { configurable: true, value: function(this: HTMLDialogElement) { this.open = false; } } });
+const render = (ui: ReactElement) => renderView(ui, {
+	wrapper: ({ children }) => <TooltipProvider>{children}</TooltipProvider>,
 });
-afterEach(() => { cleanup(); vi.resetAllMocks(); });
-describe("browser Word editor", () => {
-	it("prepares VML before opening and blocks lossy export for unsupported shapes", async () => {
-		mocks.prepare.mockImplementation((bytes: Uint8Array) => ({ bytes, converted: 1, unsupported: 2 }));
-		render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-		expect(mocks.prepare).toHaveBeenCalledWith(new Uint8Array([1, 2]));
-		expect(screen.getByRole("alert").textContent).toContain("wordEditor.unsupportedVml");
-		expect((screen.getByRole("button", { name: "wordEditor.save" }) as HTMLButtonElement).disabled).toBe(true);
-		expect((screen.getByRole("button", { name: "wordEditor.downloadCopy" }) as HTMLButtonElement).disabled).toBe(true);
-		fireEvent.keyDown(window, { key: "s", ctrlKey: true }); await flush();
-		await act(async () => { await mocks.nativeSave?.(); });
-		expect(mocks.serialize).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
-	});
-	it.each(["light", "dark"])("loads the owning workspace in %s mode without an Office service", async (theme) => {
-		mocks.theme.current = theme; const { container } = render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-		expect(screen.getByTestId("word-canvas")).toBeTruthy(); expect(mocks.open).toHaveBeenCalledWith(file.path, "owner", expect.any(AbortSignal));
-		expect(document.querySelector(".inno-word-editor")?.getAttribute("data-color-mode")).toBe(theme); expect(container.textContent).not.toContain("ONLYOFFICE");
-	});
-	it("renders inline with one file bar and no fullscreen dialog layer", async () => {
-		render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-		expect(document.querySelector("dialog[open]")).toBeNull();
-		expect(screen.getAllByRole("button", { name: "wordEditor.save" }).length).toBe(1);
-		expect(screen.getByRole("button", { name: "wordEditor.back" })).toBeTruthy();
-		expect(document.querySelector(".inno-file-name")?.textContent).toBe("report.docx");
-		expect(screen.getByRole("status").textContent).toContain("wordEditor.saved");
-	});
- it("provides the library locale context so the built-in context menu follows the app language", async () => {
-  // The sync editor route never mounts the library's own LocaleProvider, and
-  // its context menu reads from that context, so the editor must be wrapped.
-  render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-  const provider = screen.getByTestId("word-canvas").closest('[data-testid="word-locale-provider"]');
-  expect(provider).toBeTruthy(); expect(provider?.getAttribute("data-locale")).toBe("zh-CN");
- });
- it("renders file-bar actions as ghost buttons whose hints come from the shared tooltip", async () => {
-  render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-  for (const name of ["wordEditor.save", "wordEditor.downloadCopy", "wordEditor.back"]) {
-   const button = screen.getByRole("button", { name });
-   expect(button.className).toContain("inno-ghost-button");
-   expect(button.className).not.toContain("inno-primary-button");
-   expect(button.className).not.toContain("inno-secondary-button");
-   // Enabled triggers carry no native title: the shared tooltip owns the hint,
-   // so the browser bubble never duplicates it.
-   expect(button.getAttribute("title")).toBeNull();
-  }
-  fireEvent.focus(screen.getByRole("button", { name: "wordEditor.save" }));
-  expect((await screen.findByRole("tooltip")).textContent).toContain("wordEditor.saveShortcut");
- });
- it("keeps a native title on disabled actions as the mouse-hover fallback", async () => {
-  mocks.prepare.mockImplementation((bytes: Uint8Array) => ({ bytes, converted: 1, unsupported: 2 }));
-  render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-  const save = screen.getByRole("button", { name: "wordEditor.save" }) as HTMLButtonElement;
-  expect(save.disabled).toBe(true);
-  expect(save.getAttribute("title")).toBe("wordEditor.saveShortcut");
-  fireEvent.focus(save);
-  expect(screen.queryByRole("tooltip")).toBeNull();
- });
- it("ignores the save shortcut while its tab is in the background", async () => {
-		render(<WordEditor file={file} workspaceId="owner" active={false} onClose={vi.fn()} />); await flush();
-		fireEvent.keyDown(window, { key: "s", ctrlKey: true }); await flush();
-		expect(mocks.flush).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
-	});
- it("uses the same workspace save path for the engine save action", async () => {
-  render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-  fireEvent.click(screen.getByText("Type in document"));
-  await act(async () => { await mocks.nativeSave?.(); });
-  expect(mocks.flush).toHaveBeenCalledOnce();
-  expect(mocks.save).toHaveBeenCalledOnce();
-  expect(mocks.download).not.toHaveBeenCalled();
- });
- it("saves and downloads the repaired export, not the raw engine bytes", async () => {
-  const repaired = new Uint8Array([5, 6]).buffer;
-  mocks.repair.mockReturnValue(repaired);
-  render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-  fireEvent.click(screen.getByText("Type in document"));
-  fireEvent.click(screen.getByRole("button", { name: "wordEditor.save" })); await flush();
-  expect(mocks.repair).toHaveBeenCalledWith(new Uint8Array([3, 4]).buffer);
-  expect(mocks.validate).toHaveBeenCalledWith(repaired);
-  expect(mocks.save).toHaveBeenCalledWith(file.path, "owner", "v1", new Uint8Array(repaired));
-  fireEvent.click(screen.getByRole("button", { name: "wordEditor.downloadCopy" })); await flush();
-  expect(mocks.download).toHaveBeenCalledWith(file.name, repaired);
- });
- it("restores the original OMML after repair and before validation when math was typeset", async () => {
-  const prepared = new Uint8Array([7, 8]);
-  const restored = new Uint8Array([9, 10]).buffer;
-  mocks.mathPrepare.mockImplementation(async () => ({ bytes: prepared, converted: 2, unsupported: 0, restore: mocks.mathRestore }));
-  mocks.mathRestore.mockReturnValue(restored);
-  render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-  expect(mocks.mathPrepare).toHaveBeenCalledWith(new Uint8Array([1, 2]));
-  fireEvent.click(screen.getByText("Type in document"));
-  fireEvent.click(screen.getByRole("button", { name: "wordEditor.save" })); await flush();
-  expect(mocks.mathRestore).toHaveBeenCalledWith(new Uint8Array([3, 4]).buffer);
-  expect(mocks.validate).toHaveBeenCalledWith(restored);
-  expect(mocks.save).toHaveBeenCalledWith(file.path, "owner", "v1", new Uint8Array(restored));
- });
- it("keeps the document editable when math typesetting fails entirely", async () => {
-  mocks.mathPrepare.mockRejectedValueOnce(new Error("mathjax offline"));
-  render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-  expect(screen.getByTestId("word-canvas")).toBeTruthy();
-  fireEvent.click(screen.getByText("Type in document"));
-  fireEvent.click(screen.getByRole("button", { name: "wordEditor.save" })); await flush();
-  expect(mocks.mathRestore).not.toHaveBeenCalled();
-  expect(mocks.save).toHaveBeenCalledOnce();
- });
- it("reports equations it could not typeset without blocking the save button", async () => {
-  mocks.mathPrepare.mockImplementation(async (bytes: Uint8Array) => ({ bytes, converted: 51, unsupported: 3, restore: mocks.mathRestore }));
-  render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-  expect(screen.getByText("wordEditor.unsupportedMath")).toBeTruthy();
-  expect((screen.getByRole("button", { name: "wordEditor.save" }) as HTMLButtonElement).disabled).toBe(false);
- });
- it("does not overwrite the original when the engine exports invalid XML", async () => {
-  mocks.validate.mockImplementationOnce(() => { throw new Error("WORD_EDITOR_INVALID_EXPORT"); });
-  render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-  fireEvent.click(screen.getByText("Type in document"));
-  fireEvent.click(screen.getByRole("button", { name: "wordEditor.save" })); await flush();
-  expect(mocks.save).not.toHaveBeenCalled();
-  expect(screen.getByRole("status").textContent).toBe("wordEditor.unsaved");
-  expect(screen.getByRole("alert").textContent).toContain("wordEditor.invalidExport");
- });
- it("waits for IME input to settle before serializing and refuses an empty export", async () => {
-  let finish!: () => void;
-  mocks.flush.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
-  mocks.serialize.mockResolvedValueOnce(null);
-  render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush();
-  fireEvent.click(screen.getByText("Type in document"));
-  fireEvent.click(screen.getByRole("button", { name: "wordEditor.save" })); await flush();
-  expect(mocks.serialize).not.toHaveBeenCalled();
-  finish(); await flush();
-  expect(mocks.save).not.toHaveBeenCalled();
-  expect(screen.getByRole("status").textContent).toBe("wordEditor.unsaved");
-  expect(screen.getByRole("alert").textContent).toContain("wordEditor.saveFailed");
- });
 
-	it("keeps edits dirty until the original workspace save commits", async () => {
-		let finish!: (result: { version: string; savedAt: string }) => void;
-		mocks.save.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
-		render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />); await flush(); fireEvent.click(screen.getByText("Type in document"));
-		fireEvent.click(screen.getByRole("button", { name: "wordEditor.save" })); await flush();
-		expect(mocks.save).toHaveBeenCalledWith(file.path, "owner", "v1", new Uint8Array([3, 4])); expect(screen.getByRole("status").textContent).toBe("wordEditor.saving");
-		finish({ version: "v2", savedAt: "2026-10-25T08:00:00Z" }); await flush(); expect(screen.getByRole("status").textContent).toContain("wordEditor.lastSaved");
-		fireEvent.click(screen.getByText("Type in document")); fireEvent.keyDown(window, { key: "s", ctrlKey: true }); await flush();
-		expect(mocks.save.mock.calls[1][2]).toBe("v2");
+const engine = vi.hoisted(() => ({ autoReady: true, save: vi.fn(), props: null as DocxEditorProps | null, mounts: vi.fn(), unmounts: vi.fn() }));
+const storage = vi.hoisted(() => ({ save: vi.fn() }));
+vi.mock("../../api/workspace.js", () => ({ saveWorkspaceFileBinary: storage.save }));
+vi.mock("./word-editor-fonts.js", () => ({ loadWordEditorFonts: vi.fn(async () => ({ configuration: async () => ({ sources: [] }), degraded: false })) }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: "zh-CN" } }) }));
+vi.mock("@docx-editor.dev/react", () => ({
+	DocxEditor: forwardRef(function MockEditor(props: DocxEditorProps, ref) {
+		engine.props = props;
+		useImperativeHandle(ref, () => ({ save: engine.save }));
+		useEffect(() => {
+			engine.mounts();
+			props.onChange?.({ source: "load", revision: 0 });
+			if (engine.autoReady) props.onReady?.({} as never);
+			return () => { engine.unmounts(); };
+		}, []);
+		return <div aria-label="New DOCX engine"><button onClick={() => props.onChange?.({ revision: 1 })}>Type character</button></div>;
+	}),
+}));
+
+const file: WorkspaceFileDetail = { name: "report.docx", path: "reports/report.docx", format: "docx", kind: "office", size: 100, mimeType: "", updatedAt: "now", url: "/api/workspace/raw?path=reports/report.docx&workspaceId=owner" };
+const saved = { saved: true, path: file.path, size: 4, updatedAt: "now" };
+const bytes = new Uint8Array([80, 75, 3, 4]).buffer;
+
+async function open(props: Partial<React.ComponentProps<typeof WordEditor>> = {}) {
+	const ref = createRef<WordEditorHandle>();
+	const onClose = vi.fn();
+	const view = render(<WordEditor ref={ref} file={file} workspaceId="owner" onClose={onClose} {...props} />);
+	await screen.findByLabelText("New DOCX engine");
+	await waitFor(() => expect(screen.getByRole("button", { name: "wordEditor.save" }).hasAttribute("disabled")).toBe(false));
+	return { ...view, ref, onClose };
+}
+
+beforeEach(() => {
+	vi.clearAllMocks();
+	engine.props = null;
+	engine.autoReady = true;
+	engine.save.mockResolvedValue(bytes);
+	storage.save.mockResolvedValue(saved);
+	vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, arrayBuffer: async () => bytes })));
+	Object.defineProperties(HTMLDialogElement.prototype, {
+		show: { configurable: true, value: function(this: HTMLDialogElement) { this.open = true; } },
+		close: { configurable: true, value: function(this: HTMLDialogElement) { this.open = false; } },
 	});
-	it("does not mark newer edits saved while an earlier revision is in flight", async () => {
-		let finish!: (result: { version: string; savedAt: string }) => void;
-		mocks.save.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
-		render(<WordEditor file={file} workspaceId="a" onClose={vi.fn()} />); await flush(); fireEvent.click(screen.getByText("Type in document")); fireEvent.click(screen.getByRole("button", { name: "wordEditor.save" })); await flush(); fireEvent.click(screen.getByText("Type in document"));
-		finish({ version: "v2", savedAt: "2026-10-25T08:00:00Z" }); await flush(); expect(screen.getByRole("status").textContent).toBe("wordEditor.unsaved");
+});
+afterEach(() => { cleanup(); themeStore.apply("light"); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+describe("EigenPal inline Word editor", () => {
+	it("loads original DOCX bytes directly, ignores load events, and does not export on each edit", async () => {
+		const { ref } = await open();
+		expect(engine.props?.document).toEqual(new Uint8Array(bytes));
+		expect(engine.props?.menu).toBe(false);
+		expect(engine.props?.locale).toBe("zh-CN");
+		expect(engine.props?.i18n).toBeTruthy();
+		expect(ref.current?.isDirty()).toBe(false);
+		for (let i = 0; i < 30; i++) fireEvent.click(screen.getByRole("button", { name: "Type character" }));
+		expect(ref.current?.isDirty()).toBe(true);
+		expect(engine.save).not.toHaveBeenCalled();
+		expect(storage.save).not.toHaveBeenCalled();
 	});
-	it("asks before leaving unsaved changes, then saves before closing", async () => {
-		const close = vi.fn(); render(<WordEditor file={file} workspaceId="a" onClose={close} />); await flush(); fireEvent.click(screen.getByText("Type in document")); fireEvent.click(screen.getByRole("button", { name: "wordEditor.back" }));
-		expect(close).not.toHaveBeenCalled(); expect(screen.getByRole("dialog", { name: "wordEditor.closeTitle" })).toBeTruthy();
-		fireEvent.click(screen.getByRole("button", { name: "wordEditor.saveAndClose" })); await flush(); expect(close).toHaveBeenCalledOnce();
+
+	it("overlays the loading state inside the engine stage until ready", async () => {
+		engine.autoReady = false;
+		const view = render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />);
+		const editor = await screen.findByLabelText("New DOCX engine");
+		const stage = editor.parentElement!;
+		expect(stage.className).toBe("inno-word-stage");
+		expect(stage.getAttribute("aria-busy")).toBe("true");
+		expect(stage.querySelector(".inno-word-loading")?.textContent).toContain("wordEditor.loading");
+		expect(view.container.querySelectorAll(".inno-word-loading")).toHaveLength(1);
+		act(() => engine.props?.onReady?.({} as never));
+		expect(stage.getAttribute("aria-busy")).toBe("false");
+		expect(stage.querySelector(".inno-word-loading")).toBeNull();
 	});
-	it("anchors its leave confirmation to the editor pane and closes it with Escape", async () => {
-		const close = vi.fn(); render(<WordEditor file={file} workspaceId="a" onClose={close} />); await flush(); fireEvent.click(screen.getByText("Type in document")); fireEvent.click(screen.getByRole("button", { name: "wordEditor.back" }));
-		const dialog = screen.getByRole("dialog", { name: "wordEditor.closeTitle" });
-		// The confirmation renders in place inside the editor pane (not the body),
-		// so the mask and the centered card follow the pane instead of the window.
-		expect(dialog.closest(".inno-word-editor")).toBeTruthy();
-		expect(dialog.classList.contains("inno-word-confirm-dialog")).toBe(true);
-		expect(dialog.querySelector(".inno-word-confirm-card")).toBeTruthy();
-		fireEvent.keyDown(window, { key: "Escape" });
-		expect(screen.queryByRole("dialog", { name: "wordEditor.closeTitle" })).toBeNull();
-		expect(close).not.toHaveBeenCalled();
+
+	it("passes a callable font resolver without executing it as a React state updater", async () => {
+		await open();
+		expect(typeof engine.props?.fonts).toBe("function");
+		expect(engine.props?.fontShaping?.maxFontBytes).toBe(64 * 1024 * 1024);
+	});
+
+	it("does not latch a warning for transient missing fonts while native resolution is pending", async () => {
+		await open();
+		act(() => engine.props?.onFontError?.({ code: "missing", message: "pending" } as never));
+		expect(screen.queryByText("wordEditor.fontWarning")).toBeNull();
+		act(() => engine.props?.onFontError?.({ code: "loadFailed", message: "failed" } as never));
+		expect(screen.getByText("wordEditor.fontWarning")).toBeTruthy();
+	});
+
+	it("keeps the same document across dirty-state, theme, and inactive-tab updates", async () => {
+		const { rerender, onClose } = await open();
+		const original = engine.props?.document;
+		fireEvent.click(screen.getByRole("button", { name: "Type character" }));
+		act(() => themeStore.apply("dark"));
+		expect(engine.props?.colorMode).toBe("dark");
+		rerender(<WordEditor file={{ ...file }} workspaceId="owner" active={false} onClose={onClose} />);
+		expect(engine.props?.document).toBe(original);
+		expect(engine.mounts).toHaveBeenCalledOnce();
+		expect(engine.unmounts).not.toHaveBeenCalled();
+		expect(fetch).toHaveBeenCalledOnce();
+	});
+
+	it("marks clean only after workspace persistence succeeds and saves the owning workspace", async () => {
+		let acknowledge!: (result: typeof saved) => void;
+		storage.save.mockImplementation(() => new Promise((resolve) => { acknowledge = resolve; }));
+		const { ref } = await open();
+		fireEvent.click(screen.getByRole("button", { name: "Type character" }));
+		let operation!: Promise<boolean>;
+		act(() => { operation = ref.current!.save(); });
+		await waitFor(() => expect(storage.save).toHaveBeenCalledWith(file.path, bytes, "owner"));
+		expect(ref.current!.isDirty()).toBe(true);
+		await act(async () => { acknowledge(saved); expect(await operation).toBe(true); });
+		expect(ref.current!.isDirty()).toBe(false);
+	});
+
+	it("keeps later edits dirty when a previous revision finishes saving", async () => {
+		let acknowledge!: (result: typeof saved) => void;
+		storage.save.mockImplementation(() => new Promise((resolve) => { acknowledge = resolve; }));
+		const { ref } = await open();
+		fireEvent.click(screen.getByRole("button", { name: "Type character" }));
+		let operation!: Promise<boolean>;
+		act(() => { operation = ref.current!.save(); });
+		await waitFor(() => expect(storage.save).toHaveBeenCalledOnce());
+		fireEvent.click(screen.getByRole("button", { name: "Type character" }));
+		await act(async () => { acknowledge(saved); expect(await operation).toBe(false); });
+		expect(ref.current!.isDirty()).toBe(true);
+	});
+
+	it("deduplicates simultaneous saves", async () => {
+		const { ref } = await open();
+		await act(async () => {
+			const first = ref.current!.save();
+			expect(ref.current!.save()).toBe(first);
+			await first;
+		});
+		expect(engine.save).toHaveBeenCalledOnce();
+		expect(storage.save).toHaveBeenCalledOnce();
+	});
+
+	it("preserves the draft and shows a save error when persistence fails", async () => {
+		storage.save.mockRejectedValueOnce(new Error("disk full"));
+		const { ref, onClose } = await open();
+		fireEvent.click(screen.getByRole("button", { name: "Type character" }));
+		await act(async () => { expect(await ref.current!.save()).toBe(false); });
+		expect(screen.getByRole("alert").textContent).toContain("disk full");
+		expect(ref.current!.isDirty()).toBe(true);
+		expect(onClose).not.toHaveBeenCalled();
+	});
+
+	it("confirms unsaved close and waits for save before returning to preview", async () => {
+		const { onClose } = await open();
+		fireEvent.click(screen.getByRole("button", { name: "Type character" }));
 		fireEvent.click(screen.getByRole("button", { name: "wordEditor.back" }));
-		// Clicking the mask (the dialog element itself) only dismisses the prompt.
-		fireEvent.click(screen.getByRole("dialog", { name: "wordEditor.closeTitle" }));
-		expect(screen.queryByRole("dialog", { name: "wordEditor.closeTitle" })).toBeNull();
-		expect(close).not.toHaveBeenCalled();
-		fireEvent.click(screen.getByRole("button", { name: "wordEditor.back" }));
-		fireEvent.click(screen.getByRole("button", { name: "wordEditor.discard" }));
-		expect(close).toHaveBeenCalledOnce();
+		expect(screen.getByRole("dialog")).toBeTruthy();
+		expect(onClose).not.toHaveBeenCalled();
+		fireEvent.click(screen.getByRole("button", { name: "wordEditor.saveAndClose" }));
+		await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+		expect(storage.save).toHaveBeenCalledWith(file.path, bytes, "owner");
 	});
-	it("retains a conflicted draft and downloads its current bytes", async () => {
-		mocks.save.mockRejectedValue(new ApiError(409, "Conflict", { code: "WORD_EDITOR_CONFLICT" })); const close = vi.fn();
-		render(<WordEditor file={file} workspaceId="a" onClose={close} />); await flush(); fireEvent.click(screen.getByText("Type in document")); fireEvent.click(screen.getByRole("button", { name: "wordEditor.save" })); await flush();
-		expect(screen.getByRole("alert").textContent).toContain("wordEditor.conflict"); expect(screen.getByRole("status").textContent).toBe("wordEditor.unsaved");
-		fireEvent.click(screen.getAllByRole("button", { name: "wordEditor.downloadCopy" })[0]); await flush(); expect(mocks.download).toHaveBeenCalledWith(file.name, new Uint8Array([3, 4]).buffer); expect(close).not.toHaveBeenCalled();
+
+	it("does not intercept Save while the editor tab is inactive", async () => {
+		const { rerender, onClose } = await open({ active: false });
+		fireEvent.keyDown(window, { key: "s", metaKey: true });
+		expect(engine.save).not.toHaveBeenCalled();
+		rerender(<WordEditor file={file} workspaceId="owner" active onClose={onClose} />);
+		fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+		await waitFor(() => expect(storage.save).toHaveBeenCalledOnce());
 	});
-	it("retries a failed load and aborts its read on unmount", async () => {
-		mocks.open.mockRejectedValueOnce(new Error("offline")); const { unmount } = render(<WordEditor file={file} workspaceId={null} onClose={vi.fn()} />); await flush();
-		fireEvent.click(screen.getByRole("button", { name: "wordEditor.retry" })); await flush(); expect(screen.getByTestId("word-canvas")).toBeTruthy(); const signal = mocks.open.mock.calls[1][2] as AbortSignal;
-		unmount(); expect(signal.aborted).toBe(true);
+
+	it("offers a retry after a failed document fetch", async () => {
+		vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 404 } as Response);
+		render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />);
+		expect((await screen.findByRole("alert")).textContent).toContain("404");
+		fireEvent.click(screen.getByRole("button", { name: "wordEditor.retry" }));
+		await screen.findByLabelText("New DOCX engine");
+		expect(fetch).toHaveBeenCalledTimes(2);
+	});
+
+	it("aborts a document fetch when its session is unmounted", async () => {
+		vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
+		const view = render(<WordEditor file={file} workspaceId="owner" onClose={vi.fn()} />);
+		const options = vi.mocked(fetch).mock.calls[0][1]!;
+		view.unmount();
+		expect(options.signal?.aborted).toBe(true);
 	});
 });

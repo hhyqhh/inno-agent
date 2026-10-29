@@ -99,7 +99,28 @@ describe("SessionsStore navigation", () => {
 		mocks.getSession.mockResolvedValue(session("active.jsonl"));
 		const store = new SessionsStoreImpl();
 		await store.openSession("active.jsonl", { historyMode: "none" });
-		expect(store.contextUsageRevision).toBe(1);
+		await vi.waitFor(() => expect(store.contextUsageRevision).toBe(1));
+	});
+
+	it("finishes history loading before Agent activation and ignores stale activation", async () => {
+		let finishActivation!: () => void;
+		mocks.activateSession.mockImplementationOnce(() => new Promise<void>((resolve) => { finishActivation = resolve; }));
+		mocks.getSession.mockImplementation(async (id) => session(id));
+		const store = new SessionsStoreImpl();
+		await store.openSession("slow.jsonl", { historyMode: "none" });
+		expect(mocks.chatLoadHistory).toHaveBeenCalledWith([], "slow.jsonl");
+		expect(mocks.chatSetLoadingHistory).toHaveBeenLastCalledWith(false);
+		expect(store.contextUsageRevision).toBe(0);
+		const activationSignal = mocks.activateSession.mock.calls[0][1] as AbortSignal;
+		expect(activationSignal.aborted).toBe(false);
+		await store.openSession("next.jsonl", { historyMode: "none" });
+		expect(activationSignal.aborted).toBe(true);
+		const revision = store.contextUsageRevision;
+		finishActivation();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(store.currentSessionId).toBe("next.jsonl");
+		expect(store.contextUsageRevision).toBe(revision);
 	});
 
 	it("shows a first message immediately without duplicating the pending session", () => {

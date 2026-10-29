@@ -13,7 +13,10 @@ vi.mock("./ChatCenter.js", () => ({ ChatCenter: () => null }));
 vi.mock("./FeaturePage.js", () => ({ FeaturePage: () => null }));
 vi.mock("./WorkspacePanel.js", () => ({ WorkspacePanel: () => null }));
 vi.mock("./WorkspacePreviewTabs.js", () => ({ WorkspacePreviewTabs: () => null }));
-vi.mock("./DesktopWindowChrome.js", () => ({ DesktopWindowChrome: () => null }));
+vi.mock("./DesktopWindowChrome.js", () => ({
+	DesktopWindowChrome: ({ onToggleSidebar }: { onToggleSidebar: () => void }) =>
+		<button onClick={onToggleSidebar}>Toggle sidebar</button>,
+}));
 vi.mock("./SearchPanel.js", () => ({ SearchPanel: () => null }));
 vi.mock("./SessionSidebar.js", () => ({
 	startNewChat: vi.fn(),
@@ -37,6 +40,43 @@ beforeEach(() => {
 	mocks.ensure.mockReset();
 });
 afterEach(() => { cleanup(); Object.assign(appStore, previous); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+describe.each(["light", "dark"])("sidebar scrim in the %s theme", (theme) => {
+	beforeEach(() => {
+		const previousTheme = document.documentElement.getAttribute("data-theme");
+		document.documentElement.setAttribute("data-theme", theme);
+		return () => {
+			if (previousTheme === null) document.documentElement.removeAttribute("data-theme");
+			else document.documentElement.setAttribute("data-theme", previousTheme);
+		};
+	});
+
+	it.each([612, 856, 960])("keeps the Electron sidebar unobstructed at %ipx", async (width) => {
+		vi.stubGlobal("innerWidth", width);
+		vi.stubGlobal("innoDesktop", { onSearchNavigation: () => () => {} });
+		mocks.ensure.mockResolvedValue("ready");
+		const { container } = render(<App />);
+		fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+		await waitFor(() => expect(appStore.sidebarCollapsed).toBe(false));
+		expect(container.querySelector(".app-layout-scrim")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+		expect(appStore.sidebarCollapsed).toBe(true);
+	});
+
+	it("keeps tap-to-dismiss on the narrow browser drawer", async () => {
+		vi.stubGlobal("innoDesktop", undefined);
+		mocks.ensure.mockResolvedValue("ready");
+		const { container } = render(<App />);
+		expect(container.querySelector(".app-layout-scrim")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+		await waitFor(() => expect(appStore.sidebarCollapsed).toBe(false));
+		const scrim = container.querySelector(".app-layout-scrim");
+		expect(scrim).not.toBeNull();
+		fireEvent.click(scrim!);
+		expect(appStore.sidebarCollapsed).toBe(true);
+		expect(container.querySelector(".app-layout-scrim")).toBeNull();
+	});
+});
 
 describe("opening a file from a minimum-width window", () => {
 	it("expands Electron before opening a split preview", async () => {

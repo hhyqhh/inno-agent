@@ -1,8 +1,9 @@
+import { listFileApplications, openFileInApplication } from "./open-with.js";
 import { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, ipcMain, screen } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { createServer as createNetServer } from "node:net";
-import { join, dirname } from "node:path";
+import { join, dirname, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -104,6 +105,61 @@ ipcMain.handle("inno-open-path", (event, path) => {
     return "";
   }
   return shell.openPath(path);
+});
+
+// All native actions resolve the original file in its owning workspace.
+function isWorkspaceFileRequest(event, request) {
+  return !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents
+    && !!request && typeof request.path === "string" && !!request.path
+    && (request.workspaceId == null || typeof request.workspaceId === "string");
+}
+async function resolveWorkspaceFile(request) {
+  const params = new URLSearchParams({ path: request.path });
+  if (request.workspaceId) params.set("workspaceId", request.workspaceId);
+  const response = await fetch(`http://localhost:${serverPort}/api/workspace/file-location?${params}`, {
+    signal: AbortSignal.timeout(10_000), redirect: "error",
+  });
+  if (!response.ok) throw new Error("File unavailable");
+  const result = await response.json();
+  if (typeof result.absolutePath !== "string" || !isAbsolute(result.absolutePath)) throw new Error("Invalid file location");
+  return result.absolutePath;
+}
+
+ipcMain.handle("inno-workspace-file-applications", async (event, request) => {
+  if (!isWorkspaceFileRequest(event, request)) return null;
+  try {
+    const path = await resolveWorkspaceFile(request);
+    let apps;
+    let unavailable = false;
+    try { apps = await listFileApplications(path); }
+    catch { apps = [{ id: "system-default", name: "", isDefault: true }]; unavailable = true; }
+    const applications = await Promise.all(apps.map(async (entry) => {
+      if (entry.icon) return entry;
+      try { return { ...entry, icon: (await app.getFileIcon(entry.id === "system-default" ? path : entry.id, { size: "small" })).toDataURL() }; }
+      catch { return entry; }
+    }));
+    return { applications, unavailable, fileManager: process.platform === "darwin" ? "finder" : process.platform === "win32" ? "explorer" : "files" };
+  } catch { return null; }
+});
+
+ipcMain.handle("inno-open-workspace-file", async (event, request) => {
+  if (!isWorkspaceFileRequest(event, request) || (request.applicationId != null && typeof request.applicationId !== "string")) return false;
+  try {
+    const path = await resolveWorkspaceFile(request);
+    if (!request.applicationId || request.applicationId === "system-default") return (await shell.openPath(path)) === "";
+    // A renderer cannot substitute an executable: only current system-registered
+    // applications for this particular file are accepted.
+    const apps = await listFileApplications(path);
+    if (!apps.some((entry) => entry.id === request.applicationId)) return false;
+    await openFileInApplication(path, request.applicationId);
+    return true;
+  } catch { return false; }
+});
+
+ipcMain.handle("inno-reveal-workspace-file", async (event, request) => {
+  if (!isWorkspaceFileRequest(event, request)) return false;
+  try { shell.showItemInFolder(await resolveWorkspaceFile(request)); return true; }
+  catch { return false; }
 });
 
 ipcMain.handle("inno-is-full-screen", (event) => {

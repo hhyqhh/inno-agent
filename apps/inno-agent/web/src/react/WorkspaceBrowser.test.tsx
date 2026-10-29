@@ -1,7 +1,7 @@
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useDragDropManager } from "react-dnd";
-import { workspaceStore } from "../stores/workspace-store.js";
+import { workspaceStore, previewTabKey } from "../stores/workspace-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { WorkspaceBrowser } from "./WorkspaceBrowser.js";
@@ -9,14 +9,24 @@ import { InnoDndProvider } from "./ui/dnd-backend.js";
 import { renderWithTooltipProvider as render } from "./test-utils.js";
 
 vi.mock("@earendil-works/pi-web-ui", () => ({}));
+vi.mock("./office/DocxPreview.js", () => ({ default: () => <div>Word preview</div> }));
+vi.mock("./office/XlsxPreview.js", () => ({ default: () => <div>Workbook preview</div> }));
+vi.mock("./office/PptxPreview.js", () => ({ default: () => <div>Presentation preview</div> }));
 vi.mock("./LazyCodeEditor.js", () => ({
 	LazyCodeEditor: ({ value, onChange }: { value: string; onChange(value: string): void }) => (
 		<textarea aria-label="File editor" value={value} onChange={(event) => onChange(event.target.value)} />
 	),
 }));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({
-	t: (key: string, fallback?: string) => typeof fallback === "string" ? fallback : key,
-}) }));
+vi.mock("react-i18next", () => {
+	const t = (key: string, fallback?: string) => typeof fallback === "string" ? fallback : key;
+	return { useTranslation: () => ({ t }) };
+});
+
+// jsdom has no dialog implementation; the shared Dialog drives showModal/close.
+Object.defineProperties(HTMLDialogElement.prototype, {
+	showModal: { configurable: true, value: function(this: HTMLDialogElement) { this.open = true; } },
+	close: { configurable: true, value: function(this: HTMLDialogElement) { this.open = false; } },
+});
 
 function Browser({ onPreviewFile = vi.fn(), variant = "sidebar" }: { onPreviewFile?: (width: number) => void; variant?: "sidebar" | "workspace" | "preview" }) {
 	const dndManager = useDragDropManager();
@@ -44,6 +54,8 @@ describe("Sidebar workspace browser", () => {
 				] },
 			],
 		};
+		workspaceStore.previewTabs = [];
+		workspaceStore.activePreviewPath = null;
 		workspaceStore.currentFile = null;
 		workspaceStore.streamingPreview = null;
 		workspaceStore.isLoadingFile = false;
@@ -80,6 +92,47 @@ describe("Sidebar workspace browser", () => {
 		expect(screen.queryByRole("tree")).toBeNull();
 		expect(screen.queryByRole("button", { name: "workspace.filters.all" })).toBeNull();
 		expect(screen.queryByRole("button", { name: /sidebar/i })).toBeNull();
+	});
+
+	it.each(["light", "dark"])("opens the owner workspace file before the Edit action in %s", async (theme) => {
+		document.documentElement.dataset.theme = theme;
+		const openWorkspaceFile = vi.fn(async () => true);
+		vi.stubGlobal("innoDesktop", { openWorkspaceFile });
+		workspaceStore.activeWorkspaceId = "other";
+		const file = { name: "report.txt", path: "docs/report.txt", kind: "text" as const, mimeType: "text/plain", size: 1, updatedAt: "now", content: "Preview" };
+		workspaceStore.previewTabs = [{ path: file.path, name: file.name, workspaceId: "owner", file, isLoading: false, isEditing: false, editBuffer: "", isSaving: false, error: "", requestId: 0 }];
+		// Use the store's canonical tab key, including its workspace delimiter.
+		workspaceStore.activePreviewPath = previewTabKey(workspaceStore.previewTabs[0]);
+		render(<InnoDndProvider><Browser variant="preview" /></InnoDndProvider>);
+		const open = screen.getByRole("button", { name: "使用其他应用打开" });
+		expect(open.compareDocumentPosition(screen.getByRole("button", { name: "Edit" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		fireEvent.keyDown(open, { key: "Enter" });
+		fireEvent.click(await screen.findByRole("menuitem", { name: "系统默认应用" }));
+		await waitFor(() => expect(openWorkspaceFile).toHaveBeenCalledExactlyOnceWith("docs/report.txt", "owner", "system-default"));
+		await waitFor(() => expect((open as HTMLButtonElement).disabled).toBe(false));
+		workspaceStore.previewTabs = []; workspaceStore.activePreviewPath = null;
+	});
+	it.each(["doc", "docx", "xlsx", "pptx"] as const)("offers external opening for %s previews while preserving current editing", (format) => {
+		vi.stubGlobal("innoDesktop", { openWorkspaceFile: vi.fn(async () => true) });
+		workspaceStore.currentFile = { name: `report.${format}`, path: `report.${format}`, kind: "office", format, mimeType: "application/octet-stream", size: 1, updatedAt: "now", url: "/file" };
+		render(<InnoDndProvider><Browser variant="preview" /></InnoDndProvider>);
+		expect(screen.getByRole("button", { name: "使用其他应用打开" })).toBeTruthy();
+		expect(!!screen.queryByRole("button", { name: "Edit" })).toBe(format !== "doc");
+	});
+	it("shows opening failures without replacing the preview", async () => {
+		vi.stubGlobal("innoDesktop", { openWorkspaceFile: vi.fn(async () => false) });
+		workspaceStore.currentFile = { name: "a.txt", path: "a.txt", kind: "text", mimeType: "text/plain", size: 1, updatedAt: "now", content: "Still visible" };
+		render(<InnoDndProvider><Browser variant="preview" /></InnoDndProvider>);
+		fireEvent.keyDown(screen.getByRole("button", { name: "使用其他应用打开" }), { key: "Enter" });
+		fireEvent.click(await screen.findByRole("menuitem", { name: "系统默认应用" }));
+		expect(await screen.findByRole("alert")).toBeTruthy();
+		expect(screen.getByText("Still visible")).toBeTruthy();
+	});
+	it("omits the desktop-only action in a web browser", () => {
+		vi.stubGlobal("innoDesktop", undefined);
+		workspaceStore.currentFile = { name: "a.txt", path: "a.txt", kind: "text", mimeType: "text/plain", size: 1, updatedAt: "now", content: "Web preview" };
+		render(<InnoDndProvider><Browser variant="preview" /></InnoDndProvider>);
+		expect(screen.queryByRole("button", { name: "使用其他应用打开" })).toBeNull();
 	});
 
 	it("keeps editing and saving available in the desktop preview", () => {
@@ -172,5 +225,32 @@ describe("Sidebar workspace browser", () => {
 		fireEvent.contextMenu(row, { clientX: 100, clientY: 120 });
 		expect(screen.getAllByRole("menu")).toHaveLength(1);
 		expect(screen.getAllByRole("menuitem", { name: "Rename" })).toHaveLength(1);
+	});
+
+	it("confirms file deletion through a dialog portaled to the body top layer", async () => {
+		// Regression: the old in-place fixed overlay was clipped by the desktop
+		// sidebar panel's clip-path, leaving the mask visible and the dialog
+		// cropped away. The confirm must be a body-portaled dialog instead.
+		const deleteItem = vi.spyOn(workspaceStore, "deleteItem").mockResolvedValue();
+		const { container } = render(<InnoDndProvider><Browser /></InnoDndProvider>);
+		fireEvent.contextMenu(container.querySelector('[data-ws-path="report.md"]')!, { clientX: 100, clientY: 120 });
+		fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+		const dialog = await screen.findByRole("dialog", { name: "Delete?" });
+		expect(dialog.parentElement).toBe(document.body);
+		expect(within(dialog).getByText("report.md")).toBeTruthy();
+		fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+		await waitFor(() => expect(deleteItem).toHaveBeenCalledExactlyOnceWith("report.md"));
+		await waitFor(() => expect(screen.queryByRole("dialog", { name: "Delete?" })).toBeNull());
+	});
+
+	it("cancels file deletion without touching the store", async () => {
+		const deleteItem = vi.spyOn(workspaceStore, "deleteItem").mockResolvedValue();
+		const { container } = render(<InnoDndProvider><Browser /></InnoDndProvider>);
+		fireEvent.contextMenu(container.querySelector('[data-ws-path="photo.png"]')!, { clientX: 80, clientY: 90 });
+		fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+		const dialog = await screen.findByRole("dialog", { name: "Delete?" });
+		fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+		await waitFor(() => expect(screen.queryByRole("dialog", { name: "Delete?" })).toBeNull());
+		expect(deleteItem).not.toHaveBeenCalled();
 	});
 });

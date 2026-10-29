@@ -61,6 +61,8 @@ export interface TooltipProps {
 	align?: TooltipAlign;
 	sideOffset?: number;
 	contentClassName?: string;
+	/** Keep feedback visible for an active gesture, independently of hover. */
+	open?: boolean;
 }
 
 /** Shared, accessible tooltip for buttons and other single-element triggers. */
@@ -73,6 +75,7 @@ export function Tooltip({
 	align = "center",
 	sideOffset = 6,
 	contentClassName = "",
+	open: controlledOpen,
 }: TooltipProps) {
 	const [open, setOpen] = useState(false);
 	const [watchPointerMovement, setWatchPointerMovement] = useState(false);
@@ -166,7 +169,7 @@ export function Tooltip({
 
 	return (
 		<TooltipPrimitive.Root
-			open={open}
+			open={controlledOpen ?? open}
 			onOpenChange={(nextOpen) => {
 				if (nextOpen && (suppressTooltipRef.current || !tooltipWindowFocused || suppressTooltipUntilInteraction)) return;
 				setOpen(nextOpen);

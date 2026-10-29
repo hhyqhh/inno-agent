@@ -1,12 +1,13 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { motion } from "motion/react";
-import { Check } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
+import { ChevronRight } from "lucide-react";
 import type { PendingQuestion, QuestionAnswer, QuestionData, QuestionnaireResult } from "../types/chat.js";
 import { chatStore } from "../stores/chat-store.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { AnsweredQuestionCard, OptionRow } from "./chat/AnsweredQuestionCard.js";
-import { Button, Input } from "./ui/index.js";
+import { Button, Textarea, useUITransition } from "./ui/index.js";
+import { QuestionCard } from "./chat/QuestionCard.js";
 
 // Re-exported so existing import sites keep working; the component itself
 // lives in the pure chat/ module (no store/api imports allowed there).
@@ -18,7 +19,6 @@ function QuestionTab({
 	questionIndex,
 	answer,
 	onAnswer,
-	onDismiss,
 	focusedOption,
 	setFocusedOption,
 	customDraft,
@@ -28,13 +28,14 @@ function QuestionTab({
 	questionIndex: number;
 	answer: QuestionAnswer | undefined;
 	onAnswer: (a: QuestionAnswer) => void;
-	onDismiss: () => void;
 	focusedOption: number;
 	setFocusedOption: (i: number) => void;
 	customDraft: string;
 	onCustomDraftChange: (text: string) => void;
 }) {
 	const { t } = useTranslation();
+	const customId = useId();
+	const optionGroupId = useId();
 	const isMulti = q.multiSelect === true;
 	const hasPreview = q.options.some((o) => o.preview);
 	const selectedLabels = new Set(answer?.selected ?? (answer?.kind === "option" && answer.answer ? [answer.answer] : []));
@@ -100,11 +101,11 @@ function QuestionTab({
 	const preview = hasPreview ? q.options[focusedOption]?.preview : undefined;
 
 	return (
-		<div className="space-y-3">
+		<div className="min-w-0 space-y-3">
 			<markdown-block className="text-sm font-medium text-[var(--inno-text)]" content={normalizeMarkdownMath(q.question)} />
 
-			<div className={hasPreview ? "flex gap-3" : ""}>
-				<div className={`space-y-1.5 ${hasPreview ? "w-1/2" : ""}`}>
+			<div className={hasPreview ? "grid min-w-0 gap-3 @min-[480px]:grid-cols-2" : "min-w-0"}>
+				<div className="min-w-0 space-y-1.5" role="group" aria-label={t(isMulti ? "question.multiSelect" : "question.singleSelect")}>
 					{q.options.map((opt, i) => (
 						<OptionRow
 							key={opt.label}
@@ -112,45 +113,42 @@ function QuestionTab({
 							description={opt.description}
 							selected={selectedLabels.has(opt.label)}
 							multi={isMulti}
+							groupName={optionGroupId}
 							onSelect={() => handleOptionClick(opt.label)}
 							onFocus={() => setFocusedOption(i)}
 						/>
 					))}
-
-					<div className="flex flex-col gap-1 pt-1">
-						<Input
-							className={`min-w-0 flex-1 rounded-md px-2.5 py-1.5 text-[13px] ${
-								hasOptionAnswer
-									? "cursor-not-allowed border-[var(--inno-border)] bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]"
-									: "border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text)] focus-visible:border-[var(--inno-focus-border)]"
-							}`}
-							placeholder={hasOptionAnswer ? t("question.optionSelectedHint") : t("question.typeSomething")}
-							value={customDraft}
-							disabled={hasOptionAnswer}
-							onChange={(e) => handleCustomChange(e.target.value)}
-						/>
-					</div>
 				</div>
 
 				{hasPreview && preview ? (
-					<div className="w-1/2 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
-						<pre className="whitespace-pre-wrap font-mono text-xs text-[var(--inno-text)]">{preview}</pre>
+					<div className="min-w-0 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-3">
+						<pre className="whitespace-pre-wrap break-words font-mono text-xs text-[var(--inno-text)] [overflow-wrap:anywhere]">{preview}</pre>
 					</div>
 				) : null}
 			</div>
 
-			<button
-				className="text-xs text-[var(--inno-text-subtle)] underline hover:text-[var(--inno-text-muted)]"
-				onClick={onDismiss}
-			>
-				{t("question.chatAboutThis")}
-			</button>
+			<div className="space-y-1">
+				<label htmlFor={customId} className="block text-xs text-[var(--inno-text-muted)]">{t("question.customAnswer")}</label>
+				{/* A flex-1 input in a column lost its shared height and collapsed.
+				    Keep the compact field in normal flow so resizing moves the footer. */}
+				<Textarea
+					id={customId}
+					rows={1}
+					className="block min-h-9 resize-y"
+					placeholder={hasOptionAnswer ? t("question.optionSelectedHint") : t("question.typeSomething")}
+					value={customDraft}
+					disabled={hasOptionAnswer}
+					onChange={(e) => handleCustomChange(e.target.value)}
+				/>
+			</div>
 		</div>
 	);
 }
 
 export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 	const { t } = useTranslation();
+	const reduceMotion = useReducedMotion();
+	const transition = useUITransition();
 	const { questionId, params } = pending;
 	const questions = params.questions;
 	const [activeTab, setActiveTab] = useState(0);
@@ -159,28 +157,8 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 	// 每个 tab 的自定义文字草稿，提升到外层避免切换 tab 丢失
 	const [customDrafts, setCustomDrafts] = useState<Map<number, string>>(new Map());
 
-	// Keep the card at its tallest observed height across question tabs.
-	// The dialog sits at the bottom of the conversation, so any height change
-	// (switching to a taller/shorter question, hovering preview options)
-	// triggers the stick-to-bottom pin and visibly shifts the viewport
-	// mid-interaction — the same mechanism as the streaming-bubble watermark.
-	const heightWatermarkRef = useRef(0);
-	const cardObserverRef = useRef<ResizeObserver | null>(null);
-	const cardRef = useCallback((el: HTMLDivElement | null) => {
-		cardObserverRef.current?.disconnect();
-		cardObserverRef.current = null;
-		if (!el) return;
-		heightWatermarkRef.current = 0;
-		el.style.minHeight = "";
-		const observer = new ResizeObserver(() => {
-			const height = el.offsetHeight;
-			if (height > heightWatermarkRef.current) heightWatermarkRef.current = height;
-			const minHeight = `${heightWatermarkRef.current}px`;
-			if (el.style.minHeight !== minHeight) el.style.minHeight = minHeight;
-		});
-		observer.observe(el);
-		cardObserverRef.current = observer;
-	}, []);
+	// Do not retain a maximum card height: that left blank space below a
+	// shrunken textarea and kept the submit row at its former position.
 
 	const handleAnswer = useCallback(
 		(a: QuestionAnswer) => {
@@ -246,59 +224,32 @@ export function QuestionDialog({ pending }: { pending: PendingQuestion }) {
 
 	return (
 		<motion.div
-			className="flex justify-start"
-			initial={{ opacity: 0, y: 16 }}
+			className="min-w-0"
+			initial={reduceMotion ? false : { opacity: 0, y: 8 }}
 			animate={{ opacity: 1, y: 0 }}
-			transition={{ duration: 0.3, ease: "easeOut" }}
+			transition={transition}
 		>
-			<div ref={cardRef} className="w-full max-w-[36.5rem] rounded-lg border border-[var(--inno-accent-soft)] bg-[var(--inno-surface)] px-4 py-3 shadow-sm">
-				{questions.length > 1 ? (
-					<div className="mb-3 flex gap-1">
-						{questions.map((q, i) => (
-							<button
-								key={q.header}
-								className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-									activeTab === i
-										? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
-										: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
-								}`}
-								onClick={() => setActiveTab(i)}
-							>
-								{q.header}
-								{answers.has(i) ? <Check size={12} strokeWidth={2.5} aria-hidden="true" /> : null}
-							</button>
-						))}
+			<QuestionCard questions={questions} activeTab={activeTab} onTabChange={setActiveTab} isAnswered={(index) => answers.has(index)}
+				footer={
+					<div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--inno-border)] pt-3">
+						<Button variant="ghost" size="sm" onClick={handleDismiss}>{t("question.chatAboutThis")}</Button>
+						<Button variant="primary" size="sm" disabled={!canContinue} onClick={handleClick}>
+							{isLast ? t("question.submit") : t("question.submitNext")}
+							{!isLast ? <ChevronRight size={14} aria-hidden="true" /> : null}
+						</Button>
 					</div>
-				) : null}
-
+				}>
 				<QuestionTab
 					q={questions[activeTab]}
 					questionIndex={activeTab}
 					answer={answers.get(activeTab)}
 					onAnswer={handleAnswer}
-					onDismiss={handleDismiss}
 					focusedOption={focusedOptions[activeTab]}
 					setFocusedOption={(i) => setFocusedForTab(activeTab, i)}
 					customDraft={customDrafts.get(activeTab) ?? ""}
 					onCustomDraftChange={(text) => setCustomDraftForTab(activeTab, text)}
 				/>
-
-				<div className="mt-3 flex items-center justify-end gap-2">
-					{questions.length > 1 ? (
-						<span className="text-xs text-[var(--inno-text-subtle)]">
-							{activeTab + 1} / {questions.length}
-						</span>
-					) : null}
-					<Button
-						variant="primary"
-						size="md"
-						disabled={!canContinue}
-						onClick={handleClick}
-					>
-						{isLast ? t("question.submit") : t("question.submitNext")}
-					</Button>
-				</div>
-			</div>
+			</QuestionCard>
 		</motion.div>
 	);
 }

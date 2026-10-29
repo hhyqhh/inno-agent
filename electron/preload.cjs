@@ -49,6 +49,21 @@ contextBridge.exposeInMainWorld("innoDesktop", {
     const error = await ipcRenderer.invoke("inno-open-path", path);
     return typeof error === "string" && error.length === 0;
   },
+  getWorkspaceFileApplications(path, workspaceId) {
+    if (typeof path !== "string" || !path || (workspaceId != null && typeof workspaceId !== "string")) return Promise.resolve(null);
+    return ipcRenderer.invoke("inno-workspace-file-applications", { path, workspaceId });
+  },
+  revealWorkspaceFile(path, workspaceId) {
+    if (typeof path !== "string" || !path || (workspaceId != null && typeof workspaceId !== "string")) return Promise.resolve(false);
+    return ipcRenderer.invoke("inno-reveal-workspace-file", { path, workspaceId });
+  },
+  openWorkspaceFile(path, workspaceId, applicationId) {
+    if (typeof path !== "string" || !path || (workspaceId != null && typeof workspaceId !== "string")) {
+      return Promise.resolve(false);
+    }
+    if (applicationId != null && typeof applicationId !== "string") return Promise.resolve(false);
+    return ipcRenderer.invoke("inno-open-workspace-file", { path, workspaceId, applicationId });
+  },
   expandWindowWidth(side, additionalWidth) {
     if (!isWindowExpansionSide(side) || !Number.isFinite(additionalWidth) || additionalWidth < 0) {
       return Promise.resolve(false);

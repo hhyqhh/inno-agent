@@ -1,5 +1,5 @@
 import { warmWordPreviews, stopWordPreviews, closeWordPreviews } from "./office/word-preview.js";
-// Register source-map-support so that compiled JS stack traces and
+import { killSharedUnoSidecar } from "./office/uno-sidecar.js";// Register source-map-support so that compiled JS stack traces and
 // pino-caller call sites map back to the original TS source locations.
 import "source-map-support/register.js";
 
@@ -21,6 +21,9 @@ import {
 	getSession,
 	getActivePromptToken,
 	initSession,
+	syncConfig,
+	refreshConfiguredProviders,
+	switchModel,
 	isQueueTaskCancelled,
 	reloadResources,
 	setPromptEventObserver,
@@ -41,7 +44,7 @@ import { seedManagedMcpConfig } from "./mcp/mcp-config-store.js";
 import { CronScheduler } from "./scheduler/cron-scheduler.js";
 import { HttpError, json } from "./server/http-helpers.js";
 import { serveStatic } from "./server/static-serve.js";
-import { createRouteDispatcher } from "./server/route-dispatch.js";
+import { createRouteDispatcher, requiresAgent } from "./server/route-dispatch.js";
 import {
 	safeJoinReal,
 	slugifySkillName,
@@ -53,9 +56,6 @@ import { handleCheckInsRoutes } from "./server/routes/checkins.js";
 import { handleSettingsRoutes } from "./server/routes/settings.js";
 import { handleSkillsRoutes } from "./server/routes/skills.js";
 import { handleWorkspacesRoutes } from "./server/routes/workspaces.js";
-import { WordDocumentService } from "./office/word-document.js";
-import { createSystemFontService } from "./office/system-fonts.js";
-import { handleSystemFontRoutes } from "./server/routes/system.js";
 import { handleSessionsRoutes } from "./server/routes/sessions.js";
 import { handleSearchRoutes } from "./server/routes/search.js";
 import { handleLearnerRoutes } from "./server/routes/learner.js";
@@ -150,6 +150,7 @@ let dispatcher: PersonalChannelDispatcher | null = null;
 
 let bootstrapped = false;
 let bootstrapPromise: Promise<void> | null = null;
+let agentReadyPromise: Promise<void> | null = null;
 let bridgeToken: string | undefined;
 
 /** Convert a raw PI SDK event to a ChannelStreamEvent for channel streaming replies. */
@@ -293,9 +294,32 @@ async function ensureBootstrapped(): Promise<void> {
 		}
 		migrateReminderChannels();
 
+		// Passive APIs need stores, not extension/MCP session_start hooks. Publish
+		// application readiness before starting the Agent on the next event loop.
+		bootstrapped = true;
+		logger.info("[inno-server] application bootstrap complete");
+		void contentHubCatalog.warm();
+		void ensureAgentReady().catch((err) => {
+			logger.warn({ err }, "[inno-server] background agent initialization failed");
+		});
+	})().catch((err) => {
+		logger.error({ err }, "[inno-server] application bootstrap failed");
+		bootstrapPromise = null;
+		throw err;
+	});
+	return bootstrapPromise;
+}
+
+/** Only runtime operations wait here; failed Agent startup leaves data APIs usable. */
+function ensureAgentReady(): Promise<void> {
+	if (agentReadyPromise) return agentReadyPromise;
+	agentReadyPromise = (async () => {
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		await ensureBootstrapped();
 		// ---- agent session ----
 		logger.info("[inno-server] initializing agent session...");
-		await initSession(config, paths, channelRegistry, {
+		const initialConfig = config;
+		await initSession(initialConfig, paths, channelRegistry, {
 			sandbox: parsed.options.sandbox,
 			extensionDeps: {
 				workspaceRegistry,
@@ -305,7 +329,17 @@ async function ensureBootstrapped(): Promise<void> {
 			},
 		});
 
-		// ---- post-init: dispatcher, channels, cron, WebSocket ----
+		// Settings can change while session_start hooks are still pending.
+		syncConfig(config);
+		if (config !== initialConfig) {
+			await refreshConfiguredProviders(config);
+			const activeModel = getSession().model;
+			if (activeModel?.provider !== config.defaultProvider || activeModel?.id !== config.defaultModel) {
+				await switchModel(config.defaultProvider, config.defaultModel);
+			}
+		}
+
+		// ---- post-init: dispatcher, channels, cron ----
 		const channelsDataDir = join(dataDir, "channels");
 		ensureDir(channelsDataDir);
 		dispatcher = new PersonalChannelDispatcher({
@@ -379,18 +413,12 @@ async function ensureBootstrapped(): Promise<void> {
 		logger.info({ channels: channelRegistry.all().map((c) => c.name).join(", ") || "none" }, "[inno-server] channels");
 		logger.info({ jobCount: jobStore.list().length }, "[inno-server] jobs loaded");
 
-		bootstrapped = true;
-		logger.info("[inno-server] bootstrap complete");
-		// Simple Mode cards and the remote skill library are warmed in the
-		// background. Never make the first meaningful API response wait on GitHub.
-		void contentHubCatalog.warm();
+		logger.info("[inno-server] agent initialization complete");
 	})().catch((err) => {
-		logger.error({ err }, "[inno-server] bootstrap failed");
-		bootstrapPromise = null; // allow retry on next request
+		agentReadyPromise = null; // Retry runtime operations without recreating stores.
 		throw err;
 	});
-
-	return bootstrapPromise;
+	return agentReadyPromise;
 }
 
 // ---------------------------------------------------------------------------
@@ -420,8 +448,8 @@ async function reloadFeishuChannel(): Promise<void> {
 
 	if (dispatcher) {
 		feishuChannel.onMessage((msg) => dispatcher!.handle(feishuChannel!, msg));
+		feishuChannel.start();
 	}
-	feishuChannel.start();
 	logger.info("[feishu] channel hot-reloaded with new credentials");
 
 	// Auto-discover default target if none exists yet (fixes first-time setup
@@ -891,7 +919,7 @@ function listProjectSkills(): unknown[] {
  * upload UI stuck on "uploading". Fire-and-forget keeps the request snappy.
  */
 function scheduleSkillsReload(): void {
-	void reloadResources().catch((err) => {
+	void ensureAgentReady().then(() => reloadResources()).catch((err) => {
 		logger.warn({ err }, "[inno-server] skills reload failed");
 	});
 }
@@ -1188,16 +1216,7 @@ async function runQueueOpWithTimeout<T>(
 	}
 }
 
-const wordEditor = new WordDocumentService(dataDir, async (id) => {
-	const workspace = (await workspaceRegistry.listWorkspacesAsync()).find((entry) => entry.id === id);
-	return workspace ? workspaceRegistry.resolveWorkspaceDirAsync(workspace) : null;
-});
-
-const systemFonts = createSystemFontService();
 const { dispatch: dispatchRoutes } = createRouteDispatcher({
-	// --- System fonts (same-origin bytes for the DOCX editor) ---
-	system: (req, res, method, url) => handleSystemFontRoutes(req, res, method, url, systemFonts),
-
 	// --- Check-ins API ---
 	checkins: (req, res, method, url) => handleCheckInsRoutes(req, res, method, url, { checkInStore }),
 
@@ -1269,7 +1288,7 @@ const { dispatch: dispatchRoutes } = createRouteDispatcher({
 
 	// --- Workspace API + registry + session binding (extracted to server/routes/workspaces.ts) ---
 	workspaces: (req, res, method, url) => handleWorkspacesRoutes(req, res, method, url, {
-		workspaceRegistry, dataDir, paths, wordEditor,
+		workspaceRegistry, dataDir, paths,
 		installSkillZip, installSkillMarkdown, scheduleSkillsReload, importWorkspaceZip,
 		sessionFileFromId,
 		releaseQueueFromQuestionBlockedTurn, runQueueOpWithTimeout,
@@ -1349,11 +1368,14 @@ const server = createServer(async (req, response) => {
 		}
 
 		// --- Lazy bootstrap on first API request ---
-		// All /api/* endpoints need the agent session and data stores.
+		// Data APIs only need application stores. Agent hooks must not block
+		// history, file previews, settings, search, or terminal access.
 		// Static files and SPA fallback skip this so no directories are
 		// created until the user actually interacts with the web UI.
 		if (url.startsWith("/api/")) {
 			await ensureBootstrapped();
+			if (requiresAgent(method, url)) await ensureAgentReady();
+			if (res.destroyed) return;
 		}
 
 		if (await dispatchRoutes(req, res, method, url)) return;
@@ -1550,6 +1572,9 @@ installProcessFallbacks({
 const gracefulShutdown = createGracefulShutdownHandler({
 	server,
 	wss,
+	// SIGTERM the UNO sidecar (its own handler shuts soffice down) before the
+	// servers close; closeWordPreviews then stops the resident renderer.
+	cleanup: () => killSharedUnoSidecar(),
 	exit: (code) => {
 		// Stop the resident renderer and remove its private profile on normal shutdown.
 		const deadline = setTimeout(() => process.exit(code), 1_000);

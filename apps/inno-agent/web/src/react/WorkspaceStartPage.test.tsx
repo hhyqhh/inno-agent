@@ -26,15 +26,16 @@ beforeEach(() => {
 });
 afterEach(() => {
 	cleanup(); vi.restoreAllMocks(); delete document.documentElement.dataset.theme;
+	vi.useRealTimers();
 	workspaceStore.previewTabs = []; workspaceStore.activePreviewPath = null; workspaceStore.recentFiles = []; workspaceStore.tree = null; workspaceStore.error = "";
 });
 describe("File start page", () => {
-	it.each(["light", "dark"])("shows real draft/recent/modified state in %s mode", (theme) => {
+	it.each(["light", "dark"])("merges recent and modified files and preserves drafts in %s mode", (theme) => {
 		document.documentElement.dataset.theme = theme; render(<WorkspaceStartPage />);
 		expect(screen.getByRole("heading", { name: "workspaceStart.heading" })).toBeTruthy();
 		expect(screen.queryByText("private.md")).toBeNull();
-		const modified = screen.getByRole("region", { name: "workspaceStart.modified" });
-		expect(within(modified).getAllByRole("button").map((button) => button.textContent)).toEqual([expect.stringContaining("newer.md"), expect.stringContaining("older.md")]);
+		const recent = screen.getByRole("region", { name: "workspaceStart.recent" });
+		expect(within(recent).getAllByRole("button").map((button) => button.textContent)).toEqual([expect.stringContaining("recent.ts"), expect.stringContaining("newer.md"), expect.stringContaining("older.md")]);
 		fireEvent.click(screen.getByRole("button", { name: /draft.md/ }));
 		expect(workspaceStore.activePreviewPath).toBe(previewTabKey({ path: "draft.md", workspaceId: "current" })); expect(workspaceStore.editBuffer).toBe("unsaved draft");
 		expect(workspaceStore.previewTabs.some(isStartTab)).toBe(true);
@@ -63,13 +64,109 @@ describe("File start page", () => {
 		expect(workspaceStore.activeWorkspaceId).toBe("current");
 		expect(screen.getByText(/Other project/)).toBeTruthy();
 	});
-	it("deduplicates drafts, recent files and AI activity, and omits missing AI paths", () => {
+	it("retains AI provenance when merging recent files and omits missing AI paths", () => {
 		workspaceStore.recentFiles.unshift({ path: "draft.md", name: "draft.md", workspaceId: "current", openedAt: Date.now() });
+		workspaceStore.recentFiles.unshift({ path: "docs/newer.md", name: "newer.md", workspaceId: "current", openedAt: Date.now() + 1000 });
 		workspaceStore.activity.files = [{ path: "docs/newer.md", lastSeenAt: "2026-10-23" }, { path: "missing.md", lastSeenAt: "2026-10-23" }];
 		render(<WorkspaceStartPage />);
 		expect(screen.getAllByText("draft.md")).toHaveLength(1);
-		expect(within(screen.getByRole("region", { name: "workspaceStart.aiActivity" })).getByText("newer.md")).toBeTruthy();
+		const newer = screen.getByRole("button", { name: /newer.md/ });
+		expect(within(newer).getByText("workspaceStart.aiBadge")).toBeTruthy();
+		expect(within(newer).getByText("workspaceStart.opened")).toBeTruthy();
 		expect(screen.getAllByText("newer.md")).toHaveLength(1);
 		expect(screen.queryByText("missing.md")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "workspaceStart.aiFilter" }));
+		expect(screen.getByText("newer.md")).toBeTruthy();
+		expect(screen.queryByText("recent.ts")).toBeNull();
+		expect(screen.queryByText("draft.md")).toBeNull();
+	});
+	it("defaults to six files, expands all remaining files and can collapse again", () => {
+		workspaceStore.recentFiles = Array.from({ length: 14 }, (_, index) => ({ workspaceId: "current", path: `file-${index}.md`, name: `file-${index}.md`, openedAt: Date.now() - index * 1000 }));
+		render(<WorkspaceStartPage />);
+		const recent = screen.getByRole("region", { name: "workspaceStart.recent" });
+		expect(within(recent).getAllByRole("button", { name: /file-\d+\.md/ })).toHaveLength(6);
+		expect(screen.queryByText("file-13.md")).toBeNull();
+		const expand = screen.getByRole("button", { name: "workspaceStart.showMore" });
+		expect(expand.getAttribute("aria-expanded")).toBe("false");
+		expect(document.getElementById(expand.getAttribute("aria-controls")!)).toBeTruthy();
+		fireEvent.click(expand);
+		expect(screen.getByText("file-13.md")).toBeTruthy();
+		expect(screen.getByText("older.md")).toBeTruthy();
+		expect(within(recent).getAllByRole("button", { name: /file-\d+\.md/ })).toHaveLength(14);
+		const collapse = screen.getByRole("button", { name: "workspaceStart.showLess" });
+		expect(collapse.getAttribute("aria-expanded")).toBe("true");
+		fireEvent.click(collapse);
+		expect(within(recent).getAllByRole("button", { name: /file-\d+\.md/ })).toHaveLength(6);
+	});
+	it("searches beyond the folded rows and resets expansion when the search changes", () => {
+		workspaceStore.recentFiles = Array.from({ length: 14 }, (_, index) => ({ workspaceId: "current", path: `file-${index}.md`, name: `file-${index}.md`, openedAt: Date.now() - index * 1000 }));
+		render(<WorkspaceStartPage />);
+		fireEvent.click(screen.getByRole("button", { name: "workspaceStart.showMore" }));
+		fireEvent.change(screen.getByRole("textbox"), { target: { value: "file-13" } });
+		expect(screen.getByText("file-13.md")).toBeTruthy();
+		expect(screen.queryByRole("button", { name: "workspaceStart.showLess" })).toBeNull();
+		fireEvent.change(screen.getByRole("textbox"), { target: { value: "" } });
+		expect(screen.queryByText("file-13.md")).toBeNull();
+		expect(screen.getByRole("button", { name: "workspaceStart.showMore" }).getAttribute("aria-expanded")).toBe("false");
+	});
+	it("applies file-type filters to drafts and all recent sources", () => {
+		const names = ["report.DOCX", "guide.pdf", "slides.pptx", "table.xlsx", "photo.png"];
+		workspaceStore.recentFiles = names.map((name) => ({ workspaceId: "current", path: name, name, openedAt: Date.now() }));
+		render(<WorkspaceStartPage />);
+		fireEvent.click(screen.getByRole("button", { name: "workspaceStart.types.doc" }));
+		expect(screen.getByText("report.DOCX")).toBeTruthy();
+		expect(screen.getByText("guide.pdf")).toBeTruthy();
+		expect(screen.getByText("draft.md")).toBeTruthy();
+		expect(screen.queryByText("slides.pptx")).toBeNull();
+		for (const [kind, file] of [["ppt", "slides.pptx"], ["xls", "table.xlsx"], ["image", "photo.png"]]) {
+			const filter = screen.getByRole("button", { name: `workspaceStart.types.${kind}` });
+			fireEvent.click(filter);
+			expect(filter.getAttribute("aria-pressed")).toBe("true");
+			expect(screen.getByText(file)).toBeTruthy();
+			expect(screen.queryByText("draft.md")).toBeNull();
+			expect(screen.queryByText("newer.md")).toBeNull();
+		}
+	});
+	it("uses the same workspace scope for drafts and recent files and distinguishes equal paths", () => {
+		workspaceStore.previewTabs.push({ ...workspaceStore.previewTabs[0], name: "other-draft.md", path: "other-draft.md", workspaceId: "other" });
+		workspaceStore.recentFiles.push({ workspaceId: "other", name: "recent.ts", path: "recent.ts", openedAt: Date.now() });
+		render(<WorkspaceStartPage />);
+		expect(screen.queryByText("other-draft.md")).toBeNull();
+		fireEvent.click(screen.getByRole("radio", { name: "workspaceStart.scopeAll" }));
+		expect(screen.getByText("other-draft.md")).toBeTruthy();
+		expect(screen.getAllByText("recent.ts")).toHaveLength(2);
+		fireEvent.change(screen.getByRole("textbox"), { target: { value: "Other project" } });
+		expect(screen.getAllByText("recent.ts")).toHaveLength(1);
+		expect(screen.queryByText("draft.md")).toBeNull();
+	});
+	it("labels temporary workspaces clearly and omits repeated root-directory text", () => {
+		workspaceStore.activeWorkspaceId = null;
+		workspaceStore.tree!.name = ".tmp";
+		workspaceStore.recentFiles = [{ workspaceId: null, name: "temp.docx", path: "temp.docx", openedAt: Date.now() }];
+		render(<WorkspaceStartPage />);
+		expect(screen.getByText("workspace.tempWorkspaceLabel")).toBeTruthy();
+		expect(screen.queryByText(".tmp")).toBeNull();
+		expect(screen.queryByText("workspaceStart.rootFolder")).toBeNull();
+		expect(screen.getByText("temp.docx")).toBeTruthy();
+	});
+	it("ignores invalid timestamps without breaking the remaining file list", () => {
+		workspaceStore.recentFiles.push({ workspaceId: "current", path: "invalid.md", name: "invalid.md", openedAt: 1e16 });
+		workspaceStore.tree!.children.push({ path: "invalid-tree.md", name: "invalid-tree.md", type: "file", updatedAt: "not-a-date" });
+		render(<WorkspaceStartPage />);
+		expect(screen.getByText("recent.ts")).toBeTruthy();
+		expect(screen.queryByText("invalid.md")).toBeNull();
+		expect(screen.queryByText("invalid-tree.md")).toBeNull();
+	});
+	it("groups files by local day using the latest opened, modified or AI-write event", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2026, 9, 29, 12));
+		workspaceStore.recentFiles = [{ workspaceId: "current", name: "recent.ts", path: "recent.ts", openedAt: new Date(2026, 9, 28, 10).getTime() }];
+		workspaceStore.tree!.children.push({ name: "ai.md", path: "ai.md", type: "file", updatedAt: new Date(2026, 9, 27).toISOString() });
+		workspaceStore.activity.files = [{ path: "ai.md", lastSeenAt: new Date(2026, 9, 29, 11).toISOString() }];
+		render(<WorkspaceStartPage />);
+		expect(within(screen.getByRole("group", { name: "workspaceStart.today" })).getByText("ai.md")).toBeTruthy();
+		expect(within(screen.getByRole("group", { name: "workspaceStart.yesterday" })).getByText("recent.ts")).toBeTruthy();
+		expect(within(screen.getByRole("group", { name: "workspaceStart.earlier" })).getByText("older.md")).toBeTruthy();
+		expect(within(screen.getByRole("button", { name: /ai.md/ })).getByText("workspaceStart.aiUpdated")).toBeTruthy();
 	});
 });

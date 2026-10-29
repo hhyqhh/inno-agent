@@ -1,0 +1,244 @@
+diff --git a/src/App.vue b/src/App.vue
+index 660741ef..34a2a1a8 100644
+--- a/src/App.vue
++++ b/src/App.vue
+@@ -33,6 +33,7 @@ const { slides } = storeToRefs(slidesStore)
+ const { screening } = storeToRefs(screenStore)
+ 
+ const isAudienceMode = new URLSearchParams(window.location.search).get('mode') === 'audience'
++const isEmbed = new URLSearchParams(window.location.search).has('embed')
+ 
+ if (import.meta.env.MODE !== 'development') {
+   window.onbeforeunload = () => false
+@@ -46,6 +47,12 @@ onMounted(async () => {
+     }])
+     screenStore.setScreening(true)
+   }
++  else if (isEmbed) {
++    // Embedded mode keeps the blank deck the embed bridge set at startup;
++    // the bundled demo slides must not be fetched and overwrite it.
++    await deleteDiscardedDB()
++    snapshotStore.initSnapshotDatabase()
++  }
+   else {
+     const slides = await api.getMockData('slides')
+     slidesStore.setSlides(slides)
+diff --git a/src/embed.ts b/src/embed.ts
+new file mode 100644
+index 00000000..9c9d8ec2
+--- /dev/null
++++ b/src/embed.ts
+@@ -0,0 +1,91 @@
++/**
++ * Embed bridge for Inno Agent (patched into vendored PPTist).
++ *
++ * When the URL carries ?embed=1 the app talks postMessage with the host page:
++ *   host → iframe  { type: 'pptist:load', buffer: ArrayBuffer, name }   load pptx bytes
++ *   host → iframe  { type: 'pptist:export' }                            export current deck
++ *   iframe → host  { type: 'pptist:ready' }                             sent once on boot
++ *   iframe → host  { type: 'pptist:loaded' }                            import finished
++ *   iframe → host  { type: 'pptist:change' }                            deck mutated by the user
++ *   iframe → host  { type: 'pptist:exported', buffer: ArrayBuffer }     pptx bytes
++ * All traffic is same-origin (the bundle is served from the same app).
++ */
++import useImport from '@/hooks/useImport'
++import useExport from '@/hooks/useExport'
++import { useSlidesStore } from '@/store'
++import { storeToRefs } from 'pinia'
++import { watch } from 'vue'
++import { nanoid } from 'nanoid'
++
++declare global {
++  interface Window {
++    __pptistCaptureExport?: (blob: Blob) => void
++  }
++}
++
++export function setupEmbed() {
++  const params = new URLSearchParams(location.search)
++  if (!params.has('embed')) return
++
++  // Embedded mode never shows the bundled demo deck: start from a single
++  // blank slide so the sample pages can't flash up before the host posts
++  // the real file (or linger there if loading fails).
++  useSlidesStore().setSlides([{ id: nanoid(10), elements: [] }])
++
++  // Host origin: explicit parentOrigin param (cross-origin embedding/tests),
++  // otherwise same-origin.
++  const origin = params.get('parentOrigin') || window.location.origin
++
++  window.addEventListener('message', (e) => {
++    if (e.origin !== origin && e.origin !== window.location.origin) return
++    const data = e.data
++    if (!data || typeof data !== 'object') return
++
++    if (data.type === 'pptist:load' && data.buffer) {
++      const file = new File([data.buffer], data.name || 'deck.pptx', {
++        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
++      })
++      const { importPPTXFile } = useImport()
++      importPPTXFile([file], { cover: true })
++      // The importer is async but uninstrumented. The first slides write marks
++      // the import finished; the importer keeps draining for a moment, so
++      // change reports only start after a settle window, debounced to merge
++      // continuous edits. Watching the slides array (deep) ignores view state
++      // like the active slide index — paging around is not an edit.
++      const slidesStore = useSlidesStore()
++      const { slides } = storeToRefs(slidesStore)
++      let imported = false
++      let loadedAt = 0
++      let timer: ReturnType<typeof setTimeout> | undefined
++      watch(slides, () => {
++        if (!imported) {
++          imported = true
++          loadedAt = Date.now()
++          window.parent.postMessage({ type: 'pptist:loaded' }, origin)
++          return
++        }
++        if (Date.now() - loadedAt < 2500) return
++        if (timer) clearTimeout(timer)
++        timer = setTimeout(() => {
++          timer = undefined
++          window.parent.postMessage({ type: 'pptist:change' }, origin)
++        }, 800)
++      }, { deep: true })
++    }
++
++    if (data.type === 'pptist:export') {
++      const slidesStore = useSlidesStore()
++      const { slides } = storeToRefs(slidesStore)
++      const { exportPPTX } = useExport()
++      window.__pptistCaptureExport = (blob: Blob) => {
++        window.__pptistCaptureExport = undefined
++        blob.arrayBuffer().then((buffer) => {
++          window.parent.postMessage({ type: 'pptist:exported', buffer }, origin, [buffer])
++        })
++      }
++      exportPPTX(slides.value, true, false)
++    }
++  })
++
++  window.parent.postMessage({ type: 'pptist:ready' }, origin)
++}
+diff --git a/src/hooks/useExport.ts b/src/hooks/useExport.ts
+index 4c74ffb8..ac55bc2f 100644
+--- a/src/hooks/useExport.ts
++++ b/src/hooks/useExport.ts
+@@ -605,18 +605,23 @@ export default () => {
+             const [startX, startY] = start
+             const [endX, endY] = end
+ 
+-            const originW = el.width / ((endX - startX) / ratioPx2Inch.value)
+-            const originH = el.height / ((endY - startY) / ratioPx2Inch.value)
++            // clip.range is 0-100 percent of the original image (same
++            // semantics as ImageStylePanel.vue), not canvas px — dividing it
++            // by ratioPx2Inch only lines up when the viewport is 1000px wide,
++            // and produces a wrong srcRect (partly missing image) for decks
++            // imported with any other slide width.
++            const originW = el.width / ((endX - startX) / 100)
++            const originH = el.height / ((endY - startY) / 100)
+ 
+             options.w = originW / ratioPx2Inch.value
+             options.h = originH / ratioPx2Inch.value
+ 
+             options.sizing = {
+               type: 'crop',
+-              x: startX / ratioPx2Inch.value * originW / ratioPx2Inch.value,
+-              y: startY / ratioPx2Inch.value * originH / ratioPx2Inch.value,
+-              w: (endX - startX) / ratioPx2Inch.value * originW / ratioPx2Inch.value,
+-              h: (endY - startY) / ratioPx2Inch.value * originH / ratioPx2Inch.value,
++              x: startX / 100 * originW / ratioPx2Inch.value,
++              y: startY / 100 * originH / ratioPx2Inch.value,
++              w: (endX - startX) / 100 * originW / ratioPx2Inch.value,
++              h: (endY - startY) / 100 * originH / ratioPx2Inch.value,
+             }
+           }
+ 
+@@ -999,6 +1004,16 @@ export default () => {
+     }
+ 
+     setTimeout(() => {
++      // Inno Agent embed bridge: hand the bytes to the host page instead of
++      // triggering a browser download when a capture hook is installed.
++      const capture = (window as unknown as { __pptistCaptureExport?: (blob: Blob) => void }).__pptistCaptureExport
++      if (capture) {
++        pptx.write({ outputType: 'blob' }).then(data => {
++          exporting.value = false
++          capture(data as Blob)
++        }).catch(() => { exporting.value = false })
++        return
++      }
+       pptx.writeFile({ fileName: `${title.value}.pptx` }).then(() => exporting.value = false).catch(() => {
+         exporting.value = false
+         message.error('导出失败')
+diff --git a/src/main.ts b/src/main.ts
+index c18fad99..cb7065d1 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -9,8 +9,10 @@ import '@/assets/styles/global.scss'
+ import '@/assets/styles/font.scss'
+ 
+ import Directive from '@/directive'
++import { setupEmbed } from './embed'
+ 
+ const app = createApp(App)
+ app.use(Directive)
+ app.use(createPinia())
+ app.mount('#app')
++setupEmbed()
+diff --git a/src/views/Editor/EditorHeader/index.vue b/src/views/Editor/EditorHeader/index.vue
+index ad6ea2a1..2dd3511a 100644
+--- a/src/views/Editor/EditorHeader/index.vue
++++ b/src/views/Editor/EditorHeader/index.vue
+@@ -3,16 +3,6 @@
+     <div class="left">
+       <Popover trigger="click" placement="bottom-start" v-model:value="mainMenuVisible">
+         <template #content>
+-          <div class="main-menu">
+-            <div class="ai-menu" @click="openAIPPTDialog(); mainMenuVisible = false">
+-              <div class="icon"><i-custom:click /></div>
+-              <div class="aippt-content">
+-                <div class="aippt"><span>AIPPT</span></div>
+-                <div class="aippt-subtitle">输入一句话，智能生成演示文稿</div>
+-              </div>
+-            </div>
+-          </div>
+-          <Divider :margin="10" />
+           <div class="import-section">
+             <div class="import-label">导入文件</div>
+             <div class="import-grid">
+@@ -86,9 +76,6 @@
+           <div class="arrow-btn"><i-icon-park-outline:down class="arrow" /></div>
+         </Popover>
+       </div>
+-      <div class="menu-item" v-tooltip="'AI生成PPT'" @click="openAIPPTDialog(); mainMenuVisible = false">
+-        <span class="text ai">AI</span>
+-      </div>
+       <div class="menu-item" v-tooltip="'导出'" @click="setDialogForExport('pptx')">
+         <i-icon-park-outline:download class="icon" />
+       </div>
+diff --git a/src/views/Editor/Toolbar/common/RichTextBase.vue b/src/views/Editor/Toolbar/common/RichTextBase.vue
+index 6f31fb2b..d411c03c 100644
+--- a/src/views/Editor/Toolbar/common/RichTextBase.vue
++++ b/src/views/Editor/Toolbar/common/RichTextBase.vue
+@@ -124,19 +124,8 @@
+     </ButtonGroup>
+ 
+     <ButtonGroup class="row" passive>
+-      <Popover trigger="click" v-model:value="AIPopoverVisible" style="width: 25%;">
+-        <template #content>
+-          <PopoverMenuItem center @click="execAI('美化改写')">美化</PopoverMenuItem>
+-          <PopoverMenuItem center @click="execAI('扩写丰富')">扩写</PopoverMenuItem>
+-          <PopoverMenuItem center @click="execAI('精简提炼')">精简</PopoverMenuItem>
+-        </template>
+-        <CheckboxButton
+-          first
+-          style="width: 100%;"
+-          v-tooltip="'AI辅助'"
+-        ><span :class="{ 'ai-loading': isAIWriting }">{{ isAIWriting ? '' : 'AI' }}</span></CheckboxButton>
+-      </Popover>
+       <CheckboxButton
++        first
+         style="flex: 1;"
+         v-tooltip="'清除格式'"
+         @click="emitRichTextCommand('clear')"

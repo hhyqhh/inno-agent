@@ -24,12 +24,27 @@ export function ResizeHandle(props: ResizeHandleProps) {
 
 	useEffect(() => {
 		if (!resizing) return;
+		let frame = 0;
+		let latestClientX = 0;
+		const applyMove = (clientX: number) => {
+			frame = 0;
+			if (!start.current) return;
+			current.current.onValueChange(clamp(start.current.value + clientX - start.current.clientX));
+		};
 		const move = (event: PointerEvent) => {
 			if (!start.current || event.pointerId !== start.current.pointerId) return;
 			event.preventDefault();
-			current.current.onValueChange(clamp(start.current.value + event.clientX - start.current.clientX));
+			// Pointer events arrive at the input device's rate, faster than frames;
+			// one layout update per frame keeps the drag from stacking whole-app
+			// renders on every event.
+			latestClientX = event.clientX;
+			if (frame === 0) frame = requestAnimationFrame(() => applyMove(latestClientX));
 		};
 		const finish = (cancel: boolean, point: ResizePoint | null) => {
+			if (frame !== 0) {
+				cancelAnimationFrame(frame);
+				frame = 0;
+			}
 			const initial = start.current;
 			if (!initial) return;
 			start.current = null;
@@ -40,7 +55,11 @@ export function ResizeHandle(props: ResizeHandleProps) {
 		};
 		const up = (event: PointerEvent) => {
 			if (event.pointerId === start.current?.pointerId) {
-				move(event);
+				if (frame !== 0) {
+					cancelAnimationFrame(frame);
+					frame = 0;
+				}
+				applyMove(event.clientX);
 				finish(false, event);
 			}
 		};
@@ -59,6 +78,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
 		window.addEventListener("blur", blur);
 		window.addEventListener("keydown", key);
 		return () => {
+			if (frame !== 0) cancelAnimationFrame(frame);
 			document.body.classList.remove("inno-ui-resizing-columns");
 			window.removeEventListener("pointermove", move);
 			window.removeEventListener("pointerup", up);

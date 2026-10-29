@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	finalizePromptRun,
+	getSession,
+	getSessionIfInitialized,
+	getCurrentSessionId,
 	isNativeImageCapabilityError,
 	isNativeImagePayloadError,
 	isOversizedPayloadError,
@@ -98,5 +101,14 @@ describe("oversized payload classification", () => {
 		undefined,
 	])("ignores unrelated errors: %s", (message) => {
 		expect(isOversizedPayloadError(message)).toBe(false);
+	});
+});
+
+
+describe("read-only access before Agent initialization", () => {
+	it("reports no active runtime without making data routes initialize the Agent", () => {
+		expect(getSessionIfInitialized()).toBeNull();
+		expect(getCurrentSessionId()).toBe("");
+		expect(() => getSession()).toThrow("Session not initialized");
 	});
 });

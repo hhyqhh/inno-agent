@@ -68,10 +68,34 @@ export default function PdfPreview({ url, name }: { url: string; name: string })
 		eventBus.on("pagechanging", pageChanged);
 		eventBus.on("scalechanging", scaleChanged);
 		eventBus.on("pagerendered", renderFailed);
-		const resize = new ResizeObserver(() => {
+		let lastWidth = 0;
+		let refreshTimer = 0;
+		const refreshViewer = () => {
+			refreshTimer = 0;
 			// Recompute fit-width when the split pane changes, preserving explicit zoom.
 			if (viewer.currentScaleValue === "page-width") viewer.currentScaleValue = "page-width";
 			viewer.update();
+		};
+		const resize = new ResizeObserver((entries) => {
+			// Page re-rasters change the height at constant width; only real width
+			// deltas need a fit pass.
+			const entry = entries?.[entries.length - 1];
+			const width = entry?.contentRect.width ?? containerRef.current?.clientWidth ?? 0;
+			if (entry && Math.abs(width - lastWidth) < 0.5) return;
+			lastWidth = width;
+			// During a splitter drag the panel width changes every frame; re-rastering
+			// visible pages at that rate starves the main thread. Refresh periodically
+			// mid-drag instead; on release the dragging body class is already gone,
+			// so the final resize delivery snaps the viewer to the committed width.
+			if (document.body.classList.contains("workspace-resizing") || document.body.classList.contains("inno-ui-resizing-columns")) {
+				if (refreshTimer === 0) refreshTimer = window.setTimeout(refreshViewer, 150);
+				return;
+			}
+			if (refreshTimer !== 0) {
+				clearTimeout(refreshTimer);
+				refreshTimer = 0;
+			}
+			refreshViewer();
 		});
 		resize.observe(containerRef.current!);
 		const scrollContainer = containerRef.current!;
@@ -97,6 +121,7 @@ export default function PdfPreview({ url, name }: { url: string; name: string })
 		}).catch(() => { if (!disposed) setFailed(true); });
 		return () => {
 			disposed = true;
+			if (refreshTimer !== 0) clearTimeout(refreshTimer);
 			resize.disconnect();
 			scrollContainer.removeEventListener("wheel", wheelZoom);
 			eventBus.off("pagesinit", initialized);

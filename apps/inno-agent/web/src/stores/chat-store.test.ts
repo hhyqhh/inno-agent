@@ -36,17 +36,20 @@ vi.mock("./app-store.js", () => ({
 vi.mock("./window-expansion.js", () => ({ ensureWindowForPanel: mocks.ensureWindowForPanel }));
 vi.mock("./workspace-store.js", () => ({
 	workspaceStore: {
+		activeWorkspaceId: "workspace-1",
 		streamingPreview: null,
 		clearStreamingPreview: vi.fn(),
 		finishStreamingPreview: vi.fn(),
 		updateStreamingPreview: vi.fn(),
 		startStreamingPreview: vi.fn(),
 		loadTree: vi.fn(),
+		loadActivity: vi.fn(),
 		selectFile: vi.fn(),
 	},
 }));
 
 import { ChatStoreImpl } from "./chat-store.js";
+import { workspaceStore } from "./workspace-store.js";
 import type { ChatStreamEvent, QuestionnaireResult, StreamEventEnvelope } from "../types/chat.js";
 import { answeredQuestionnaireFromTool } from "../utils/questionnaire.js";
 
@@ -94,6 +97,7 @@ describe("ChatStore stream ownership", () => {
 		mocks.ensureWindowForPanel.mockResolvedValue("unavailable");
 		mocks.appStore.workspaceWidth = 640;
 		mocks.appStore.workspaceMode = "half";
+		workspaceStore.activeWorkspaceId = "workspace-1";
 	});
 
 	it("keeps the owner while a scoped cancellation waits for its terminal event", async () => {
@@ -303,6 +307,67 @@ describe("ChatStore stream ownership", () => {
 		await vi.waitFor(() => expect(mocks.appStore.setRightPanelTab).toHaveBeenCalledWith("preview"));
 		expect(mocks.appStore.setWorkspaceWidth).toHaveBeenCalledWith(640);
 		expect(mocks.appStore.setWorkspaceMode).toHaveBeenCalledWith("half");
+	});
+
+	it.each(["report.docx", "deck.pptx", "budget.xlsx", "legacy.doc", "legacy.ppt", "legacy.xls", ".inno-previews/report.pdf", ".inno-previews/report-p0.png"])("keeps generic writes to %s in chat without opening previews", async (path) => {
+		mocks.appStore.workspaceMode = "collapsed";
+		mocks.streamChat.mockImplementation(async function* () {
+			yield envelope(1, { type: "tool_start", toolCallId: "write-1", toolName: "write", args: { path, content: "data" } });
+			yield envelope(2, { type: "tool_end", toolCallId: "write-1", toolName: "write", result: { path }, isError: false });
+			yield envelope(3, { type: "workspace_change", toolCallId: "write-1", toolName: "write", changes: [{ path, change: "created" }] });
+			yield envelope(4, { type: "aborted", persisted: false });
+		});
+		const store = new ChatStoreImpl();
+		await store.send("create a document");
+		expect(workspaceStore.loadTree).toHaveBeenCalled();
+		expect(workspaceStore.startStreamingPreview).not.toHaveBeenCalled();
+		expect(workspaceStore.selectFile).not.toHaveBeenCalled();
+		expect(mocks.ensureWindowForPanel).not.toHaveBeenCalled();
+		expect(mocks.appStore.setRightPanelTab).not.toHaveBeenCalled();
+	});
+
+	it.each(["office_create_document", "office_edit_document", "office_render_document"])("refreshes files silently for %s, including accompanying output", async (toolName) => {
+		mocks.streamChat.mockImplementation(async function* () {
+			yield envelope(1, { type: "workspace_change", toolName, changes: [
+				{ path: "report.docx", change: "modified" },
+				{ path: "report.pdf", change: "created" },
+				{ path: "notes.md", change: "created" },
+			] });
+			yield envelope(2, { type: "aborted", persisted: false });
+		});
+		await new ChatStoreImpl().send("edit the document");
+		expect(workspaceStore.loadTree).toHaveBeenCalled();
+		expect(workspaceStore.selectFile).not.toHaveBeenCalled();
+		expect(mocks.ensureWindowForPanel).not.toHaveBeenCalled();
+	});
+
+	it.each([false, true])("keeps a pending Office file refresh scoped to its workspace after the turn ends (navigate=%s)", async (navigate) => {
+		let releaseTree!: () => void;
+		const treeReady = new Promise<void>((resolve) => { releaseTree = resolve; });
+		let applied = false;
+		vi.mocked(workspaceStore.loadTree).mockImplementationOnce(async (isCurrent = () => true) => {
+			await treeReady;
+			applied = isCurrent();
+		});
+		mocks.streamChat.mockImplementation(async function* () {
+			yield envelope(1, { type: "workspace_change", toolName: "office_create_document", changes: [{ path: "deck.pptx", change: "created" }] });
+			yield envelope(2, { type: "aborted", persisted: false });
+		});
+		try {
+			const store = new ChatStoreImpl();
+			await store.send("create slides");
+			expect(store.isSending).toBe(false);
+			// Activity must refresh directly, even without a mounted start page or
+			// while the tree response is still pending.
+			expect(workspaceStore.loadActivity).toHaveBeenCalledOnce();
+			if (navigate) workspaceStore.activeWorkspaceId = "workspace-2";
+		} finally {
+			releaseTree();
+		}
+		await treeReady;
+		expect(applied).toBe(!navigate);
+		expect(workspaceStore.selectFile).not.toHaveBeenCalled();
+		expect(mocks.ensureWindowForPanel).not.toHaveBeenCalled();
 	});
 
 	it("materializes the full answered questionnaire as soon as it is submitted", async () => {

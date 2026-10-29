@@ -78,14 +78,30 @@ export function TerminalView({ innoSessionId, workspaceId, className }: Terminal
 		// Connect (idempotent if same session is already wired).
 		void terminalStore.connect(innoSessionId, workspaceId, term.cols, term.rows);
 
-		// Resize tracking
-		const ro = new ResizeObserver(() => {
+		// Resize tracking. A splitter drag resizes the host every frame; refitting
+		// xterm (DOM measure + canvas redraw + WS resize) at that rate drops
+		// frames, so refresh periodically mid-drag. On release the dragging body
+		// class is already gone, so the final resize delivery snaps to the
+		// committed layout.
+		let resizeTimer = 0;
+		const refit = () => {
 			try {
 				fit.fit();
 				terminalStore.resize(term.cols, term.rows);
 			} catch {
 				// ignore transient layout errors
 			}
+		};
+		const ro = new ResizeObserver(() => {
+			if (document.body.classList.contains("workspace-resizing") || document.body.classList.contains("inno-ui-resizing-columns")) {
+				if (resizeTimer === 0) resizeTimer = window.setTimeout(() => { resizeTimer = 0; refit(); }, 150);
+				return;
+			}
+			if (resizeTimer !== 0) {
+				clearTimeout(resizeTimer);
+				resizeTimer = 0;
+			}
+			refit();
 		});
 		ro.observe(host);
 
@@ -95,6 +111,7 @@ export function TerminalView({ innoSessionId, workspaceId, className }: Terminal
 		});
 
 		return () => {
+			if (resizeTimer !== 0) clearTimeout(resizeTimer);
 			ro.disconnect();
 			offOutput();
 			offTheme();

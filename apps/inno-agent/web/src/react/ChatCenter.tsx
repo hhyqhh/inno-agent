@@ -767,10 +767,10 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 	const highlightWorkspace = useCallback((paths: string[] | null) => {
 		window.dispatchEvent(new CustomEvent("inno-smart-highlight", { detail: paths }));
 	}, []);
-	const openSmartFilePreview = useCallback((path: string) => {
+	const openSmartFilePreview = useCallback((path: string, workspaceId = workspaceStore.activeWorkspaceId) => {
 		appStore.setRightPanelTab("preview");
 		workspaceStore.clearStreamingPreview();
-		void workspaceStore.selectFile(path);
+		void workspaceStore.selectFile(path, () => true, workspaceId);
 		void onPreviewFile(SMART_FILE_PREVIEW_WIDTH);
 	}, [onPreviewFile]);
 	const openChatAttachmentPreview = useCallback((file: AttachmentRef) => {
@@ -1519,6 +1519,7 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 			btwControl={btwControl}
 			btwPanel={<BtwPanel />}
 			onOpenAttachment={openChatAttachmentPreview}
+			onOpenDocument={(file) => openSmartFilePreview(file.path, file.workspaceId)}
 			onOpenSkill={openSkillPanel}
 			onEditMessage={handleEditMessage}
 			canRetry={Boolean(chat.lastUserPrompt) && !chat.isSending && !chat.pendingQuestion && !chat.pendingPermission && !isUploading}

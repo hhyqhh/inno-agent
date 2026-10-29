@@ -1002,6 +1002,7 @@ select:focus-visible {
 
 .inno-markdown-content-block--mermaid.is-fullscreen .inno-markdown-mermaid-surface {
 	max-height: none;
+	min-height: 0;
 }
 
 .inno-markdown--compact .inno-markdown-mermaid-surface {
@@ -1087,6 +1088,15 @@ select:focus-visible {
 	display: flex;
 	flex-direction: column;
 	background: var(--inno-background);
+	color: var(--inno-text);
+}
+
+/* Fullscreen portals live outside app-layout, so reserve native chrome here
+   using the same token. Windows has its titlebar outside the renderer. */
+.inno-markdown-fullscreen-titlebar {
+	flex: 0 0 var(--inno-window-chrome-height);
+	background: var(--inno-window-chrome-bg);
+	-webkit-app-region: drag;
 }
 
 .inno-markdown-fullscreen-header {
@@ -1098,16 +1108,13 @@ select:focus-visible {
 	border-bottom: 1px solid var(--inno-border);
 	background: var(--inno-surface);
 	flex-wrap: wrap;
-}
-
-/* macOS keeps its native traffic lights above this renderer-owned overlay. */
-.inno-markdown-fullscreen.is-macos-window .inno-markdown-fullscreen-header {
-	padding-left: 88px;
+	flex-shrink: 0;
+	-webkit-app-region: no-drag;
 }
 
 .inno-markdown-fullscreen-title {
 	flex: 1 1 auto;
-	font-size: 0.8125rem;
+	font-size: var(--text-sm);
 }
 
 .inno-markdown-fullscreen-actions {
@@ -1131,10 +1138,55 @@ select:focus-visible {
 }
 
 .inno-markdown-fullscreen-body {
+	min-width: 0;
 	min-height: 0;
 	flex: 1 1 auto;
 	overflow: auto;
-	padding: 0.75rem;
+	background: var(--inno-surface);
+}
+
+/* Inline card framing and intrinsic height left a small code card floating in
+   a blank fullscreen page. Give the viewer one scroll owner and full height. */
+.inno-code-fullscreen,
+.inno-markdown .inno-code-fullscreen [data-streamdown="code-block"] {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	margin: 0;
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+}
+
+.inno-markdown .inno-code-fullscreen [data-streamdown="code-block-body"] {
+	flex: 1 1 auto;
+	min-height: 0;
+	max-height: none;
+	overflow: auto;
+	border: 0;
+	border-radius: 0;
+}
+
+.inno-markdown-fullscreen-body > .inno-markdown-content-block--mermaid {
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+}
+
+.inno-fullscreen-image {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	min-height: 0;
+	padding: 1rem;
+}
+
+.inno-fullscreen-image img {
+	max-width: 100%;
+	max-height: 100%;
+	object-fit: contain;
 }
 
 .inno-markdown-fullscreen-body > .inno-markdown-mermaid-surface {
@@ -1978,6 +2030,24 @@ inno-app-shell {
 	transition-delay: 0s;
 }
 
+
+/* Action placement and heading clearance share one source. Reserving only
+   the action's right offset let the selector extend under its 32px hit area. */
+.app-layout--desktop.app-layout--chat .inno-window-chrome {
+	--inno-chat-action-width: 32px;
+	--inno-chat-action-right: calc(50px + var(--inno-window-chrome-control-size) + 16px);
+}
+
+.app-layout--desktop.app-layout--chat.app-layout--workspace-quarter .inno-window-chrome,
+.app-layout--desktop.app-layout--chat.app-layout--workspace-half .inno-window-chrome {
+	--inno-chat-action-right: calc(var(--workspace-w) + var(--inno-window-chrome-control-size) + 16px);
+}
+
+.app-layout--desktop.app-layout--chat.app-layout--workspace-full .inno-window-chrome {
+	--inno-chat-action-width: var(--inno-window-chrome-control-size);
+	--inno-chat-action-right: calc(16px + (var(--inno-window-chrome-control-size) + var(--inno-window-chrome-action-gap)) * 2);
+}
+
 .app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header {
 	position: absolute;
 	inset: 0 0 auto;
@@ -1997,7 +2067,7 @@ inno-app-shell {
 	min-height: var(--inno-window-chrome-height);
 	padding-left: calc(var(--inno-window-chrome-control-left) + var(--inno-window-chrome-control-size) * 3 + 16px);
 	padding-top: 10px;
-	padding-right: 56px;
+	padding-right: calc(var(--inno-chat-title-clearance, var(--inno-chat-action-right)) + var(--inno-chat-action-width) + 8px);
 	border-bottom: 0;
 	background: transparent;
 	backdrop-filter: none;
@@ -2020,37 +2090,19 @@ inno-app-shell {
 	padding-left: calc(var(--sidebar-w) + 16px);
 }
 
-.app-layout--desktop.app-layout--chat.app-layout--workspace-quarter .inno-window-chrome-chat-header > .inno-conversation-header,
-.app-layout--desktop.app-layout--chat.app-layout--workspace-half .inno-window-chrome-chat-header > .inno-conversation-header {
-	/* Beyond the panel width, keep the header clear of the terminal toggle and
-	   the small divider that sit just left of the chat/preview border. */
-	padding-right: calc(var(--workspace-w) + var(--inno-window-chrome-control-size) + 16px);
-}
-
-/* With the panel collapsed the terminal rests between the divider and the
-   panel toggle. Keep an 8px gap on each side of the terminal at every width. */
-.app-layout--desktop.app-layout--chat.app-layout--workspace-collapsed .inno-window-chrome-chat-header > .inno-conversation-header {
-	padding-right: calc(50px + var(--inno-window-chrome-control-size) + 16px);
-}
-
 .app-layout--desktop.app-layout--chat .inno-conversation-header-actions {
 	position: absolute;
 	top: calc(var(--inno-window-chrome-control-top) - 1px);
-	right: calc(50px + var(--inno-window-chrome-control-size) + 16px);
+	right: var(--inno-chat-action-right);
 	margin-left: 0;
 	transition: right var(--inno-dur-modal) var(--inno-ease-in-out);
-}
-
-.app-layout--desktop.app-layout--chat.app-layout--workspace-quarter .inno-conversation-header-actions,
-.app-layout--desktop.app-layout--chat.app-layout--workspace-half .inno-conversation-header-actions {
-	right: calc(var(--workspace-w) + var(--inno-window-chrome-control-size) + 16px);
 }
 
 .app-layout--desktop.app-layout--chat.app-layout--workspace-full .inno-conversation-header-actions {
 	/* All three full-view actions use the same hit area and stride. The old
 	   32px question button and independent offsets left uneven icon spacing. */
 	top: var(--inno-window-chrome-control-top);
-	right: calc(16px + (var(--inno-window-chrome-control-size) + var(--inno-window-chrome-action-gap)) * 2);
+	right: var(--inno-chat-action-right);
 }
 
 .app-layout--desktop.app-layout--chat.app-layout--workspace-full .inno-conversation-btw-control {
@@ -2274,6 +2326,72 @@ inno-app-shell {
 	transition: left var(--inno-dur-modal) var(--inno-ease-in-out), right var(--inno-dur-modal) var(--inno-ease-in-out), opacity var(--inno-dur-fast) ease, visibility 0s;
 }
 
+/* Toolbar and preview share the drag geometry even when the host window
+   cannot apply the panel width until release. Cancel restores inheritance. */
+.workspace-resizing .inno-window-chrome {
+	--workspace-w: var(--inno-workspace-drag-width, var(--inno-workspace-width));
+}
+
+/* Both the small divider (track left - 11px) and the drag line use the
+   measured edge, including the desktop shell's inset and deferred expansion. */
+.workspace-resizing .inno-window-chrome-preview-tabs {
+	left: calc(var(--inno-workspace-drag-left) + 11px);
+	transform: none !important;
+}
+
+.workspace-resizing .inno-window-chrome-preview-terminal {
+	right: calc(100% - var(--inno-workspace-drag-left) + 8px);
+}
+
+.workspace-resizing .app-layout--desktop.app-layout--chat .inno-window-chrome {
+	--inno-chat-action-right: calc(100% - var(--inno-workspace-drag-left) + var(--inno-window-chrome-control-size) + 16px);
+}
+
+/* A deferred drag is an overlay, not additional header layout. Reserving its
+   requested width kept squeezing the conversation title before the window
+   could expand. Keep its live clearance and ghost the moving controls above it. */
+.workspace-resizing .app-layout--desktop.app-layout--chat[data-workspace-resize-overlay] .inno-window-chrome {
+	--inno-chat-title-clearance: calc(var(--inno-workspace-width) + var(--inno-window-chrome-control-size) + 16px);
+}
+
+.workspace-resizing [data-workspace-resize-overlay] .inno-window-chrome-preview-tabs,
+.workspace-resizing [data-workspace-resize-overlay] .inno-window-chrome-preview-terminal,
+.workspace-resizing [data-workspace-resize-overlay] .inno-conversation-header-actions {
+	z-index: 3;
+}
+
+/* The glass belongs between the title and the moving controls. Putting it
+   inside an opacity < 1 tab track composites both text layers together and
+   makes that track a backdrop root, preventing the blur from masking the title. */
+.workspace-resizing [data-workspace-resize-overlay] .inno-window-chrome-chat-header {
+	z-index: auto;
+}
+
+.workspace-resizing [data-workspace-resize-overlay] .inno-window-chrome::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	height: var(--inno-window-chrome-height);
+	left: calc(var(--inno-workspace-drag-left) - var(--inno-window-chrome-control-size) - 16px - var(--inno-chat-action-width, 32px) - 4px);
+	right: calc(16px + var(--inno-window-chrome-control-size) * 2 + 12px);
+	z-index: 2;
+	background: color-mix(in srgb, var(--inno-window-chrome-bg, var(--inno-desktop-base-bg)) 90%, transparent);
+	/* Standard last: Lightning CSS otherwise retains only the WebKit alias,
+	   leaving the production Chromium renderer without any backdrop blur. */
+	-webkit-backdrop-filter: blur(6px);
+	backdrop-filter: blur(6px);
+	border-radius: var(--radius-md);
+	pointer-events: none;
+}
+
+.workspace-resizing .app-layout--desktop.app-layout--chat .inno-conversation-header-actions {
+	transition: none;
+}
+
+.workspace-resizing .app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header > .inno-conversation-header {
+	transition: none;
+}
+
 /* Tabs stay interactive (click to switch, right-click for the tab menu);
    only the blank strip around them drags the window. */
 .inno-window-chrome-preview-tabs button {
@@ -2302,10 +2420,18 @@ inno-app-shell {
 }
 
 .inno-window-chrome-chat-header .inno-conversation-workspace-control {
-	max-width: 320px;
+	min-width: 0;
+	max-width: min(320px, 100%);
+	flex-shrink: 1;
 	opacity: 1;
 	overflow: hidden;
 	transition: max-width var(--inno-dur-modal) var(--inno-ease-in-out), opacity var(--inno-dur-ui) ease;
+}
+
+.inno-window-chrome-chat-header .inno-conversation-heading {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
 }
 
 .app-layout--workspace-full .inno-window-chrome-chat-header .inno-conversation-workspace-control {
@@ -3811,7 +3937,8 @@ inno-workspace-panel textarea {
 	padding: 0.125rem;
 	border: 0;
 	border-radius: 0.5rem;
-	background: color-mix(in srgb, var(--inno-content-border) 28%, transparent);
+	/* Strengthen the shared base behind both options, not the selected pill. */
+	background: color-mix(in srgb, var(--inno-content-border) 60%, transparent);
 }
 
 .inno-ui-segmented-control--toolbar .inno-ui-segmented-control__option {
@@ -3961,6 +4088,9 @@ inno-workspace-panel textarea {
    separate cards, matching the mockup's steps-card placement between agent
    paragraphs. */
 .inno-trace-row {
+	/* Contain the expanded body's bottom margin so it cannot split the
+	   shared card border between consecutive process rows. */
+	display: flow-root;
 	min-width: 0;
 	padding: 0 14px;
 	border: 1px solid var(--inno-border);
@@ -4076,16 +4206,15 @@ inno-workspace-panel textarea {
 .inno-trace-row-details {
 	display: block;
 	min-width: 0;
-	margin: 0 0 9px 26px;
-	padding: 2px 0 2px 18px;
+	margin: 0 0 16px 8px;
+	padding: 4px 0 4px 16px;
 	border-left: 1px solid var(--inno-border);
 	color: var(--inno-text-muted);
-	font-size: 12px;
-	line-height: 1.55;
+	font-size: var(--text-sm);
+	line-height: 1.7;
 	overflow-anchor: none;
 }
 
-.inno-trace-thinking,
 .inno-trace-error-details,
 .inno-trace-payload {
 	max-height: 320px;
@@ -4094,11 +4223,100 @@ inno-workspace-panel textarea {
 	white-space: pre-wrap;
 	word-break: break-word;
 	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-	font-size: 11px;
+	font-size: var(--text-xs);
 	line-height: 1.6;
 }
 
+.inno-trace-readable {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--inno-text-muted);
+}
+
+.inno-trace-readable.is-clipped {
+	max-height: 13.6em; /* Eight lines at the detail body's 1.7 line height. */
+	overflow: hidden;
+}
+
 .inno-trace-thinking {
+	white-space: normal;
+}
+
+.inno-trace-thinking .inno-markdown {
+	font-size: inherit;
+	line-height: inherit;
+	color: inherit;
+}
+
+.inno-trace-text-preview > .inno-ui-button {
+	margin-top: 8px;
+}
+
+.inno-trace-tool-details {
+	display: grid;
+	gap: 12px;
+	min-width: 0;
+}
+
+.inno-trace-tool-details.has-error .inno-trace-readable,
+.inno-trace-tool-details.has-error > div > .inno-trace-detail-label {
+	color: var(--inno-danger);
+}
+
+.inno-trace-raw-disclosure,
+.inno-trace-raw-toolbar,
+.inno-trace-raw-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.inno-trace-raw-disclosure,
+.inno-trace-raw-toolbar {
+	flex-wrap: wrap;
+}
+
+.inno-trace-tool-name {
+	color: var(--inno-text-subtle);
+	font-size: var(--text-xs);
+	overflow-wrap: anywhere;
+}
+
+.inno-trace-raw-panel {
+	min-width: 0;
+	overflow: hidden;
+	border: 1px solid var(--inno-border);
+	border-radius: var(--radius-lg);
+	background: var(--inno-surface-muted);
+}
+
+.inno-trace-raw-toolbar {
+	justify-content: space-between;
+	padding: 4px 8px;
+	border-bottom: 1px solid var(--inno-border);
+}
+
+.inno-trace-raw-actions {
+	margin-left: auto;
+}
+
+.inno-trace-raw-panel .inno-trace-payload {
+	margin: 0;
+	padding: 12px;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+}
+
+.inno-trace-payload.is-expanded {
+	max-height: none;
+}
+
+.inno-trace-copy-status {
+	display: block;
+	padding: 4px 12px;
+	font-size: var(--text-xs);
 	color: var(--inno-text-muted);
 }
 
@@ -4110,7 +4328,7 @@ inno-workspace-panel textarea {
 	display: inline-block;
 	margin-right: 8px;
 	color: var(--inno-text-subtle);
-	font-size: 11px;
+	font-size: var(--text-xs);
 }
 
 .inno-trace-payload {
@@ -4124,6 +4342,7 @@ inno-workspace-panel textarea {
 .inno-trace-change-list {
 	margin: 4px 0 0;
 	padding-left: 18px;
+	overflow-wrap: anywhere;
 }
 
 .inno-trace-skill-details,
@@ -5697,19 +5916,19 @@ inno-workspace-panel textarea {
 
 .inno-ui-resize-handle::after {
 	position: absolute;
-	top: 12px;
+	top: 0;
 	right: 1px;
-	bottom: 12px;
+	bottom: 0;
 	width: 1px;
-	background: transparent;
+	opacity: 0;
 	content: "";
-	transition: background-color var(--inno-dur-fast) var(--inno-ease-out);
+	transition: opacity var(--inno-dur-fast) var(--inno-ease-out);
 }
 
 .inno-ui-resize-handle:hover::after,
 :root:not([data-inno-input-modality="pointer"]) .inno-ui-resize-handle:focus-visible::after,
 .inno-ui-resize-handle[data-resizing]::after {
-	background: var(--inno-border-strong);
+	opacity: 1;
 }
 
 /* Pointer capture focuses the splitter; Chromium can retain :focus-visible
@@ -6560,17 +6779,16 @@ inno-workspace-panel textarea {
 	content: "";
 	position: absolute;
 	left: 3px;
-	top: 12px;
-	bottom: 12px;
+	top: 0;
+	bottom: 0;
 	width: 1px;
-	background: transparent;
-	transition: background-color var(--inno-dur-fast) var(--inno-ease-out), box-shadow var(--inno-dur-fast) var(--inno-ease-out);
+	opacity: 0;
+	transition: opacity var(--inno-dur-fast) var(--inno-ease-out);
 }
 
 .workspace-resize-handle:hover::after,
 .workspace-resizing .workspace-resize-handle::after {
-	background: var(--inno-accent);
-	box-shadow: var(--inno-ring);
+	opacity: 1;
 }
 
 .workspace-resizing {
@@ -6585,23 +6803,8 @@ inno-workspace-panel textarea {
 	top: 0;
 	right: 0;
 	bottom: 0;
-	width: var(--inno-workspace-preview-width);
 	z-index: 999;
 	pointer-events: none;
-}
-
-.workspace-resize-preview::before {
-	content: "";
-	position: absolute;
-	left: 0;
-	top: 50%;
-	width: 7px;
-	height: 38px;
-	transform: translate(-50%, -50%);
-	border: 1px solid color-mix(in srgb, var(--inno-accent) 28%, var(--inno-border));
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--inno-surface) 94%, transparent);
-	box-shadow: 0 2px 10px rgba(31, 35, 40, 0.12), 0 0 0 2px color-mix(in srgb, var(--inno-accent) 5%, transparent);
 }
 
 .workspace-resize-preview::after {
@@ -6610,28 +6813,38 @@ inno-workspace-panel textarea {
 	left: 0;
 	top: 0;
 	bottom: 0;
-	width: 2px;
-	transform: translateX(-50%);
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--inno-accent) 32%, transparent);
+	width: 1px;
 }
 
-.workspace-resize-preview--limit::before {
-	border-color: color-mix(in srgb, var(--inno-danger) 72%, var(--inno-border));
-	box-shadow: 0 2px 10px rgba(220, 38, 38, 0.16), 0 0 0 2px color-mix(in srgb, var(--inno-danger) 10%, transparent);
+/* Hover and drag are the same boundary. Sharing the paint prevents the
+   solid, inset hover highlight from returning as soon as a drag ends. */
+.inno-ui-resize-handle::after,
+.workspace-resize-handle::after,
+.workspace-resize-preview::after {
+	background: linear-gradient(to bottom,
+		transparent 0%,
+		color-mix(in srgb, var(--inno-accent) 72%, transparent) 50%,
+		transparent 100%);
 }
 
-.workspace-resize-preview--limit::after {
-	background: var(--inno-danger);
-	box-shadow: 0 0 8px color-mix(in srgb, var(--inno-danger) 42%, transparent);
+/* Tooltip portals have their own stacking context; keep drag feedback above
+   the line even when viewport collision handling places it over the content. */
+.workspace-resize-tooltip {
+	z-index: 1000;
 }
 
-/* Hide the old edge while the ghost edge is active so the user sees one
- * unambiguous target position. During a normal resize the real edge remains
- * visible and the workspace follows the pointer directly. */
+.workspace-resize-tooltip-anchor {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 1px;
+	height: 1px;
+}
+
+/* Keep the panel's structural border visible when the preview moves beyond
+   its live bounds. Only suppress the duplicate hover paint during a drag. */
 .workspace-resize-preview-active .workspace-resize-handle::after {
-	background: transparent;
-	box-shadow: none;
+	opacity: 0;
 }
 
 
@@ -8055,27 +8268,9 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 
 .inno-search-overlay:not([open]) { display: none; }
 
-/* DOCX editing is inline in the workspace preview pane: the pane owns the file
-   bar, the BetterOffice ribbon sits under it, and the document body scrolls
-   internally. The editor engine maps its own colors onto the theme tokens. */
-.inno-word-editor, .inno-word-editor .inno-betteroffice.oox-root {
-	--doc-surface: var(--inno-surface);
-	--doc-card: var(--inno-surface-raised);
-	--doc-bg: var(--inno-workspace-bg);
-	--doc-bg-subtle: var(--inno-surface-muted);
-	--doc-bg-hover: var(--inno-surface-muted);
-	--doc-bg-input: var(--inno-surface);
-	--doc-text: var(--inno-text);
-	--doc-text-muted: var(--inno-text-muted);
-	--doc-text-subtle: var(--inno-text-subtle);
-	--doc-border: var(--inno-border);
-	--doc-border-input: var(--inno-border-strong);
-	--doc-border-light: var(--inno-border);
-	--doc-primary: var(--inno-accent);
-	--doc-primary-light: var(--inno-accent-soft);
-	--doc-focus-ring: var(--inno-border-strong);
-	--doc-toggle-active-bg: var(--inno-surface-muted);
-	--doc-toggle-active-fg: var(--inno-text);
+/* DOCX editing is inline: the pane owns persistence controls and EigenPal's
+   paginated browser editor owns the document surface and formatting tools. */
+.inno-word-editor {
 	display: flex;
 	flex-direction: column;
 	height: 100%;
@@ -8086,28 +8281,38 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 	font-family: inherit;
 }
 .inno-word-save-state { display: flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--inno-text-subtle); font-size: var(--text-xs, 12px); }
-.inno-word-ribbon { flex-shrink: 0; min-width: 0; padding: 0 8px 12px; background: var(--inno-surface-muted); }
-.inno-word-ribbon .inno-ui-tabs { min-height: 36px; overflow-x: auto; }
-.inno-word-ribbon-panel { min-height: 76px; display: flex; align-items: center; overflow-x: auto; border: 1px solid var(--inno-border); border-radius: var(--radius-lg, 8px); background: var(--inno-surface); }
-.inno-word-editor .inno-word-ribbon .inno-word-toolbar { flex-wrap: nowrap; width: max-content; min-width: 100%; min-height: 68px; margin: 0; padding: 4px 8px; gap: 0; border-radius: 0; background: transparent; font-family: inherit; }
-.inno-word-ribbon-group { display: flex; align-items: center; align-self: stretch; gap: 8px; padding: 0 12px; }
-.inno-word-ribbon-group + .inno-word-ribbon-group { border-left: 1px solid var(--inno-border); }
-.inno-word-ribbon-stack { display: flex; flex-direction: column; gap: 4px; }
-.inno-word-ribbon-row { display: flex; align-items: center; gap: 4px; }
-.inno-word-editor .inno-word-font-select { width: 124px; height: 32px; flex-shrink: 0; }
-.inno-word-font-preview { flex-shrink: 0; font-size: var(--text-sm, 14px); line-height: 1; opacity: 0.75; }
-.inno-word-editor .inno-betteroffice { flex: 1; min-width: 0; min-height: 0; height: auto; }
-.inno-word-editor .inno-betteroffice .docx-toolbar { background: var(--inno-surface); color: var(--inno-text); }
-/* BetterOffice paints behind-text anchored images as pointer-interactive
-   mirror runs (.layout-run-image). A page-sized image anchored in the header
-   band inherits the band's cursor: pointer (header click-to-edit) and shows a
-   hand over every body position it blankets — hand cursors reported over
-   document text. Mirror runs are not links or buttons: give them the body
-   content's text cursor, which is what the engine's own `.layout-page-content`
-   carries, so hover over the blanket reads as typeable text. Real links keep
-   their styling, and image selection still works through the engine's
-   coordinate hit-test underneath. */
-.inno-word-editor .inno-betteroffice .layout-run-image { cursor: text; }
+.inno-word-stage { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.inno-word-loading { position: absolute; inset: 0; z-index: 51; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--inno-workspace-bg); color: var(--inno-text-muted); font-size: var(--text-sm, 14px); }
+.inno-word-editor .inno-word-docx {
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	--doc-bg: var(--inno-workspace-bg);
+	--doc-surface: var(--inno-surface);
+	--doc-bg-input: var(--inno-surface);
+	--doc-bg-subtle: var(--inno-surface-muted);
+	--doc-bg-hover: var(--inno-surface-muted);
+	--doc-popover-bg: var(--inno-surface-raised);
+	--doc-text: var(--inno-text);
+	--doc-text-muted: var(--inno-text-muted);
+	--doc-text-subtle: var(--inno-text-subtle);
+	--doc-border: var(--inno-border);
+	--doc-border-input: var(--inno-border);
+	--doc-primary: var(--inno-accent);
+	--doc-link: var(--inno-accent);
+}
+/* Word permits bold on regular-only faces such as SimSun. The application
+   chrome disables synthetic weight at :root; inheriting that policy made a
+   DOCX run with w:b and font-weight:bold paint as regular (e.g. “目录”). */
+.inno-word-docx .layout-run { font-synthesis-weight: auto; }
+/* The workspace file bar already names the document. Keep one owner for
+   opening and saving files; the packaged File menu is disabled in WordEditor. */
+/* The pinned 2.32 adapter renders this title row with inline display:flex.
+   Override it here because the workspace already owns the document title. */
+.inno-word-docx > div:first-child > div:first-child { display: none !important; }
+/* WordEditor opens in edit mode and the workspace owns returning to preview.
+   Remove the engine's redundant edit/suggest/view picker from the toolbar. */
+.inno-word-docx [data-slot="review.editingMode"] { display: none; }
 .inno-word-notice { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 12px; padding: 8px 20px; border-bottom: 1px solid var(--inno-border); background: var(--inno-surface-muted); color: var(--inno-text-muted); font-size: var(--text-sm, 14px); }
 .inno-word-editor { position: relative; }
 /* The save confirmation renders inside the pane (Dialog scoped mode) instead of
@@ -8134,6 +8339,16 @@ body.inno-smart-dragging .inno-smart-kw-hit::before {
 }
 .inno-word-confirm-dialog:not([open]) { display: none; }
 .inno-word-confirm-card { width: min(480px, calc(100% - 32px)); border: 1px solid var(--inno-border); border-radius: var(--radius-xl, 12px); background: var(--inno-surface-raised); color: var(--inno-text); }
+
+/* File delete confirmation (shared Dialog in the body top layer). Tailwind
+   preflight resets the UA dialog `margin: auto`, so centering is restored
+   here; the backdrop keeps the black/20 mask of the old hand-rolled overlay. */
+.inno-confirm-dialog {
+	margin: auto;
+	max-width: calc(100vw - 32px);
+}
+.inno-confirm-dialog::backdrop { background: rgba(0, 0, 0, 0.2); }
+.inno-confirm-dialog:not([open]) { display: none; }
 
 /* The preview pane is the size container for the shared file bar: in narrow
    panes (half/quarter layout, small windows) the bar collapses to icon-only

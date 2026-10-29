@@ -22,6 +22,8 @@ import { TodoWidget, extractTodoTasks } from "./TodoWidget.js";
 import { answeredQuestionnaireFromTool } from "../../utils/questionnaire.js";
 import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
 import { TerminalDrawer } from "../terminal/TerminalDrawer.js";
+import { officeDeliverables, type OfficeDeliverable } from "../../utils/office-deliverables.js";
+import { OfficeDocumentCards } from "./OfficeDocumentCards.js";
 
 function traceContainsAssistantText(message: ChatMessage): boolean {
 	if (message.trace?.some((step) => (step.kind === "progress" || step.kind === "answer") && Boolean(step.text?.trim()))) return true;
@@ -62,6 +64,7 @@ interface ChatConversationProps {
 	/** "随便问问" floating panel, rendered above the composer layer. */
 	btwPanel?: ReactNode;
 	onOpenAttachment: (file: AttachmentRef) => void;
+	onOpenDocument?: (file: OfficeDeliverable) => void;
 	onOpenSkill: (skillName: string) => void;
 	onEditMessage: (message: ChatMessage) => void;
 	canRetry: boolean;
@@ -99,6 +102,7 @@ export function ChatConversation({
 	btwControl,
 	btwPanel,
 	onOpenAttachment,
+	onOpenDocument,
 	onOpenSkill,
 	onEditMessage,
 	canRetry,
@@ -222,6 +226,18 @@ export function ChatConversation({
 		[chat.messages, chat.activeTools, chat.completedTools],
 	);
 	const activeWorkspaceId = useStoreSnapshot(workspaceStore, () => workspaceStore.activeWorkspaceId);
+	const documentsByOwner = useMemo(() => {
+		const result = new Map<number, OfficeDeliverable[]>();
+		for (const turn of conversationTurns) {
+			const messages = chat.messages.slice(turn.startMessageIndex, turn.endMessageIndex + 1);
+			// The trace owner may hide other assistant fragments from this turn.
+			// Aggregate once so repeated saves produce a single final card.
+			const owner = [...traceTurnPresentation.actionOwnerIndexes].find((index) => index >= turn.startMessageIndex && index <= turn.endMessageIndex)
+				?? [...lastAssistantMessageIndexes].find((index) => index >= turn.startMessageIndex && index <= turn.endMessageIndex);
+			if (owner !== undefined) result.set(owner, officeDeliverables(messages, activeWorkspaceId));
+		}
+		return result;
+	}, [chat.messages, conversationTurns, activeWorkspaceId, traceTurnPresentation, lastAssistantMessageIndexes]);
 	const resolveAttachmentUrl = useCallback(
 		(file: AttachmentRef) => workspaceFileUrl(file.path, activeWorkspaceId ?? undefined),
 		[activeWorkspaceId],
@@ -285,6 +301,7 @@ export function ChatConversation({
 								const isActiveTurnAssistant = activeTurnStartMessage !== undefined && index >= activeTurnStartMessage && message.role === "assistant";
 								const isTurnActionOwner = lastAssistantMessageIndexes.has(index) || traceTurnPresentation.actionOwnerIndexes.has(index);
 								const showActions = message.role === "user" || (isTurnActionOwner && !isActiveTurnAssistant);
+								const documents = !isActiveTurnAssistant ? documentsByOwner.get(index) ?? [] : [];
 								return (
 									<div key={messageKey} data-conversation-turn={turnIndex} data-entry-id={message.entryId}>
 										<MessageBubble
@@ -300,6 +317,7 @@ export function ChatConversation({
 											showRetry={canRetry && index === retryOwnerIndex}
 											showActions={showActions}
 											answeredQuestionnaires={traceTurnPresentation.questionnairesByOwner.get(index)}
+											resultContent={onOpenDocument && documents.length ? <OfficeDocumentCards files={documents} onOpen={onOpenDocument} /> : undefined}
 											onRetry={onRetry}
 										/>
 									</div>

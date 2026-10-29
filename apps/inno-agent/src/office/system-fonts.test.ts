@@ -1,199 +1,59 @@
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildFaceSfnt, parseSfntFaceNames, scanSystemFontFaces, subfamilyToWeightStyle, SystemFontService } from "./system-fonts.js";
+import { defaultSystemFontDirs, readFontMetadata, SystemFontService } from "./system-fonts.js";
 
-function u16(value: number): Buffer { const b = Buffer.alloc(2); b.writeUInt16BE(value); return b; }
-function u32(value: number): Buffer { const b = Buffer.alloc(4); b.writeUInt32BE(value); return b; }
-function tag(text: string): Buffer { return Buffer.from(text, "latin1"); }
+vi.mock("./engine-locator.js", () => ({ findSoffice: async () => "/opt/inno/Contents/MacOS/soffice" }));
 
-/** Build a minimal sfnt with one `name` table holding the given records. */
-function buildSfnt(records: Array<{ platform: number; encoding: number; language: number; nameId: number; value: string }>, options?: { faceOffset?: number }): Buffer {
-	const encoded = records.map((record) => {
-		const raw = record.platform === 1 ? Buffer.from(record.value, "latin1") : Buffer.from(record.value, "utf16le").swap16();
-		return { ...record, raw };
+const roots: string[] = [];
+afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
+async function temporary() { const root = await mkdtemp(join(tmpdir(), "inno-font-")); roots.push(root); return root; }
+
+/** Minimal sfnt metadata, including a format-1 name table's normal record offset. */
+function font(family: string, localized: string, weight = 400, faceOffset = 0) {
+	const values = [family, localized, "Regular"].map(s => { const b = Buffer.from(s, "utf16le"); return b.swap16(); });
+	const name = Buffer.alloc(6 + 3 * 12 + 2 + values.reduce((n, b) => n + b.length, 0));
+	name.writeUInt16BE(1, 0); name.writeUInt16BE(3, 2); name.writeUInt16BE(44, 4);
+	let data = 44;
+	values.forEach((value, i) => {
+		const at = 6 + i * 12; name.writeUInt16BE(3, at); name.writeUInt16BE(i === 1 ? 0x804 : 0x409, at + 4);
+		name.writeUInt16BE(i === 2 ? 2 : 1, at + 6); name.writeUInt16BE(value.length, at + 8); name.writeUInt16BE(data - 44, at + 10);
+		value.copy(name, data); data += value.length;
 	});
-	const storage = Buffer.concat(encoded.map((r) => r.raw));
-	let storageOffset = 0;
-	const recordBuffers = encoded.map((r) => {
-		const record = Buffer.concat([u16(r.platform), u16(r.encoding), u16(r.language), u16(r.nameId), u16(r.raw.length), u16(storageOffset)]);
-		storageOffset += r.raw.length;
-		return record;
-	});
-	const nameTable = Buffer.concat([u16(0), u16(encoded.length), u16(6 + encoded.length * 12), ...recordBuffers, storage]);
-	const tableDirectory = Buffer.concat([tag("name"), u32(0), u32(12 + 16), u32(nameTable.length)]);
-	const header = Buffer.concat([u32(0x00010000), u16(1), u16(16), u16(0), u16(0), tableDirectory]);
-	const faceOffset = options?.faceOffset ?? 0;
-	if (faceOffset > 0) return Buffer.concat([Buffer.alloc(faceOffset), header, nameTable]);
-	return Buffer.concat([header, nameTable]);
+	const os2 = Buffer.alloc(64); os2.writeUInt16BE(weight, 4);
+	const bytes = Buffer.alloc(44 + name.length + os2.length); bytes.writeUInt32BE(0x10000); bytes.writeUInt16BE(2, 4);
+	bytes.write("name", 12); bytes.writeUInt32BE(faceOffset + 44, 20); bytes.writeUInt32BE(name.length, 24);
+	bytes.write("OS/2", 28); bytes.writeUInt32BE(faceOffset + 44 + name.length, 36); bytes.writeUInt32BE(os2.length, 40);
+	name.copy(bytes, 44); os2.copy(bytes, 44 + name.length); return bytes;
 }
 
-function buildTtc(faceBuffers: Buffer[]): Buffer {
-	const header = Buffer.concat([tag("ttcf"), u32(0x00010000), u32(faceBuffers.length)]);
-	const offsetsSize = faceBuffers.length * 4;
-	let offset = header.length + offsetsSize;
-	const offsetBuffers = faceBuffers.map((face) => {
-		const entry = u32(offset);
-		offset += face.length;
-		return entry;
+describe("system font bytes for DOCX layout", () => {
+	it("includes the preview engine's private fonts in the editor catalog", async () => {
+		const dirs = await defaultSystemFontDirs();
+		expect(dirs).toContain(process.platform === "darwin" ? "/opt/inno/Contents/Resources/fonts" : "/opt/inno/Contents/share/fonts");
 	});
-	return Buffer.concat([header, ...offsetBuffers, ...faceBuffers]);
-}
-
-/** Apple-style collection: the face directory stores file-absolute offsets. */
-function buildTtcAbsolute(faceBuffers: Buffer[]): Buffer {
-	const header = Buffer.concat([tag("ttcf"), u32(0x00010000), u32(faceBuffers.length)]);
-	const offsetsSize = faceBuffers.length * 4;
-	let offset = header.length + offsetsSize;
-	const offsetBuffers: Buffer[] = [];
-	const relocated: Buffer[] = [];
-	for (const face of faceBuffers) {
-		offsetBuffers.push(u32(offset));
-		// Move each face's table directory plus its data, rewriting the table
-		// entries to stay face-relative so the faces themselves stay valid.
-		const numTables = face.readUInt16BE(4);
-		const shifted = Buffer.from(face);
-		for (let i = 0; i < numTables; i += 1) {
-			const base = 12 + i * 16;
-			shifted.writeUInt32BE(offset + face.readUInt32BE(base + 8), base + 8);
-		}
-		relocated.push(shifted);
-		offset += face.length;
-	}
-	return Buffer.concat([header, ...offsetBuffers, ...relocated]);
-}
-
-let dir: string;
-beforeAll(async () => {
-	dir = await mkdtemp(join(tmpdir(), "inno-system-fonts-"));
-	await writeFile(join(dir, "Times New Roman.ttf"), buildSfnt([
-		{ platform: 3, encoding: 1, language: 0x409, nameId: 1, value: "Times New Roman" },
-		{ platform: 3, encoding: 1, language: 0x409, nameId: 2, value: "Regular" },
-		{ platform: 1, encoding: 0, language: 0, nameId: 1, value: "Times New Roman" },
-	]));
-	await writeFile(join(dir, "Songti.ttc"), buildTtc([
-		buildSfnt([
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 1, value: "Songti SC" },
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 2, value: "Bold" },
-		]),
-		buildSfnt([
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 16, value: "宋体-简" },
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 17, value: "Light" },
-		]),
-	]));
-	await writeFile(join(dir, "broken.ttf"), Buffer.from("not a font at all"));
-	await writeFile(join(dir, "notes.txt"), Buffer.from("ignored"));
-});
-afterAll(async () => { await rm(dir, { recursive: true, force: true }); });
-
-describe("sfnt name parsing", () => {
-	it("reads family and subfamily from a simple TTF", () => {
-		const faces = parseSfntFaceNames(buildSfnt([
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 1, value: "Arial" },
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 2, value: "Bold Italic" },
-		]));
-		expect(faces).toEqual([{ family: "Arial", subfamily: "Bold Italic" }]);
+	it("retains localized family names and numeric OS/2 weights", async () => {
+		const root = await temporary(), path = join(root, "song.ttf");
+		await writeFile(path, font("SimSun", "宋体", 700));
+		expect(await readFontMetadata(path)).toEqual([{ family: "SimSun", aliases: ["SimSun", "宋体"], weight: 700, style: "normal", faceIndex: 0 }]);
 	});
-	it("prefers the typographic family ids when present", () => {
-		const faces = parseSfntFaceNames(buildSfnt([
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 1, value: "Songti SC Light" },
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 16, value: "Songti SC" },
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 17, value: "Light" },
-		]));
-		expect(faces).toEqual([{ family: "Songti SC", subfamily: "Light" }]);
+	it("preserves TTC face indices and uses file-absolute table offsets", async () => {
+		const root = await temporary(), path = join(root, "collection.ttc");
+		const first = font("Songti SC", "宋体-简", 400, 20);
+		const second = font("Songti SC", "宋体-简", 700, 20 + first.length);
+		const head = Buffer.alloc(20); head.write("ttcf"); head.writeUInt32BE(0x10000, 4); head.writeUInt32BE(2, 8); head.writeUInt32BE(20, 12); head.writeUInt32BE(20 + first.length, 16);
+		await writeFile(path, Buffer.concat([head, first, second]));
+		expect((await readFontMetadata(path)).map(f => [f.faceIndex, f.weight])).toEqual([[0, 400], [1, 700]]);
 	});
-	it("expands every face of a TrueType collection", () => {
-		const faces = parseSfntFaceNames(buildTtc([
-			buildSfnt([
-				{ platform: 3, encoding: 1, language: 0x409, nameId: 1, value: "Songti SC" },
-				{ platform: 3, encoding: 1, language: 0x409, nameId: 2, value: "Regular" },
-			]),
-			buildSfnt([
-				{ platform: 3, encoding: 1, language: 0x409, nameId: 1, value: "宋体-简" },
-				{ platform: 3, encoding: 1, language: 0x409, nameId: 2, value: "Black" },
-			]),
-		]));
-		expect(faces.map((face) => face.family)).toEqual(["Songti SC", "宋体-简"]);
-	});
-	it("maps subfamilies to CSS weight and style", () => {
-		expect(subfamilyToWeightStyle("Regular")).toEqual({ weight: 400, style: "normal" });
-		expect(subfamilyToWeightStyle("Bold")).toEqual({ weight: 700, style: "normal" });
-		expect(subfamilyToWeightStyle("Bold Italic")).toEqual({ weight: 700, style: "italic" });
-		expect(subfamilyToWeightStyle("Light")).toEqual({ weight: 300, style: "normal" });
-		expect(subfamilyToWeightStyle("Semibold")).toEqual({ weight: 600, style: "normal" });
-		expect(subfamilyToWeightStyle("Heavy Oblique")).toEqual({ weight: 900, style: "italic" });
-	});
-});
-
-describe("system font service", () => {
-	it("scans directories into deduplicated faces with opaque file refs", async () => {
-		const faces = await scanSystemFontFaces([dir]);
-		const families = faces.map((face) => face.family).sort();
-		// The broken binary is skipped silently; non-font extensions ignored.
-		expect(families).toEqual(["Songti SC", "Times New Roman", "宋体-简"]);
-		expect(faces.every((face) => /^0:/.test(face.file))).toBe(true);
-		const songtiBold = faces.find((face) => face.family === "Songti SC");
-		expect(songtiBold?.weight).toBe(700);
-	});
-	it("resolves opaque refs to contained files and refuses escapes", async () => {
-		const service = new SystemFontService([dir]);
-		const faces = await service.list();
-		const face = faces.find((candidate) => candidate.family === "Times New Roman")!;
-		const path = await service.resolveFacePath(face.file);
-		expect(path).toBe(join(dir, "Times New Roman.ttf"));
-		expect(await service.resolveFacePath("1:escape.ttf")).toBe(null);
-		expect(await service.resolveFacePath("0:no-such.ttf")).toBe(null);
-		expect(await service.resolveFacePath("../outside.ttf")).toBe(null);
-	});
-	it("serves the bytes of a listed face", async () => {
-		const service = new SystemFontService([dir]);
-		const faces = await service.list();
-		const face = faces.find((candidate) => candidate.family === "宋体-简")!;
-		const bytes = await service.readFaceBytes(face.file);
-		expect(bytes?.length).toBeGreaterThan(0);
-	});
-	it("extracts a referenced TTC face as a standalone sfnt", async () => {
-		const faceA = buildSfnt([
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 1, value: "Songti SC" },
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 2, value: "Bold" },
-		]);
-		const faceB = buildSfnt([
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 16, value: "宋体-简" },
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 17, value: "Light" },
-		]);
-		const collection = buildTtc([faceA, faceB]);
-		const extracted = buildFaceSfnt(collection, faceA.length + 12 + 8, false);
-		expect(parseSfntFaceNames(extracted)).toEqual([{ family: "宋体-简", subfamily: "Light" }]);
-	});
-	it("extracts faces from Apple-style absolute-offset collections", async () => {
-		const faceA = buildSfnt([
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 1, value: "Songti SC" },
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 2, value: "Regular" },
-		]);
-		const faceB = buildSfnt([
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 1, value: "宋体-简" },
-			{ platform: 3, encoding: 1, language: 0x409, nameId: 2, value: "Light" },
-		]);
-		const collection = buildTtcAbsolute([faceA, faceB]);
-		// Face 1 lives right after face 0's block in this layout.
-		const faceBOffset = 12 + 8 + faceA.length;
-		const extracted = buildFaceSfnt(collection, faceBOffset, true);
-		expect(parseSfntFaceNames(extracted)).toEqual([{ family: "宋体-简", subfamily: "Light" }]);
-	});
-	it("serves per-face bytes for TTC references ending in #index", async () => {
-		const service = new SystemFontService([dir]);
-		const faces = await service.list();
-		const songtiFaces = faces.filter((face) => face.family === "宋体-简" || face.family === "Songti SC");
-		expect(songtiFaces.length).toBeGreaterThanOrEqual(2);
-		const bytes = await service.readFaceBytes(songtiFaces[0].file);
-		expect(bytes).not.toBeNull();
-		const parsed = parseSfntFaceNames(bytes!);
-		expect(parsed.map((face) => face.family)).toContain(songtiFaces[0].family);
-	});
-	it("rejects non-font extensions before touching the filesystem", async () => {
-		const service = new SystemFontService([dir]);
-		expect(await service.resolveFacePath("0:notes.txt")).toBe(null);
-		expect(await service.readFaceBytes("0:notes.txt")).toBe(null);
+	it("serves only catalog ids and rejects symlinks escaping a font root", async () => {
+		const root = await temporary(), outside = await temporary();
+		const bytes = font("SimSun", "宋体"); await writeFile(join(root, "song.ttf"), bytes);
+		await writeFile(join(outside, "secret.ttf"), bytes); await symlink(join(outside, "secret.ttf"), join(root, "escape.ttf"));
+		const service = new SystemFontService(async () => [root]);
+		const pending = service.list(); expect(service.list()).toBe(pending);
+		const faces = await pending; expect(faces).toHaveLength(1); expect(faces[0].id).toMatch(/^[a-f0-9]{64}$/);
+		expect(await service.read(faces[0].id)).toEqual(bytes);
+		expect(await service.read("../secret.ttf")).toBeNull();
 	});
 });

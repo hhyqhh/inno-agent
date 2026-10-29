@@ -16,7 +16,7 @@ beforeEach(async () => {
 	root = await mkdtemp(join(tmpdir(), "office-worker-")); converter = new OfficePdfConverter(root); fail = false; fontConfig = "";
 	vi.stubEnv("FONTCONFIG_FILE", "");
 	vi.spyOn(process, "kill").mockImplementation(() => true);
-	vi.mocked(getOfficeEngine).mockResolvedValue({ path: "/test/LibreOffice.app/Contents/MacOS/soffice", fingerprint: "26.8.1" });
+	vi.mocked(getOfficeEngine).mockResolvedValue({ path: "/test/LibreOffice.app/Contents/MacOS/soffice", fingerprint: "26.8.1", version: "LibreOffice 26.8.1 test" });
 	vi.mocked(spawn).mockImplementation(((_path: string, args: string[], options: { env: NodeJS.ProcessEnv }) => {
 		profile = fileURLToPath(args[0].split("=").slice(1).join("="));
 		fontConfig = options.env.FONTCONFIG_FILE ?? "";

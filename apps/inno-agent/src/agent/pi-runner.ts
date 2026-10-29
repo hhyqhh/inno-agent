@@ -515,8 +515,13 @@ export function syncConfig(config: InnoConfig): void {
 }
 
 /**
- * Get the singleton runtime session. Throws if not initialized.
+ * Read runtime metadata without forcing Agent startup.
  */
+export function getSessionIfInitialized(): AgentSession | null {
+	return _runtime?.session ?? null;
+}
+
+/** Get the singleton runtime session. Throws if not initialized. */
 export function getSession(): AgentSession {
 	if (!_runtime) throw new Error("Session not initialized. Call initSession() first.");
 	return _runtime.session;
@@ -1015,7 +1020,8 @@ export async function abortJobPromptInSession(sessionPath: string): Promise<bool
  * Return current runtime session id.
  */
 export function getCurrentSessionId(): string {
-	const sessionFile = getSession().sessionFile;
+	// Read-only routes run before Agent initialization; no runtime means no active session.
+	const sessionFile = getSessionIfInitialized()?.sessionFile;
 	return sessionFile ? basename(sessionFile) : "";
 }
 

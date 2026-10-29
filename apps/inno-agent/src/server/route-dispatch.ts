@@ -4,7 +4,7 @@ type RouteHandler = (req: IncomingMessage, res: ServerResponse, method: string, 
 
 export type RouteHandlers = Record<
 	| "checkins" | "jobs" | "channels" | "skills" | "sessions" | "search" | "wiki" | "learner"
-	| "workspaces" | "presets" | "practice" | "settings" | "commands" | "btw" | "chat" | "system",
+	| "workspaces" | "presets" | "practice" | "settings" | "commands" | "btw" | "chat",
 	RouteHandler
 >;
 
@@ -35,7 +35,6 @@ export function createRouteDispatcher(handlers: RouteHandlers) {
 		{ prefix: "/api/mcp", handler: handlers.settings },
 		{ prefix: "/api/commands", handler: handlers.commands },
 		{ prefix: "/api/btw", handler: handlers.btw },
-		{ prefix: "/api/system", handler: handlers.system },
 		{ prefix: "/api/chat", handler: handlers.chat },
 	];
 	const byPrefix = new Map<string, RouteHandler[]>();
@@ -55,4 +54,14 @@ export function createRouteDispatcher(handlers: RouteHandlers) {
 		return false;
 	};
 	return { registry, dispatch };
+}
+
+/** Data routes stay usable while extension/MCP startup runs in the background. */
+export function requiresAgent(method: string, url: string): boolean {
+	const path = url.split("?", 1)[0];
+	if (method === "GET") return path === "/api/commands";
+	if (method !== "POST") return false;
+	return ["/api/chat", "/api/chat/stream", "/api/sessions", "/api/btw/ask", "/api/btw/bring-back", "/api/bridge/messages"].includes(path)
+		|| /^\/api\/sessions\/[^/]+\/(activate|branch-before-message|generate-topic)$/.test(path)
+		|| /^\/api\/jobs\/[^/]+\/run(?:\/stream)?$/.test(path);
 }

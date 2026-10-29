@@ -645,25 +645,35 @@ export async function handleWorkspacesRoutes(
 		if (contentBase64 !== null && !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(contentBase64)) {
 			json(res, 400, { error: "Invalid base64 content" }); return true;
 		}
-		const needsOfficeBackup = contentBase64 !== null && [".xlsx", ".pptx"].includes(extname(fullPath).toLowerCase());
+		const createOnly = body.createOnly === true;
+		const needsOfficeBackup = !createOnly && contentBase64 !== null && [".xlsx", ".pptx"].includes(extname(fullPath).toLowerCase());
 		if (needsOfficeBackup && body.confirmOverwrite !== true) {
-			json(res, 409, { error: "Confirm the format-loss warning before overwriting", code: "OFFICE_OVERWRITE_CONFIRMATION_REQUIRED" }); return true;
+			json(res, 409, { error: "Confirm before overwriting the original file", code: "OFFICE_OVERWRITE_CONFIRMATION_REQUIRED" }); return true;
 		}
 		await serializeFileSave(fullPath, async () => {
 			let output;
-			try { output = await open(fullPath, "r+"); }
+			try { output = await open(fullPath, createOnly ? "wx" : "r+"); }
 			catch (error) {
+				// Exclusive creation makes Save copy incapable of replacing an existing file,
+				// including concurrent saves choosing the same destination.
+				if (createOnly && (error as NodeJS.ErrnoException).code === "EEXIST") { json(res, 409, { error: "File already exists" }); return; }
 				if (["ENOENT", "EISDIR", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) { json(res, 404, { error: "File not found" }); return; }
 				throw error;
 			}
 			try {
-				if (!(await output.stat()).isFile()) { json(res, 404, { error: "File not found" }); return; }
+				const originalInfo = await output.stat();
+				if (!originalInfo.isFile()) { json(res, 404, { error: "File not found" }); return; }
+				// The preserving export is based on the imported source. A newer
+				// external edit must be reloaded, not replaced by that old package.
+				if (!createOnly && typeof body.expectedUpdatedAt === "string" && body.expectedUpdatedAt !== originalInfo.mtime.toISOString()) {
+					json(res, 409, { error: "原文件已被其他操作修改，请保存副本或重新打开。 / Original changed; save a copy or reopen.", code: "FILE_CHANGED" }); return;
+				}
 				let backupPath: string | undefined;
 				if (needsOfficeBackup) {
 					const extension = extname(normalized);
 					backupPath = `${normalized.slice(0, -extension.length)}.backup-${Date.now()}-${randomUUID()}${extension}`;
 					const backupFile = await resolveContainedPathAsync(root!, backupPath);
-					// XLSX/PPTX conversion drops unsupported content. A unique,
+					// An overwrite still needs a recovery point. A unique,
 					// exclusive byte-for-byte backup must succeed before any write.
 					try {
 						if (!backupFile) throw new Error("Invalid backup path");

@@ -33,6 +33,22 @@ describe("workspace in-place saves", () => {
 		expect((await put({ path, contentBase64: bytes.toString("base64"), confirmOverwrite: true })).status).toBe(200);
 		expect(await readFile(join(root, path))).toEqual(bytes);
 	});
+    it.each(["budget.xlsx", "deck.pptx"])("creates an edited %s copy without confirmation or changing the source", async (path) => {
+        await writeFile(join(root, path), "original");
+        const result = await put({ path: `copy-${path}`, contentBase64: "bmV3", createOnly: true });
+        expect(result.status).toBe(200);
+        expect(JSON.parse(result.body).backupPath).toBeUndefined();
+        expect(await readFile(join(root, path), "utf8")).toBe("original");
+        expect(await readFile(join(root, `copy-${path}`), "utf8")).toBe("new");
+        expect((await put({ path, contentBase64: "eA==", createOnly: true, confirmOverwrite: true })).status).toBe(409);
+        expect(await readFile(join(root, path), "utf8")).toBe("original");
+    });
+    it("allows only one concurrent creator of a copy destination", async () => {
+        const results = await Promise.all(["YQ==", "Yg=="].map(contentBase64 => put({ path: "copy.xlsx", contentBase64, createOnly: true })));
+        expect(results.map(r => r.status).sort()).toEqual([200, 409]);
+        expect(await readFile(join(root, "copy.xlsx"), "utf8")).toBe("a");
+    });
+
 	it("requires confirmation and backs up exact original bytes before each overwrite", async () => {
 		const path = "budget.xlsx";
 		const original = Buffer.from([0, 128, 255]);
@@ -47,6 +63,15 @@ describe("workspace in-place saves", () => {
 		expect(await readFile(join(root, backups[1]), "utf8")).toBe("first");
 		expect(await readFile(join(root, path), "utf8")).toBe("second");
 	});
+    it("refuses to overwrite a source changed since it was imported", async () => {
+        await writeFile(join(root, "budget.xlsx"), "new external edit");
+        const result = await put({ path: "budget.xlsx", contentBase64: "eA==", confirmOverwrite: true, expectedUpdatedAt: "2000-01-01T00:00:00.000Z" });
+        expect(result.status).toBe(409);
+        expect(JSON.parse(result.body).code).toBe("FILE_CHANGED");
+        expect(await readFile(join(root, "budget.xlsx"), "utf8")).toBe("new external edit");
+        expect(await fs.readdir(root)).toEqual(["budget.xlsx"]);
+    });
+
 	it("leaves the original unchanged when backup creation fails", async () => {
 		await writeFile(join(root, "deck.pptx"), "original");
 		vi.mocked(fs.copyFile).mockRejectedValueOnce(new Error("disk full"));

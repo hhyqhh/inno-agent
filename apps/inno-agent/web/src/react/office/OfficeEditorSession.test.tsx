@@ -43,7 +43,7 @@ it.each(["light", "dark"])("confirms overwrites and displays the backup in the %
     await waitFor(() => expect(saveWorkspaceFileBinary).toHaveBeenCalledOnce());
     const [path, bytes, owner, options] = vi.mocked(saveWorkspaceFileBinary).mock.calls[0];
     expect(path).toBe("budget.xlsx");
-    expect(options).toEqual({ confirmOverwrite: true });
+    expect(options).toEqual({ confirmOverwrite: true, expectedUpdatedAt: "now" });
     expect(bytes).toEqual(new Uint8Array([1, 2]));
     expect(owner).toBe("owner");
     expect(await screen.findByText("wordEditor.saved")).toBeTruthy();
@@ -99,4 +99,48 @@ it("cancels the warning without exporting or overwriting", async () => {
     fireEvent.click(screen.getByRole("button", { name: "common.cancel" }));
     expect(exported.run).not.toHaveBeenCalled();
     expect(saveWorkspaceFileBinary).not.toHaveBeenCalled();
+});
+
+it.each(["light", "dark"])("saves the current draft as a new file in the %s theme without confirming an overwrite", async (theme) => {
+    document.documentElement.dataset.theme = theme;
+    vi.mocked(saveWorkspaceFileBinary).mockImplementation(async (path) => ({ path, saved: true, size: 2, updatedAt: "now" }));
+    const { ref } = await setup();
+    fireEvent.click(screen.getByRole("button", { name: "budget.xlsx edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "officeEditor.saveCopy" }));
+    await screen.findByText("officeEditor.copySaved");
+    const [path, bytes, owner, options] = vi.mocked(saveWorkspaceFileBinary).mock.calls[0];
+    expect(path).toMatch(/^budget\.edited-[0-9]+-[a-f0-9-]+\.xlsx$/);
+    expect(path).not.toBe(file.path);
+    expect(bytes).toEqual(new Uint8Array([1, 2]));
+    expect(owner).toBe("owner");
+    expect(options).toEqual({ createOnly: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText(/officeEditor.copyPath/).textContent).toContain(path);
+    act(() => { expect(ref.current!.requestCloseTab()).toBe(false); });
+});
+it("keeps a draft unsaved when preserving export refuses an unsupported edit", async () => {
+    exported.run.mockRejectedValue(new Error("Cannot preserve this edit"));
+    const { ref } = await setup();
+    fireEvent.click(screen.getByRole("button", { name: "budget.xlsx edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "officeEditor.saveCopy" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Cannot preserve this edit");
+    expect(saveWorkspaceFileBinary).not.toHaveBeenCalled();
+    act(() => { expect(ref.current!.requestCloseTab()).toBe(true); });
+});
+
+it("keeps the editor free of a persistent warning banner", async () => {
+    await setup();
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(screen.queryByText("officeEditor.overwriteNotice")).toBeNull();
+    expect(screen.getByRole("button", { name: "officeEditor.saveCopy" }).getAttribute("aria-label")).toBe("officeEditor.saveCopy");
+});
+it("uses the latest successful overwrite version for the next save", async () => {
+    await setup();
+    vi.mocked(saveWorkspaceFileBinary).mockResolvedValue({ path: file.path, saved: true, size: 1, updatedAt: "new-version" });
+    for (let i = 0; i < 2; i++) {
+        fireEvent.click(screen.getByRole("button", { name: "wordEditor.save" }));
+        fireEvent.click(screen.getByRole("button", { name: "officeEditor.confirmOverwrite" }));
+        await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    }
+    expect(vi.mocked(saveWorkspaceFileBinary).mock.calls[1][3]).toEqual({ confirmOverwrite: true, expectedUpdatedAt: "new-version" });
 });

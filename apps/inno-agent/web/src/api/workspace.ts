@@ -60,7 +60,7 @@ export async function saveWorkspaceFile(path: string, content: string, workspace
 }
 
 /** Save binary file bytes (WYSIWYG office editors) over the same PUT route. */
-export async function saveWorkspaceFileBinary(path: string, bytes: Blob | ArrayBuffer | Uint8Array, workspaceId?: string, options?: { confirmOverwrite: boolean }): Promise<{ path: string; saved: boolean; size: number; updatedAt: string; backupPath?: string }> {
+export async function saveWorkspaceFileBinary(path: string, bytes: Blob | ArrayBuffer | Uint8Array, workspaceId?: string, options?: { confirmOverwrite?: boolean; createOnly?: boolean; expectedUpdatedAt?: string }): Promise<{ path: string; saved: boolean; size: number; updatedAt: string; backupPath?: string }> {
 	let buf: ArrayBuffer;
 	if (bytes instanceof Blob) buf = await bytes.arrayBuffer();
 	else if (bytes instanceof Uint8Array) buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;

@@ -1,17 +1,6 @@
-/**
- * ExcelJS ↔ Univer snapshot conversion for the xlsx editor.
- *
- * Univer's xlsx import/export is a Pro feature; this converter covers the
- * open-source subset we need. The former SheetJS-based build lost every rich
- * style on save (the community build cannot write styles), so the pipeline now
- * round-trips through ExcelJS, which reads and writes them.
- *
- * Preserved across edit→save: values, formulas, merges, column widths, row
- * heights, and the common cell styles (bold, italic, font family/size, font
- * color, background fill, horizontal/vertical alignment, wrap, number
- * format, the four plain borders). Still NOT preserved: charts, images,
- * conditional formatting, data validation, pivot tables, shared formulas
- * (kept as static values) and rich text (flattened to plain text).
+/** ExcelJS ↔ Univer view conversion. This is intentionally an incomplete
+ * representation: editor saves use office-ooxml.ts to patch the original ZIP.
+ * The standalone converter below must not be used to overwrite an import.
  */
 import ExcelJS from "exceljs";
 
@@ -88,6 +77,9 @@ export interface UniverCell {
 }
 
 interface UniverSheetData {
+	scrollTop?: number;
+	scrollLeft?: number;
+	zoomRatio?: number;
 	id: string;
 	name: string;
 	rowCount: number;
@@ -99,6 +91,7 @@ interface UniverSheetData {
 }
 
 export interface UniverWorkbookData {
+	dateSystem?: "date1900" | "date1904";
 	id: string;
 	name: string;
 	sheetOrder: string[];
@@ -246,7 +239,10 @@ export function excelJsToUniver(workbook: ExcelJS.Workbook, name: string): Unive
                         // Dates are numeric Excel values, including fractional
                         // days. Flattening them to strings breaks date formulas.
                         out.v = raw.getTime() / 86_400_000 + 25569;
-                        if (out.v < 61) out.v--;
+                        // The editor supports both epochs; preserving saves keep the
+                        // original workbookPr, so numeric dates must use its epoch.
+                        if (workbook.properties.date1904) out.v -= 1462;
+                        else if (out.v < 61) out.v--;
                         out.t = T_NUMBER;
 					} else {
 						// richText / hyperlink / formulaError / sharedFormula — flatten.
@@ -296,7 +292,7 @@ export function excelJsToUniver(workbook: ExcelJS.Workbook, name: string): Unive
 		};
 		sheetOrder.push(id);
 	});
-	return { id: `wb-${Date.now()}`, name, sheetOrder, sheets };
+	return { id: `wb-${Date.now()}`, name, sheetOrder, sheets, dateSystem: workbook.properties.date1904 ? "date1904" : "date1900" };
 }
 
 function resolveStyle(cell: UniverCell, styles?: Record<string, UniverStyle | null>): UniverStyle | undefined {
@@ -345,6 +341,7 @@ function univerStyleToExcel(cell: ExcelJS.Cell, style: UniverStyle): void {
 export function univerToExcelJs(snapshot: UniverWorkbookData, name: string): ExcelJS.Workbook {
 	const wb = new ExcelJS.Workbook();
 	wb.creator = name;
+	wb.properties.date1904 = snapshot.dateSystem === "date1904";
 	for (const sheetId of snapshot.sheetOrder) {
 		const sheet = snapshot.sheets[sheetId];
 		if (!sheet) continue;

@@ -1,15 +1,17 @@
 /** PPTist bridge with correlated exports and deterministic teardown. */
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { preservePptx, type PptxSnapshot } from "./office-ooxml.js";
 import type { OfficeEditorHandle, OfficeEditorProps } from "./office-editor-handle.js";
 
 interface PendingExport {
     id: number;
-    resolve(buffer: Uint8Array): void;
+    resolve(snapshot: PptxSnapshot): void;
     reject(error: Error): void;
     timer: ReturnType<typeof setTimeout>;
 }
 const PptxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function PptxEditor({ file, onReadyChange, onInteract }, ref) {
     const iframe = useRef<HTMLIFrameElement>(null);
+    const source = useRef<{ bytes: Uint8Array; baseline?: PptxSnapshot } | null>(null);
     const pending = useRef<PendingExport | null>(null);
     const nextId = useRef(0);
     const callbacks = useRef({ onReadyChange, onInteract });
@@ -36,10 +38,12 @@ const PptxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function Pp
                     const response = await fetch(file.url ?? "", { signal: abort.signal });
                     if (!response.ok) throw new Error(`Failed to load presentation (${response.status})`);
                     const buffer = await response.arrayBuffer();
+                    if (!cancelled) source.current = { bytes: new Uint8Array(buffer.slice(0)) };
                     if (!cancelled) iframe.current?.contentWindow?.postMessage({ type: "pptist:load", buffer, name: file.name }, origin, [buffer]);
                 } catch (err) { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); }
             }
-            if (data.type === "pptist:loaded") {
+            if (data.type === "pptist:loaded" && source.current && data.snapshot?.slides instanceof Array) {
+                source.current.baseline = data.snapshot;
                 clearTimeout(loadTimer);
                 setLoaded(true);
                 callbacks.current.onReadyChange?.(true);
@@ -51,16 +55,17 @@ const PptxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function Pp
                 if (call && call.id === data.requestId) { clearTimeout(call.timer); pending.current = null; call.reject(new Error(String(data.error))); }
             }
             const call = pending.current;
-            if (data.type === "pptist:exported" && call && data.requestId === call.id && data.buffer instanceof ArrayBuffer) {
+            if (data.type === "pptist:exported" && call && data.requestId === call.id && data.snapshot?.slides instanceof Array) {
                 clearTimeout(call.timer);
                 pending.current = null;
-                call.resolve(new Uint8Array(data.buffer));
+                call.resolve(data.snapshot);
             }
         };
         window.addEventListener("message", onMessage);
         return () => {
             cancelled = true;
             abort.abort();
+            source.current = null;
             clearTimeout(loadTimer);
             window.removeEventListener("message", onMessage);
             if (pending.current) { clearTimeout(pending.current.timer); pending.current.reject(new Error("Editor closed")); pending.current = null; }
@@ -72,7 +77,7 @@ const PptxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function Pp
             if (!loaded || pending.current) throw new Error("Editor is not ready");
             // A request id prevents an export that arrived after its timeout
             // from satisfying a later save with the wrong document bytes.
-            const bytes = await new Promise<Uint8Array>((resolve, reject) => {
+            const snapshot = await new Promise<PptxSnapshot>((resolve, reject) => {
                 const id = ++nextId.current;
                 const timer = setTimeout(() => {
                     if (pending.current?.id !== id) return;
@@ -82,7 +87,8 @@ const PptxEditor = forwardRef<OfficeEditorHandle, OfficeEditorProps>(function Pp
                 pending.current = { id, timer, resolve, reject };
                 iframe.current?.contentWindow?.postMessage({ type: "pptist:export", requestId: id }, origin);
             });
-            return bytes;
+            if (!source.current?.baseline) throw new Error("No original presentation snapshot");
+            return preservePptx(source.current.bytes, source.current.baseline, snapshot);
         },
     }), [loaded, origin, file.path, file.url]);
 

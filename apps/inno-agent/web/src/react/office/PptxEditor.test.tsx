@@ -5,6 +5,8 @@ import PptxEditor from "./PptxEditor.js";
 import type { OfficeEditorHandle } from "./office-editor-handle.js";
 import type { WorkspaceFileDetail } from "../../types/workspace.js";
 
+const snapshot = { slides: [] };
+vi.mock("./office-ooxml.js", () => ({ preservePptx: vi.fn(async (_original, _baseline, current) => new Uint8Array([current.value])) }));
 const file = { path: "deck.pptx", name: "deck.pptx", format: "pptx", url: "/deck?workspaceId=owner" } as WorkspaceFileDetail;
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 async function setup() {
@@ -24,7 +26,7 @@ async function setup() {
 it("waits for completed import and accepts immediate changes only from its iframe", async () => {
 	const { ready, dirty, message } = await setup();
 	expect(ready).not.toHaveBeenCalledWith(true);
-	await message({ type: "pptist:loaded" });
+	await message({ type: "pptist:loaded", snapshot });
 	expect(ready).toHaveBeenCalledWith(true);
 	await message({ type: "pptist:change" }, window);
 	await message({ type: "pptist:change" }, null, "https://other.example");
@@ -34,7 +36,7 @@ it("waits for completed import and accepts immediate changes only from its ifram
 });
 it("does not let a late timed-out export satisfy the next save", async () => {
 	const { ref, message, post } = await setup();
-	await message({ type: "pptist:loaded" });
+	await message({ type: "pptist:loaded", snapshot });
 	vi.useFakeTimers();
 	const first = ref.current!.exportBytes().catch((error) => error);
 	const firstId = (post.mock.calls.at(-1)![0] as { requestId: number }).requestId;
@@ -42,13 +44,13 @@ it("does not let a late timed-out export satisfy the next save", async () => {
 	expect(await first).toBeInstanceOf(Error);
 	const second = ref.current!.exportBytes();
 	const secondId = (post.mock.calls.at(-1)![0] as { requestId: number }).requestId;
-	await message({ type: "pptist:exported", requestId: firstId, buffer: new Uint8Array([1]).buffer });
-	await message({ type: "pptist:exported", requestId: secondId, buffer: new Uint8Array([2]).buffer });
+	await message({ type: "pptist:exported", requestId: firstId, snapshot: { ...snapshot, value: 1 } });
+	await message({ type: "pptist:exported", requestId: secondId, snapshot: { ...snapshot, value: 2 } });
 	expect(await second).toEqual(new Uint8Array([2]));
 });
 it("settles a pending save when the editor is unmounted", async () => {
 	const { ref, message, mounted } = await setup();
-	await message({ type: "pptist:loaded" });
+	await message({ type: "pptist:loaded", snapshot });
 	const saved = ref.current!.exportBytes().catch((error) => error);
 	mounted.unmount();
 	expect(await saved).toBeInstanceOf(Error);

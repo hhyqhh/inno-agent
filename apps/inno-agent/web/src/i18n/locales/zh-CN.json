@@ -1,9 +1,15 @@
 {
   "officeEditor": {
-    "overwriteTitle": "备份并覆盖原文件？",
-    "overwriteNotice": "此编辑器可能丢失图表、图片及部分格式。保存前会在同一文件夹创建原文件的 .backup- 备份；备份失败时不会覆盖。是否继续？",
-    "confirmOverwrite": "备份并覆盖",
-    "backupSaved": "原文件备份："
+      "overwriteTitle": "备份并覆盖原文件？",
+      "overwriteNotice": "将当前编辑写回原文件。保存前会在同一文件夹创建原文件的 .backup- 备份；备份失败时不会覆盖。也可以取消后选择“保存副本”。",
+      "confirmOverwrite": "备份并覆盖",
+      "backupSaved": "原文件备份：",
+      "saveCopy": "保存副本",
+      "copySaved": "副本已保存",
+      "copyPath": "副本路径：",
+      "xlsxLimits": "保真保存仅支持单元格值与普通公式；保留原文件的图片、图表及格式。暂不支持格式、行列、工作表结构及复杂公式修改，不支持的编辑会阻止保存。",
+      "pptxLimits": "保真保存仅支持可唯一映射的已有单段纯文本；保留原文件其他内容。暂不支持格式、布局、增删对象或幻灯片；不支持的编辑会阻止保存。",
+      "unsupportedCommand": "为保留原文件内容，暂不支持此操作。仅可编辑单元格值与普通公式；粘贴请使用“仅粘贴值”。"
   },
 	"workspaceStart": {
 		"tab": "起始页",

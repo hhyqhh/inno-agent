@@ -34,7 +34,9 @@ Source archive: https://codeload.github.com/pipipi-pikachu/PPTist/tar.gz/$PPTIST
 Inno Agent modifications: https://github.com/hhyqhh/inno-agent/blob/refactor/scripts/patches/pptist-embed.patch
 Rebuild: run scripts/prepare-pptist.sh from the Inno Agent repository.
 The upstream lockfile pins dependencies; the patch adds the host bridge,
-import completion/error signals, export correlation, and the crop correction.
+import completion/error signals, correlated model snapshots for preserving saves,
+fixed imported text boxes, immediate model updates, host-owned file actions,
+and the standalone export crop correction.
 SOURCE
 # Replace only after the entire rebuild succeeds.
 rm -rf "$DEST_DIR"

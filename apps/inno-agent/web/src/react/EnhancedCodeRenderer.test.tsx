@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderWithTooltipProvider as render } from "./test-utils.js";
 import { MarkdownArtifact } from "./MarkdownArtifact.js";
 
 vi.mock("react-i18next", () => ({
@@ -32,7 +33,7 @@ describe("code block header actions", () => {
 		expect(moreButton).not.toBeNull();
 		expect(moreButton?.textContent).toContain("更多");
 
-		fireEvent.click(getByRole("button", { name: "更多" }));
+		fireEvent.pointerDown(getByRole("button", { name: "更多" }), { button: 0, pointerType: "mouse" });
 		expect(queryByRole("menuitem", { name: "编辑副本" })).toBeNull();
 		expect(getByRole("menuitem", { name: "自动换行" })).not.toBeNull();
 		expect(queryByRole("menuitem", { name: "运行代码" })).toBeNull();

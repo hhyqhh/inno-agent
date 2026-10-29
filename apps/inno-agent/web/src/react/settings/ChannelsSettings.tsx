@@ -5,9 +5,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { settingsStore } from "../../stores/settings-store.js";
 import { feishuQrRegister, feishuQrStatus, wechatQrLogin, wechatQrStatus, wechatStatus } from "../../api/settings.js";
 import type { InnoSettings, ChannelsSettingsPayload, PersonalBridgeChannelConfig } from "../../types/settings.js";
-import { inputCls } from "../ui/input.js";
-import { checkboxCls } from "../ui/checkbox.js";
-import { Switch } from "../ui/Switch.js";
+import { Button, Checkbox, Input, Switch, Textarea } from "../ui/index.js";
 import { SettingsSection } from "./primitives.js";
 
 const labelCls = "mb-0.5 block text-xs text-[var(--inno-text-muted)]";
@@ -76,13 +74,14 @@ function QrPanel({ children }: { children: ReactNode }) {
 
 function QrActionButton({ label, onClick }: { label: string; onClick: () => void }) {
 	return (
-		<button
-			className="flex items-center gap-1.5 rounded-md inno-primary-button px-3 py-1.5 text-xs text-white"
+		<Button
+			variant="primary"
+			size="sm"
 			onClick={onClick}
 		>
 			<QrCodeIcon size={14} />
 			{label}
-		</button>
+		</Button>
 	);
 }
 
@@ -100,14 +99,14 @@ function AccessControl({ personalOnly, onPersonalOnlyChange, userIds, onUserIdsC
 		<div className="grid gap-2">
 			{personalOnly !== undefined && (
 				<label className={checkCls}>
-					<input type="checkbox" className={checkboxCls} checked={personalOnly} onChange={(e) => onPersonalOnlyChange?.(e.target.checked)} />
+					<Checkbox checked={personalOnly} onChange={(e) => onPersonalOnlyChange?.(e.target.checked)} />
 					{t("settings.channels.personalOnly")}
 				</label>
 			)}
 			<div>
 				<label className={labelCls}>{t("settings.channels.allowedUserIds")}</label>
-				<textarea
-					className={`${inputCls} h-14 resize-y`}
+				<Textarea
+					className="h-14 resize-y"
 					placeholder={t("settings.channels.allowedUserIdsHint") ?? ""}
 					value={userIds}
 					onChange={(e) => onUserIdsChange(e.target.value)}
@@ -227,11 +226,11 @@ function FeishuChannel({ settings, state, onStateChange }: {
 					<div className="grid grid-cols-2 gap-2">
 						<div>
 							<label className={labelCls}>{t("settings.channels.feishu.appId")}</label>
-							<input className={inputCls} value={state.appId} onChange={(e) => onStateChange({ appId: e.target.value })} />
+							<Input size="sm" value={state.appId} onChange={(e) => onStateChange({ appId: e.target.value })} />
 						</div>
 						<div>
 							<label className={labelCls}>{t("settings.channels.feishu.appSecret")} {settings.feishu?.appSecret && <span className="text-[var(--inno-text-subtle)]">(••••)</span>}</label>
-							<input className={inputCls} type="password" placeholder={t("settings.channels.feishu.appSecretHint") ?? ""} value={state.appSecret} onChange={(e) => onStateChange({ appSecret: e.target.value })} />
+							<Input size="sm" type="password" placeholder={t("settings.channels.feishu.appSecretHint") ?? ""} value={state.appSecret} onChange={(e) => onStateChange({ appSecret: e.target.value })} />
 						</div>
 					</div>
 					<AccessControl
@@ -470,7 +469,7 @@ export function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 							<div className="text-xs text-[var(--inno-text-subtle)]">{t("settings.channels.qq.desc")}</div>
 						</div>
 						<label className={checkCls}>
-							<input type="checkbox" className={checkboxCls} checked={qqEnabled} onChange={(e) => setQqEnabled(e.target.checked)} />
+							<Checkbox checked={qqEnabled} onChange={(e) => setQqEnabled(e.target.checked)} />
 							{t("settings.channels.enabled")}
 						</label>
 					</div>
@@ -478,7 +477,7 @@ export function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 						<div className="grid grid-cols-2 gap-2">
 							<div className="col-span-2">
 								<label className={labelCls}>{t("settings.channels.sidecarBaseUrl")}</label>
-								<input className={inputCls} value={qqSidecarUrl} onChange={(e) => setQqSidecarUrl(e.target.value)} />
+								<Input size="sm" value={qqSidecarUrl} onChange={(e) => setQqSidecarUrl(e.target.value)} />
 							</div>
 							<div className="col-span-2">
 								<AccessControl
@@ -500,8 +499,8 @@ export function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 				<div className="rounded-lg bg-[var(--inno-surface)] p-4">
 					<div className="text-xs font-medium text-[var(--inno-text)] mb-1">{t("settings.channels.bridgeToken")}</div>
 					<div className="text-xs text-[var(--inno-text-subtle)] mb-2">{t("settings.channels.bridgeTokenHint")}</div>
-					<input
-						className={inputCls}
+					<Input
+						size="sm"
 						type="password"
 						placeholder={settings.bridge?.token ? t("settings.channels.bridgeTokenPlaceholder") ?? "" : ""}
 						value={bridgeToken}
@@ -514,13 +513,14 @@ export function ChannelsSettings({ settings }: { settings: InnoSettings }) {
 			<div className="grid justify-items-start gap-2">
 				{formError && <div className="w-full rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div>}
 				{saveMsg && <div className="w-full rounded bg-[var(--inno-success-bg)] px-2 py-1 text-xs text-[var(--inno-success)]">{saveMsg}</div>}
-				<button
-					className="rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50"
+				<Button
+					variant="primary"
+					size="sm"
 					disabled={saving}
 					onClick={() => void handleSave()}
 				>
 					{saving ? t("settings.channels.saving") : t("settings.channels.save")}
-				</button>
+				</Button>
 			</div>
 		</SettingsSection>
 	);

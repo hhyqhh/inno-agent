@@ -93,17 +93,20 @@ export function EnhancedTable({ children, className, node: _node, ...props }: En
 									{copied ? <Check size={14} /> : <Copy size={14} />}
 								</ToolbarIconButton> : null}
 								{downloadEnabled || fullscreenEnabled ? (
-									<div className="inno-markdown-toolbar-menu-anchor">
-										<ToolbarIconButton label={t("markdown.moreTools", "更多")} showLabel menu expanded={moreOpen} aria-controls={moreId} onClick={() => setMoreOpen((value) => !value)}>
-											<MoreHorizontal size={14} />
-										</ToolbarIconButton>
-										<ToolbarMenu id={moreId} open={moreOpen} onClose={() => setMoreOpen(false)} label={t("markdown.moreTools", "更多")}>
+										<ToolbarMenu
+											trigger={<ToolbarIconButton label={t("markdown.moreTools", "更多")} showLabel menu expanded={moreOpen} aria-controls={moreId}>
+												<MoreHorizontal size={14} />
+											</ToolbarIconButton>}
+											id={moreId}
+											open={moreOpen}
+											onOpenChange={setMoreOpen}
+											label={t("markdown.moreTools", "更多")}
+										>
 											{downloadEnabled ? <ToolbarMenuItem label={exporting ? t("markdown.exportingExcel", "正在导出 Excel") : t("markdown.exportExcel", "导出 Excel")} disabled={exporting} onClick={() => void handleExport()}>
 												<FileSpreadsheet size={14} />
 											</ToolbarMenuItem> : null}
 											{fullscreenEnabled ? <ToolbarMenuItem label={t("markdown.tableFullscreen", "全屏查看表格")} onClick={() => setFullscreen(true)}><Maximize2 size={14} /></ToolbarMenuItem> : null}
 										</ToolbarMenu>
-									</div>
 								) : null}
 							</MarkdownToolbarGroup>
 						</MarkdownToolbar>

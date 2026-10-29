@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { cleanup } from "@testing-library/react";
+import { renderWithTooltipProvider as render } from "../test-utils.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { RunButton } from "./RunButton.js";
 

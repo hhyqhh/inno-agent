@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { ShieldAlert, Terminal, FileText, Wrench, Puzzle } from "lucide-react";
 import type { PendingPermission, PermissionDecisionKind } from "../types/chat.js";
 import { chatStore } from "../stores/chat-store.js";
+import { Button } from "./ui/index.js";
 
 function surfaceIcon(pending: PendingPermission) {
 	if (pending.command) return <Terminal size={14} aria-hidden="true" />;
@@ -80,27 +81,30 @@ export function PermissionDialog({ pending }: { pending: PendingPermission }) {
 				) : null}
 
 				<div className="mt-3 flex items-center justify-end gap-2">
-					<button
-						className="rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface-muted)]"
+					<Button
+						variant="ghost"
+						size="sm"
 						disabled={submitting !== null}
 						onClick={() => decide("deny")}
 					>
 						{t("permission.deny")}
-					</button>
-					<button
-						className="rounded-lg border border-[var(--inno-border)] px-3 py-1.5 text-sm font-medium text-[var(--inno-text)] transition-colors hover:bg-[var(--inno-surface-muted)]"
+					</Button>
+					<Button
+						variant="secondary"
+						size="sm"
 						disabled={submitting !== null}
 						onClick={() => decide("allow_session")}
 					>
 						{t("permission.allowSession")}
-					</button>
-					<button
-						className="inno-primary-button rounded-lg px-4 py-1.5 text-sm font-medium transition-colors"
+					</Button>
+					<Button
+						variant="primary"
+						size="md"
 						disabled={submitting !== null}
 						onClick={() => decide("allow_once")}
 					>
 						{t("permission.allowOnce")}
-					</button>
+					</Button>
 				</div>
 			</div>
 		</motion.div>

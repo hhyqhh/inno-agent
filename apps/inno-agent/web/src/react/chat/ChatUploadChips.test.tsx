@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderWithTooltipProvider as render } from "../test-utils.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PendingUpload } from "./composer-utils.js";
 import { ChatUploadChips } from "./ChatUploadChips.js";
@@ -21,6 +22,12 @@ function workspaceUpload(id: number, path: string): PendingUpload {
 	};
 }
 
+function chipFor(name: string): HTMLElement {
+	const chip = screen.getByText(name).closest(".inno-upload-chip");
+	expect(chip).not.toBeNull();
+	return chip as HTMLElement;
+}
+
 describe("ChatUploadChips", () => {
 	it("does not transfer a removed drag opacity to the next chip", () => {
 		const transfer = {
@@ -36,14 +43,14 @@ describe("ChatUploadChips", () => {
 		};
 		const { rerender } = render(<ChatUploadChips {...props} />);
 
-		const firstChip = screen.getByTitle(first.path);
+		const firstChip = chipFor("first");
 		fireEvent.dragStart(firstChip, { dataTransfer: transfer });
 		expect(firstChip.className).toContain("is-dragging");
 
 		// Dropping onto a smart bubble can unmount the source before its native
 		// dragend event fires. The remaining chip must stay fully visible.
 		rerender(<ChatUploadChips {...props} uploads={[second]} />);
-		expect(screen.getByTitle(second.path).className).not.toContain("is-dragging");
+		expect(chipFor("second").className).not.toContain("is-dragging");
 	});
 
 	it("clears drag opacity when the window finishes the drag", () => {
@@ -55,7 +62,7 @@ describe("ChatUploadChips", () => {
 		const file = workspaceUpload(3, "file.pdf");
 		render(<ChatUploadChips uploads={[file]} onRemove={vi.fn()} />);
 
-		const chip = screen.getByTitle(file.path);
+		const chip = chipFor("file");
 		fireEvent.dragStart(chip, { dataTransfer: transfer });
 		fireEvent(window, new Event("dragend"));
 		expect(chip.className).not.toContain("is-dragging");

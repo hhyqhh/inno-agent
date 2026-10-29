@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Tooltip } from "../ui/index.js";
 import { useContextUsage } from "./useContextUsage.js";
 import "./context-usage.css";
 
@@ -150,7 +151,7 @@ export function ContextUsage({ sessionId, streaming, revision, modelKey, activat
 			</div>
 			{known && <ul className="inno-context-breakdown">{data?.breakdown.map((part) => <li key={part.id}>
 				<span className={`inno-context-dot inno-context-color-${part.id}`} /><span>{t(`contextUsage.categories.${part.id}`)}</span>
-				<span className="inno-context-part-value" title={`${part.tokens.toLocaleString()} tokens`}>{part.percent.toFixed(1)}%</span>
+				<Tooltip label={`${part.tokens.toLocaleString()} tokens`}><span className="inno-context-part-value">{part.percent.toFixed(1)}%</span></Tooltip>
 			</li>)}</ul>}
 			<p className="inno-context-note">{known ? t(data?.source === "estimated" ? "contextUsage.estimatedNote" : "contextUsage.note") : t("contextUsage.unknownNote")}</p>
 		</div> : <div ref={panel} role="tooltip" className="inno-context-tooltip" style={position}>{summary}</div>, document.body)}

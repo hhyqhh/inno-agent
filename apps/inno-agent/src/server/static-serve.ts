@@ -15,6 +15,10 @@ export const MIME_TYPES: Record<string, string> = {
 	".jpeg": "image/jpeg",
 	".svg": "image/svg+xml",
 	".ico": "image/x-icon",
+	// HarfBuzz uses streaming WASM compilation, which requires this exact MIME.
+	".wasm": "application/wasm",
+	".otf": "font/otf",
+	".ttf": "font/ttf",
 	".woff": "font/woff",
 	".woff2": "font/woff2",
 };

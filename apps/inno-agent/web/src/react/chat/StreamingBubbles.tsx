@@ -7,7 +7,6 @@ import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
 import { QuestionDialog } from "../QuestionDialog.js";
 import { PermissionDialog } from "../PermissionDialog.js";
 import { AgentTraceTimeline } from "./AgentTraceTimeline.js";
-import { AgentAvatar } from "./MessageBubble.js";
 
 /** Render the live turn as one ordered flow. Text records stay in the same
  * sequence as thinking and tool records instead of being painted as a
@@ -54,12 +53,11 @@ export function StreamingBubbles({ onOpenSkill, holdCompleted = false }: { onOpe
 	if (!effective) return null;
 	return (
 		<motion.div
-			className="inno-trace-shell inno-trace-shell-live flex gap-3"
+			className="inno-trace-shell inno-trace-shell-live flex"
 			initial={{ opacity: 0, y: 8 }}
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ duration: 0.2, ease: "easeOut" }}
 		>
-			<AgentAvatar />
 			<div className="min-w-0 flex-1">
 				<AgentTraceTimeline
 					steps={effective.trace}

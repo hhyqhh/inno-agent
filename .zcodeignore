@@ -1,0 +1,70 @@
+node_modules/
+dist/
+dist-electron/
+apps/*/dist/
+apps/*/web/dist/
+
+# Local runtime + workspace state (machine-specific)
+# Anchored to repo root so we don't accidentally ignore src/workspace/, etc.
+/runtime/
+/workspace/
+/data/
+.inno/
+.pi/
+
+# Logs and editor noise
+*.log
+.DS_Store
+.env
+.idea/
+.vscode/
+
+# Local agent / tooling outputs
+graphify-out/
+.claude/
+
+# Icon build intermediates (keep icon.svg/icns/png)
+build/icon.iconset/
+
+# Docs (local only)
+apps/inno-agent/docs/
+.zcode/
+
+# Signing credentials: never commit private keys, exports, or local passwords
+*.p12
+*.pfx
+*.p8
+*.key
+.env.*
+!.env.example
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+bower_components/
+jspm_packages/
+__pycache__/
+site-packages/
+venv/
+coverage/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）

@@ -1,15 +1,27 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CompositionEvent as ReactCompositionEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
-import { createPortal } from "react-dom";
-import { X, ArrowUp, Square, RotateCcw, Image, ScrollText, Check, ChevronDown, ChevronUp, CornerDownLeft, Plus, Settings2, HardDriveUpload } from "lucide-react";
+import {
+	useUITransition,
+	DropdownMenu,
+	DropdownMenuActionItem,
+	DropdownMenuContent,
+	DropdownMenuLabel,
+	DropdownMenuOptionItem,
+	DropdownMenuRadioGroup,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+	Spinner,
+	IconButton,
+	Tooltip,
+} from "../ui/index.js";
+import { useRef, useState, type ChangeEvent, type ClipboardEvent, type CompositionEvent as ReactCompositionEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
+import { X, ArrowUp, Square, RotateCcw, Image, ScrollText, ChevronDown, CornerDownLeft, Plus, Settings2, HardDriveUpload } from "lucide-react";
+import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
-import { Spinner } from "../ui/Spinner.js";
 import { FileName } from "../FileName.js";
 import { FileTypeIcon } from "../FileTypeIcon.js";
 import type { InnoModelInfo } from "../../types/settings.js";
 import type { PreparedInlineImage, PendingPasteBlock } from "./composer-utils.js";
 import { kindFromName } from "./smart-input/kinds.js";
 import { ModelProviderIcon } from "./ModelProviderIcon.js";
-import { positionModelMenu } from "./model-menu-position.js";
 
 export interface ChatComposerModelState {
 	models: InnoModelInfo[];
@@ -130,122 +142,10 @@ export function ChatComposer({
 	onReconnect,
 	slashPalette,
 }: ChatComposerProps) {
+	const uiTransition = useUITransition();
 	const { t } = useTranslation();
-	const modelPickerRef = useRef<HTMLDivElement | null>(null);
-	const modelMenuRef = useRef<HTMLDivElement | null>(null);
-	const attachTriggerRef = useRef<HTMLDivElement | null>(null);
-	const attachMenuRef = useRef<HTMLDivElement | null>(null);
-	const [modelMenuPosition, setModelMenuPosition] = useState({ left: 8, top: 8, maxHeight: 360, maxWidth: 220 });
-	const [attachMenuPosition, setAttachMenuPosition] = useState({ left: 8, top: 8 });
 	const [osFileDragOver, setOsFileDragOver] = useState(false);
 	const currentModelLabel = currentModel?.name || currentModel?.id || modelState.defaultModel || t("chat.modelUnavailable");
-
-	useEffect(() => {
-		if (!modelPickerOpen) return;
-		const handlePointerDown = (event: PointerEvent) => {
-			const target = event.target as Node;
-			if (modelPickerRef.current?.contains(target) || modelMenuRef.current?.contains(target)) return;
-			onCloseModelPicker();
-		};
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") onCloseModelPicker();
-		};
-		document.addEventListener("pointerdown", handlePointerDown);
-		window.addEventListener("keydown", handleKeyDown);
-		return () => {
-			document.removeEventListener("pointerdown", handlePointerDown);
-			window.removeEventListener("keydown", handleKeyDown);
-		};
-	}, [modelPickerOpen, onCloseModelPicker]);
-
-	useEffect(() => {
-		if (!attachMenuOpen) return;
-		const handlePointerDown = (event: PointerEvent) => {
-			const target = event.target as Node;
-			if (attachTriggerRef.current?.contains(target) || attachMenuRef.current?.contains(target)) return;
-			onCloseAttachMenu();
-		};
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") onCloseAttachMenu();
-		};
-		document.addEventListener("pointerdown", handlePointerDown);
-		window.addEventListener("keydown", handleKeyDown);
-		return () => {
-			document.removeEventListener("pointerdown", handlePointerDown);
-			window.removeEventListener("keydown", handleKeyDown);
-		};
-	}, [attachMenuOpen, onCloseAttachMenu]);
-
-	const repositionModelMenu = useCallback(() => {
-		const trigger = modelPickerRef.current;
-		const menu = modelMenuRef.current;
-		if (!trigger || !menu) return;
-		const vv = window.visualViewport;
-		// Use the untransformed layout box: opening animations must not alter
-		// the anchor calculation. The visual viewport also tracks soft keyboards.
-		const next = positionModelMenu(trigger.getBoundingClientRect(), {
-			width: vv?.width ?? window.innerWidth,
-			height: vv?.height ?? window.innerHeight,
-			left: vv?.offsetLeft ?? 0,
-			top: vv?.offsetTop ?? 0,
-		}, { width: menu.offsetWidth, height: menu.scrollHeight + 2 });
-		setModelMenuPosition((previous) => Object.keys(next).every(
-			(key) => previous[key as keyof typeof next] === next[key as keyof typeof next],
-		) ? previous : next);
-	}, []);
-
-	useLayoutEffect(() => {
-		if (!modelPickerOpen) return;
-		const handleScroll = (event: Event) => {
-			if (event.target instanceof Node && modelMenuRef.current?.contains(event.target)) return;
-			repositionModelMenu();
-		};
-		repositionModelMenu();
-		window.addEventListener("resize", repositionModelMenu);
-		window.visualViewport?.addEventListener("resize", repositionModelMenu);
-		window.visualViewport?.addEventListener("scroll", repositionModelMenu);
-		document.addEventListener("scroll", handleScroll, true);
-		return () => {
-			window.removeEventListener("resize", repositionModelMenu);
-			window.visualViewport?.removeEventListener("resize", repositionModelMenu);
-			window.visualViewport?.removeEventListener("scroll", repositionModelMenu);
-			document.removeEventListener("scroll", handleScroll, true);
-		};
-	}, [modelPickerOpen, modelOptions.length, repositionModelMenu]);
-
-	const repositionAttachMenu = useCallback(() => {
-		const trigger = attachTriggerRef.current;
-		const menu = attachMenuRef.current;
-		if (!trigger || !menu) return;
-		const triggerRect = trigger.getBoundingClientRect();
-		// getBoundingClientRect() includes the opening transform animation. Using
-		// it here makes the first scroll remeasure a different size and nudges the
-		// fixed menu. offset* reports the stable layout box instead.
-		const width = menu.offsetWidth || Math.min(220, Math.max(0, window.innerWidth - 16));
-		const height = menu.offsetHeight || 264;
-		const maxLeft = Math.max(8, window.innerWidth - width - 8);
-		const maxTop = Math.max(8, window.innerHeight - height - 8);
-		const left = Math.max(8, Math.min(triggerRect.right - width, maxLeft));
-		const top = Math.max(8, Math.min(triggerRect.top - height - 8, maxTop));
-		setAttachMenuPosition((previous) => previous.left === left && previous.top === top ? previous : { left, top });
-	}, []);
-
-	useLayoutEffect(() => {
-		if (!attachMenuOpen) return;
-		const handleScroll = (event: Event) => {
-			// Scrolling the portaled menu does not move its fixed anchor. Avoid a
-			// synchronous layout read on every wheel/trackpad event in that menu.
-			if (event.target instanceof Node && attachMenuRef.current?.contains(event.target)) return;
-			repositionAttachMenu();
-		};
-		repositionAttachMenu();
-		window.addEventListener("resize", repositionAttachMenu);
-		document.addEventListener("scroll", handleScroll, true);
-		return () => {
-			window.removeEventListener("resize", repositionAttachMenu);
-			document.removeEventListener("scroll", handleScroll, true);
-		};
-	}, [attachMenuOpen, repositionAttachMenu, workspaceFiles.length]);
 
 	const isOsFileDrag = (event: ReactDragEvent<HTMLElement>): boolean =>
 		Array.from(event.dataTransfer?.types ?? []).includes("Files");
@@ -328,14 +228,16 @@ export function ChatComposer({
 							<img src={img.previewUrl} alt="" />
 						</span>
 						<img src={img.previewUrl} alt={img.name} className="h-12 w-12 rounded object-cover" />
-						<button
-							type="button"
-							className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] shadow-sm hover:bg-[var(--inno-accent-soft)] hover:text-[var(--inno-accent)]"
-							title={t("chat.removeImage")}
-							onClick={() => onRemoveInlineImage(index)}
-						>
-							<X size={12} />
-						</button>
+						<Tooltip label={t("chat.removeImage")}>
+							<button
+								type="button"
+								className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[var(--inno-text-muted)] shadow-sm hover:bg-[var(--inno-accent-soft)] hover:text-[var(--inno-accent)]"
+								aria-label={t("chat.removeImage")}
+								onClick={() => onRemoveInlineImage(index)}
+							>
+								<X size={12} />
+							</button>
+						</Tooltip>
 					</span>
 				))}
 			</div>
@@ -365,22 +267,25 @@ export function ChatComposer({
 					<span className="inno-paste-card-icon" aria-hidden="true">
 						<ScrollText size={14} />
 				</span>
-				<div className="inno-paste-card-copy" title={compactText}>
-					<span className="inno-paste-card-preview">{preview}{hasMoreText ? "…" : ""}</span>
-					<span className="inno-paste-card-count">· {t("common.pasteCardCharCount", "{{count}} 字", { count: block.text.length })}</span>
-				</div>
-				<button
-					type="button"
-					className="inno-paste-card-remove"
-					title={t("common.pasteCardRemove")}
-					aria-label={t("common.pasteCardRemove")}
-					onClick={(event) => {
-						event.stopPropagation();
-						onRemovePasteBlock(block.id);
-					}}
-				>
-					<X size={12} />
-				</button>
+				<Tooltip label={compactText}>
+					<div className="inno-paste-card-copy">
+						<span className="inno-paste-card-preview">{preview}{hasMoreText ? "…" : ""}</span>
+						<span className="inno-paste-card-count">· {t("common.pasteCardCharCount", "{{count}} 字", { count: block.text.length })}</span>
+					</div>
+				</Tooltip>
+				<Tooltip label={t("common.pasteCardRemove")}>
+					<button
+						type="button"
+						className="inno-paste-card-remove"
+						aria-label={t("common.pasteCardRemove")}
+						onClick={(event) => {
+							event.stopPropagation();
+							onRemovePasteBlock(block.id);
+						}}
+					>
+						<X size={12} />
+					</button>
+				</Tooltip>
 			</div>
 		);
 	};
@@ -396,124 +301,109 @@ export function ChatComposer({
 	);
 
 	const renderAttachMenu = () => (
-		<div ref={attachTriggerRef} className="inno-composer-model-picker relative shrink-0">
-			<button
-				type="button"
-				className="inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50"
-				title={t("chat.uploadFiles")}
-				disabled={chatIsSending || isUploading}
-				aria-haspopup="menu"
-				aria-expanded={attachMenuOpen}
-				onClick={onToggleAttachMenu}
-			>
-				{isUploading ? <Spinner size={16} /> : <Plus size={18} />}
-			</button>
-			{attachMenuOpen && typeof document !== "undefined" ? createPortal(
-				<div
-					ref={attachMenuRef}
-					className="inno-composer-model-menu inno-smart-attach-menu"
-					role="menu"
+		<DropdownMenu
+			open={attachMenuOpen}
+			onOpenChange={(nextOpen) => {
+				if (nextOpen && !attachMenuOpen) onToggleAttachMenu();
+				else if (!nextOpen && attachMenuOpen) onCloseAttachMenu();
+			}}
+		>
+			<DropdownMenuTrigger asChild>
+				<IconButton
+					variant="ghost"
+					size="md"
+					shape="pill"
+					className="inno-composer-action"
+					title={t("chat.uploadFiles")}
 					aria-label={t("chat.uploadFiles")}
-					style={{ position: "fixed", left: attachMenuPosition.left, top: attachMenuPosition.top, right: "auto", bottom: "auto", zIndex: 100 }}
+					disabled={chatIsSending || isUploading}
 				>
-					<button
-						type="button"
-						role="menuitem"
-						className="inno-composer-model-option"
-						onClick={() => {
-							onCloseAttachMenu();
-							fileInputRef.current?.click();
-						}}
-					>
-						<span className="flex min-w-0 items-center gap-2">
-							<HardDriveUpload size={14} className="shrink-0 text-[var(--inno-text-muted)]" />
-							<span className="truncate">{t("chat.smartInput.attachFromThisDevice", "本机文件…")}</span>
-						</span>
-					</button>
-					{workspaceFiles.length > 0 ? (
-						<div className="inno-smart-attach-menu-caption">{t("chat.smartInput.attachFromWorkspace", "从工作区添加")}</div>
-					) : (
-						<div className="inno-smart-attach-menu-caption">{t("chat.smartInput.workspaceEmpty", "工作区暂无文件")}</div>
-					)}
-					{workspaceFiles.map((file) => (
-						<button
-							key={file.path}
-							type="button"
-							role="menuitem"
-							className="inno-composer-model-option"
-							title={file.path}
-							onClick={() => {
-								onCloseAttachMenu();
-								onPickWorkspaceFiles([file.path]);
-							}}
-						>
-							<span className="flex min-w-0 items-center gap-2">
-								<FileTypeIcon kind={kindFromName(file.name)} size={14} />
-								<FileName name={file.name} className="min-w-0 flex-1" />
-							</span>
-						</button>
-					))}
-				</div>,
-				document.body,
-			) : null}
-		</div>
+					{isUploading ? <Spinner size={16} /> : <Plus size={18} />}
+				</IconButton>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" side="top" sideOffset={8} collisionPadding={8} aria-label={t("chat.uploadFiles")} className="inno-smart-attach-menu">
+				<DropdownMenuActionItem
+					icon={<HardDriveUpload size={14} />}
+					label={t("chat.smartInput.attachFromThisDevice", "本机文件…")}
+					onSelect={() => {
+						onCloseAttachMenu();
+						fileInputRef.current?.click();
+					}}
+				/>
+				<DropdownMenuLabel className="inno-smart-attach-menu-caption">
+					{workspaceFiles.length > 0
+						? t("chat.smartInput.attachFromWorkspace", "从工作区添加")
+						: t("chat.smartInput.workspaceEmpty", "工作区暂无文件")}
+				</DropdownMenuLabel>
+				{workspaceFiles.map((file) => (
+					<DropdownMenuActionItem
+						key={file.path}
+						icon={<FileTypeIcon kind={kindFromName(file.name)} size={14} />}
+						label={<FileName name={file.name} className="min-w-0 flex-1" />}
+						title={file.path}
+						onSelect={() => onPickWorkspaceFiles([file.path])}
+					/>
+				))}
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 
+	const modelOptionValue = (provider: string, modelId: string) => JSON.stringify([provider, modelId]);
+	const selectedModelValue = modelOptionValue(modelState.defaultProvider, modelState.defaultModel);
 	const renderModelPicker = () => (
-		<div ref={modelPickerRef} className="inno-composer-model-picker relative shrink-0">
-			<button
-				type="button"
-				className="inno-composer-model-trigger flex h-8 shrink-0 items-center gap-1 px-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"
-				title={t("chat.selectModel")}
-				aria-label={t("chat.selectModel")}
-				aria-haspopup="menu"
-				aria-expanded={modelPickerOpen}
-				disabled={modelOptions.length === 0 || modelState.isSavingModel || chatIsSending}
-				onClick={onToggleModelPicker}
-			>
-				{modelState.defaultProvider ? <ModelProviderIcon provider={currentModel?.provider ?? modelState.defaultProvider} /> : null}
-				<span className="max-w-[32vw] truncate whitespace-nowrap md:max-w-none" title={currentModelLabel}>{currentModelLabel}</span>
-				{modelPickerOpen ? <ChevronUp size={13} className="shrink-0" /> : <ChevronDown size={13} className="shrink-0" />}
-			</button>
-			{modelPickerOpen && modelOptions.length > 0 && typeof document !== "undefined" ? createPortal(
-				<div
-					ref={modelMenuRef}
-					className="inno-composer-model-menu"
-					role="menu"
+		<DropdownMenu
+			open={modelPickerOpen && modelOptions.length > 0}
+			onOpenChange={(nextOpen) => {
+				if (nextOpen && !modelPickerOpen) onToggleModelPicker();
+				else if (!nextOpen && modelPickerOpen) onCloseModelPicker();
+			}}
+		>
+			<DropdownMenuTrigger asChild>
+				<button
+					type="button"
+					className="inno-composer-model-trigger inno-composer-subrow-control flex h-8 shrink-0 items-center gap-1 px-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"
 					aria-label={t("chat.selectModel")}
-					style={{ ...modelMenuPosition, position: "fixed", right: "auto", bottom: "auto", zIndex: 100 }}
+					disabled={modelOptions.length === 0 || modelState.isSavingModel || chatIsSending}
 				>
-					{modelOptions.map((model) => {
-						const selected = model.provider === modelState.defaultProvider && model.id === modelState.defaultModel;
-						return (
-							<button
-								key={`${model.provider}:${model.id}`}
-								type="button"
-								role="menuitemradio"
-								aria-checked={selected}
-								className={`inno-composer-model-option ${selected ? "is-selected" : ""}`}
-								disabled={modelState.isSavingModel || chatIsSending}
-								onClick={() => onModelSelect(model)}
-								title={model.id}
-							>
-								<span className="flex min-w-0 items-center gap-2">
-									<ModelProviderIcon provider={model.provider} />
-									<span className="min-w-0 truncate">{model.name || model.id}</span>
-								</span>
-								{selected ? <Check size={14} className="shrink-0" /> : null}
-							</button>
-						);
-					})}
-					<div className="inno-composer-model-menu-footer">
-						<button type="button" className="inno-composer-model-manage" role="menuitem" onClick={onOpenModelSettings}>
-							<Settings2 size={14} />
-							<span>{t("chat.manageModels")}</span>
-						</button>
-					</div>
-				</div>,
-				document.body,
-			) : null}
-		</div>
+					{modelState.defaultProvider ? <ModelProviderIcon provider={currentModel?.provider ?? modelState.defaultProvider} /> : null}
+						<span className="max-w-[32vw] truncate whitespace-nowrap md:max-w-none">{currentModelLabel}</span>
+						<motion.span
+							className="inline-flex shrink-0"
+							animate={{ rotate: modelPickerOpen ? 180 : 0 }}
+							transition={uiTransition}
+						>
+							<ChevronDown size={13} aria-hidden="true" />
+						</motion.span>
+				</button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" side="top" sideOffset={8} collisionPadding={8} aria-label={t("chat.selectModel")} className="inno-composer-model-menu">
+				<DropdownMenuRadioGroup
+					value={selectedModelValue}
+					onValueChange={(value) => {
+						const model = modelOptions.find((option) => modelOptionValue(option.provider, option.id) === value);
+						if (model) onModelSelect(model);
+					}}
+				>
+					{modelOptions.map((model) => (
+						<DropdownMenuOptionItem
+							key={modelOptionValue(model.provider, model.id)}
+							value={modelOptionValue(model.provider, model.id)}
+							icon={<ModelProviderIcon provider={model.provider} />}
+							label={model.name || model.id}
+							disabled={modelState.isSavingModel || chatIsSending}
+							className="inno-composer-model-option"
+						/>
+					))}
+				</DropdownMenuRadioGroup>
+				<DropdownMenuSeparator />
+				<DropdownMenuActionItem
+					icon={<Settings2 size={14} />}
+					label={t("chat.manageModels")}
+					className="inno-composer-model-manage"
+					onSelect={onOpenModelSettings}
+				/>
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 
 	const sendDisabled = !hasSendableContent || isUploading;
@@ -567,61 +457,75 @@ export function ChatComposer({
 				<div className="inno-composer-toolbar flex shrink-0 items-center justify-between gap-2">
 					<div className="flex min-w-0 items-center gap-2">
 						{renderAttachMenu()}
-						<button
-							type="button"
-							className="inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full disabled:opacity-50"
+						<IconButton
+							variant="ghost"
+							size="md"
+							shape="pill"
+							className="inno-composer-action"
 							title={modelState.currentModelSupportsNativeImages ? t("chat.attachImage") : t("chat.attachImageViaOcr")}
+							aria-label={modelState.currentModelSupportsNativeImages ? t("chat.attachImage") : t("chat.attachImageViaOcr")}
 							disabled={chatIsSending || isUploading}
 							onClick={() => imageInputRef.current?.click()}
 						>
 							<Image size={16} />
-						</button>
+						</IconButton>
 						{conversationMode ? permissionControl : null}
 					</div>
 					<div className="flex shrink-0 items-center gap-1">
-						<button
-							type="button"
-							className="inno-composer-newline inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full"
+						<IconButton
+							variant="ghost"
+							size="md"
+							shape="pill"
+							className="inno-composer-newline inno-composer-action"
 							title={t("chat.insertNewline")}
 							aria-label={t("chat.insertNewline")}
 							disabled={chatIsSending || isUploading || hasPendingQuestion}
 							onClick={insertNewline}
 						>
 							<CornerDownLeft size={16} />
-						</button>
+						</IconButton>
 						{conversationMode ? contextUsageControl : null}
 						{conversationMode ? renderModelPicker() : null}
 						{(chatIsSending || jobStreaming) ? (
 							<>
 								{canReconnect && !jobStreaming ? (
-									<button
-										type="button"
-										className="inno-composer-action inno-icon-button flex h-9 w-9 shrink-0 rounded-full"
+									<IconButton
+										variant="ghost"
+										size="md"
+										shape="pill"
+										className="inno-composer-action"
 										title={t("chat.reconnect", "重新连接")}
+										aria-label={t("chat.reconnect", "重新连接")}
 										onClick={onReconnect}
 									>
 										<RotateCcw size={16} />
-									</button>
+									</IconButton>
 								) : null}
-								<button
-									type="button"
-									className="inno-composer-stop flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
+								<IconButton
+									variant="danger"
+									size="md"
+									shape="pill"
+									className="inno-composer-stop text-white"
 									title={t("chat.stopGeneration")}
+									aria-label={t("chat.stopGeneration")}
 									onClick={onStop}
 								>
 									<Square size={15} />
-								</button>
+								</IconButton>
 							</>
 						) : (
-							<button
-								type="button"
-								className={`inno-composer-send flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${sendDisabled ? "is-disabled" : ""}`}
+							<IconButton
+								variant="primary"
+								size="sm"
+								shape="pill"
+								className={`inno-composer-send ${sendDisabled ? "is-disabled" : ""}`}
 								title={t("chat.send")}
+								aria-label={t("chat.send")}
 								disabled={sendDisabled}
 								onClick={onSend}
 							>
 								<ArrowUp size={16} strokeWidth={2} />
-							</button>
+							</IconButton>
 						)}
 					</div>
 				</div>

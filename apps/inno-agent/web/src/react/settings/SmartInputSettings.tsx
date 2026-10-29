@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Plus, Trash2 } from "lucide-react";
 import { settingsStore } from "../../stores/settings-store.js";
 import { useStoreSnapshot } from "../hooks.js";
-import { Switch } from "../ui/Switch.js";
+import { Input, Switch, Tooltip } from "../ui/index.js";
 import { Spinner } from "../ui/Spinner.js";
 import { SettingsCard, SettingsRow, SettingsSection } from "./primitives.js";
 import { kindFromRule } from "../chat/smart-input/kinds.js";
@@ -181,7 +181,8 @@ export function SmartInputSettings() {
 		const editing = editingKeywordId === rule.id;
 		if (editing) {
 			return (
-				<input
+				<Input
+					size="sm"
 					ref={keywordInputRef}
 					className="inno-smart-set-keyword-input"
 					value={keywordInput}
@@ -196,19 +197,21 @@ export function SmartInputSettings() {
 			);
 		}
 		return (
-			<button
-				type="button"
-				className={`inno-smart-set-pill ${rule.enabled ? "" : "is-off"}`}
-				title={t("settings.smartInput.renameKeyword", "点击重命名关键词")}
-				onClick={() => {
-					setEditingKeywordId(rule.id);
-					setKeywordInput(rule.keyword);
-					requestAnimationFrame(() => keywordInputRef.current?.select());
-				}}
-			>
-				<FileTypeIcon kind={kind} size={13} color={rule.enabled ? undefined : "var(--inno-text-subtle)"} />
-				{rule.keyword}
-			</button>
+			<Tooltip label={t("settings.smartInput.renameKeyword", "点击重命名关键词")}>
+				<button
+					type="button"
+					className={`inno-smart-set-pill ${rule.enabled ? "" : "is-off"}`}
+					aria-label={`${t("settings.smartInput.renameKeyword", "点击重命名关键词")}：${rule.keyword}`}
+					onClick={() => {
+						setEditingKeywordId(rule.id);
+						setKeywordInput(rule.keyword);
+						requestAnimationFrame(() => keywordInputRef.current?.select());
+					}}
+				>
+					<FileTypeIcon kind={kind} size={13} color={rule.enabled ? undefined : "var(--inno-text-subtle)"} />
+					{rule.keyword}
+				</button>
+			</Tooltip>
 		);
 	};
 
@@ -227,19 +230,21 @@ export function SmartInputSettings() {
 				{values.map((ext) => (
 					<span key={ext} className="inno-smart-set-ext">
 						{ext}
-						<button
-							type="button"
-							className="inno-smart-set-ext-x"
-							title={t("settings.smartInput.removeExt", "移除格式")}
-							aria-label={`${t("settings.smartInput.removeExt", "移除格式")} ${ext}`}
-							onClick={() => onRemove(ext)}
-						>
-							×
-						</button>
+						<Tooltip label={`${t("settings.smartInput.removeExt", "移除格式")} ${ext}`}>
+							<button
+								type="button"
+								className="inno-smart-set-ext-x"
+								aria-label={`${t("settings.smartInput.removeExt", "移除格式")} ${ext}`}
+								onClick={() => onRemove(ext)}
+							>
+								×
+							</button>
+						</Tooltip>
 					</span>
 				))}
 				{editing ? (
-					<input
+					<Input
+						size="sm"
 						ref={extInputRef}
 						className="inno-smart-set-ext-input"
 						placeholder={t("settings.smartInput.extensionPlaceholder", "如 pdf")}
@@ -256,17 +261,24 @@ export function SmartInputSettings() {
 						onBlur={() => { if (extInput.trim()) onCommit(); else closeExtensionInput(); }}
 					/>
 				) : (
-					<button
-						type="button"
-						className="inno-smart-set-ext-add"
-						title={kind === "include"
-							? t("settings.smartInput.addIncludeExt", "添加允许格式")
-							: t("settings.smartInput.addExcludeExt", "添加排除格式")}
-						disabled={state.isSaving}
-						onClick={() => beginExtensionInput(id, kind)}
-					>
-						<Plus size={11} />
-					</button>
+					<Tooltip label={kind === "include"
+						? t("settings.smartInput.addIncludeExt", "添加允许格式")
+						: t("settings.smartInput.addExcludeExt", "添加排除格式")}>
+						<button
+							type="button"
+							className="inno-smart-set-ext-add"
+							aria-label={kind === "include"
+								? t("settings.smartInput.addIncludeExt", "添加允许格式")
+								: t("settings.smartInput.addExcludeExt", "添加排除格式")}
+							disabled={state.isSaving}
+							title={state.isSaving ? (kind === "include"
+								? t("settings.smartInput.addIncludeExt", "添加允许格式")
+								: t("settings.smartInput.addExcludeExt", "添加排除格式")) : undefined}
+							onClick={() => beginExtensionInput(id, kind)}
+						>
+							<Plus size={11} />
+						</button>
+					</Tooltip>
 				)}
 			</div>
 		);
@@ -365,17 +377,20 @@ export function SmartInputSettings() {
 						aria-label={t("settings.smartInput.toggleRule", "启用该关键词")}
 						onChange={(value) => patchRule(rule.id, { enabled: value })}
 					/>
-					<button
-						type="button"
-						className="inno-smart-set-delete"
-						title={rule.isPreset
-							? t("settings.smartInput.presetRuleHint", "系统预设关键词不可删除，只能关闭")
-							: t("settings.smartInput.deleteRule", "删除规则")}
-						disabled={state.isSaving || rule.isPreset}
-						onClick={rule.isPreset ? undefined : () => patchConfig({ rules: draft.rules.filter((entry) => entry.id !== rule.id) })}
-					>
-						<Trash2 size={14} />
-					</button>
+					<Tooltip label={rule.isPreset
+						? t("settings.smartInput.presetRuleHint", "系统预设关键词不可删除，只能关闭")
+						: t("settings.smartInput.deleteRule", "删除规则")}>
+						<button
+							type="button"
+							className="inno-smart-set-delete"
+							aria-label={t("settings.smartInput.deleteRule", "删除规则")}
+							title={rule.isPreset ? t("settings.smartInput.presetRuleHint", "系统预设关键词不可删除，只能关闭") : undefined}
+							disabled={state.isSaving || rule.isPreset}
+							onClick={rule.isPreset ? undefined : () => patchConfig({ rules: draft.rules.filter((entry) => entry.id !== rule.id) })}
+						>
+							<Trash2 size={14} />
+						</button>
+					</Tooltip>
 				</span>
 			</div>
 			{renderFormatSections(
@@ -393,7 +408,8 @@ export function SmartInputSettings() {
 	const renderNewRuleRow = () => newRule ? (
 		<div className="inno-smart-set-row is-new">
 			<div className="inno-smart-set-row-head">
-				<input
+				<Input
+					size="sm"
 					ref={newKeywordRef}
 					className="inno-smart-set-keyword-input is-primary"
 					placeholder={t("settings.smartInput.newKeywordPlaceholder", "关键词")}

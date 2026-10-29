@@ -8,6 +8,7 @@ import "@mariozechner/mini-lit/dist/MarkdownBlock.js";
 import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./react/App.js";
+import { TooltipProvider } from "./react/ui/index.js";
 import { recoverFromDynamicImportError } from "./utils/dynamic-import-recovery.js";
 
 interface AppErrorBoundaryState {
@@ -57,7 +58,9 @@ if (!rootEl) throw new Error("Missing #root element");
 createRoot(rootEl).render(
 	<StrictMode>
 		<AppErrorBoundary>
-			<App />
+			<TooltipProvider delayDuration={450} skipDelayDuration={250}>
+				<App />
+			</TooltipProvider>
 		</AppErrorBoundary>
 	</StrictMode>,
 );

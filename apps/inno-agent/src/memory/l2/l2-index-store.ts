@@ -14,7 +14,7 @@
 
 import { logger } from "../../logger.js";
 import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { segmentForFts } from "../l3/sqlite-store.js";
 
 /** One indexed wiki page (the document unit for retrieval — whole page). */
@@ -142,7 +142,7 @@ export class L2IndexStore {
 		}
 		if (!DatabaseSync) return null;
 		try {
-			mkdirSync(l2DataDir, { recursive: true });
+			await mkdir(l2DataDir, { recursive: true });
 			const db = new DatabaseSync(join(l2DataDir, "index.db"));
 			db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
 			return new L2IndexStore(db);

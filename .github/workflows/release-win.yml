@@ -56,6 +56,10 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=4096
         run: npm --workspace inno-agent-web run build
 
+      - name: Stage bundled LibreOffice for Word previews
+        shell: pwsh
+        run: ./scripts/prepare-libreoffice.ps1
+
       # ── 7. 打包 Electron（NSIS exe + MSI）───────────────────────────────────
       - name: Package Electron (Windows)
         run: npx electron-builder --win --x64 --publish never

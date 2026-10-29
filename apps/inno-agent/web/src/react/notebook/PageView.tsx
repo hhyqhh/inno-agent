@@ -5,7 +5,10 @@ import { parseFrontmatter } from "../../utils/frontmatter.js";
 import { normalizeMarkdownMath } from "../../utils/markdown-math.js";
 import { useStoreSnapshot } from "../hooks.js";
 import "@earendil-works/pi-web-ui";
-import { Spinner } from "../ui/Spinner.js";
+import {
+	Spinner,
+	Button,
+} from "../ui/index.js";
 import { LazyMarkdownEditor } from "../LazyMarkdownEditor.js";
 
 function typeColor(type?: WikiPageType): string {
@@ -95,12 +98,12 @@ export function PageView() {
 					/>
 				</div>
 				<div className="flex gap-2 border-t border-[var(--inno-border)] p-3">
-					<button className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={() => void notebookStore.savePage()}>
+					<Button variant="primary" size="sm" onClick={() => void notebookStore.savePage()}>
 						{t("common.save")}
-					</button>
-					<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => notebookStore.cancelEditing()}>
+					</Button>
+					<Button variant="secondary" size="sm" onClick={() => notebookStore.cancelEditing()}>
 						{t("common.cancel")}
-					</button>
+					</Button>
 				</div>
 			</div>
 		);
@@ -113,12 +116,12 @@ export function PageView() {
 				<markdown-artifact content={normalizeMarkdownMath(parsed.body)} />
 			</div>
 			<div className="flex gap-2 border-t border-[var(--inno-border)] p-3">
-				<button className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={() => notebookStore.startEditing()}>
+				<Button variant="primary" size="sm" onClick={() => notebookStore.startEditing()}>
 					{t("common.edit")}
-				</button>
-				<button className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => notebookStore.setView("graph")}>
+				</Button>
+				<Button variant="secondary" size="sm" onClick={() => notebookStore.setView("graph")}>
 					{t("notebook.page.backToGraph")}
-				</button>
+				</Button>
 			</div>
 		</div>
 	);

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { createRef } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { createRef, useState } from "react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderWithTooltipProvider as render } from "../test-utils.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatComposer, type ChatComposerProps } from "./ChatComposer.js";
 import type { InnoModelInfo } from "../../types/settings.js";
@@ -46,9 +47,9 @@ describe("ChatComposer portaled model menu", () => {
 	it("escapes the composer's overflow clipping parent", () => {
 		const { container } = render(<div style={{ overflow: "auto", height: 40 }}><ChatComposer {...props()} /></div>);
 		const menu = screen.getByRole("menu", { name: "chat.selectModel" });
-		expect(menu.parentElement).toBe(document.body);
+		expect(document.body.contains(menu)).toBe(true);
+		expect(menu.closest("[data-radix-popper-content-wrapper]")).not.toBeNull();
 		expect(container.contains(menu)).toBe(false);
-		expect(menu.style.position).toBe("fixed");
 	});
 
 	it("does not dismiss before a portaled option can be selected", () => {
@@ -63,16 +64,27 @@ describe("ChatComposer portaled model menu", () => {
 		expect(p.onOpenModelSettings).toHaveBeenCalledTimes(1);
 	});
 
-	it("preserves trigger toggling and dismisses on outside pointer / Escape", () => {
+	it("preserves trigger toggling and dismisses on outside pointer / Escape", async () => {
 		const p = props();
-		render(<ChatComposer {...p} />);
-		const trigger = screen.getByRole("button", { name: "chat.selectModel" });
-		fireEvent.pointerDown(trigger);
-		expect(p.onCloseModelPicker).not.toHaveBeenCalled();
-		fireEvent.click(trigger);
+		function ControlledComposer() {
+			const [open, setOpen] = useState(false);
+			return <ChatComposer
+				{...p}
+				modelPickerOpen={open}
+				onToggleModelPicker={() => { p.onToggleModelPicker(); setOpen((value) => !value); }}
+				onCloseModelPicker={() => { p.onCloseModelPicker(); setOpen(false); }}
+			/>;
+		}
+		const { container } = render(<ControlledComposer />);
+		const trigger = () => container.querySelector<HTMLButtonElement>(".inno-composer-model-trigger")!;
+		fireEvent.pointerDown(trigger(), { button: 0, pointerType: "mouse" });
 		expect(p.onToggleModelPicker).toHaveBeenCalledTimes(1);
-		fireEvent.pointerDown(document.body);
-		fireEvent.keyDown(document, { key: "Escape" });
+		await new Promise((resolve) => window.setTimeout(resolve, 0));
+		fireEvent.pointerDown(container.querySelector(".inno-composer-textarea")!, { button: 0, pointerType: "mouse" });
+		expect(p.onCloseModelPicker).toHaveBeenCalledTimes(1);
+		fireEvent.pointerDown(trigger(), { button: 0, pointerType: "mouse" });
+		await new Promise((resolve) => window.setTimeout(resolve, 0));
+		fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
 		expect(p.onCloseModelPicker).toHaveBeenCalledTimes(2);
 	});
 

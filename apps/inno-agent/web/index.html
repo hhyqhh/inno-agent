@@ -15,8 +15,10 @@
 			(function () {
 				try {
 					var t = localStorage.getItem("inno.theme") || "light";
+					if (t === "system") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 					if (t !== "light" && t !== "dark") t = "light";
 					document.documentElement.setAttribute("data-theme", t);
+					document.documentElement.style.colorScheme = t;
 					if (t === "dark") document.documentElement.classList.add("dark");
 				} catch (e) {}
 			})();

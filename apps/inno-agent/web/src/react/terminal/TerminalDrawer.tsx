@@ -7,6 +7,7 @@ import { terminalStore, type TerminalStatus } from "../../stores/terminal-store.
 import { sessionsStore } from "../../stores/sessions-store.js";
 import { workspaceStore } from "../../stores/workspace-store.js";
 import { useStoreSnapshot } from "../hooks.js";
+import { IconButton, Tooltip } from "../ui/index.js";
 
 const TerminalView = lazy(() => import("./TerminalView.js").then((module) => ({ default: module.TerminalView })));
 
@@ -95,39 +96,45 @@ export function TerminalDrawer() {
 					className="flex shrink-0 flex-col overflow-hidden border-t border-[var(--inno-border)] bg-[var(--inno-workspace-bg)]"
 				>
 					<div className="flex h-8 items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-workspace-chrome)] px-2 text-xs text-[var(--inno-text-muted)]">
-						<button
-							onClick={toggle}
-							className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
-							title={term.isOpen ? t("terminal.collapse") : t("terminal.expand")}
-						>
-							<TerminalIcon size={12} />
-							<span className="font-medium">{t("terminal.title")}</span>
-							<ChevronDown size={12} />
-						</button>
-						<span
-							className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[term.status]}`}
-							title={STATUS_LABEL[term.status]}
-							aria-label={STATUS_LABEL[term.status]}
-						/>
-						{term.cwd ? <span className="truncate text-[11px] text-[var(--inno-text-subtle)]" title={term.cwd}>{term.cwd}</span> : null}
+						<Tooltip label={term.isOpen ? t("terminal.collapse") : t("terminal.expand")}>
+							<button
+								type="button"
+								onClick={toggle}
+								className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
+							>
+								<TerminalIcon size={12} />
+								<span className="font-medium">{t("terminal.title")}</span>
+								<ChevronDown size={12} />
+							</button>
+						</Tooltip>
+						<Tooltip label={STATUS_LABEL[term.status]}>
+							<span
+								className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[term.status]}`}
+								aria-label={STATUS_LABEL[term.status]}
+							/>
+						</Tooltip>
+						{term.cwd ? <Tooltip label={term.cwd}><span className="truncate text-[11px] text-[var(--inno-text-subtle)]">{term.cwd}</span></Tooltip> : null}
 						{term.error ? <span className="text-[11px] text-[var(--inno-danger)]">{term.error}</span> : null}
 						<div className="ml-auto flex items-center gap-1">
 							{term.isOpen && sess.currentSessionId ? (
 								<>
-									<button
-										onClick={toggleHistory}
-										className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${showHistory ? "bg-[var(--inno-surface)] text-[var(--inno-text)]" : "text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"}`}
-										title={t("terminal.history")}
-									>
-										<History size={12} />
-									</button>
-									<button
-										onClick={() => void restart()}
-										className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
-										title={t("terminal.restart")}
-									>
-										<RotateCcw size={12} />
-									</button>
+					<IconButton
+						size="xs"
+						aria-label={t("terminal.history")}
+						aria-pressed={showHistory}
+						title={t("terminal.history")}
+						onClick={toggleHistory}
+					>
+						<History size={12} />
+					</IconButton>
+					<IconButton
+						size="xs"
+						aria-label={t("terminal.restart")}
+						title={t("terminal.restart")}
+						onClick={() => void restart()}
+					>
+						<RotateCcw size={12} />
+					</IconButton>
 								</>
 							) : null}
 						</div>
@@ -140,16 +147,16 @@ export function TerminalDrawer() {
 						) : (
 							<div className="flex-1 min-h-0 p-2">
 								<div className="inno-terminal-keybar" role="toolbar" aria-label={t("terminal.title")}>
-									{TOUCH_KEY_BAR.map((key) => (
-										<button
-											key={key.label}
-											type="button"
-											className="inno-terminal-key"
-											title={key.title}
-											onClick={() => terminalStore.input(key.data)}
-										>
-											{key.label}
-										</button>
+								{TOUCH_KEY_BAR.map((key) => (
+										<Tooltip key={key.label} label={key.title}>
+											<button
+												type="button"
+												className="inno-terminal-key"
+												onClick={() => terminalStore.input(key.data)}
+											>
+												{key.label}
+											</button>
+										</Tooltip>
 									))}
 								</div>
 								<Suspense fallback={<div className="h-[200px] w-full" aria-busy="true" />}>

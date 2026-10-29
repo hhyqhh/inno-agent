@@ -4,7 +4,7 @@ import { ChevronDown, Database, KeyRound, Globe, Search } from "lucide-react";
 import { settingsStore } from "../../stores/settings-store.js";
 import { getWebAccessSettings, saveWebAccessSettings } from "../../api/settings.js";
 import type { InnoSettings, WebAccessSettings } from "../../types/settings.js";
-import { inputCls } from "../ui/input.js";
+import { Button, Input, Select, SelectContent, SelectOption, SelectTrigger, SelectValue } from "../ui/index.js";
 import { SettingsSection } from "./primitives.js";
 
 /* ---------- Content Hub (source for skill library + presets) ---------- */
@@ -98,35 +98,37 @@ function ContentHubSettings({ settings }: { settings: InnoSettings }) {
 					{type === "github" ? (
 						<>
 							<div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2">
-								<input className={inputCls} value={owner} onChange={(e) => { setOwner(e.target.value); setSaved(false); }} placeholder="owner" autoComplete="off" />
-								<input className={inputCls} value={repo} onChange={(e) => { setRepo(e.target.value); setSaved(false); }} placeholder="repo" autoComplete="off" />
-								<input className={inputCls} value={ref} onChange={(e) => { setRef(e.target.value); setSaved(false); }} placeholder="ref (main)" autoComplete="off" />
+								<Input size="sm" value={owner} onChange={(e) => { setOwner(e.target.value); setSaved(false); }} placeholder="owner" autoComplete="off" />
+								<Input size="sm" value={repo} onChange={(e) => { setRepo(e.target.value); setSaved(false); }} placeholder="repo" autoComplete="off" />
+								<Input size="sm" value={ref} onChange={(e) => { setRef(e.target.value); setSaved(false); }} placeholder="ref (main)" autoComplete="off" />
 							</div>
 							<div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2">
-								<input className={inputCls} value={skillsPath} onChange={(e) => { setSkillsPath(e.target.value); setSaved(false); }} placeholder="skill-library" autoComplete="off" />
-								<input className={inputCls} value={presetsPath} onChange={(e) => { setPresetsPath(e.target.value); setSaved(false); }} placeholder="workspace-templates" autoComplete="off" />
+								<Input size="sm" value={skillsPath} onChange={(e) => { setSkillsPath(e.target.value); setSaved(false); }} placeholder="skill-library" autoComplete="off" />
+								<Input size="sm" value={presetsPath} onChange={(e) => { setPresetsPath(e.target.value); setSaved(false); }} placeholder="workspace-templates" autoComplete="off" />
 							</div>
 						</>
 					) : (
-						<input className={inputCls} value={baseUrl} onChange={(e) => { setBaseUrl(e.target.value); setSaved(false); }} placeholder="https://hub.example.com" autoComplete="off" />
+						<Input size="sm" value={baseUrl} onChange={(e) => { setBaseUrl(e.target.value); setSaved(false); }} placeholder="https://hub.example.com" autoComplete="off" />
 					)}
 
 					<div className="flex min-w-0 flex-wrap items-center gap-2">
-						<input
-							className={`${inputCls} flex-1 basis-44`}
+						<Input
+							size="sm"
+							className="flex-1 basis-44"
 							type="password"
 							value={token}
 							onChange={(e) => { setToken(e.target.value); setSaved(false); }}
 							placeholder={t("settings.contentHub.tokenPlaceholder", "访问令牌(私有仓库 / 提额,可选)") ?? ""}
 							autoComplete="off"
 						/>
-						<button
+						<Button
+							variant="primary"
 							disabled={saving}
 							onClick={() => void handleSave()}
-							className="flex h-8 shrink-0 items-center rounded-md inno-primary-button px-3 text-xs text-white disabled:opacity-50"
+							className="shrink-0"
 						>
 							{saving ? t("common.loading") : saved ? t("settings.github.saved", "已保存") : t("common.save")}
-						</button>
+						</Button>
 					</div>
 				</div>
 			) : null}
@@ -217,23 +219,23 @@ function OcrSettings({ settings }: { settings: InnoSettings }) {
 			{open ? (
 				<div className="mt-3 grid gap-2.5">
 					<div className="grid min-w-0 gap-2">
-						<input
-							className={inputCls}
+						<Input
+							size="sm"
 							type="password"
 							value={token}
 							onChange={(e) => { setToken(e.target.value); setTokenDirty(true); setSaved(false); }}
 							placeholder={hasExistingToken ? maskedToken : (t("settings.ocr.tokenPlaceholder", "bearer token") ?? "")}
 							autoComplete="off"
 						/>
-						<input
-							className={inputCls}
+						<Input
+							size="sm"
 							value={model}
 							onChange={(e) => { setModel(e.target.value); setSaved(false); }}
 							placeholder={t("settings.ocr.modelPlaceholder", "PaddleOCR-VL-1.6") ?? ""}
 							autoComplete="off"
 						/>
-						<input
-							className={inputCls}
+						<Input
+							size="sm"
 							value={baseUrl}
 							onChange={(e) => { setBaseUrl(e.target.value); setSaved(false); }}
 							placeholder={t("settings.ocr.baseUrlPlaceholder", "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs") ?? ""}
@@ -241,21 +243,23 @@ function OcrSettings({ settings }: { settings: InnoSettings }) {
 						/>
 					</div>
 					<div className="flex min-w-0 flex-wrap items-center gap-2">
-						<button
+						<Button
+							variant="primary"
 							disabled={saving || !dirty}
 							onClick={() => void handleSave()}
-							className="flex h-8 shrink-0 items-center rounded-md inno-primary-button px-3 text-xs text-white disabled:opacity-50"
+							className="shrink-0"
 						>
 							{saving ? t("common.loading") : saved ? t("settings.ocr.saved", "已保存") : t("common.save")}
-						</button>
+						</Button>
 						{hasExistingToken && (
-							<button
+							<Button
+								variant="secondary"
 								disabled={saving}
 								onClick={() => void handleClear()}
-								className="flex h-8 shrink-0 items-center rounded-md border border-[var(--inno-border)] px-3 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+								className="shrink-0"
 							>
 								{t("settings.ocr.clear", "清除")}
-							</button>
+							</Button>
 						)}
 					</div>
 				</div>
@@ -337,8 +341,8 @@ function TavilySettings({ settings }: { settings: InnoSettings }) {
 
 			{open ? (
 				<div className="mt-3 grid gap-2.5">
-					<input
-						className={inputCls}
+					<Input
+						size="sm"
 						type="password"
 						value={apiKey}
 						onChange={(e) => { setApiKey(e.target.value); setKeyDirty(true); setSaved(false); }}
@@ -346,21 +350,23 @@ function TavilySettings({ settings }: { settings: InnoSettings }) {
 						autoComplete="off"
 					/>
 					<div className="flex min-w-0 flex-wrap items-center gap-2">
-						<button
+						<Button
+							variant="primary"
 							disabled={saving || !dirty}
 							onClick={() => void handleSave()}
-							className="flex h-8 shrink-0 items-center rounded-md inno-primary-button px-3 text-xs text-white disabled:opacity-50"
+							className="shrink-0"
 						>
 							{saving ? t("common.loading") : saved ? t("settings.tavily.saved", "已保存") : t("common.save")}
-						</button>
+						</Button>
 						{hasExistingKey && (
-							<button
+							<Button
+								variant="secondary"
 								disabled={saving}
 								onClick={() => void handleClear()}
-								className="flex h-8 shrink-0 items-center rounded-md border border-[var(--inno-border)] px-3 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+								className="shrink-0"
 							>
 								{t("settings.tavily.clear", "清除")}
-							</button>
+							</Button>
 						)}
 					</div>
 				</div>
@@ -457,18 +463,18 @@ function WebResearchSettings() {
 				<div className="mt-3 grid gap-2.5">
 					<label className="grid gap-1 text-xs text-[var(--inno-text-muted)]">
 						{t("settings.webResearch.defaultProvider", "默认搜索源")}
-						<select
-							className={inputCls}
+						<Select
 							value={provider}
-							onChange={(e) => { setProvider(e.target.value); setSaved(false); }}
+							onValueChange={(value) => { setProvider(value); setSaved(false); }}
 						>
-							<option value="auto">auto（自动选择）</option>
-							{data.providers.map((p) => (
-								<option key={p.id} value={p.id}>
-									{p.id}{p.configured ? " ✓" : p.kind === "none" ? `（${t("settings.webResearch.keyless", "免配置")}）` : ""}
-								</option>
-							))}
-						</select>
+							<SelectTrigger className="w-full text-sm" aria-label={t("settings.webResearch.defaultProvider", "默认搜索源")}><SelectValue /></SelectTrigger>
+							<SelectContent>
+								<SelectOption value="auto" label="auto（自动选择）" />
+								{data.providers.map((p) => (
+									<SelectOption key={p.id} value={p.id} label={`${p.id}${p.configured ? " ✓" : p.kind === "none" ? `（${t("settings.webResearch.keyless", "免配置")}）` : ""}`} />
+								))}
+							</SelectContent>
+						</Select>
 					</label>
 
 					{data.providers.map((p) =>
@@ -479,8 +485,8 @@ function WebResearchSettings() {
 							</div>
 						) : (
 							<div key={p.id} className="flex min-w-0 items-center gap-2">
-								<input
-									className={inputCls}
+								<Input
+									size="sm"
 									type={p.kind === "key" ? "password" : "text"}
 									value={draft[p.id] ?? ""}
 									onChange={(e) => {
@@ -504,13 +510,14 @@ function WebResearchSettings() {
 					)}
 
 					<div className="flex min-w-0 flex-wrap items-center gap-2">
-						<button
+						<Button
+							variant="primary"
 							disabled={saving || !dirty}
 							onClick={() => void handleSave()}
-							className="flex h-8 shrink-0 items-center rounded-md inno-primary-button px-3 text-xs text-white disabled:opacity-50"
+							className="shrink-0"
 						>
 							{saving ? t("common.loading") : saved ? t("settings.webResearch.saved", "已保存") : t("common.save")}
-						</button>
+						</Button>
 					</div>
 					<p className="text-xs leading-relaxed text-[var(--inno-text-subtle)]">
 						{t("settings.webResearch.hint", "更多搜索源与高级选项可直接编辑配置目录下的 web-search.json。")}

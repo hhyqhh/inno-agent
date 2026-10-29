@@ -6,8 +6,8 @@ import { jobsStore } from "../stores/jobs-store.js";
 import { requiresCheckIn, type CreateJobInput, type ScheduledJob, type TaskType } from "../types/jobs.js";
 import type { CheckInStatus } from "../types/checkins.js";
 import { useStoreSnapshot } from "./hooks.js";
-import { checkboxCls } from "./ui/checkbox.js";
 import { Spinner } from "./ui/Spinner.js";
+import { Button, Checkbox, Input, Select, SelectContent, SelectOption, SelectTrigger, SelectValue, Textarea } from "./ui/index.js";
 import { ScheduleEditor } from "./jobs/ScheduleEditor.js";
 import { CheckInCard } from "./jobs/CheckInCard.js";
 import { runJobInConversation } from "./jobs/runJobInConversation.js";
@@ -197,10 +197,10 @@ export function JobsPanel() {
 							<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("jobs.title")}</h3>
 							<p className="text-xs text-[var(--inno-text-muted)]">{t("jobs.subtitle")}</p>
 						</div>
-						<button className="flex items-center gap-1 rounded-md inno-primary-button px-3 py-1.5 text-sm text-white" onClick={openNewForm}>
+						<Button variant="primary" size="sm" onClick={openNewForm}>
 							<Plus size={14} />
 							{t("jobs.newJob")}
-						</button>
+						</Button>
 					</div>
 
 					<div className="px-[18px] pb-[18px] pt-3">
@@ -264,39 +264,43 @@ export function JobsPanel() {
 											</div>
 
 												<div className="mt-2 flex flex-wrap gap-1.5">
-													<button
-														className={`flex items-center gap-1 rounded-md inno-primary-button px-2 py-1 text-xs text-white ${isRunning ? "cursor-wait opacity-50" : ""}`}
+													<Button
+														variant="primary"
+														size="xs"
 														disabled={isRunning}
 														title={t("jobs.actions.run")}
 														onClick={() => void runJobNow(job)}
 													>
 														<Play size={12} />
 														{isRunning ? t("jobs.actions.running") : t("jobs.actions.run")}
-													</button>
-													<button
-														className="flex items-center gap-1 rounded bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+													</Button>
+													<Button
+														variant="secondary"
+														size="xs"
 														title={t("jobs.actions.edit")}
 														onClick={() => openEditForm(job)}
 													>
 														<Pencil size={12} />
 														{t("jobs.actions.edit")}
-													</button>
-													<button
-														className="flex items-center gap-1 rounded bg-[var(--inno-surface-muted)] px-2 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+													</Button>
+													<Button
+														variant="secondary"
+														size="xs"
 														title={job.enabled ? t("jobs.actions.disable") : t("jobs.actions.enable")}
 														onClick={() => void jobsStore.update(job.id, { enabled: !job.enabled })}
 													>
 														{job.enabled ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
 														{job.enabled ? t("jobs.actions.disable") : t("jobs.actions.enable")}
-													</button>
-													<button
-														className="flex items-center gap-1 rounded px-2 py-1 text-xs text-[var(--inno-danger)] hover:bg-[var(--inno-danger-bg)]"
+													</Button>
+													<Button
+														variant="danger"
+														size="xs"
 														title={t("jobs.actions.delete")}
 														onClick={() => void jobsStore.remove(job.id)}
 													>
 														<Trash2 size={12} />
 														{t("jobs.actions.delete")}
-													</button>
+													</Button>
 												</div>
 											</div>
 										);
@@ -330,8 +334,8 @@ export function JobsPanel() {
 						<div className="flex flex-col gap-3">
 							<label className="block text-sm">
 								<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("jobs.form.name")}</span>
-								<input
-									className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+				<Input
+					className="rounded-md px-3 py-2 text-sm"
 									placeholder={t("jobs.form.namePlaceholder") ?? ""}
 									value={form.name}
 									onChange={(event) => setForm({ ...form, name: event.target.value })}
@@ -352,23 +356,23 @@ export function JobsPanel() {
 
 							<label className="block text-sm">
 								<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("jobs.form.taskType")}</span>
-								<select
-									className="w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+								<Select
 									value={form.taskType}
-									onChange={(event) => setForm({ ...form, taskType: event.target.value as TaskType })}
+									onValueChange={(taskType) => setForm({ ...form, taskType: taskType as TaskType })}
 								>
+									<SelectTrigger className="w-full min-h-10 text-sm"><SelectValue /></SelectTrigger>
+									<SelectContent>
 									{TASK_TYPE_IDS.map((id) => (
-										<option key={id} value={id}>
-											{t(`jobs.taskTypes.${id}`)}
-										</option>
+										<SelectOption key={id} value={id} label={t(`jobs.taskTypes.${id}`)} />
 									))}
-								</select>
+									</SelectContent>
+								</Select>
 							</label>
 
 							<label className="block text-sm">
 								<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("jobs.form.prompt")}</span>
-								<textarea
-									className="h-24 w-full resize-none rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+								<Textarea
+									className="h-24 resize-none px-3 py-2 text-sm"
 									placeholder={t("jobs.form.promptPlaceholder") ?? ""}
 									value={form.prompt}
 									onChange={(event) => setForm({ ...form, prompt: event.target.value })}
@@ -376,9 +380,7 @@ export function JobsPanel() {
 							</label>
 
 							<label className="flex items-center gap-2 text-sm text-[var(--inno-text)]">
-								<input
-									type="checkbox"
-									className={checkboxCls}
+								<Checkbox
 									checked={form.enabled}
 									onChange={(event) => setForm({ ...form, enabled: event.target.checked })}
 								/>
@@ -387,20 +389,22 @@ export function JobsPanel() {
 						</div>
 						<div className="mt-4 flex justify-end gap-2">
 							{formError ? <div className="mr-auto text-xs text-[var(--inno-danger)]">{formError}</div> : null}
-							<button
-								className="rounded-md bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
+							<Button
+								variant="secondary"
+								size="sm"
 								disabled={isSaving}
 								onClick={() => setShowForm(false)}
 							>
 								{t("common.cancel")}
-							</button>
-							<button
-								className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50"
+							</Button>
+							<Button
+								variant="primary"
+								size="sm"
 								disabled={isSaving}
 								onClick={() => void saveForm()}
 							>
 								{isSaving ? t("common.saving") : t("common.save")}
-							</button>
+							</Button>
 						</div>
 					</motion.div>
 				</motion.div>

@@ -1,9 +1,15 @@
-import { createPortal } from "react-dom";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import {
+	useUITransition,
+	Input,
+	SearchableSelect,
+	type SearchableSelectAction,
+	type SearchableSelectSection,
+} from "./ui/index.js";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, ChevronDown, ChevronUp, Folder, FolderInput, Plus, Search, X, Ban, LoaderCircle } from "lucide-react";
+import { motion } from "motion/react";
+import { Ban, Check, ChevronDown, Folder, FolderInput, LoaderCircle, Plus, X } from "lucide-react";
 import type { WorkspaceMeta } from "../api/workspaces.js";
-import { PopoverSurface } from "./ui/PopoverSurface.js";
 
 export type WorkspaceChoice =
 	| { kind: "workspace"; workspaceId: string }
@@ -30,22 +36,10 @@ interface WorkspaceSwitcherProps {
 	onImport?: (file: File) => void;
 }
 
-type WorkspaceMenuPlacement = "above" | "below";
-
-interface WorkspaceMenuPosition {
-	left: number;
-	top: number;
-	maxHeight: number;
-	placement: WorkspaceMenuPlacement;
-}
-
-const WORKSPACE_MENU_MARGIN = 8;
-const WORKSPACE_MENU_MAX_HEIGHT = 390;
-
 /**
- * Compact workspace context selector shared by the welcome view and active
- * conversations. It deliberately owns only the popover UI; session binding
- * and draft creation remain in ChatCenter.
+ * Workspace selection built on the shared searchable-select pattern. Workspace
+ * filtering, selected rows, popover placement and keyboard behavior are shared;
+ * this component owns only workspace-specific actions and create/import flow.
  */
 export function WorkspaceSwitcher({
 	workspaces,
@@ -59,142 +53,48 @@ export function WorkspaceSwitcher({
 	onChange,
 	onImport,
 }: WorkspaceSwitcherProps) {
+	const uiTransition = useUITransition();
 	const { t } = useTranslation();
-	const rootRef = useRef<HTMLDivElement | null>(null);
-	const triggerRef = useRef<HTMLButtonElement | null>(null);
-	const menuRef = useRef<HTMLDivElement | null>(null);
-	const searchRef = useRef<HTMLInputElement | null>(null);
 	const createInputRef = useRef<HTMLInputElement | null>(null);
 	const importInputRef = useRef<HTMLInputElement | null>(null);
 	const [open, setOpen] = useState(false);
-	const [query, setQuery] = useState("");
 	const [creating, setCreating] = useState(false);
 	const [draftName, setDraftName] = useState(newWorkspaceName);
-	const [menuPosition, setMenuPosition] = useState<WorkspaceMenuPosition>({
-		left: WORKSPACE_MENU_MARGIN,
-		top: WORKSPACE_MENU_MARGIN,
-		maxHeight: WORKSPACE_MENU_MAX_HEIGHT,
-		placement: "above",
-	});
 
 	const selectedWorkspace = useMemo(
 		() => (selectedWorkspaceId ? workspaces.find((workspace) => workspace.id === selectedWorkspaceId) : undefined),
-		[ selectedWorkspaceId, workspaces ],
+		[selectedWorkspaceId, workspaces],
 	);
+	const tempWorkspace = useMemo(() => workspaces.find((workspace) => workspace.isTemp), [workspaces]);
 	const resolvedKind: WorkspaceSelectionKind = selectedWorkspace?.isTemp
 		? "temp"
 		: selectedWorkspaceId
 			? "workspace"
 			: selectedKind;
-	const visibleWorkspaces = useMemo(() => {
-		const normalized = query.trim().toLocaleLowerCase();
-		return workspaces
-			.filter((workspace) => !workspace.id.startsWith("channel-") && (conversationMode || !workspace.isTemp))
-			.filter((workspace) => !normalized || `${workspace.name} ${workspace.relPath}`.toLocaleLowerCase().includes(normalized));
-	}, [conversationMode, query, workspaces]);
-
+	const selectedValue = selectedWorkspace?.id ?? (resolvedKind === "temp" ? tempWorkspace?.id ?? null : null);
 	const triggerLabel = resolvedKind === "temp"
 		? t("workspace.tempWorkspaceLabel")
 		: resolvedKind === "new"
 			? newWorkspaceName.trim() || t("workspace.newWorkspace")
 			: selectedWorkspace?.name ?? t("workspace.selectWorkspace");
-
-	useEffect(() => {
-		if (!open) return;
-		const closeOnPointerDown = (event: PointerEvent) => {
-			const target = event.target as Node;
-			if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
-			setOpen(false);
-		};
-		const closeOnEscape = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				setOpen(false);
-				setCreating(false);
-			}
-		};
-		document.addEventListener("pointerdown", closeOnPointerDown);
-		window.addEventListener("keydown", closeOnEscape);
-		return () => {
-			document.removeEventListener("pointerdown", closeOnPointerDown);
-			window.removeEventListener("keydown", closeOnEscape);
-		};
-	}, [open]);
-
-	const repositionMenu = useCallback(() => {
-		if (!open) return;
-		const trigger = triggerRef.current;
-		const menu = menuRef.current;
-		if (!trigger || !menu || typeof window === "undefined") return;
-
-		const triggerRect = trigger.getBoundingClientRect();
-		const aboveSpace = Math.max(0, triggerRect.top - WORKSPACE_MENU_MARGIN);
-		const belowSpace = Math.max(0, window.innerHeight - triggerRect.bottom - WORKSPACE_MENU_MARGIN);
-		const placement: WorkspaceMenuPlacement = aboveSpace >= belowSpace ? "above" : "below";
-		const availableSpace = placement === "above" ? aboveSpace : belowSpace;
-		const maxHeight = Math.max(1, Math.min(WORKSPACE_MENU_MAX_HEIGHT, availableSpace));
-
-		// Apply the available height before measuring so the first layout already
-		// reserves a scrollable list instead of painting past the viewport.
-		menu.style.maxHeight = `${maxHeight}px`;
-		// getBoundingClientRect() includes the opening transform animation. Reading
-		// it here and again after the first scroll produces a small position jump;
-		// offset* reports the stable, untransformed layout box instead.
-		const width = Math.min(menu.offsetWidth || 300, Math.max(1, window.innerWidth - WORKSPACE_MENU_MARGIN * 2));
-		const height = Math.min(menu.offsetHeight || maxHeight, maxHeight);
-		const maxLeft = Math.max(WORKSPACE_MENU_MARGIN, window.innerWidth - width - WORKSPACE_MENU_MARGIN);
-		const left = Math.max(WORKSPACE_MENU_MARGIN, Math.min(triggerRect.left, maxLeft));
-		const preferredTop = placement === "above"
-			? triggerRect.top - height - WORKSPACE_MENU_MARGIN
-			: triggerRect.bottom + WORKSPACE_MENU_MARGIN;
-		const maxTop = Math.max(WORKSPACE_MENU_MARGIN, window.innerHeight - height - WORKSPACE_MENU_MARGIN);
-		const top = Math.max(WORKSPACE_MENU_MARGIN, Math.min(preferredTop, maxTop));
-
-		setMenuPosition((previous) => (
-			previous.left === left
-				&& previous.top === top
-				&& previous.maxHeight === maxHeight
-				&& previous.placement === placement
-				? previous
-				: { left, top, maxHeight, placement }
-		));
-	}, [open]);
-
-	useLayoutEffect(() => {
-		if (!open) return;
-		repositionMenu();
-		const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(repositionMenu);
-		for (const target of [triggerRef.current, menuRef.current]) {
-			if (target) resizeObserver?.observe(target);
-		}
-		window.addEventListener("resize", repositionMenu);
-		const handleScroll = (event: Event) => {
-			// Scrolling the portaled menu only changes its contents, not its fixed
-			// anchor. Avoid a synchronous layout read on every wheel/trackpad event.
-			if (event.target instanceof Node && menuRef.current?.contains(event.target)) return;
-			repositionMenu();
-		};
-		document.addEventListener("scroll", handleScroll, true);
-		return () => {
-			resizeObserver?.disconnect();
-			window.removeEventListener("resize", repositionMenu);
-			document.removeEventListener("scroll", handleScroll, true);
-		};
-	}, [creating, open, repositionMenu, visibleWorkspaces.length]);
-
-	useEffect(() => {
-		if (!open) {
-			setQuery("");
-			setCreating(false);
-			return;
-		}
-		if (creating) createInputRef.current?.focus();
-		else searchRef.current?.focus();
-	}, [creating, open]);
+	const searchableWorkspaces = useMemo(
+		() => workspaces.filter((workspace) => !workspace.id.startsWith("channel-") && (conversationMode || !workspace.isTemp)),
+		[conversationMode, workspaces],
+	);
+	const sections = useMemo<SearchableSelectSection[]>(() => {
+		const projectOptions = searchableWorkspaces.map((workspace) => ({
+			value: workspace.id,
+			label: workspace.name,
+			searchText: workspace.relPath,
+			icon: workspace.isTemp ? <Ban size={14} /> : <Folder size={14} />,
+			className: "inno-workspace-option",
+		}));
+		return [{ id: "workspaces", options: projectOptions }];
+	}, [searchableWorkspaces]);
 
 	const close = () => {
 		setOpen(false);
 		setCreating(false);
-		setQuery("");
 	};
 
 	const choose = (choice: WorkspaceChoice) => {
@@ -202,10 +102,9 @@ export function WorkspaceSwitcher({
 			const choiceWorkspaceId = choice.kind === "workspace"
 				? choice.workspaceId
 				: choice.kind === "temp"
-					? workspaces.find((workspace) => workspace.isTemp)?.id
+					? tempWorkspace?.id
 					: undefined;
-			const currentWorkspaceId = selectedWorkspace?.id;
-			if (choiceWorkspaceId && currentWorkspaceId === choiceWorkspaceId) {
+			if (choiceWorkspaceId && selectedWorkspace?.id === choiceWorkspaceId) {
 				close();
 				return;
 			}
@@ -222,173 +121,139 @@ export function WorkspaceSwitcher({
 	};
 
 	const pickImportArchive = () => {
-		// Close the popover first: the native file dialog blocks the main
-		// thread, and the outside-pointer-down listener would otherwise fire
-		// on the dialog itself.
+		// Close before opening the native file dialog, then click within the same
+		// user gesture so browsers preserve the file-picker activation.
 		close();
 		importInputRef.current?.click();
 	};
 
 	const handleImportFile = (event: ChangeEvent<HTMLInputElement>) => {
 		const file = event.target.files?.[0];
-		// Reset so picking the same archive twice still fires change.
 		event.target.value = "";
 		if (file && onImport) onImport(file);
 	};
 
-	return (
-		<div ref={rootRef} className={`inno-workspace-switcher ${className}`}>
+	const actions: SearchableSelectAction[] = conversationMode ? [] : [
+		...(tempWorkspace
+			? [{
+				id: "temporary-workspace",
+				label: t("workspace.tempWorkspace"),
+				icon: <Ban size={15} />,
+				selected: resolvedKind === "temp",
+				onSelect: () => choose({ kind: "temp" }),
+			}]
+			: []),
+		{
+			id: "create-workspace",
+			label: t("workspace.newWorkspace"),
+			icon: <Plus size={15} />,
+			onSelect: () => {
+				setDraftName(newWorkspaceName);
+				setCreating(true);
+			},
+			closeOnSelect: false,
+		},
+		...(onImport
+			? [{
+				id: "import-workspace",
+				label: t("workspace.importWorkspace"),
+				icon: <FolderInput size={15} />,
+				onSelect: pickImportArchive,
+			}]
+			: []),
+	];
+
+	const createContent = creating ? (
+		<div className="inno-workspace-create-form">
+			<div className="inno-workspace-menu-heading">{t("workspace.newWorkspace")}</div>
+			<div className="inno-workspace-create-row">
+				<Input
+					size="sm"
+					ref={createInputRef}
+					value={draftName}
+					placeholder={t("workspace.newWorkspacePlaceholder")}
+					className="inno-workspace-search-input"
+					onChange={(event) => setDraftName(event.target.value)}
+					onKeyDown={(event) => {
+						if (event.key === "Enter") {
+							event.preventDefault();
+							submitNewWorkspace();
+						}
+						if (event.key === "Escape") {
+							setCreating(false);
+							setDraftName("");
+						}
+					}}
+				/>
+				<button
+					type="button"
+					className="inno-workspace-create-submit"
+					disabled={!draftName.trim()}
+					onClick={submitNewWorkspace}
+				>
+					<Check size={14} />
+				</button>
+			</div>
 			<button
 				type="button"
-				ref={triggerRef}
-				className="inno-workspace-switcher-trigger"
-				disabled={disabled || busy}
-				aria-haspopup="menu"
-				aria-expanded={open}
-				title={t("workspace.switch")}
-				onClick={() => setOpen((value) => !value)}
+				className="inno-workspace-menu-back"
+				onClick={() => {
+					setCreating(false);
+					setDraftName("");
+				}}
 			>
-				<span className="inno-workspace-switcher-folder" aria-hidden="true">
-					<Folder size={15} />
-				</span>
-				<span className="inno-workspace-switcher-label" title={triggerLabel}>{triggerLabel}</span>
-				{busy ? <LoaderCircle size={13} className="inno-workspace-switcher-spinner" aria-hidden="true" /> : open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
+				<X size={13} />
+				<span>{t("common.cancel")}</span>
 			</button>
+		</div>
+	) : undefined;
 
-			{open && typeof document !== "undefined" ? createPortal(
-				<PopoverSurface
-					ref={menuRef}
-					className="inno-workspace-switcher-menu"
-					role="menu"
-					aria-label={t("workspace.switch")}
-					style={{
-						position: "fixed",
-						left: menuPosition.left,
-						top: menuPosition.top,
-						right: "auto",
-						bottom: "auto",
-						maxHeight: menuPosition.maxHeight,
-						zIndex: 100,
-						transformOrigin: menuPosition.placement === "above" ? "bottom left" : "top left",
-					}}
-				>
-					{creating ? (
-						<div className="inno-workspace-create-form">
-							<div className="inno-workspace-menu-heading">{t("workspace.newWorkspace")}</div>
-							<div className="inno-workspace-create-row">
-								<input
-									ref={createInputRef}
-									value={draftName}
-									placeholder={t("workspace.newWorkspacePlaceholder")}
-									className="inno-workspace-search-input"
-									onChange={(event) => setDraftName(event.target.value)}
-									onKeyDown={(event) => {
-										if (event.key === "Enter") {
-											event.preventDefault();
-											submitNewWorkspace();
-										}
-										if (event.key === "Escape") {
-											setCreating(false);
-											setDraftName("");
-										}
-									}}
-								/>
-								<button
-									type="button"
-									className="inno-workspace-create-submit"
-									disabled={!draftName.trim()}
-									onClick={submitNewWorkspace}
-								>
-									<Check size={14} />
-								</button>
-							</div>
-							<button
-								type="button"
-								className="inno-workspace-menu-back"
-								onClick={() => {
-									setCreating(false);
-									setDraftName("");
-								}}
+	return (
+		<div className={`inno-workspace-switcher ${className}`}>
+			<SearchableSelect
+				trigger={(
+					<button
+						type="button"
+						className="inno-workspace-switcher-trigger inno-composer-subrow-control"
+						disabled={disabled || busy}
+					>
+						<span className="inno-workspace-switcher-folder" aria-hidden="true"><Folder size={15} /></span>
+						<span className="inno-workspace-switcher-label">{triggerLabel}</span>
+						{busy ? <LoaderCircle size={13} className="inno-workspace-switcher-spinner" aria-hidden="true" /> : (
+							<motion.span
+								className="inline-flex shrink-0"
+								animate={{ rotate: open ? 180 : 0 }}
+								transition={uiTransition}
 							>
-								<X size={13} />
-								<span>{t("common.cancel")}</span>
-							</button>
-						</div>
-					) : (
-						<>
-							<div className="inno-workspace-search">
-								<Search size={14} aria-hidden="true" />
-								<input
-									ref={searchRef}
-									value={query}
-									placeholder={t("workspace.searchPlaceholder")}
-									aria-label={t("workspace.searchPlaceholder")}
-									onChange={(event) => setQuery(event.target.value)}
-								/>
-								{query ? (
-									<button type="button" className="inno-workspace-search-clear" aria-label={t("common.clearSearch", "清除搜索")} onClick={() => setQuery("")}>
-										<X size={13} />
-									</button>
-								) : null}
-							</div>
-
-							<div className="inno-workspace-options" role="group" aria-label={t("workspace.title")}>
-								{visibleWorkspaces.length > 0 ? visibleWorkspaces.map((workspace) => {
-									const selected = selectedWorkspaceId === workspace.id && (workspace.isTemp ? resolvedKind === "temp" : resolvedKind === "workspace");
-									return (
-										<button
-											key={workspace.id}
-											type="button"
-											role="menuitemradio"
-											aria-checked={selected}
-											className={`inno-workspace-option ${selected ? "is-selected" : ""}`}
-											title={workspace.relPath}
-											onClick={() => choose({ kind: "workspace", workspaceId: workspace.id })}
-										>
-											<span className="inno-workspace-option-icon" aria-hidden="true"><Folder size={15} /></span>
-											<span className="inno-workspace-option-copy">
-												<span className="inno-workspace-option-name">{workspace.name}</span>
-												<span className="inno-workspace-option-path">{workspace.relPath}</span>
-											</span>
-											{selected ? <Check size={15} className="inno-workspace-option-check" aria-hidden="true" /> : null}
-										</button>
-									);
-								}) : (
-									<div className="inno-workspace-empty">{t("workspace.noResults")}</div>
-								)}
-							</div>
-
-							{!conversationMode ? (
-								<>
-									<div className="inno-workspace-menu-divider" />
-									<button type="button" className="inno-workspace-action" role="menuitem" onClick={() => setCreating(true)}>
-										<span className="inno-workspace-action-icon" aria-hidden="true"><Plus size={15} /></span>
-										<span>{t("workspace.newWorkspace")}</span>
-									</button>
-									{onImport ? (
-										<button type="button" className="inno-workspace-action" role="menuitem" onClick={pickImportArchive}>
-											<span className="inno-workspace-action-icon" aria-hidden="true"><FolderInput size={15} /></span>
-											<span>{t("workspace.importWorkspace")}</span>
-										</button>
-									) : null}
-									<button
-										type="button"
-										className={`inno-workspace-action ${resolvedKind === "temp" ? "is-selected" : ""}`}
-										role="menuitemradio"
-										aria-checked={resolvedKind === "temp"}
-										onClick={() => choose({ kind: "temp" })}
-									>
-										<span className="inno-workspace-action-icon" aria-hidden="true"><Ban size={14} /></span>
-										<span>{t("workspace.tempWorkspace")}</span>
-										{resolvedKind === "temp" ? <Check size={15} className="inno-workspace-option-check" aria-hidden="true" /> : null}
-									</button>
-								</>
-							) : null}
-						</>
-					)}
-				</PopoverSurface>,
-				document.body,
-			) : null}
+								<ChevronDown size={13} aria-hidden="true" />
+							</motion.span>
+						)}
+					</button>
+				)}
+				open={open}
+				onOpenChange={(nextOpen) => {
+					setOpen(nextOpen);
+					if (!nextOpen) setCreating(false);
+				}}
+				sections={sections}
+				value={selectedValue}
+				onValueChange={(workspaceId) => {
+					if (!conversationMode && tempWorkspace?.id === workspaceId) choose({ kind: "temp" });
+					else choose({ kind: "workspace", workspaceId });
+				}}
+				searchPlaceholder={t("workspace.searchPlaceholder")}
+				searchClassName="inno-workspace-switcher-search"
+				clearSearchLabel={t("common.clearSearch", "清除搜索")}
+				emptyMessage={t("workspace.noResults")}
+				ariaLabel={t("workspace.title")}
+				actions={actions}
+				customContent={createContent}
+				initialFocusRef={creating ? createInputRef : undefined}
+				contentClassName="inno-workspace-switcher-menu"
+				maxListHeight={180}
+				side="top"
+				sideOffset={8}
+			/>
 			{onImport ? (
 				<input
 					ref={importInputRef}

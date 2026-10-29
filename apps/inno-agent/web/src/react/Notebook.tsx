@@ -4,6 +4,7 @@ import { Network, FileText, PanelLeftClose, PanelLeftOpen, Trash2, ClipboardChec
 import { notebookStore } from "../stores/notebook-store.js";
 import type { WikiPageType } from "../types/wiki.js";
 import { useStoreSnapshot } from "./hooks.js";
+import { Button, getTabTriggerId, IconButton, Input, TabPanel, Tabs } from "./ui/index.js";
 import { GraphView } from "./notebook/GraphView.js";
 import { PageView } from "./notebook/PageView.js";
 import { ReviewView } from "./notebook/ReviewView.js";
@@ -73,35 +74,35 @@ export function Notebook() {
 		<div className={`relative grid h-full min-h-0 gap-4 p-5 transition-[grid-template-columns] duration-200 max-md:grid-cols-[minmax(0,1fr)] ${sidebarOpen ? "grid-cols-[260px_minmax(0,1fr)]" : "grid-cols-[0px_minmax(0,1fr)]"}`}>
 			<aside className={`flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] transition-opacity duration-200 max-md:absolute max-md:inset-3 max-md:z-20 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0 max-md:hidden"}`}>
 				<div className="flex gap-2 border-b border-[var(--inno-border)] p-2">
-					<input
-						type="text"
-						className="min-w-0 flex-1 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+					<Input
+						className="min-w-0 flex-1 rounded-lg px-3 py-1.5 text-sm"
 						placeholder={t("notebook.search") ?? ""}
 						value={state.searchQuery}
 						onChange={(event) => notebookStore.setSearchQuery(event.target.value)}
 					/>
-					<button
-						type="button"
-						className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] max-md:flex"
+					<IconButton
+						size="sm"
+						className="hidden shrink-0 max-md:flex"
+						aria-label={t("common.collapseSidebar", "Collapse sidebar")}
 						onClick={() => setSidebarOpen(false)}
 						title={t("common.collapseSidebar", "Collapse sidebar")}
 					>
 						<PanelLeftClose size={16} />
-					</button>
+					</IconButton>
 				</div>
 				<div className="flex flex-wrap gap-1 border-b border-[var(--inno-border)] px-2 py-2">
 					{FILTER_TYPES.map((type) => (
-						<button
+						<Button
 							key={type}
-							className={`rounded-full px-2 py-0.5 text-xs transition-colors ${
-								state.filterType === type
-									? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]"
-									: "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-							}`}
+							variant={state.filterType === type ? "primary" : "secondary"}
+							size="compact"
+							shape="pill"
+							className="inno-filter-button inno-notebook-filter-button"
+							aria-pressed={state.filterType === type}
 							onClick={() => notebookStore.setFilterType(type)}
 						>
 							{t(`notebook.filter.${type}`, { defaultValue: type })}
-						</button>
+						</Button>
 					))}
 				</div>
 				<div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -129,9 +130,12 @@ export function Notebook() {
 											<span className="truncate text-[11.5px] text-[var(--inno-text-subtle)]">{page.frontmatter?.updated || ""}</span>
 										</div>
 									</button>
-									<button
-										className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-muted)] hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)] disabled:opacity-50 ${state.isDeletingPage ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+									<IconButton
+										variant="danger"
+										size="xs"
+										className={`absolute right-1.5 top-1.5 ${state.isDeletingPage ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
 										title={t("notebook.delete.button")}
+										aria-label={t("notebook.delete.button")}
 										disabled={state.isDeletingPage}
 										onClick={(e) => {
 											e.stopPropagation();
@@ -139,7 +143,7 @@ export function Notebook() {
 										}}
 									>
 										<Trash2 size={14} />
-									</button>
+									</IconButton>
 								</div>
 							);
 						})}
@@ -149,49 +153,55 @@ export function Notebook() {
 
 			<section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] max-md:col-start-1 max-md:row-start-1">
 				<div className="@container flex items-center gap-2 border-b border-[var(--inno-border)] px-3">
-					<button
-						className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+					<IconButton
+						size="xs"
+						className="shrink-0"
 						onClick={() => setSidebarOpen((v) => !v)}
 						title={sidebarOpen ? t("common.collapseSidebar", "Collapse sidebar") : t("common.expandSidebar", "Expand sidebar")}
+						aria-label={sidebarOpen ? t("common.collapseSidebar", "Collapse sidebar") : t("common.expandSidebar", "Expand sidebar")}
 					>
 						{sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-					</button>
-					<div className="flex min-w-0 gap-1">
-						<button
-							className={`inline-flex items-center gap-1.5 border-b-2 px-3.5 py-2.5 text-[13.5px] ${state.view === "page" ? "border-[var(--inno-accent)] font-medium text-[var(--inno-accent)]" : "border-transparent text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"}`}
-							onClick={() => notebookStore.setView("page")}
-							title={t("notebook.view.page")}
-						>
-							<FileText size={14} />
-							<span className="hidden @[680px]:inline">{t("notebook.view.page")}</span>
-						</button>
-						<button
-							className={`inline-flex items-center gap-1.5 border-b-2 px-3.5 py-2.5 text-[13.5px] ${state.view === "graph" ? "border-[var(--inno-accent)] font-medium text-[var(--inno-accent)]" : "border-transparent text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"}`}
-							onClick={() => notebookStore.setView("graph")}
-							title={t("notebook.view.graph")}
-						>
-							<Network size={14} />
-							<span className="hidden @[680px]:inline">{t("notebook.view.graph")}</span>
-						</button>
-						<button
-							className={`inline-flex items-center gap-1.5 border-b-2 px-3.5 py-2.5 text-[13.5px] ${state.view === "reviews" ? "border-[var(--inno-accent)] font-medium text-[var(--inno-accent)]" : "border-transparent text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"}`}
-							onClick={() => notebookStore.setView("reviews")}
-							title={t("notebook.reviews.title")}
-						>
-							<ClipboardCheck size={14} />
-							<span className="hidden @[680px]:inline">{t("notebook.reviews.title")}</span>
-							{state.reviews.length > 0 ? <span className="text-[10px]">{state.reviews.length}</span> : null}
-						</button>
-					</div>
+					</IconButton>
+					<Tabs
+						id="notebook-view"
+						value={state.view}
+						onValueChange={(view) => notebookStore.setView(view)}
+						ariaLabel={t("notebook.view.label")}
+						size="sm"
+						items={[
+							{
+								value: "page",
+								ariaLabel: t("notebook.view.page"),
+								title: t("notebook.view.page"),
+								label: <><FileText size={14} /><span className="hidden @[680px]:inline">{t("notebook.view.page")}</span></>,
+							},
+							{
+								value: "graph",
+								ariaLabel: t("notebook.view.graph"),
+								title: t("notebook.view.graph"),
+								label: <><Network size={14} /><span className="hidden @[680px]:inline">{t("notebook.view.graph")}</span></>,
+							},
+							{
+								value: "reviews",
+								ariaLabel: t("notebook.reviews.title"),
+								title: t("notebook.reviews.title"),
+								label: <><ClipboardCheck size={14} /><span className="hidden @[680px]:inline">{t("notebook.reviews.title")}</span>{state.reviews.length > 0 ? <span className="text-[10px]">{state.reviews.length}</span> : null}</>,
+							},
+						]}
+					/>
 					<div className="ml-auto truncate pl-2 text-xs text-[var(--inno-text-subtle)]">{state.currentPagePath ?? ""}</div>
 				</div>
-				<div className={`min-h-0 flex-1 ${state.view === "graph" ? "overflow-hidden" : "overflow-auto"}`}>
+				<TabPanel
+					id="notebook-view-panel"
+					labelledBy={getTabTriggerId("notebook-view", state.view)}
+					className={`min-h-0 flex-1 ${state.view === "graph" ? "overflow-hidden" : "overflow-auto"}`}
+				>
 					{state.view === "graph"
 						? <GraphView />
 						: state.view === "reviews"
 							? <ReviewView reviews={state.reviews} onOpenPage={(path) => void notebookStore.selectPage(path)} />
 							: <PageView />}
-				</div>
+				</TabPanel>
 			</section>
 		</div>
 	);

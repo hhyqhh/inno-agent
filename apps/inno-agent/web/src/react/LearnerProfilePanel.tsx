@@ -13,6 +13,7 @@ import type {
 	MisconceptionStatus,
 } from "../types/learner.js";
 import { useStoreSnapshot } from "./hooks.js";
+import { Button, Input, Select, SelectContent, SelectOption, SelectTrigger, SelectValue, Textarea } from "./ui/index.js";
 
 const GOAL_TYPES: GoalType[] = ["skill", "concept", "project", "exam", "habit"];
 const GOAL_STATUSES: GoalStatus[] = ["active", "paused", "completed", "archived"];
@@ -111,8 +112,8 @@ function SummarySection() {
 				<Stat label={t("profile.summary.dueReviews")} value={due} />
 				<Stat label={t("profile.summary.openMisconceptions")} value={openMisc} />
 			</div>
-			<textarea
-				className="min-h-[110px] w-full resize-y rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3.5 py-3 text-[13px] leading-relaxed text-[var(--inno-text-muted)] focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+			<Textarea
+				className="min-h-[110px] resize-y rounded-xl px-3.5 py-3 text-[13px] leading-relaxed text-[var(--inno-text-muted)]"
 				placeholder={t("profile.summary.placeholder") ?? ""}
 				value={buffer}
 				onChange={(e) => {
@@ -122,17 +123,19 @@ function SummarySection() {
 			/>
 			{dirty ? (
 				<div className="mt-2 flex justify-end gap-2">
-					<button
-						className="rounded-lg bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"
+					<Button
+						variant="secondary"
+						size="sm"
 						onClick={() => {
 							setBuffer(profile?.profile_summary ?? "");
 							setDirty(false);
 						}}
 					>
 						{t("common.cancel")}
-					</button>
-					<button
-						className="rounded-lg inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50"
+					</Button>
+					<Button
+						variant="primary"
+						size="sm"
 						disabled={state.isSaving}
 						onClick={async () => {
 							await learnerStore.patchSummary(buffer);
@@ -140,7 +143,7 @@ function SummarySection() {
 						}}
 					>
 						{state.isSaving ? t("common.saving") : t("common.save")}
-					</button>
+					</Button>
 				</div>
 			) : null}
 		</Section>
@@ -206,13 +209,14 @@ function GoalsSection() {
 				title={t("profile.sections.goals")}
 				count={goals.length}
 				action={
-					<button
-						className="inline-flex items-center gap-1.5 rounded-[9px] inno-primary-button px-3 py-1.5 text-xs text-white"
+					<Button
+						variant="primary"
+						size="xs"
 						onClick={openForm}
 					>
 						<Plus size={12} strokeWidth={2.2} />
 						{t("profile.goals.addNew")}
-					</button>
+					</Button>
 				}
 			>
 				{error ? <div className="mb-2 rounded bg-[var(--inno-danger-bg)] p-2 text-xs text-[var(--inno-danger)]">{error}</div> : null}
@@ -273,8 +277,8 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 				<div className="flex flex-col gap-3">
 					<label className="block text-sm">
 						<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.goals.title")}</span>
-						<input
-							className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+						<Input
+							className="rounded-lg px-3 py-2 text-sm"
 							placeholder={t("profile.goals.namePlaceholder") ?? ""}
 							value={draft.title}
 							autoFocus
@@ -284,27 +288,31 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 					<div className="grid grid-cols-2 gap-2">
 						<label className="block text-sm">
 							<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.goals.type")}</span>
-							<select
-								className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm"
+							<Select
 								value={draft.type}
-								onChange={(e) => setDraft({ ...draft, type: e.target.value as GoalType })}
+								onValueChange={(type) => setDraft({ ...draft, type: type as GoalType })}
 							>
+								<SelectTrigger className="w-full min-h-10 text-sm"><SelectValue /></SelectTrigger>
+								<SelectContent>
 								{GOAL_TYPES.map((tp) => (
-									<option key={tp} value={tp}>{t(`profile.goals.typeOptions.${tp}`)}</option>
+									<SelectOption key={tp} value={tp} label={t(`profile.goals.typeOptions.${tp}`)} />
 								))}
-							</select>
+								</SelectContent>
+							</Select>
 						</label>
 						<label className="block text-sm">
 							<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.goals.status")}</span>
-							<select
-								className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm"
+							<Select
 								value={draft.status}
-								onChange={(e) => setDraft({ ...draft, status: e.target.value as GoalStatus })}
+								onValueChange={(status) => setDraft({ ...draft, status: status as GoalStatus })}
 							>
+								<SelectTrigger className="w-full min-h-10 text-sm"><SelectValue /></SelectTrigger>
+								<SelectContent>
 								{GOAL_STATUSES.map((st) => (
-									<option key={st} value={st}>{t(`profile.goals.statusOptions.${st}`)}</option>
+									<SelectOption key={st} value={st} label={t(`profile.goals.statusOptions.${st}`)} />
 								))}
-							</select>
+								</SelectContent>
+							</Select>
 						</label>
 					</div>
 					<label className="block text-sm">
@@ -322,8 +330,8 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 					</label>
 					<label className="block text-sm">
 						<span className="mb-1 block font-medium text-[var(--inno-text)]">{t("profile.goals.successCriteria")}</span>
-						<textarea
-							className="h-20 w-full resize-none rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+						<Textarea
+							className="h-20 resize-none rounded-lg px-3 py-2 text-sm"
 							placeholder={t("profile.goals.successCriteriaPlaceholder") ?? ""}
 							value={draft.success_criteria.join("\n")}
 							onChange={(e) =>
@@ -337,20 +345,22 @@ function GoalFormDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 				</div>
 				<div className="mt-4 flex justify-end gap-2">
 					{error ? <div className="mr-auto text-xs text-[var(--inno-danger)]">{error}</div> : null}
-					<button
-						className="rounded-lg bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:text-[var(--inno-text)] disabled:opacity-50"
+					<Button
+						variant="secondary"
+						size="sm"
 						disabled={saving}
 						onClick={onClose}
 					>
 						{t("common.cancel")}
-					</button>
-					<button
-						className="rounded-lg inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50"
+					</Button>
+					<Button
+						variant="primary"
+						size="sm"
 						disabled={saving}
 						onClick={() => void save()}
 					>
 						{saving ? t("common.saving") : t("common.save")}
-					</button>
+					</Button>
 				</div>
 			</motion.div>
 		</motion.div>
@@ -435,18 +445,20 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 					<span className={`rounded-[9px] px-2.5 py-0.5 text-[11px] ${statusToneFor(goal.status)}`}>
 						{t(`profile.goals.statusOptions.${goal.status}`)}
 					</span>
-					<button
-						className="rounded-md px-2 py-1 text-xs text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+					<Button
+						variant="secondary"
+						size="xs"
 						onClick={() => setEditing(true)}
 					>
 						{t("common.edit")}
-					</button>
-					<button
-						className="rounded-md px-2 py-1 text-xs text-[var(--inno-danger)] hover:bg-[var(--inno-danger-bg)]"
+					</Button>
+					<Button
+						variant="danger"
+						size="xs"
 						onClick={() => void doDelete()}
 					>
 						{t("common.delete")}
-					</button>
+					</Button>
 				</div>
 			</div>
 		);
@@ -454,39 +466,39 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 	return (
 		<div className="rounded-xl border border-[var(--inno-border)] px-[15px] py-[13px]">
 			<div className="grid gap-2">
-				<input
-					className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-sm"
+				<Input
+					className="rounded-lg px-3 py-2 text-sm"
 					value={draft.title}
 					onChange={(e) => setDraft({ ...draft, title: e.target.value })}
 				/>
 				<div className="grid grid-cols-2 gap-2">
 					<label className="block text-xs">
 						<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.goals.type")}</span>
-						<select
-							className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+						<Select
 							value={draft.type}
-							onChange={(e) => setDraft({ ...draft, type: e.target.value as GoalType })}
+							onValueChange={(type) => setDraft({ ...draft, type: type as GoalType })}
 						>
+							<SelectTrigger className="w-full min-h-9 text-sm"><SelectValue /></SelectTrigger>
+							<SelectContent>
 							{GOAL_TYPES.map((tp) => (
-								<option key={tp} value={tp}>
-									{t(`profile.goals.typeOptions.${tp}`)}
-								</option>
+								<SelectOption key={tp} value={tp} label={t(`profile.goals.typeOptions.${tp}`)} />
 							))}
-						</select>
+							</SelectContent>
+						</Select>
 					</label>
 					<label className="block text-xs">
 						<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.goals.status")}</span>
-						<select
-							className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+						<Select
 							value={draft.status}
-							onChange={(e) => setDraft({ ...draft, status: e.target.value as GoalStatus })}
+							onValueChange={(status) => setDraft({ ...draft, status: status as GoalStatus })}
 						>
+							<SelectTrigger className="w-full min-h-9 text-sm"><SelectValue /></SelectTrigger>
+							<SelectContent>
 							{GOAL_STATUSES.map((st) => (
-								<option key={st} value={st}>
-									{t(`profile.goals.statusOptions.${st}`)}
-								</option>
+								<SelectOption key={st} value={st} label={t(`profile.goals.statusOptions.${st}`)} />
 							))}
-						</select>
+							</SelectContent>
+						</Select>
 					</label>
 				</div>
 				<label className="block text-xs">
@@ -502,20 +514,20 @@ function GoalCard({ goal }: { goal: LearningGoal }) {
 				</label>
 				<label className="block text-xs">
 					<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.goals.successCriteria")}</span>
-					<textarea
-						className="h-20 w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+					<Textarea
+						className="h-20 rounded-lg px-2 py-1.5 text-sm"
 						placeholder={t("profile.goals.successCriteriaPlaceholder") ?? ""}
 						value={draft.success_criteria.join("\n")}
 						onChange={(e) => setDraft({ ...draft, success_criteria: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
 					/>
 				</label>
 				<div className="flex justify-end gap-2 pt-1">
-					<button className="rounded-lg bg-[var(--inno-surface-muted)] px-3 py-1 text-xs text-[var(--inno-text-muted)]" onClick={() => setEditing(false)}>
+					<Button variant="secondary" size="xs" onClick={() => setEditing(false)}>
 						{t("common.cancel")}
-					</button>
-					<button className="rounded-lg inno-primary-button px-3 py-1 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void save()}>
+					</Button>
+					<Button variant="primary" size="xs" disabled={saving} onClick={() => void save()}>
 						{saving ? t("common.saving") : t("common.save")}
-					</button>
+					</Button>
 				</div>
 				{error ? <div className="mt-1 rounded bg-[var(--inno-danger-bg)] p-2 text-xs text-[var(--inno-danger)]">{error}</div> : null}
 			</div>
@@ -663,8 +675,8 @@ function KnowledgeRow({ state }: { state: KnowledgeState }) {
 						</label>
 						<label className="block text-xs">
 							<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.knowledge.diagnosis")}</span>
-							<textarea
-								className="h-20 w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+							<Textarea
+								className="h-20 rounded-lg px-2 py-1.5 text-sm"
 								placeholder={t("profile.knowledge.diagnosisPlaceholder") ?? ""}
 								value={draft.diagnosis}
 								onChange={(e) => setDraft({ ...draft, diagnosis: e.target.value })}
@@ -672,20 +684,20 @@ function KnowledgeRow({ state }: { state: KnowledgeState }) {
 						</label>
 						<label className="block text-xs">
 							<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.knowledge.nextActions")}</span>
-							<textarea
-								className="h-20 w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+							<Textarea
+								className="h-20 rounded-lg px-2 py-1.5 text-sm"
 								placeholder={t("profile.knowledge.nextActionsPlaceholder") ?? ""}
 								value={draft.nextActions.join("\n")}
 								onChange={(e) => setDraft({ ...draft, nextActions: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
 							/>
 						</label>
 						<div className="flex justify-end gap-2 pt-1">
-							<button className="rounded-lg bg-[var(--inno-surface)] px-3 py-1 text-xs text-[var(--inno-text-muted)]" onClick={() => setExpanded(false)}>
+							<Button variant="secondary" size="xs" onClick={() => setExpanded(false)}>
 								{t("common.cancel")}
-							</button>
-							<button className="rounded-lg inno-primary-button px-3 py-1 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void save()}>
+							</Button>
+							<Button variant="primary" size="xs" disabled={saving} onClick={() => void save()}>
 								{saving ? t("common.saving") : t("common.save")}
-							</button>
+							</Button>
 						</div>
 					</div>
 				</div>
@@ -758,20 +770,20 @@ function MisconceptionRow({ item }: { item: Misconception }) {
 			<div className="grid grid-cols-2 gap-2">
 				<label className="block text-xs">
 					<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.misconceptions.status")}</span>
-					<select
-						className="w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+					<Select
 						value={draft.status}
-						onChange={(e) => {
-							setDraft({ ...draft, status: e.target.value as MisconceptionStatus });
+						onValueChange={(status) => {
+							setDraft({ ...draft, status: status as MisconceptionStatus });
 							setDirty(true);
 						}}
 					>
+						<SelectTrigger className="w-full min-h-9 text-sm"><SelectValue /></SelectTrigger>
+						<SelectContent>
 						{MISC_STATUSES.map((s) => (
-							<option key={s} value={s}>
-								{t(`profile.misconceptions.statusOptions.${s}`)}
-							</option>
+							<SelectOption key={s} value={s} label={t(`profile.misconceptions.statusOptions.${s}`)} />
 						))}
-					</select>
+						</SelectContent>
+					</Select>
 				</label>
 				<label className="block text-xs">
 					<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.misconceptions.severity")}: {Math.round(draft.severity * 100)}%</span>
@@ -790,8 +802,8 @@ function MisconceptionRow({ item }: { item: Misconception }) {
 			</div>
 			<label className="mt-2 block text-xs">
 				<span className="mb-0.5 block text-[var(--inno-text-subtle)]">{t("profile.misconceptions.repair")}</span>
-				<textarea
-					className="h-16 w-full rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1.5 text-sm"
+				<Textarea
+					className="h-16 rounded-lg px-2 py-1.5 text-sm"
 					value={draft.repair}
 					onChange={(e) => {
 						setDraft({ ...draft, repair: e.target.value });
@@ -801,12 +813,12 @@ function MisconceptionRow({ item }: { item: Misconception }) {
 			</label>
 			{dirty ? (
 				<div className="mt-2 flex justify-end gap-2">
-					<button className="rounded-lg bg-[var(--inno-surface)] px-3 py-1 text-xs text-[var(--inno-text-muted)]" onClick={() => setDirty(false)}>
+					<Button variant="secondary" size="xs" onClick={() => setDirty(false)}>
 						{t("common.cancel")}
-					</button>
-					<button className="rounded-lg inno-primary-button px-3 py-1 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void save()}>
+					</Button>
+					<Button variant="primary" size="xs" disabled={saving} onClick={() => void save()}>
 						{saving ? t("common.saving") : t("common.save")}
-					</button>
+					</Button>
 				</div>
 			) : null}
 		</div>
@@ -850,12 +862,12 @@ function PreferencesSection() {
 			</div>
 			{dirty ? (
 				<div className="mt-3 flex justify-end gap-2">
-					<button className="rounded-lg bg-[var(--inno-surface-muted)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)]" onClick={() => setDirty(false)}>
+					<Button variant="secondary" size="sm" onClick={() => setDirty(false)}>
 						{t("common.cancel")}
-					</button>
-					<button className="rounded-lg inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50" disabled={state.isSaving} onClick={() => void save()}>
+					</Button>
+					<Button variant="primary" size="sm" disabled={state.isSaving} onClick={() => void save()}>
 						{state.isSaving ? t("common.saving") : t("common.save")}
-					</button>
+					</Button>
 				</div>
 			) : null}
 		</Section>
@@ -885,8 +897,9 @@ function ChipInput({ label, values, onChange, placeholder }: { label: string; va
 						</button>
 					</span>
 				))}
-				<input
-					className="min-w-[120px] flex-1 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 text-xs focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]"
+				<Input
+					size="sm"
+					className="min-w-[120px] flex-1 rounded-lg px-2 py-1 text-xs"
 					placeholder={placeholder}
 					value={input}
 					onChange={(e) => setInput(e.target.value)}
@@ -925,13 +938,15 @@ export function LearnerProfilePanel() {
 							<p>{t("profile.version", { version: state.profile.version, updated: formatDate(state.profile.updated_at) })}</p>
 						) : null}
 					</div>
-					<button
-						className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] inno-primary-button px-4 py-2 text-[13px] text-white"
+					<Button
+						variant="primary"
+						size="md"
+						className="shrink-0"
 						onClick={() => void learnerStore.load()}
 					>
 						<RefreshCw size={14} />
 						{t("profile.refresh")}
-					</button>
+					</Button>
 				</div>
 
 				{state.isLoading ? (

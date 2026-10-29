@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 type RouteHandler = (req: IncomingMessage, res: ServerResponse, method: string, url: string) => Promise<boolean>;
 
 export type RouteHandlers = Record<
-	| "checkins" | "jobs" | "channels" | "skills" | "sessions" | "wiki" | "learner"
+	| "checkins" | "jobs" | "channels" | "skills" | "sessions" | "search" | "wiki" | "learner"
 	| "workspaces" | "presets" | "practice" | "settings" | "commands" | "btw" | "chat",
 	RouteHandler
 >;
@@ -17,6 +17,8 @@ export function createRouteDispatcher(handlers: RouteHandlers) {
 		{ prefix: "/api/skills", handler: handlers.skills },
 		{ prefix: "/api/skill-library", handler: handlers.skills },
 		{ prefix: "/api/sessions", handler: handlers.sessions },
+		// Keep the WIP unified-search route reachable after the prefix-dispatch merge.
+		{ prefix: "/api/search", handler: handlers.search },
 		{ prefix: "/api/wiki", handler: handlers.wiki },
 		{ prefix: "/api/l2", handler: handlers.wiki },
 		{ prefix: "/api/learner", handler: handlers.learner },
@@ -52,4 +54,14 @@ export function createRouteDispatcher(handlers: RouteHandlers) {
 		return false;
 	};
 	return { registry, dispatch };
+}
+
+/** Data routes stay usable while extension/MCP startup runs in the background. */
+export function requiresAgent(method: string, url: string): boolean {
+	const path = url.split("?", 1)[0];
+	if (method === "GET") return path === "/api/commands";
+	if (method !== "POST") return false;
+	return ["/api/chat", "/api/chat/stream", "/api/sessions", "/api/btw/ask", "/api/btw/bring-back", "/api/bridge/messages"].includes(path)
+		|| /^\/api\/sessions\/[^/]+\/(activate|branch-before-message|generate-topic)$/.test(path)
+		|| /^\/api\/jobs\/[^/]+\/run(?:\/stream)?$/.test(path);
 }

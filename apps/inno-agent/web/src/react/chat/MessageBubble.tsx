@@ -1,21 +1,23 @@
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { X, AlertTriangle, FileCode2, History, BookmarkPlus, BookOpen, Check, Copy, Pencil, RotateCcw, TerminalSquare } from "lucide-react";
+import { AlertTriangle, FileCode2, History, BookmarkPlus, BookOpen, Check, Copy, Pencil, RotateCcw, TerminalSquare } from "lucide-react";
 import type { AttachmentBinding, AttachmentRef, ChatMessage, ChatToolRecord, ChatTraceStep } from "../../types/chat.js";
 import { splitContentByBindings } from "../../utils/attachment-render.js";
 import { answeredQuestionnaireFromTool, buildAnsweredQuestionnaireTimeline } from "../../utils/questionnaire.js";
 import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
 import { KIND_LABEL_KEYS } from "./smart-input/kinds.js";
 import { MarkdownArtifact } from "../MarkdownArtifact.js";
+import { MarkdownFullscreenDialog } from "../markdown/shared.js";
 import { AnsweredQuestionCard } from "./AnsweredQuestionCard.js";
 import { FileName } from "../FileName.js";
 import { FileTypeIcon } from "../FileTypeIcon.js";
 import { skillMessageFromContent } from "./skill-message-collapse.js";
 import { parseAgentCommandMessage, type AgentCommandMessage } from "./agent-command-message.js";
 import { PopoverSurface } from "../ui/PopoverSurface.js";
+import { IconButton, Tooltip } from "../ui/index.js";
 import { AgentTraceTimeline } from "./AgentTraceTimeline.js";
 import { finalizeTraceSteps, hasVisibleTraceSteps, traceStepsFromEvents, traceStepsFromLegacy, traceTerminalState } from "../../utils/chat-trace.js";
 
@@ -98,20 +100,6 @@ export function ChannelBadge({ channel }: { channel: string }) {
 	);
 }
 
-/** 28px brand avatar shown beside every assistant message (live and
- *  persisted). Unified with the other IA marks: surface background, primary
- *  text color (white-on-black in light theme). */
-export function AgentAvatar() {
-	return (
-		<div
-			className="mt-0.5 flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-full border border-[var(--inno-border)] bg-[var(--inno-surface)] text-[10px] font-semibold text-[var(--inno-text)]"
-			aria-hidden="true"
-		>
-			IA
-		</div>
-	);
-}
-
 function AgentCommandIcon({ command }: { command: string }) {	if (command.startsWith("skill:")) {
 		return (
 			<svg className="inno-smart-agent-mark" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -162,7 +150,7 @@ function AgentCommandMessageContent({ command, args, onOpenSkill }: AgentCommand
 			) : skillName ? (
 				<span className={bubbleClassName}>{chipContent}</span>
 			) : (
-				<span title={hint || displayName} className={bubbleClassName}>{chipContent}</span>
+				<Tooltip label={hint || displayName}><span className={bubbleClassName}>{chipContent}</span></Tooltip>
 			)}
 			{args ? <span className="inno-smart-agent-ref-args">{args}</span> : null}
 		</span>
@@ -170,31 +158,19 @@ function AgentCommandMessageContent({ command, args, onOpenSkill }: AgentCommand
 }
 
 function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
-	useEffect(() => {
-		const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-		window.addEventListener("keydown", handler);
-		return () => window.removeEventListener("keydown", handler);
-	}, [onClose]);
-
-	return createPortal(
-		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-			onClick={onClose}
-		>
-			<img
-				src={src}
-				alt="enlarged"
-				className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
-				onClick={(e) => e.stopPropagation()}
-			/>
-			<button
-				className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/40"
-				onClick={onClose}
-			>
-				<X size={16} />
-			</button>
-		</div>,
-		document.body,
+	const { t } = useTranslation();
+	// Use the same titlebar reservation as the other fullscreen viewers; the
+	// previous top-4 close button overlapped native macOS window chrome.
+	return (
+		<MarkdownFullscreenDialog open title={t("markdown.imagePreview", "图片预览")} closeLabel={t("markdown.exitFullscreen", "退出全屏")} onClose={onClose}>
+			<div className="inno-fullscreen-image" onClick={onClose}>
+				<img
+					src={src}
+					alt={t("markdown.imagePreview", "图片预览")}
+					onClick={(e) => e.stopPropagation()}
+				/>
+			</div>
+		</MarkdownFullscreenDialog>
 	);
 }
 
@@ -221,11 +197,11 @@ function AttachmentFileChip({ file, resolveUrl, onOpenFile }: {
 	);
 	const className = "inno-smart-ref-chip";
 	if (onOpenFile) {
-		return <button type="button" className={className} onClick={() => onOpenFile(file)} title={file.path}>{inner}</button>;
+		return <Tooltip label={file.path}><button type="button" className={className} onClick={() => onOpenFile(file)}>{inner}</button></Tooltip>;
 	}
 	return url
-		? <a className={className} href={url} target="_blank" rel="noreferrer" title={file.path}>{inner}</a>
-		: <span className={className} title={file.path}>{inner}</span>;
+		? <Tooltip label={file.path}><a className={className} href={url} target="_blank" rel="noreferrer">{inner}</a></Tooltip>
+		: <Tooltip label={file.path}><span className={className}>{inner}</span></Tooltip>;
 }
 
 /** Read-only hover panel for a sent bubble: bound files with source + path.
@@ -297,7 +273,7 @@ function SentBindingPanel({ binding, anchor, onOpenFile }: { binding: Attachment
 						</>
 					);
 					return onOpenFile
-						? <button key={file.path} type="button" className="inno-smart-panel-row w-full text-left" onClick={() => onOpenFile(file)} title={file.path}>{row}</button>
+						? <button key={file.path} type="button" className="inno-smart-panel-row w-full text-left" onClick={() => onOpenFile(file)}>{row}</button>
 						: <div key={file.path} className="inno-smart-panel-row">{row}</div>;
 				})}
 			</div>
@@ -356,7 +332,7 @@ function UserAttachmentContent({ content, attachments, resolveUrl, onOpenFile }:
 			onMouseEnter={(event) => showBinding(binding, event)}
 			onMouseLeave={scheduleHide}
 		>
-			<span className="inno-smart-ref-word inno-smart-file-ref-bubble" title={t("chat.smartInput.sentBubbleHint", "已绑定 {{count}} 个文件", { count: binding.files.length })}>
+			<span className="inno-smart-ref-word inno-smart-file-ref-bubble">
 					<FileTypeIcon kind={binding.files[0]?.kind ?? "file"} size={13} />
 				{binding.word}
 			</span>
@@ -522,7 +498,7 @@ export function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; c
 	);
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, showChannel, collapseUserToFirstLine = false, resolveAttachmentUrl, onOpenAttachment, onOpenSkill, onEdit, showRetry, showActions = true, answeredQuestionnaires: suppliedQuestionnaires, animateEntry = true, liveBodies = false, onRetry }: {
+export const MessageBubble = memo(function MessageBubble({ message, showChannel, collapseUserToFirstLine = false, resolveAttachmentUrl, onOpenAttachment, onOpenSkill, onEdit, showRetry, showActions = true, answeredQuestionnaires: suppliedQuestionnaires, animateEntry = true, liveBodies = false, resultContent, onRetry }: {
 	message: ChatMessage;
 	showChannel?: boolean;
 	/** Render user messages as their first line only (job-prompt turns in
@@ -549,6 +525,8 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 	/** Keep the live stream's markdown DOM shape for text bodies so the
 	 *  finalize swap does not relayout the content. */
 	liveBodies?: boolean;
+	/** Final assistant deliverables, above the message's time and actions. */
+	resultContent?: ReactNode;
 	onRetry?: () => void;
 }) {
 	const { t, i18n } = useTranslation();
@@ -661,35 +639,35 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 							<time dateTime={new Date(message.timestamp).toISOString()}>{messageTime}</time>
 						) : null}
 						{canEdit ? (
-							<button
-								type="button"
+							<IconButton
+								size="xs"
 								className="inno-message-action"
 								title={t("chat.editAndResend")}
 								aria-label={t("chat.editAndResend")}
 								onClick={() => onEdit?.(message)}
 							>
 								<Pencil size={13} />
-							</button>
+							</IconButton>
 						) : null}
-						<button
-							type="button"
+						<IconButton
+							size="xs"
 							className="inno-message-action"
 							title={copied ? t("common.copied") : t("common.copy")}
 							aria-label={copied ? t("common.copied") : t("common.copy")}
 							onClick={() => { void copyMessage(); }}
 						>
 							{copied ? <Check size={14} /> : <Copy size={14} />}
-						</button>
+						</IconButton>
 						{showRetry && onRetry ? (
-							<button
-								type="button"
+							<IconButton
+								size="xs"
 								className="inno-message-action"
 								title={t("chat.retryLast")}
 								aria-label={t("chat.retryLast")}
 								onClick={onRetry}
 							>
 								<RotateCcw size={14} />
-							</button>
+							</IconButton>
 						) : null}
 					</div>
 				</div>
@@ -697,15 +675,16 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 		);
 	}
 
+	// Let the shared questionnaire card own its width. The old percentage
+	// limit on this parent made archived cards narrower than pending cards.
 	return (
 		<motion.div
-			className="flex justify-start gap-3"
+			className="flex justify-start"
 			initial={animateEntry ? { opacity: 0 } : false}
 			animate={{ opacity: 1 }}
 			transition={{ duration: 0.25, ease: "easeOut" }}
 		>
-			<AgentAvatar />
-			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : hasAnsweredQuestionnaire ? "w-full max-w-[76%]" : "max-w-[78%]"} max-md:max-w-full ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-0 py-0 text-[14px] leading-[1.75] text-[var(--inno-text)]`}>
+			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : resultContent || hasAnsweredQuestionnaire ? "w-full max-w-full" : "max-w-[78%]"} max-md:max-w-full ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-0 py-0 text-[14px] leading-[1.75] text-[var(--inno-text)]`}>
 				{showChannel && message.channel ? (
 					<div className="mb-1"><ChannelBadge channel={message.channel} /></div>
 				) : null}
@@ -732,26 +711,29 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 						<ErrorBlock error={message.error} />
 					</div>
 				) : null}
+				{/* The action row is positioned at this bubble's bottom; cards outside
+				    the bubble previously appeared below its time instead of above it. */}
+				{resultContent}
 				{showActions ? <div className="inno-message-actions">
-					<button
-						type="button"
+					<IconButton
+						size="xs"
 						className="inno-message-action"
 						title={copied ? t("common.copied") : t("common.copy")}
 						aria-label={copied ? t("common.copied") : t("common.copy")}
 						onClick={() => { void copyMessage(); }}
 					>
 						{copied ? <Check size={14} /> : <Copy size={14} />}
-					</button>
+					</IconButton>
 					{showRetry && onRetry ? (
-						<button
-							type="button"
+						<IconButton
+							size="xs"
 							className="inno-message-action"
 							title={t("chat.retryLast")}
 							aria-label={t("chat.retryLast")}
 							onClick={onRetry}
 						>
 							<RotateCcw size={14} />
-						</button>
+						</IconButton>
 					) : null}
 					{messageTime ? (
 						<time dateTime={new Date(message.timestamp).toISOString()}>{messageTime}</time>

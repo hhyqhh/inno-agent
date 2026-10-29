@@ -4,9 +4,7 @@
  * --inno-ring (a box-shadow) via `shadow-` not `ring-`, and `focus-visible:`
  * so it doesn't fire on mouse click.
  */
-export const inputCls =
-	"h-8 w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 text-sm font-normal text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] transition-colors focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]";
+export const inputCls = "inno-ui-input";
 
 /** Textarea variant — same base, grows vertically. */
-export const textareaCls =
-	"w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1.5 text-sm font-normal text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] transition-colors focus-visible:border-[var(--inno-focus-border)] focus-visible:outline-none focus-visible:shadow-[var(--inno-ring)]";
+export const textareaCls = "inno-ui-textarea";

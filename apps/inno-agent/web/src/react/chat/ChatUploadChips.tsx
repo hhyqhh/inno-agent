@@ -5,7 +5,11 @@ import { useTranslation } from "react-i18next";
 import type { PendingUpload } from "./composer-utils.js";
 import type { SmartInputRule } from "../../types/settings.js";
 import { anyActiveRuleMatches, kindFromName } from "./smart-input/kinds.js";
-import { ContextMenu, type ContextMenuItem } from "../ui/ContextMenu.js";
+import {
+	ContextMenu,
+	type ContextMenuItem,
+	Tooltip,
+} from "../ui/index.js";
 import { buildDragFilePanel, hiddenDragImage } from "./smart-input/drag-utils.js";
 import { workspaceFileUrl } from "../../api/workspace.js";
 import { FileName } from "../FileName.js";
@@ -183,7 +187,6 @@ export function ChatUploadChips({ uploads, onRemove, onRetry, onInsertAsBubble, 
 								? "border-[var(--inno-danger-border)] bg-[var(--inno-danger-bg)]"
 								: "border-[var(--inno-border)] bg-[var(--inno-surface-muted)]"
 						}`}
-						title={file.path}
 					>
 						{kind === "image" ? (
 							<AttachmentImagePreview item={file} workspaceId={workspaceId} />
@@ -197,27 +200,29 @@ export function ChatUploadChips({ uploads, onRemove, onRetry, onInsertAsBubble, 
 							<span className="flex items-center gap-0.5">
 								<span className="text-[10px] text-[var(--inno-danger)]">{t("chat.smartInput.uploadFailed", "失败")}</span>
 								{onRetry ? (
-									<button
-										type="button"
-										className="inno-smart-retry-btn"
-										title={t("chat.smartInput.retryUpload", "重试上传（随下次发送）")}
-										onClick={() => onRetry(index)}
-									>
-										<RotateCcw size={12} />
-								</button>
+									<Tooltip label={t("chat.smartInput.retryUpload", "重试上传（随下次发送）")}>
+										<button
+											type="button"
+											className="inno-smart-retry-btn"
+											onClick={() => onRetry(index)}
+										>
+											<RotateCcw size={12} />
+										</button>
+									</Tooltip>
 								) : null}
 							</span>
 						) : (
 							<span className="text-[10px] text-[var(--inno-text-subtle)]">{t("chat.smartInput.sourceUpload", "本地")}</span>
 						)}
-						<button
-							type="button"
-							className="text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"
-							title={t("chat.removeUpload")}
-							onClick={() => onRemove(index)}
-						>
-							<X size={14} />
-						</button>
+						<Tooltip label={t("chat.removeUpload")}>
+							<button
+								type="button"
+								className="text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"
+								onClick={() => onRemove(index)}
+							>
+								<X size={14} />
+							</button>
+						</Tooltip>
 					</span>
 				);
 			})}

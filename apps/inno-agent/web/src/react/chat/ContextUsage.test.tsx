@@ -1,4 +1,5 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderWithTooltipProvider as render } from "../test-utils.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ContextUsage, formatContextTokens } from "./ContextUsage.js";
 import { CONTEXT_USAGE_CACHE_STORAGE_KEY } from "./useContextUsage.js";

@@ -2,7 +2,7 @@ import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { probeProviderModels } from "../../agent/model-probe.js";
 import {
 	getAvailableModels,
-	getSession,
+	getSessionIfInitialized,
 	refreshConfiguredProviders,
 	switchModel,
 	syncConfig,
@@ -39,6 +39,7 @@ import {
 import type { RuntimePaths } from "../../runtime.js";
 import { applyProviderProxyBypass } from "../../utils/proxy-bypass.js";
 import { json, matchRoute, readBody } from "../http-helpers.js";
+import { handleFontRoutes } from "./fonts.js";
 
 /**
  * Server state the settings routes touch. `config` is reassigned on every
@@ -76,12 +77,13 @@ function providerModelToRuntimeModel(model: InnoModelConfig, provider: string, b
 }
 
 function buildSafeSettings(config: InnoConfig) {
-	const session = getSession();
-	const currentModel = session.model;
+	// Settings are available while Agent extensions are still initializing.
+	const session = getSessionIfInitialized();
+	const currentModel = session?.model;
 	const configuredModels = Object.entries(config.providers).flatMap(([providerId, providerConfig]) =>
 		providerConfig.models.map((model) => providerModelToRuntimeModel(model, providerId, providerConfig.baseUrl)),
 	);
-	const availableModels = getAvailableModels().map((model) => ({
+	const availableModels = (session ? getAvailableModels() : configuredModels).map((model) => ({
 		id: model.id,
 		name: model.name,
 		provider: model.provider,
@@ -225,6 +227,7 @@ export async function handleSettingsRoutes(
 	url: string,
 	ctx: SettingsRouteContext,
 ): Promise<boolean> {
+	if (await handleFontRoutes(res, method, url)) return true;
 	const { paths } = ctx;
 	// Per-request view of the mutable config; every save mirrors back via
 	// ctx.setConfig so subsequent requests (and other domains) see the write.
@@ -248,10 +251,12 @@ export async function handleSettingsRoutes(
 			return true;
 		}
 
-		await switchModel(provider, model);
-		save(saveConfig(paths.configPath, setDefaultModel(config, provider, model)));
+		// Persist selections immediately; startup reconciles them once the runtime exists.
+		const nextConfig = setDefaultModel({ ...config }, provider, model);
+		if (getSessionIfInitialized()) await switchModel(provider, model);
+		save(saveConfig(paths.configPath, nextConfig));
 		syncConfig(config);
-		const currentModel = getSession().model;
+		const currentModel = getSessionIfInitialized()?.model;
 		json(res, 200, {
 			defaultProvider: currentModel?.provider ?? provider,
 			defaultModel: currentModel?.id ?? model,
@@ -271,8 +276,8 @@ export async function handleSettingsRoutes(
 			}),
 		));
 		applyProviderProxyBypass(config);
-		await refreshConfiguredProviders(config);
-		if (payload.makeDefault) {
+		if (getSessionIfInitialized()) await refreshConfiguredProviders(config);
+		if (payload.makeDefault && getSessionIfInitialized()) {
 			await switchModel(config.defaultProvider, config.defaultModel);
 			save(saveConfig(paths.configPath, setDefaultModel(config, config.defaultProvider, config.defaultModel)));
 		}
@@ -314,7 +319,7 @@ export async function handleSettingsRoutes(
 		}
 		try {
 			save(saveConfig(paths.configPath, deleteModel(config, providerId, modelId)));
-			await refreshConfiguredProviders(config);
+			if (getSessionIfInitialized()) await refreshConfiguredProviders(config);
 		} catch (err) {
 			logger.error({ err, providerId, modelId }, "failed to delete model");
 			json(res, 400, { error: err instanceof Error ? err.message : String(err) });
@@ -332,7 +337,7 @@ export async function handleSettingsRoutes(
 		}
 		try {
 			save(saveConfig(paths.configPath, deleteProvider(config, providerId)));
-			await refreshConfiguredProviders(config);
+			if (getSessionIfInitialized()) await refreshConfiguredProviders(config);
 		} catch (err) {
 			logger.error({ err }, "failed to update channel settings");
 			json(res, 400, { error: err instanceof Error ? err.message : String(err) });
@@ -701,7 +706,7 @@ export async function handleSettingsRoutes(
 		const theme = typeof body.theme === "string" ? body.theme.trim() : "";
 		// Legacy values (warm/ocean/innospark) stay accepted so older clients do
 		// not break; the web UI normalizes them to "light" on read.
-		const ALLOWED_THEMES = ["light", "dark", "warm", "ocean", "innospark"];
+		const ALLOWED_THEMES = ["light", "dark", "system", "warm", "ocean", "innospark"];
 		if (!ALLOWED_THEMES.includes(theme)) {
 			json(res, 400, { error: `Invalid theme. Allowed: ${ALLOWED_THEMES.join(", ")}` });
 			return true;

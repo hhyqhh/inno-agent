@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, waitFor } from "@testing-library/react";
+import { renderWithTooltipProvider as render } from "../test-utils.js";
 import { fireEvent } from "@testing-library/dom";
 import { MessageBubble } from "./MessageBubble.js";
 import type { ChatMessage } from "../../types/chat.js";
+
+vi.mock("react-i18next", () => ({
+	useTranslation: () => ({ t: (key: string, fallback?: string) => fallback ?? key }),
+}));
 
 // The sent-message binding panel must re-anchor when the layout shifts
 // (window expansion, streaming reflow): resize/scroll listeners and a rAF

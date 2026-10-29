@@ -11,11 +11,11 @@ import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { groupByCategory, matchesQuery } from "../utils/category-grouping.js";
 import { useStoreSnapshot } from "./hooks.js";
-import { checkboxCls } from "./ui/checkbox.js";
 import { Spinner } from "./ui/Spinner.js";
 import { LazyCodeEditor } from "./LazyCodeEditor.js";
 import { LazyMarkdownEditor } from "./LazyMarkdownEditor.js";
 import { FileName } from "./FileName.js";
+import { Button, Checkbox, IconButton, TabPanel, Tabs, Tooltip } from "./ui/index.js";
 import "@earendil-works/pi-web-ui";
 
 /* ---------- helpers (same as WorkspaceBrowser) ---------- */
@@ -91,13 +91,15 @@ function FilePreview({ file, skillName, isLoading }: { file: WorkspaceFileDetail
 			<div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-[var(--inno-text-muted)]">
 				<div className="text-lg font-medium text-[var(--inno-text)]">{file.name}</div>
 				<div>{t("preview.binaryFile", "Binary file")} · {formatSize(file.size)}</div>
-				<button
-					className="mt-2 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"
+				<Button
+					variant="secondary"
+					size="xs"
+					className="mt-2"
 					onClick={() => skillsStore.openAsText()}
 				>
 					<FileCode2 size={14} />
 					{t("preview.openAsText", "Open as Text")}
-				</button>
+				</Button>
 			</div>
 		);
 	}
@@ -164,21 +166,25 @@ function SkillFilePane({ skillName, onToggleSidebar, sidebarOpen }: { skillName:
 			<div className="flex h-full flex-col">
 				<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
 					<div className="flex min-w-0 flex-1 items-center gap-2">
-						<button className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onToggleSidebar}>
+						<IconButton
+							size="xs"
+							aria-label={sidebarOpen ? t("common.collapseSidebar", "折叠侧边栏") : t("common.expandSidebar", "展开侧边栏")}
+							onClick={onToggleSidebar}
+						>
 							{sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-						</button>
+						</IconButton>
 						<div className="min-w-0">
 							<FileName name={state.file.name} className="text-sm font-medium" />
 							<div className="truncate text-[10px] text-[var(--inno-text-muted)]">{t("files.editing", "Editing")} · {state.file.path}</div>
 						</div>
 					</div>
 					<div className="flex items-center gap-1.5">
-						<button disabled={state.isSaving} className="flex h-7 items-center gap-1 rounded-md inno-primary-button px-2.5 text-xs text-white disabled:opacity-50" onClick={() => void skillsStore.saveFile()}>
+						<Button variant="primary" size="xs" disabled={state.isSaving} onClick={() => void skillsStore.saveFile()}>
 							<Save size={12} /> {t("common.save", "Save")}
-						</button>
-						<button disabled={state.isSaving} className="flex h-7 items-center gap-1 rounded-md px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-50" onClick={() => skillsStore.cancelEditing()}>
+						</Button>
+						<Button variant="ghost" size="xs" disabled={state.isSaving} onClick={() => skillsStore.cancelEditing()}>
 							<X size={12} /> {t("common.cancel", "Cancel")}
-						</button>
+						</Button>
 					</div>
 				</div>
 				<div className="min-h-0 flex-1">
@@ -196,9 +202,9 @@ function SkillFilePane({ skillName, onToggleSidebar, sidebarOpen }: { skillName:
 		<div className="flex h-full flex-col">
 			<div className="flex h-10 items-center justify-between border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3">
 				<div className="flex min-w-0 flex-1 items-center gap-2">
-					<button className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onToggleSidebar}>
+					<IconButton size="xs" className="shrink-0" aria-label={sidebarOpen ? t("common.collapseSidebar", "折叠侧边栏") : t("common.expandSidebar", "展开侧边栏")} onClick={onToggleSidebar}>
 						{sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-					</button>
+					</IconButton>
 					<div className="min-w-0">
 						{state.file ? <FileName name={state.file.name} className="text-sm font-medium" /> : <div className="text-sm font-medium">{t("preview.noFile", "No file selected")}</div>}
 						<div className="truncate text-[10px] text-[var(--inno-text-muted)]">
@@ -207,9 +213,10 @@ function SkillFilePane({ skillName, onToggleSidebar, sidebarOpen }: { skillName:
 					</div>
 				</div>
 				{canEdit && (
-					<button className="flex h-7 items-center gap-1 rounded-md px-2.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => skillsStore.startEditing()}>
-						<Pencil size={12} /> {t("common.edit", "Edit")}
-					</button>
+					<Button variant="secondary" size="xs" onClick={() => skillsStore.startEditing()}>
+						<Pencil size={12} />
+						{t("common.edit", "Edit")}
+					</Button>
 				)}
 			</div>
 			<div className="min-h-0 flex-1 overflow-auto">
@@ -284,9 +291,9 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 			<aside className={`flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)] transition-opacity duration-200 max-md:absolute max-md:inset-3 max-md:z-20 ${sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0 max-md:hidden"}`}>
 				{/* Skill header */}
 				<div className="flex items-center gap-2 border-b border-[var(--inno-border)] px-2 py-2">
-					<button className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onBack}>
+					<IconButton size="xs" className="shrink-0" aria-label={t("common.back", "返回")} onClick={onBack}>
 						<ChevronLeft size={16} />
-					</button>
+					</IconButton>
 					<div className="min-w-0 flex-1">
 						<div className="flex items-center gap-2">
 							<span className="truncate text-sm font-medium text-[var(--inno-text)]">{skill.name}</span>
@@ -300,16 +307,16 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 				{/* Toolbar */}
 				<div className="flex items-center gap-1 border-b border-[var(--inno-border)] px-2 py-1.5">
 					<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
-						<input type="checkbox" className={checkboxCls} checked={skill.enabled} onChange={(e) => void skillsStore.setEnabled(skill.name, e.target.checked)} />
+						<Checkbox checked={skill.enabled} onChange={(e) => void skillsStore.setEnabled(skill.name, e.target.checked)} />
 						{t("common.enable", "Enable")}
 					</label>
 					<div className="flex-1" />
-					<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" title={t("preview.refresh", "Refresh")} onClick={() => void skillsStore.refreshTree()}>
+					<IconButton size="xs" aria-label={t("preview.refresh", "Refresh")} title={t("preview.refresh", "Refresh")} onClick={() => void skillsStore.refreshTree()}>
 						<RefreshCw size={12} />
-					</button>
-					<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-danger)] hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)]" title={t("common.delete", "Delete")} onClick={() => { void skillsStore.remove(skill.name); onBack(); }}>
+					</IconButton>
+					<IconButton variant="danger" size="xs" aria-label={t("common.delete", "Delete")} title={t("common.delete", "Delete")} onClick={() => { void skillsStore.remove(skill.name); onBack(); }}>
 						<Trash2 size={12} />
-					</button>
+					</IconButton>
 				</div>
 
 				{/* File tree */}
@@ -383,10 +390,9 @@ function SkillCard({ skill, category, onClick }: { skill: SkillInfo; category: s
 					{skill.description || t("skills.noDescription")} · {formatSize(skill.size)}
 				</div>
 			</div>
-			<span
-				className={`h-2 w-2 shrink-0 rounded-full ${skill.enabled ? "bg-[var(--inno-success)]" : "bg-[var(--inno-border-strong)]"}`}
-				title={skill.enabled ? t("common.enabled", "Enabled") : t("common.disabled", "Disabled")}
-			/>
+			<Tooltip label={skill.enabled ? t("common.enabled", "Enabled") : t("common.disabled", "Disabled")}>
+				<span className={`h-2 w-2 shrink-0 rounded-full ${skill.enabled ? "bg-[var(--inno-success)]" : "bg-[var(--inno-border-strong)]"}`} />
+			</Tooltip>
 		</button>
 	);
 }
@@ -477,21 +483,17 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 			<div className="mx-auto flex w-full max-w-[1160px] flex-col px-5 pb-10 pt-2">
 				{/* Tabs + search + actions */}
 				<div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-					<div className="flex gap-6">
-						{(["mine", "library"] as SkillsTab[]).map((key) => (
-							<button
-								key={key}
-								className={`border-b-[2.5px] py-2.5 text-[15px] ${
-									tab === key
-										? "border-[var(--inno-text)] font-medium text-[var(--inno-text)]"
-										: "border-transparent text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"
-								}`}
-								onClick={() => switchTab(key)}
-							>
-								{t(`skills.tabs.${key}`)}
-							</button>
-						))}
-					</div>
+					<Tabs
+						id="skills-source"
+						value={tab}
+						onValueChange={switchTab}
+						ariaLabel={t("skills.tabs.label")}
+						spacing="comfortable"
+						items={(["mine", "library"] as SkillsTab[]).map((key) => ({
+							value: key,
+							label: t(`skills.tabs.${key}`),
+						}))}
+					/>
 					<div className="flex min-w-0 items-center gap-2 max-md:w-full">
 						<div className="flex min-w-0 w-[220px] items-center gap-2 rounded-[18px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-3.5 py-[7px] max-md:flex-1">
 							<Search size={15} className="shrink-0 text-[var(--inno-text-subtle)]" />
@@ -503,61 +505,69 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 								className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--inno-text)] placeholder:text-[var(--inno-text-subtle)] focus:outline-none"
 							/>
 							{query ? (
-								<button
-									className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]"
+								<IconButton
+									size="compact"
+									className="shrink-0"
+									aria-label={t("common.clear", "Clear")}
 									onClick={() => setQuery("")}
 									title={t("common.clear", "Clear")}
 								>
 									<X size={12} />
-								</button>
+								</IconButton>
 							) : null}
 						</div>
-						<button
-							className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-							title={isLibraryTab ? t("skills.reload") : t("preview.refresh", "Refresh")}
+						<IconButton
+							size="sm"
+							aria-label={isLibraryTab ? t("skills.reload") : t("preview.refresh", "刷新")}
 							onClick={() => void (isLibraryTab ? skillsStore.loadLibrary(true) : skillsStore.reload())}
 						>
 							<RefreshCw size={15} />
-						</button>
+						</IconButton>
 						<input ref={uploadRef} type="file" className="hidden" accept=".zip,application/zip,.md,text/markdown,text/plain" onChange={handleUpload} />
-						<button
-							className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] inno-primary-button px-3.5 text-[13px] text-white disabled:opacity-50"
+						<Button
+							variant="primary"
+							size="sm"
+							className="shrink-0"
 							disabled={state.isUploading}
 							title={state.isUploading ? t("skills.uploading") : t("skills.upload")}
 							onClick={() => uploadRef.current?.click()}
 						>
 							<Upload size={14} />
 							{state.isUploading ? t("skills.uploading") : t("skills.upload")}
-						</button>
+						</Button>
 					</div>
 				</div>
 
+				<TabPanel
+					id="skills-source-panel"
+					labelledBy={`skills-source-tab-${tab}`}
+				>
 				{/* Category filter row (real categories only — no invented metadata) */}
 				{groups.length > 1 || categoryFilter ? (
-					<div className="mb-4 flex flex-wrap items-baseline gap-1 py-1.5">
+					<div className="mb-4 flex flex-wrap items-center gap-1.5 py-1.5">
 						<span className="mr-2 min-w-[46px] shrink-0 text-[13px] text-[var(--inno-text-subtle)]">{t("skills.filterCategory")}</span>
-						<button
-							className={`whitespace-nowrap rounded-lg px-2.5 py-[3px] text-[13px] ${
-								categoryFilter === null
-									? "bg-[var(--inno-accent-soft)] font-medium text-[var(--inno-accent)]"
-									: "text-[var(--inno-text-muted)] hover:text-[var(--inno-accent)]"
-							}`}
+						<Button
+							variant={categoryFilter === null ? "primary" : "secondary"}
+							size="xs"
+							shape="pill"
+							className="inno-filter-button shrink-0"
+							aria-pressed={categoryFilter === null}
 							onClick={() => setCategoryFilter(null)}
 						>
 							{t("skills.filterAll")}
-						</button>
+						</Button>
 						{groups.map(([cat]) => (
-							<button
+							<Button
 								key={cat}
-								className={`whitespace-nowrap rounded-lg px-2.5 py-[3px] text-[13px] ${
-									categoryFilter === cat
-										? "bg-[var(--inno-accent-soft)] font-medium text-[var(--inno-accent)]"
-										: "text-[var(--inno-text-muted)] hover:text-[var(--inno-accent)]"
-								}`}
+								variant={categoryFilter === cat ? "primary" : "secondary"}
+								size="xs"
+								shape="pill"
+								className="inno-filter-button shrink-0"
+								aria-pressed={categoryFilter === cat}
 								onClick={() => setCategoryFilter(cat)}
 							>
 								{cat === uncategorizedLabel ? cat : t(`categories.${cat}`, cat)}
-							</button>
+							</Button>
 						))}
 					</div>
 				) : null}
@@ -628,14 +638,16 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 															<Check size={12} /> {t("skills.installed")}
 														</span>
 													) : (
-														<button
-															disabled={isImporting}
-															className="flex h-7 shrink-0 items-center gap-1 rounded-md inno-primary-button px-2.5 text-xs text-white disabled:opacity-50"
-															onClick={() => void skillsStore.importFromLibrary(item.name)}
-														>
-															<Download size={12} />
-															{isImporting ? t("skills.importing") : t("skills.import")}
-														</button>
+									<Button
+										variant="primary"
+										size="xs"
+										className="shrink-0"
+										disabled={isImporting}
+										onClick={() => void skillsStore.importFromLibrary(item.name)}
+									>
+										<Download size={12} />
+										{isImporting ? t("skills.importing") : t("skills.import")}
+									</Button>
 													)}
 												</div>
 											);
@@ -645,8 +657,9 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 										))}
 							</div>
 						</div>
-					))
+						))
 				)}
+				</TabPanel>
 			</div>
 			{state.notice ? (
 				<div

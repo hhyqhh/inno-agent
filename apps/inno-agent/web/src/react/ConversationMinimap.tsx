@@ -128,7 +128,7 @@ function formatTurnTime(timestamp: number): string {
 function markerWidth(turn: ConversationTurn): number {
 	const userLength = turn.userMessage?.content.length ?? 0;
 	const assistantLength = turn.assistantMessages.reduce((sum, message) => sum + message.content.length, 0);
-	return Math.min(28, 10 + Math.round(Math.log2(Math.max(2, userLength + assistantLength)) * 1.8));
+	return Math.min(18, 8 + Math.round(Math.log2(Math.max(2, userLength + assistantLength)) * 1.2));
 }
 
 export function ConversationMinimap({
@@ -319,7 +319,7 @@ export function ConversationMinimap({
 					const markerY = markerYByTurnIndex.get(turn.index) ?? trackHeight / 2;
 					const current = turn.index === activeIndex;
 					const hovered = turn.index === hoveredIndex;
-					const highlighted = hoveredIndex === null ? current : hovered;
+					const highlighted = hovered;
 					return (
 						<motion.button
 							key={turn.id}
@@ -340,7 +340,7 @@ export function ConversationMinimap({
 							<motion.span
 								className="block h-[3px] origin-left rounded-full shadow-[0_0_0_1px_color-mix(in_srgb,var(--inno-chat-bg)_40%,transparent)]"
 								animate={{
-									width: highlighted ? 34 : markerWidth(turn),
+									width: highlighted ? Math.min(20, markerWidth(turn) + 2) : markerWidth(turn),
 									backgroundColor: highlighted ? "var(--inno-accent)" : "var(--inno-border-strong)",
 									opacity: highlighted ? 1 : 0.62,
 								}}

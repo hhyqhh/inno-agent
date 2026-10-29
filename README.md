@@ -271,6 +271,10 @@ Join the WeChat user group to ask questions, share use cases, and follow updates
 
 [MIT](./LICENSE). This project depends on the Pi SDK (`@earendil-works/pi-*` packages by Mario Zechner), also MIT-licensed and consumed via npm.
 
+### Third-party licenses
+
+The preview-side WYSIWYG document editors include an **AGPL-3.0** component: [PPTist](https://github.com/pipipi-pikachu/PPTist) (pptx editing, vendored build staged by `scripts/prepare-pptist.sh`). Distributed builds of the web UI therefore carry AGPL obligations for that component; its source and our modifications are available in this repository (the pinned upstream commit plus `scripts/patches/pptist-embed.patch`). The xlsx editor ([Univer](https://github.com/dream-num/univer)) is Apache-2.0.
+
 ## Citation
 
 ```bibtex

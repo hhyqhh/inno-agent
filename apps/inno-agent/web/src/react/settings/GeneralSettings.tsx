@@ -6,52 +6,58 @@ import { setLocale } from "../../i18n/index.js";
 import { useStoreSnapshot } from "../hooks.js";
 import type { WindowCloseBehavior } from "../../types/settings.js";
 import { SettingsSection, SettingsCard, SettingsRow } from "./primitives.js";
-import { Switch } from "../ui/Switch.js";
+import { Select, SelectContent, SelectOption, SelectTrigger, SelectValue, Switch, Button } from "../ui/index.js";
 
 function ThemePicker() {
 	const { t } = useTranslation();
-	const state = useStoreSnapshot(themeStore, () => ({ current: themeStore.current }));
+	const state = useStoreSnapshot(themeStore, () => ({ current: themeStore.current, preference: themeStore.preference }));
 	return (
 		<div className="flex flex-wrap gap-2">
 			{THEME_IDS.map((id) => {
 				const active = state.current === id;
 				return (
-					<button
+					<Button
 						key={id}
-						type="button"
+						variant={active ? "primary" : "secondary"}
+						size="xs"
+						shape="pill"
 						aria-label={t(`settings.themeOptions.${id}`)}
 						aria-pressed={active}
-						title={t(`settings.themeOptions.${id}`)}
+						disabled={state.preference === "system"}
 						onClick={() => void themeStore.save(id)}
-						className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border py-1.5 pl-2 pr-3.5 text-xs transition-colors ${
-							active
-								? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] font-medium text-[var(--inno-accent)]"
-								: "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:border-[var(--inno-border-strong)] hover:text-[var(--inno-text)]"
-						}`}
 					>
-						<span
-							className="h-4 w-4 rounded-full border border-[var(--inno-border-strong)]"
-							style={{ backgroundColor: THEME_PREVIEW_COLORS[id] }}
-						/>
+						<span className="h-4 w-4 rounded-full border border-[var(--inno-border-strong)]" style={{ backgroundColor: THEME_PREVIEW_COLORS[id] }} />
 						{t(`settings.themeOptions.${id}`)}
-					</button>
+					</Button>
 				);
 			})}
 		</div>
 	);
 }
 
+function FollowSystemToggle() {
+	const { t } = useTranslation();
+	const followsSystem = useStoreSnapshot(themeStore, () => themeStore.preference === "system");
+	return <Switch
+		checked={followsSystem}
+		aria-label={t("settings.followSystem")}
+		onChange={(enabled) => void themeStore.save(enabled ? "system" : themeStore.current)}
+	/>;
+}
+
 function LanguageSelect() {
 	const { t, i18n } = useTranslation();
 	return (
-		<select
-			className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 text-xs"
+		<Select
 			value={i18n.language}
-			onChange={(e) => setLocale(e.target.value as "zh-CN" | "en")}
+			onValueChange={(value) => setLocale(value as "zh-CN" | "en")}
 		>
-			<option value="zh-CN">{t("settings.languageOptions.zh-CN")}</option>
-			<option value="en">{t("settings.languageOptions.en")}</option>
-		</select>
+			<SelectTrigger className="text-xs" aria-label={t("settings.language")}><SelectValue /></SelectTrigger>
+			<SelectContent>
+				<SelectOption value="zh-CN" label={t("settings.languageOptions.zh-CN")} />
+				<SelectOption value="en" label={t("settings.languageOptions.en")} />
+			</SelectContent>
+		</Select>
 	);
 }
 
@@ -69,16 +75,18 @@ function CloseBehaviorSelect() {
 	}
 
 	return (
-		<select
-			className="rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 text-xs"
+		<Select
 			value={state.behavior}
 			disabled={!state.isReady || state.isSaving}
-			onChange={(e) => handleChange(e.target.value)}
+			onValueChange={handleChange}
 		>
-			<option value="ask">{t("settings.closeBehavior.options.ask")}</option>
-			<option value="hide">{t("settings.closeBehavior.options.hide")}</option>
-			<option value="quit">{t("settings.closeBehavior.options.quit")}</option>
-		</select>
+			<SelectTrigger className="text-xs" aria-label={t("settings.closeBehavior.title")}><SelectValue /></SelectTrigger>
+			<SelectContent>
+				<SelectOption value="ask" label={t("settings.closeBehavior.options.ask")} />
+				<SelectOption value="hide" label={t("settings.closeBehavior.options.hide")} />
+				<SelectOption value="quit" label={t("settings.closeBehavior.options.quit")} />
+			</SelectContent>
+		</Select>
 	);
 }
 
@@ -170,12 +178,13 @@ export function GeneralSettings() {
 	return (
 		<>
 			<SettingsSection title={t("settings.tabs.general")} description={t("settings.sections.general.desc", "外观与语言偏好")}>
-			<SettingsCard>
+			<SettingsCard className="space-y-4">
 				<SettingsRow
 					label={t("settings.theme")}
 					description={t("settings.sections.general.themeDesc", "选择界面配色主题")}
 					control={<ThemePicker />}
 				/>
+				<SettingsRow label={t("settings.followSystem")} description={t("settings.followSystemDesc")} control={<FollowSystemToggle />} />
 			</SettingsCard>
 			<SettingsCard>
 				<SettingsRow

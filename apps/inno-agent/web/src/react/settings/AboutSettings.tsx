@@ -4,6 +4,7 @@ import { getWikiStats } from "../../api/wiki.js";
 import { settingsStore } from "../../stores/settings-store.js";
 import type { WikiStats } from "../../types/wiki.js";
 import { useStoreSnapshot } from "../hooks.js";
+import { Button } from "../ui/index.js";
 import { SettingsSection, SettingsCard } from "./primitives.js";
 import { formatBytes } from "./shared.js";
 import packageJson from "../../../package.json";
@@ -28,9 +29,9 @@ export function AboutSettings() {
 			<SettingsCard>
 				<div className="mb-3 flex items-center justify-between">
 					<h4 className="text-sm font-medium text-[var(--inno-text)]">{t("settings.title")}</h4>
-					<button className="shrink-0 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-1.5 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void settingsStore.load()}>
+					<Button variant="secondary" size="sm" className="shrink-0" onClick={() => void settingsStore.load()}>
 						{t("settings.refresh")}
-					</button>
+					</Button>
 				</div>
 				{state.isLoading ? <div className="text-sm text-[var(--inno-text-muted)]">{t("settings.loading")}</div> : null}
 				{state.error ? <div className="rounded bg-[var(--inno-danger-bg)] p-2 text-sm text-[var(--inno-danger)]">{state.error}</div> : null}

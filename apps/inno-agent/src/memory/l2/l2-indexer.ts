@@ -9,12 +9,12 @@
  */
 
 import { createHash } from "node:crypto";
-import { statSync } from "node:fs";
-import { join } from "node:path";
-import { readText, fileExists } from "../../storage/file-store.js";
+import { stat } from "node:fs/promises";
+import { resolveContainedPathAsync } from "../../utils/path-safety.js";
+import { readTextAsync } from "../../storage/file-store.js";
 import { parseFrontmatter } from "./wiki-maintainer.js";
 import type { L2IndexStore, L2PageDoc } from "./l2-index-store.js";
-import { listWikiPagePaths } from "./wiki-page-files.js";
+import { listWikiPagePathsAsync } from "./wiki-page-files.js";
 
 function contentHashOf(s: string): string {
 	return createHash("sha256").update(s).digest("hex").slice(0, 16);
@@ -34,10 +34,10 @@ function inferTypeFromPath(wikiPath: string): string {
  * Index one wiki page by its wiki-relative path. Returns true if the store was
  * written (false when the file is missing/empty or unchanged since last index).
  */
-export function indexPage(store: L2IndexStore, l2DataDir: string, wikiPath: string): boolean {
-	const abs = join(l2DataDir, wikiPath);
-	if (!fileExists(abs)) return false;
-	const content = readText(abs);
+export async function indexPage(store: L2IndexStore, l2DataDir: string, wikiPath: string): Promise<boolean> {
+	const abs = await resolveContainedPathAsync(l2DataDir, wikiPath);
+	if (!abs) return false;
+	const content = await readTextAsync(abs);
 	if (!content.trim()) return false;
 
 	const hash = contentHashOf(content);
@@ -47,7 +47,7 @@ export function indexPage(store: L2IndexStore, l2DataDir: string, wikiPath: stri
 	const { frontmatter, body } = parseFrontmatter(content);
 	let mtimeMs = 0;
 	try {
-		mtimeMs = Math.floor(statSync(abs).mtimeMs);
+		mtimeMs = Math.floor((await stat(abs)).mtimeMs);
 	} catch {
 		mtimeMs = 0;
 	}
@@ -71,12 +71,12 @@ export function indexPage(store: L2IndexStore, l2DataDir: string, wikiPath: stri
  * Index every wiki page, pruning index rows for files that no longer exist.
  * Idempotent — unchanged pages are skipped, so re-runs are cheap.
  */
-export function indexAllPages(store: L2IndexStore, l2DataDir: string): { indexed: number; pruned: number } {
+export async function indexAllPages(store: L2IndexStore, l2DataDir: string): Promise<{ indexed: number; pruned: number }> {
 	const present = new Set<string>();
 	let indexed = 0;
-	for (const wikiPath of listWikiPagePaths(l2DataDir)) {
+	for (const wikiPath of await listWikiPagePathsAsync(l2DataDir)) {
 		present.add(wikiPath);
-		if (indexPage(store, l2DataDir, wikiPath)) indexed++;
+		if (await indexPage(store, l2DataDir, wikiPath)) indexed++;
 	}
 	let pruned = 0;
 	for (const p of store.listIndexedPaths()) {

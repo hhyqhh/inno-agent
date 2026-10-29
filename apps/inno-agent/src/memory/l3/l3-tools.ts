@@ -15,10 +15,10 @@
 import { logger } from "../../logger.js";
 import { Type } from "typebox";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { openL3Store, type L3Store } from "./sqlite-store.js";
+import { openL3Store, type L3SearchHit, type L3Store } from "./sqlite-store.js";
 import { indexAllSessions, indexSession } from "./indexer.js";
 import { recall, formatRecallForPrompt, type RecallResult } from "./recall.js";
-import { join } from "node:path";
+import { resolveContainedPathAsync } from "../../utils/path-safety.js";
 
 /**
  * Holds the singleton store for a runtime. The store opens lazily on first use
@@ -26,8 +26,10 @@ import { join } from "node:path";
  */
 export class L3Memory {
 	private store: L3Store | null = null;
-	private opened = false;
+	private opening: Promise<L3Store | null> | null = null;
+	private indexQueue: Promise<unknown> = Promise.resolve();
 	private backfilled = false;
+	private backfillPromise: Promise<void> | null = null;
 
 	constructor(
 		private readonly l3DataDir: string,
@@ -35,27 +37,49 @@ export class L3Memory {
 	) {}
 
 	private async ensureStore(): Promise<L3Store | null> {
-		if (this.opened) return this.store;
-		this.opened = true;
-		this.store = await openL3Store(this.l3DataDir);
-		if (!this.store) {
-			logger.warn("[L3] node:sqlite unavailable — cross-conversation recall disabled.");
-		}
-		return this.store;
+		// Concurrent searches must await the same open, rather than observe a temporary null.
+		this.opening ??= openL3Store(this.l3DataDir).then((store) => {
+			this.store = store;
+			if (!store) logger.warn("[L3] node:sqlite unavailable; index-backed retrieval disabled.");
+			return store;
+		});
+		return this.opening;
+	}
+
+	private enqueueIndex<T>(operation: () => Promise<T>): Promise<T> {
+		const result = this.indexQueue.then(operation);
+		this.indexQueue = result.catch(() => {});
+		return result;
 	}
 
 	/** One-time backfill of all existing sessions (cheap: skips unchanged files). */
 	async backfill(): Promise<void> {
 		if (this.backfilled) return;
-		const store = await this.ensureStore();
-		if (!store) return;
-		this.backfilled = true;
+		if (this.backfillPromise) return this.backfillPromise;
+		const run = (async () => {
+			const store = await this.ensureStore();
+			if (!store) return;
+			try {
+				const { sessions, chunks } = await this.enqueueIndex(() => indexAllSessions(store, this.sessionDir));
+				this.backfilled = true;
+				if (sessions > 0) logger.info(`[L3] indexed ${chunks} chunks from ${sessions} session(s).`);
+			} catch (err) {
+				logger.warn({ err }, `[L3] backfill failed: ${err instanceof Error ? err.message : String(err)}`);
+			}
+		})();
+		this.backfillPromise = run;
 		try {
-			const { sessions, chunks } = indexAllSessions(store, this.sessionDir);
-			if (sessions > 0) logger.info(`[L3] indexed ${chunks} chunks from ${sessions} session(s).`);
-		} catch (err) {
-			logger.warn({ err }, `[L3] backfill failed: ${err instanceof Error ? err.message : String(err)}`);
+			await run;
+		} finally {
+			if (this.backfillPromise === run) this.backfillPromise = null;
 		}
+	}
+
+	/** Full-text UI search over the visible user/assistant conversation branch. */
+	async searchLexical(query: string, limit = 40): Promise<L3SearchHit[] | null> {
+		await this.backfill();
+		const store = await this.ensureStore();
+		return store ? store.searchLexical(query, limit, 1) : null;
 	}
 
 	/** Incrementally (re)index a single session file by id. */
@@ -64,7 +88,8 @@ export class L3Memory {
 		const store = await this.ensureStore();
 		if (!store) return;
 		try {
-			indexSession(store, join(this.sessionDir, sessionId));
+			const path = await resolveContainedPathAsync(this.sessionDir, sessionId);
+			if (path) await this.enqueueIndex(() => indexSession(store, path));
 		} catch (err) {
 			logger.warn({ err }, `[L3] index ${sessionId} failed: ${err instanceof Error ? err.message : String(err)}`);
 		}
@@ -85,8 +110,10 @@ export class L3Memory {
 	close(): void {
 		this.store?.close();
 		this.store = null;
-		this.opened = false;
+		this.opening = null;
+		this.indexQueue = Promise.resolve();
 		this.backfilled = false;
+		this.backfillPromise = null;
 	}
 }
 

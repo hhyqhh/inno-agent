@@ -4,6 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const runtimeState = vi.hoisted(() => ({ shouldThrow: true }));
 
+vi.mock("react-i18next", () => ({
+	useTranslation: () => ({ t: (key: string, fallback?: string) => fallback ?? key }),
+}));
+
 vi.mock("./MarkdownRuntime.js", () => ({
 	MarkdownRuntime: ({ content }: { content: string }) => {
 		if (runtimeState.shouldThrow) throw new Error("simulated cold-start markdown failure");

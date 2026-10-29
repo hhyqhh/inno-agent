@@ -9,8 +9,13 @@ import { KIND_LABEL_KEYS, kindFromName, kindFromRule, nameMatchesRule } from "./
 import type { PendingUpload } from "../composer-utils.js";
 import { FileName } from "../../FileName.js";
 import { FileTypeIcon } from "../../FileTypeIcon.js";
-import { ContextMenu, type ContextMenuItem } from "../../ui/ContextMenu.js";
-import { PopoverSurface } from "../../ui/PopoverSurface.js";
+import {
+	ContextMenu,
+	type ContextMenuItem,
+	MenuOption,
+	PopoverSurface,
+	Tooltip,
+} from "../../ui/index.js";
 import { useTitleMarquee } from "../../hooks.js";
 
 /**
@@ -65,7 +70,8 @@ function SkillNameMarquee({ name, titleState }: { name: string; titleState: Skil
 	} = titleState;
 
 	return (
-		<span ref={titleViewportRef} className="inno-smart-agent-skill-title" title={name}>
+		<Tooltip label={name}>
+		<span ref={titleViewportRef} className="inno-smart-agent-skill-title">
 			<span
 				className={`inno-sidebar-title ${marqueeActive ? "inno-sidebar-title-marquee" : "block overflow-hidden whitespace-nowrap"}${titleOverflowing ? " inno-sidebar-title-fade" : ""} font-medium text-[var(--inno-text)]`}
 				style={marqueeActive ? ({
@@ -80,6 +86,7 @@ function SkillNameMarquee({ name, titleState }: { name: string; titleState: Skil
 				{name}
 			</span>
 		</span>
+		</Tooltip>
 	);
 }
 
@@ -89,8 +96,7 @@ function AgentSkillOption({ command, onSelect }: { command: SlashCommandItem; on
 	const titleState = useTitleMarquee<HTMLSpanElement>(skillName, hovered);
 
 	return (
-		<button
-			type="button"
+		<MenuOption
 			className="inno-smart-panel-row inno-smart-panel-pick"
 			onMouseEnter={() => setHovered(true)}
 			onMouseLeave={() => setHovered(false)}
@@ -98,8 +104,8 @@ function AgentSkillOption({ command, onSelect }: { command: SlashCommandItem; on
 		>
 			<Zap size={14} className="shrink-0 text-[var(--inno-accent)]" aria-hidden="true" />
 			<SkillNameMarquee name={skillName} titleState={titleState} />
-			{command.description ? <span className="inno-smart-agent-description" title={command.description}>{command.description}</span> : null}
-		</button>
+			{command.description ? <Tooltip label={command.description}><span className="inno-smart-agent-description">{command.description}</span></Tooltip> : null}
+		</MenuOption>
 	);
 }
 
@@ -383,9 +389,11 @@ export function SmartInputOverlay({ engine, panel, onClose, onOpenPanel, workspa
 	const renderProgress = (file: SlotFile) => {
 		if (file.state !== "failed") return null;
 		return (
-			<button type="button" className="inno-smart-retry-btn" title={t("chat.smartInput.retryUpload", "重试上传")} onClick={(event) => { pin(event); engine.retryUpload(file.uid); }}>
-				<RotateCcw size={12} />
-			</button>
+			<Tooltip label={t("chat.smartInput.retryUpload", "重试上传")}>
+				<button type="button" className="inno-smart-retry-btn" onClick={(event) => { pin(event); engine.retryUpload(file.uid); }}>
+					<RotateCcw size={12} />
+				</button>
+			</Tooltip>
 		);
 	};
 
@@ -402,18 +410,19 @@ export function SmartInputOverlay({ engine, panel, onClose, onOpenPanel, workspa
 					{t("chat.smartInput.boundFilesTitle", "「{{word}}」绑定的文件（{{count}}）", { word: slot.word, count: slot.files.length })}
 				</div>
 				{fillCandidates.length > 0 && !workspaceFilesLoading ? (
-					<button
-						type="button"
-						className="inno-smart-fill-plus"
-						title={t("chat.smartInput.addBinding", "继续添加文件")}
-						aria-label={t("chat.smartInput.addBinding", "继续添加文件")}
-						onClick={(event) => {
-							pin(event);
-							openFill();
-						}}
-					>
-						<Plus size={12} />
-					</button>
+					<Tooltip label={t("chat.smartInput.addBinding", "继续添加文件")}>
+						<button
+							type="button"
+							className="inno-smart-fill-plus"
+							aria-label={t("chat.smartInput.addBinding", "继续添加文件")}
+							onClick={(event) => {
+								pin(event);
+								openFill();
+							}}
+						>
+							<Plus size={12} />
+						</button>
+					</Tooltip>
 				) : null}
 			</div>
 			<div
@@ -437,22 +446,23 @@ export function SmartInputOverlay({ engine, panel, onClose, onOpenPanel, workspa
 						<FileName name={file.name} className="inno-smart-panel-name" title={file.path} />
 						<span className="inno-smart-src-tag">{sourceLabel(file)}</span>
 						{renderProgress(file)}
-						<button
-							type="button"
-							className="inno-smart-panel-remove"
-							title={t("chat.smartInput.removeBinding", "移除绑定")}
-							onClick={(event) => {
-								pin(event);
-								const wasLast = slot.files.length <= 1;
-								engine.removeBinding(slot, file.uid);
-								if (wasLast) {
-									onClose();
-									openFill();
-								}
-							}}
-						>
-							<X size={12} />
-						</button>
+						<Tooltip label={t("chat.smartInput.removeBinding", "移除绑定")}>
+							<button
+								type="button"
+								className="inno-smart-panel-remove"
+								onClick={(event) => {
+									pin(event);
+									const wasLast = slot.files.length <= 1;
+									engine.removeBinding(slot, file.uid);
+									if (wasLast) {
+										onClose();
+										openFill();
+									}
+								}}
+							>
+								<X size={12} />
+							</button>
+						</Tooltip>
 					</div>
 				))}
 			</div>
@@ -471,18 +481,19 @@ export function SmartInputOverlay({ engine, panel, onClose, onOpenPanel, workspa
 			<div className="inno-smart-fill-head">
 				<div className="flex min-w-0 items-center gap-1.5">
 					{slot.files.length > 0 ? (
-						<button
-							type="button"
-							className="inno-smart-fill-plus"
-							title={t("chat.smartInput.backToBound", "返回绑定列表")}
-							aria-label={t("chat.smartInput.backToBound", "返回绑定列表")}
-							onClick={(event) => {
-								pin(event);
-								openStatus();
-							}}
-						>
-							<ArrowLeft size={14} aria-hidden="true" />
-						</button>
+						<Tooltip label={t("chat.smartInput.backToBound", "返回绑定列表")}>
+							<button
+								type="button"
+								className="inno-smart-fill-plus"
+								aria-label={t("chat.smartInput.backToBound", "返回绑定列表")}
+								onClick={(event) => {
+									pin(event);
+									openStatus();
+								}}
+							>
+								<ArrowLeft size={14} aria-hidden="true" />
+							</button>
+						</Tooltip>
 					) : null}
 					<div className="inno-smart-panel-title">
 						{pickFileTitle}
@@ -518,18 +529,19 @@ export function SmartInputOverlay({ engine, panel, onClose, onOpenPanel, workspa
 							</button>
 						</div>
 					) : (
-						<button
-							type="button"
-							className="inno-smart-fill-plus"
-							title={t("chat.smartInput.batchAdd", "批量添加")}
-							aria-label={t("chat.smartInput.batchAdd", "批量添加")}
-							onClick={() => {
-								setMultiSelect(true);
-								setPicked(new Map());
-							}}
-						>
-							<ListChecks size={14} aria-hidden="true" />
-						</button>
+						<Tooltip label={t("chat.smartInput.batchAdd", "批量添加")}>
+							<button
+								type="button"
+								className="inno-smart-fill-plus"
+								aria-label={t("chat.smartInput.batchAdd", "批量添加")}
+								onClick={() => {
+									setMultiSelect(true);
+									setPicked(new Map());
+								}}
+							>
+								<ListChecks size={14} aria-hidden="true" />
+							</button>
+						</Tooltip>
 					)
 				) : null}
 			</div>
@@ -546,11 +558,11 @@ export function SmartInputOverlay({ engine, panel, onClose, onOpenPanel, workspa
 					{fillCandidates.map((candidate) => {
 						const active = picked.has(candidate.path);
 						return (
-							<button
+							<MenuOption
 								key={`${candidate.source}:${candidate.path}`}
-								type="button"
 								className={`inno-smart-panel-row inno-smart-panel-pick ${active ? "is-on" : ""}`}
 								title={candidate.path}
+								aria-pressed={active}
 								onMouseEnter={() => onWorkspaceHighlight(candidate.source === "workspace" ? [candidate.path] : null)}
 								onClick={(event) => {
 									if (multiSelect) {
@@ -567,11 +579,11 @@ export function SmartInputOverlay({ engine, panel, onClose, onOpenPanel, workspa
 									onClose();
 								}}
 							>
-									<FileTypeIcon kind={kindFromName(candidate.name)} size={14} />
-								<FileName name={candidate.name} className="inno-smart-panel-name" title={candidate.path} />
+								<FileTypeIcon kind={kindFromName(candidate.name)} size={14} />
+								<FileName name={candidate.name} className="inno-smart-panel-name" />
 								{candidate.source === "attach" ? <span className="inno-smart-src-tag">{t("chat.smartInput.sourceAttach", "附件")}</span> : null}
 								{multiSelect && active ? <Check size={12} className="shrink-0 text-[var(--inno-accent)]" /> : null}
-							</button>
+							</MenuOption>
 						);
 					})}
 				</div>

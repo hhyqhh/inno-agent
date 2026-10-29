@@ -32,6 +32,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { StreamdownContext, type CustomRendererProps } from "streamdown";
+import { SegmentedControl } from "../ui/index.js";
 import {
 	downloadBlob,
 	MarkdownFullscreenDialog,
@@ -41,7 +42,6 @@ import {
 	ToolbarIconButton,
 	ToolbarMenu,
 	ToolbarMenuItem,
-	ToolbarSegmentedButton,
 	markdownControlEnabled,
 	markdownMaxHeight,
 	markdownToolbarEnabled,
@@ -211,8 +211,7 @@ interface ArtifactToolbarProps {
 	onPreview: () => void;
 	onSource: () => void;
 	onSplit: () => void;
-	onToggleMore: () => void;
-	onCloseMore: () => void;
+	onMoreOpenChange: (open: boolean) => void;
 	onWrap: () => void;
 	onApply: () => void;
 	onEdit: () => void;
@@ -239,8 +238,7 @@ function ArtifactToolbar({
 	onPreview,
 	onSource,
 	onSplit,
-	onToggleMore,
-	onCloseMore,
+	onMoreOpenChange,
 	onWrap,
 	onApply,
 	onEdit,
@@ -253,21 +251,31 @@ function ArtifactToolbar({
 	const { t } = useTranslation();
 	return (
 		<MarkdownToolbar label={t("markdown.artifactTools", "Artifact 工具")}>
-			<div className="inno-markdown-toolbar-group inno-markdown-toolbar-group--modes" role="tablist" aria-label={t("markdown.artifactView", "Artifact 视图")}>
-				<ToolbarSegmentedButton label={t("markdown.preview", "预览")} showLabel selected={displayMode === "preview"} disabled={!canPreview} onClick={onPreview}><Eye size={14} /></ToolbarSegmentedButton>
-				<ToolbarSegmentedButton label={t("markdown.viewSource", "查看源码")} showLabel selected={displayMode === "source"} onClick={onSource}><Code2 size={14} /></ToolbarSegmentedButton>
-			</div>
+			<SegmentedControl
+				variant="toolbar"
+				ariaLabel={t("markdown.artifactView", "Artifact 视图")}
+				value={displayMode}
+				onValueChange={(mode) => void (mode === "preview" ? onPreview() : onSource())}
+				items={[
+					{ value: "preview", ariaLabel: t("markdown.preview", "预览"), disabled: !canPreview, label: <><Eye size={14} /><span className="inno-markdown-toolbar-button-label">{t("markdown.preview", "预览")}</span></> },
+					{ value: "source", ariaLabel: t("markdown.viewSource", "查看源码"), label: <><Code2 size={14} /><span className="inno-markdown-toolbar-button-label">{t("markdown.viewSource", "查看源码")}</span></> },
+				]}
+			/>
 			{copyEnabled ? (
 				<ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copySource", "复制源码")} showLabel onClick={onCopy}>
 					{copied ? <Check size={14} /> : <Copy size={14} />}
 				</ToolbarIconButton>
 			) : null}
 			{toolbarAction}
-			<div className="inno-markdown-toolbar-menu-anchor">
-				<ToolbarIconButton label={t("markdown.moreTools", "更多")} showLabel menu expanded={moreOpen} aria-controls={moreId} onClick={onToggleMore}>
+			<ToolbarMenu
+				trigger={<ToolbarIconButton label={t("markdown.moreTools", "更多")} showLabel menu expanded={moreOpen} aria-controls={moreId}>
 					<MoreHorizontal size={14} />
-				</ToolbarIconButton>
-				<ToolbarMenu id={moreId} open={moreOpen} onClose={onCloseMore} label={t("markdown.moreTools", "更多")}>
+				</ToolbarIconButton>}
+				id={moreId}
+				open={moreOpen}
+				onOpenChange={onMoreOpenChange}
+				label={t("markdown.moreTools", "更多")}
+			>
 					<ToolbarMenuItem label={t("markdown.splitView", "分屏查看")} disabled={!canPreview} onClick={onSplit}><Columns2 size={14} /></ToolbarMenuItem>
 					<ToolbarMenuItem label={wrapped ? t("markdown.disableWrapText", "取消自动换行") : t("markdown.wrapText", "自动换行")} onClick={onWrap}><WrapText size={14} /></ToolbarMenuItem>
 					{editing ? (
@@ -278,8 +286,7 @@ function ArtifactToolbar({
 					{hasEditedSource ? <ToolbarMenuItem label={t("markdown.restoreOriginal", "恢复模型原文")} onClick={onRestore}><RotateCcw size={14} /></ToolbarMenuItem> : null}
 					{downloadEnabled ? <ToolbarMenuItem label={t("markdown.downloadSource", "下载源码")} onClick={onDownload}><Download size={14} /></ToolbarMenuItem> : null}
 					{fullscreenEnabled ? <ToolbarMenuItem label={t("markdown.fullscreen", "全屏查看")} disabled={!canPreview} onClick={onFullscreen}><Maximize2 size={14} /></ToolbarMenuItem> : null}
-				</ToolbarMenu>
-			</div>
+			</ToolbarMenu>
 		</MarkdownToolbar>
 	);
 }
@@ -397,8 +404,7 @@ function ArtifactShell({ code, language, isIncomplete, title, extension, mimeTyp
 			onPreview={handlePreview}
 			onSource={() => setMode("source")}
 			onSplit={() => setMode("split")}
-			onToggleMore={() => setMoreOpen((value) => !value)}
-			onCloseMore={() => setMoreOpen(false)}
+			onMoreOpenChange={setMoreOpen}
 			onWrap={() => setWrapped((value) => !value)}
 			onApply={handleSave}
 			onEdit={handleEdit}

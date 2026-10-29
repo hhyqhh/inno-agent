@@ -3,6 +3,7 @@ import type { ChatStreamEvent, ChatTraceStep } from "../types/chat.js";
 import {
 	applyChatTraceEvent,
 	finalizeTraceSteps,
+	hasVisibleTraceSteps,
 	traceStepsFromEvents,
 	traceTerminalState,
 	visibleTraceSteps,
@@ -166,6 +167,30 @@ describe("PI chat trace reducer", () => {
 
 		expect(steps.some((step) => step.kind === "skill")).toBe(false);
 		expect(visibleTraceSteps(steps).map((step) => step.title)).toEqual(["Request was aborted"]);
+	});
+
+	it.each([false, true])("retains settlement metadata without a live or historical card (aborted=%s)", (aborted) => {
+		const records = [{ event: {
+			type: "system_event" as const, eventType: "agent_settled",
+			summary: aborted ? "aborted" : "settled", detail: { aborted },
+		} }];
+		const live = traceStepsFromEvents(records);
+		expect(live).toHaveLength(1);
+		expect(live[0]?.eventDetail).toEqual({ aborted });
+		expect(visibleTraceSteps(live)).toEqual([]);
+		expect(hasVisibleTraceSteps(live)).toBe(false);
+		expect(visibleTraceSteps(finalizeTraceSteps(live))).toEqual([]);
+	});
+
+	it("keeps actual cancellation visible when hiding its settlement event", () => {
+		const records = [
+			{ event: { type: "system_event" as const, eventType: "agent_settled", summary: "aborted", detail: { aborted: true } } },
+			{ event: { type: "aborted" as const, message: "Stopped by user", persisted: false } },
+		];
+		const visible = visibleTraceSteps(traceStepsFromEvents(records));
+		expect(visible).toHaveLength(1);
+		expect(visible[0]).toMatchObject({ kind: "error", text: "Stopped by user" });
+		expect(traceTerminalState(records)).toEqual({ status: "aborted", reason: "Stopped by user" });
 	});
 
 	it("keeps content when native boundaries are missing without inventing its duration", () => {

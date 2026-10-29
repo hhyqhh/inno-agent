@@ -1,6 +1,7 @@
 import { FileText, Search, ClipboardCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { WikiReview } from "../../types/wiki.js";
+import { Tooltip } from "../ui/index.js";
 
 interface ReviewViewProps {
 	reviews: WikiReview[];
@@ -42,9 +43,11 @@ export function ReviewView({ reviews, onOpenPage }: ReviewViewProps) {
 						{review.pages?.length ? (
 							<div className="mt-2 flex flex-wrap gap-1.5">
 								{review.pages.map((path) => (
-									<button key={path} type="button" className="inline-flex max-w-full items-center gap-1 truncate rounded border border-[var(--inno-border)] px-2 py-1 text-xs text-[var(--inno-text)] hover:bg-[var(--inno-surface)]" onClick={() => onOpenPage(path)} title={path}>
-										<FileText size={12} /> <span className="truncate">{path}</span>
-									</button>
+									<Tooltip key={path} label={path}>
+										<button type="button" className="inline-flex max-w-full items-center gap-1 truncate rounded border border-[var(--inno-border)] px-2 py-1 text-xs text-[var(--inno-text)] hover:bg-[var(--inno-surface)]" onClick={() => onOpenPage(path)}>
+											<FileText size={12} /> <span className="truncate">{path}</span>
+										</button>
+									</Tooltip>
 								))}
 							</div>
 						) : null}

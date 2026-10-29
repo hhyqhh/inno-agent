@@ -20,20 +20,27 @@ import { searchL2, type L2SearchResult } from "./l2-search.js";
 
 export class L2Memory {
 	private store: L2IndexStore | null = null;
-	private opened = false;
+	private opening: Promise<L2IndexStore | null> | null = null;
+	private indexQueue: Promise<unknown> = Promise.resolve();
 	private backfilled = false;
 	private backfillPromise: Promise<void> | null = null;
 
 	constructor(private readonly l2DataDir: string) {}
 
 	private async ensureStore(): Promise<L2IndexStore | null> {
-		if (this.opened) return this.store;
-		this.opened = true;
-		this.store = await openL2IndexStore(this.l2DataDir);
-		if (!this.store) {
-			logger.warn("[L2] node:sqlite unavailable — index-backed retrieval disabled (falling back to substring).");
-		}
-		return this.store;
+		// Concurrent searches must await the same open, rather than observe a temporary null.
+		this.opening ??= openL2IndexStore(this.l2DataDir).then((store) => {
+			this.store = store;
+			if (!store) logger.warn("[L2] node:sqlite unavailable; index-backed retrieval disabled.");
+			return store;
+		});
+		return this.opening;
+	}
+
+	private enqueueIndex<T>(operation: () => Promise<T>): Promise<T> {
+		const result = this.indexQueue.then(operation);
+		this.indexQueue = result.catch(() => {});
+		return result;
 	}
 
 	/** Expose the store for the search layer; null when sqlite is unavailable. */
@@ -69,7 +76,7 @@ export class L2Memory {
 		const store = await this.ensureStore();
 		if (!store) return;
 		try {
-			const { indexed, pruned } = indexAllPages(store, this.l2DataDir);
+			const { indexed, pruned } = await this.enqueueIndex(() => indexAllPages(store, this.l2DataDir));
 			this.backfilled = true;
 			if (indexed > 0 || pruned > 0) logger.info(`[L2] backfill indexed ${indexed} page(s), pruned ${pruned}.`);
 		} catch (err) {
@@ -82,7 +89,7 @@ export class L2Memory {
 		const store = await this.ensureStore();
 		if (!store) return false;
 		try {
-			indexAllPages(store, this.l2DataDir);
+			await this.enqueueIndex(() => indexAllPages(store, this.l2DataDir));
 			return true;
 		} catch (err) {
 			logger.warn({ err }, `[L2] reconciliation failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -95,7 +102,7 @@ export class L2Memory {
 		if (!wikiPath) return;
 		const store = await this.ensureStore();
 		if (!store) return;
-		indexPage(store, this.l2DataDir, wikiPath);
+		await this.enqueueIndex(() => indexPage(store, this.l2DataDir, wikiPath));
 	}
 
 	/**
@@ -120,7 +127,9 @@ export class L2Memory {
 		const store = await this.ensureStore();
 		if (!store) return;
 		try {
-			removePageFromIndex(store, wikiPath);
+			// Deletions must follow pending reads/upserts so an older backfill
+			// cannot recreate a page after its removal.
+			await this.enqueueIndex(async () => removePageFromIndex(store, wikiPath));
 		} catch (err) {
 			logger.warn({ err }, `[L2] remove ${wikiPath} failed: ${err instanceof Error ? err.message : String(err)}`);
 		}
@@ -134,8 +143,10 @@ export class L2Memory {
 	close(): void {
 		this.store?.close();
 		this.store = null;
-		this.opened = false;
+		this.opening = null;
+		this.indexQueue = Promise.resolve();
 		this.backfilled = false;
+		this.backfillPromise = null;
 	}
 }
 

@@ -5,7 +5,6 @@ import { useStoreSnapshot } from "../hooks.js";
 import { QuestionDialog } from "../QuestionDialog.js";
 import { PermissionDialog } from "../PermissionDialog.js";
 import { AgentTraceTimeline } from "./AgentTraceTimeline.js";
-import { AgentAvatar } from "./MessageBubble.js";
 
 /** Live view of a manual job run. Deliberately renders with the exact same
  *  trace timeline as a normal chat turn (StreamingBubbles), but is driven by
@@ -40,12 +39,11 @@ export function JobStreamBubbles({ holdCompleted = false }: { holdCompleted?: bo
 		: undefined;
 	return (
 		<motion.div
-			className="inno-trace-shell inno-trace-shell-live flex gap-3"
+			className="inno-trace-shell inno-trace-shell-live flex"
 			initial={{ opacity: 0, y: 8 }}
 			animate={{ opacity: 1, y: 0 }}
 			transition={{ duration: 0.2, ease: "easeOut" }}
 		>
-			<AgentAvatar />
 			<div className="min-w-0 flex-1">
 				<AgentTraceTimeline
 					steps={effective.trace}

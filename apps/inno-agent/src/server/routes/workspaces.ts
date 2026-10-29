@@ -1,6 +1,8 @@
 import { execFile, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import {
+	constants as fsConstants,
 	existsSync,
 	mkdirSync,
 	readdirSync,
@@ -11,6 +13,7 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
+import { copyFile, open, stat } from "node:fs/promises";
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative } from "node:path";
@@ -18,9 +21,10 @@ import { promisify } from "node:util";
 import { applyWorkspaceCwd, getCurrentSessionId } from "../../agent/pi-runner.js";
 import { streamRegistry } from "../../chat/stream-registry.js";
 import { logger } from "../../logger.js";
+import { getWordPdfPreview, WordPreviewError } from "../../office/word-preview.js";
 import type { RuntimePaths } from "../../runtime.js";
 import { ensureDir } from "../../storage/file-store.js";
-import { isWithin } from "../../utils/path-safety.js";
+import { isWithin, resolveContainedPathAsync } from "../../utils/path-safety.js";
 import { TEMP_WORKSPACE_ID, type WorkspaceMeta, type WorkspaceRegistry } from "../../workspace/workspace-registry.js";
 import {
 	canonicalTreeRoot,
@@ -41,13 +45,28 @@ import {
 	workspaceSwitchStatistics,
 	type WorkspaceSwitchFileAction,
 } from "../workspace-switch.js";
-import { json, matchRoute, readBody } from "../http-helpers.js";
+import { servePdf } from "../pdf-response.js";
+import { listWorkspaceWriteActivity } from "../workspace-activity-store.js";
+import { json, matchRoute, readBody, UPLOAD_MAX_BODY_BYTES } from "../http-helpers.js";
 
 /**
  * Server-owned dependencies the workspace routes touch. `workspaceRegistry`
  * is the live singleton; the skill installers close over server module state
  * (skillsDir default), so they are injected rather than imported.
  */
+// The PUT route owns Office backups and writes. Serialize saves to one file
+// so a second request backs up the completed prior save, never partial bytes.
+const pendingFileSaves = new Map<string, Promise<void>>();
+async function serializeFileSave(path: string, write: () => Promise<void>): Promise<void> {
+    const prior = pendingFileSaves.get(path) ?? Promise.resolve();
+    const saving = prior.then(write);
+    const settled = saving.then(() => {}, () => {});
+    pendingFileSaves.set(path, settled);
+    try { await saving; } finally {
+        if (pendingFileSaves.get(path) === settled) pendingFileSaves.delete(path);
+    }
+}
+
 export interface WorkspacesRouteContext {
 	workspaceRegistry: WorkspaceRegistry;
 	dataDir: string;
@@ -321,6 +340,37 @@ export async function handleWorkspacesRoutes(
 		runQueueOpWithTimeout,
 	} = ctx;
 
+	if (method === "GET" && url.split("?")[0] === "/api/workspace/activity") {
+		const workspaceId = workspaceIdFromQuery(url);
+		const workspaces = await workspaceRegistry.listWorkspacesAsync();
+		if (!workspaces.some((workspace) => workspace.id === workspaceId)) { json(res, 404, { error: "Workspace not found" }); return true; }
+		json(res, 200, await listWorkspaceWriteActivity(dataDir, workspaceId));
+		return true;
+	}
+
+	if (method === "GET" && url.split("?")[0] === "/api/workspace/file-location") {
+		const workspaceId = workspaceIdFromQuery(url);
+		const requestedPath = new URL(url, "http://localhost").searchParams.get("path") ?? "";
+		if (!requestedPath) { json(res, 400, { error: "Missing path" }); return true; }
+		const workspace = (await workspaceRegistry.listWorkspacesAsync()).find((entry) => entry.id === workspaceId);
+		if (!workspace) { json(res, 404, { error: "Workspace not found" }); return true; }
+		const root = await workspaceRegistry.resolveWorkspaceDirAsync(workspace);
+		const normalized = normalizeWorkspaceRelativePath(requestedPath);
+		const fullPath = root && !normalized.startsWith("/") && !/^[A-Za-z]:/.test(normalized)
+			? await resolveContainedPathAsync(root, normalized) : null;
+		if (!fullPath) { json(res, 403, { error: "Path outside workspace" }); return true; }
+		try {
+			if (!(await stat(fullPath)).isFile()) { json(res, 404, { error: "File not found" }); return true; }
+		} catch (error) {
+			if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+				json(res, 404, { error: "File not found" }); return true;
+			}
+			throw error;
+		}
+		json(res, 200, { absolutePath: fullPath });
+		return true;
+	}
+
 	// safeWorkspacePath closed over server.ts's module-level workspaceRegistry;
 	// rebind it to the injected registry here so the route bodies stay verbatim.
 	// safeJoinReal (not plain safeJoin): a symlink planted inside the workspace
@@ -392,11 +442,12 @@ export async function handleWorkspacesRoutes(
 			const relPath = workspaceRelativePath(root, filePath);
 			const rawUrl = `/api/workspace/raw?workspaceId=${encodeURIComponent(wsId)}&path=${encodeURIComponent(relPath)}`;
 			const format = kind === "office" ? officeFormat(filePath) : undefined;
-			// pptx is rendered as SVG via the Python converter; docx/xlsx are
-			// rendered client-side from the raw bytes, so they need no previewUrl.
+			// Word uses fixed-page PDF previews; HTML reflow changed its print layout.
 			let previewUrl: string | undefined;
 			if (format === "pptx") {
 				previewUrl = `/api/workspace/pptx-preview?workspaceId=${encodeURIComponent(wsId)}&path=${encodeURIComponent(relPath)}`;
+			} else if (format === "doc" || format === "docx") {
+				previewUrl = `/api/workspace/word-preview?workspaceId=${encodeURIComponent(wsId)}&path=${encodeURIComponent(relPath)}`;
 			}
 			json(res, 200, {
 				path: relPath,
@@ -490,6 +541,28 @@ export async function handleWorkspacesRoutes(
 		return true;
 	}
 
+	if ((method === "GET" || method === "HEAD") && url.startsWith("/api/workspace/word-preview?")) {
+		const params = new URL(url, "http://localhost").searchParams;
+		const root = workspaceRegistry.resolveWorkspaceDir(workspaceIdFromQuery(url));
+		if (!root) { json(res, 404, { error: "Workspace not found" }); return true; }
+		try {
+			const pdf = await getWordPdfPreview(ctx.dataDir, root, params.get("path") ?? "");
+			if (!res.destroyed) {
+				if (params.get("metadata") === "1") {
+					params.delete("metadata");
+					params.set("v", pdf.etag.replaceAll('"', ""));
+					json(res, 200, { url: `/api/workspace/word-preview?${params}`, size: pdf.size });
+				} else await servePdf(req, res, pdf, method === "HEAD");
+			}
+		} catch (error) {
+			if (!res.destroyed && !res.headersSent) {
+				const failure = error instanceof WordPreviewError ? error : new WordPreviewError("WORD_PREVIEW_FAILED", 422, "Unable to preview this Word document.");
+				json(res, failure.status, { error: failure.message, code: failure.code });
+			}
+		}
+		return true;
+	}
+
 	// Extract text from office documents (docx/xlsx/pptx) for in-browser preview.
 	if (method === "GET" && url.startsWith("/api/workspace/office-preview?")) {
 		const params = new URL(url, "http://localhost").searchParams;
@@ -551,19 +624,72 @@ export async function handleWorkspacesRoutes(
 	// --- Workspace Mutations API ---
 
 	if (method === "PUT" && url === "/api/workspace/file") {
-		const body = (await readBody(req)) as Record<string, unknown>;
+		// contentBase64 writes carry office-editor exports; base64 inflates by
+		// 4/3, so this endpoint shares the upload cap (192 MB wire ≈ 144 MB
+		// binary) instead of the chat/CRUD default.
+		const body = (await readBody(req, { maxBytes: UPLOAD_MAX_BODY_BYTES })) as Record<string, unknown>;
 		const wsId = workspaceIdFromBody(body);
 		const filePath = typeof body.path === "string" ? body.path.trim() : "";
+		// Binary writes (WYSIWYG office editors) send base64; text edits send content.
+		const contentBase64 = typeof body.contentBase64 === "string" ? body.contentBase64 : null;
 		const content = typeof body.content === "string" ? body.content : "";
 		if (!filePath) { json(res, 400, { error: "Missing path" }); return true; }
-		const fullPath = safeWorkspacePath(wsId, filePath);
-		if (!fullPath) { json(res, 400, { error: "Invalid path" }); return true; }
-		if (!existsSync(fullPath) || !statSync(fullPath).isFile()) {
-			json(res, 404, { error: "File not found" }); return true;
+		// Large Office saves must not block streaming requests. Resolve the same
+		// contained path as reads, validate base64 before opening without truncation.
+		const meta = (await workspaceRegistry.listWorkspacesAsync()).find((workspace) => workspace.id === wsId);
+		const root = meta ? await workspaceRegistry.resolveWorkspaceDirAsync(meta) : null;
+		const normalized = normalizeWorkspaceRelativePath(filePath);
+		const fullPath = root && !normalized.startsWith("/") && !/^[A-Za-z]:/.test(normalized)
+			? await resolveContainedPathAsync(root, normalized) : null;
+		if (!fullPath) { json(res, 403, { error: "Path outside workspace" }); return true; }
+		if (contentBase64 !== null && !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(contentBase64)) {
+			json(res, 400, { error: "Invalid base64 content" }); return true;
 		}
-		writeFileSync(fullPath, content, "utf-8");
-		const stat = statSync(fullPath);
-		json(res, 200, { path: filePath, saved: true, size: stat.size, updatedAt: stat.mtime.toISOString() });
+		const createOnly = body.createOnly === true;
+		const needsOfficeBackup = !createOnly && contentBase64 !== null && [".xlsx", ".pptx"].includes(extname(fullPath).toLowerCase());
+		if (needsOfficeBackup && body.confirmOverwrite !== true) {
+			json(res, 409, { error: "Confirm before overwriting the original file", code: "OFFICE_OVERWRITE_CONFIRMATION_REQUIRED" }); return true;
+		}
+		await serializeFileSave(fullPath, async () => {
+			let output;
+			try { output = await open(fullPath, createOnly ? "wx" : "r+"); }
+			catch (error) {
+				// Exclusive creation makes Save copy incapable of replacing an existing file,
+				// including concurrent saves choosing the same destination.
+				if (createOnly && (error as NodeJS.ErrnoException).code === "EEXIST") { json(res, 409, { error: "File already exists" }); return; }
+				if (["ENOENT", "EISDIR", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) { json(res, 404, { error: "File not found" }); return; }
+				throw error;
+			}
+			try {
+				const originalInfo = await output.stat();
+				if (!originalInfo.isFile()) { json(res, 404, { error: "File not found" }); return; }
+				// The preserving export is based on the imported source. A newer
+				// external edit must be reloaded, not replaced by that old package.
+				if (!createOnly && typeof body.expectedUpdatedAt === "string" && body.expectedUpdatedAt !== originalInfo.mtime.toISOString()) {
+					json(res, 409, { error: "原文件已被其他操作修改，请保存副本或重新打开。 / Original changed; save a copy or reopen.", code: "FILE_CHANGED" }); return;
+				}
+				let backupPath: string | undefined;
+				if (needsOfficeBackup) {
+					const extension = extname(normalized);
+					backupPath = `${normalized.slice(0, -extension.length)}.backup-${Date.now()}-${randomUUID()}${extension}`;
+					const backupFile = await resolveContainedPathAsync(root!, backupPath);
+					// An overwrite still needs a recovery point. A unique,
+					// exclusive byte-for-byte backup must succeed before any write.
+					try {
+						if (!backupFile) throw new Error("Invalid backup path");
+						await copyFile(fullPath, backupFile, fsConstants.COPYFILE_EXCL);
+					} catch {
+						logger.warn("Office backup failed; overwrite cancelled");
+						json(res, 500, { error: "Backup failed. The original file was not overwritten.", code: "OFFICE_BACKUP_FAILED" }); return;
+					}
+				}
+				const bytes = contentBase64 !== null ? Buffer.from(contentBase64, "base64") : Buffer.from(content, "utf-8");
+				await output.writeFile(bytes);
+				await output.truncate(bytes.length);
+				const info = await output.stat();
+				json(res, 200, { path: filePath, saved: true, size: info.size, updatedAt: info.mtime.toISOString(), ...(backupPath ? { backupPath } : {}) });
+			} finally { await output.close(); }
+		});
 		return true;
 	}
 

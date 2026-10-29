@@ -1,5 +1,6 @@
 import { EventEmitter } from "./event-emitter.js";
-import { fitPanelLayout, resolveWorkspaceModeForViewport, WORKSPACE_DEFAULT_WIDTH } from "./app-layout.js";
+import { DESKTOP_SIDEBAR_CONTENT_WIDTH, fitPanelLayout, getEffectiveSidebarWidth, resolveWorkspaceModeForViewport, WORKSPACE_DEFAULT_WIDTH } from "./app-layout.js";
+import { syncNavigationHistory } from "./navigation-history.js";
 
 /**
  * The right panel only hosts the artifact/file browser now — notebook,
@@ -46,6 +47,7 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 	page: AppPage = getInitialPage();
 	rightPanelTab: RightPanelTab = "preview";
 	sidebarCollapsed = false;
+	sidebarWidth = getInitialSidebarWidth();
 	workspaceMode: WorkspaceMode = "collapsed";
 	workspaceWidth = getInitialWorkspaceWidth();
 	settingsOpen = getInitialSettingsOpen();
@@ -73,8 +75,7 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 		if (TAB_TO_PAGE[nextUrl.searchParams.get("tab") ?? ""]) nextUrl.searchParams.delete("tab");
 		const current = new URL(window.location.href);
 		if (nextUrl.href === current.href) return;
-		if (mode === "push") window.history.pushState({}, "", nextUrl);
-		else window.history.replaceState({}, "", nextUrl);
+		syncNavigationHistory(nextUrl, mode);
 	}
 
 	openSettings(tab: SettingsTab = "general") {
@@ -105,6 +106,18 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 		this.setSidebarCollapsed(!this.sidebarCollapsed);
 	}
 
+	setSidebarWidth(width: number) {
+		const nextWidth = getEffectiveSidebarWidth(width);
+		if (this.sidebarWidth === nextWidth) return;
+		this.sidebarWidth = nextWidth;
+		try {
+			if (typeof window !== "undefined") window.localStorage.setItem("inno.sidebarWidth", String(nextWidth));
+		} catch {
+			// Keep resizing usable when browser storage is unavailable.
+		}
+		this.emit("change", undefined);
+	}
+
 	setSidebarCollapsed(collapsed: boolean) {
 		let nextWorkspaceMode = this.workspaceMode;
 		let nextWorkspaceWidth = this.workspaceWidth;
@@ -112,7 +125,14 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 			// Full mode occupies the chat surface but keeps the session sidebar as
 			// the navigation anchor. Only a split layout needs a fit pass here.
 			if (nextWorkspaceMode !== "full" && typeof window !== "undefined") {
-				const fitted = fitPanelLayout(window.innerWidth, false, nextWorkspaceMode, this.workspaceWidth);
+				const fitted = fitPanelLayout(
+					window.innerWidth,
+					false,
+					nextWorkspaceMode,
+					this.workspaceWidth,
+					Boolean(window.innoDesktop),
+					this.sidebarWidth,
+				);
 				if (fitted?.sidebarCollapsed === false) {
 					nextWorkspaceMode = fitted.workspaceMode;
 					nextWorkspaceWidth = fitted.workspaceWidth;
@@ -137,10 +157,17 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 		let nextWorkspaceMode = mode;
 		let nextWorkspaceWidth = this.workspaceWidth;
 		if (typeof window !== "undefined") {
-			// Narrow viewports have no room for a side-by-side panel: every call
-			// site gets the full-width overlay instead of a refused/squeezed split.
-			nextWorkspaceMode = resolveWorkspaceModeForViewport(nextWorkspaceMode, window.innerWidth);
-			const fitted = fitPanelLayout(window.innerWidth, nextSidebarCollapsed, nextWorkspaceMode, nextWorkspaceWidth);
+			// Browser narrow screens use an overlay. Native windows keep the
+			// fitted split or close it; shrinking the window is not a maximize action.
+			nextWorkspaceMode = resolveWorkspaceModeForViewport(nextWorkspaceMode, window.innerWidth, Boolean(window.innoDesktop));
+			const fitted = fitPanelLayout(
+				window.innerWidth,
+				nextSidebarCollapsed,
+				nextWorkspaceMode,
+				nextWorkspaceWidth,
+				Boolean(window.innoDesktop),
+				this.sidebarWidth,
+			);
 			if (!fitted) return;
 			nextSidebarCollapsed = fitted.sidebarCollapsed;
 			nextWorkspaceMode = fitted.workspaceMode;
@@ -162,7 +189,14 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 		let nextSidebarCollapsed = this.sidebarCollapsed;
 		let nextWorkspaceMode = this.workspaceMode;
 		if (typeof window !== "undefined") {
-			const fitted = fitPanelLayout(window.innerWidth, nextSidebarCollapsed, nextWorkspaceMode, nextWorkspaceWidth);
+			const fitted = fitPanelLayout(
+				window.innerWidth,
+				nextSidebarCollapsed,
+				nextWorkspaceMode,
+				nextWorkspaceWidth,
+				Boolean(window.innoDesktop),
+				this.sidebarWidth,
+			);
 			if (fitted) {
 				nextSidebarCollapsed = fitted.sidebarCollapsed;
 				nextWorkspaceMode = fitted.workspaceMode;
@@ -187,6 +221,15 @@ class AppStoreImpl extends EventEmitter<AppStoreEvents> {
 
 	toggleWorkspace() {
 		this.setWorkspaceMode(this.workspaceMode === "collapsed" ? "half" : "collapsed");
+	}
+}
+
+function getInitialSidebarWidth(): number {
+	try {
+		const saved = typeof window !== "undefined" ? window.localStorage.getItem("inno.sidebarWidth") : null;
+		return saved === null ? DESKTOP_SIDEBAR_CONTENT_WIDTH : getEffectiveSidebarWidth(Number(saved));
+	} catch {
+		return DESKTOP_SIDEBAR_CONTENT_WIDTH;
 	}
 }
 

@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, CornerUpLeft, Loader2, MessageCircleQuestion, Minimize2, Plus, RotateCcw, SendHorizontal, X } from "lucide-react";
+import { Check, CornerUpLeft, Loader2, MessageCircleQuestion, Minimize2, Plus, RotateCcw, SendHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { btwStore } from "../stores/btw-store.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { MarkdownArtifact } from "./MarkdownArtifact.js";
+import { getTabTriggerId, IconButton, TabPanel, Tabs, Textarea, Tooltip } from "./ui/index.js";
 import { getSession } from "../api/sessions.js";
 import {
 	constrainBtwGeometry,
@@ -78,6 +79,7 @@ export function BtwPanel() {
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 	const listRef = useRef<HTMLDivElement | null>(null);
 	const tabStripRef = useRef<HTMLDivElement | null>(null);
+	const focusTabsAfterCloseRef = useRef(false);
 	const confirmCancelRef = useRef<HTMLButtonElement | null>(null);
 	const confirmDeleteRef = useRef<HTMLButtonElement | null>(null);
 	const focusBeforeConfirmRef = useRef<HTMLElement | null>(null);
@@ -184,7 +186,9 @@ export function BtwPanel() {
 
 	useLayoutEffect(() => {
 		if (!btw.visible || !btw.activeTab) return;
-		inputRef.current?.focus({ preventScroll: true });
+		if (!tabStripRef.current?.contains(document.activeElement)) {
+			inputRef.current?.focus({ preventScroll: true });
+		}
 		const list = listRef.current;
 		if (list) {
 			list.scrollTop = btw.activeTab.scrollTop;
@@ -202,10 +206,19 @@ export function BtwPanel() {
 	// Keep the active tab fully visible in the strip: creating or switching to
 	// a tab beyond the scroll edge must not clip its label and close button.
 	useLayoutEffect(() => {
-		if (!btw.activeTab) return;
-		tabStripRef.current
-			?.querySelector('[aria-selected="true"]')
-			?.scrollIntoView({ block: "nearest", inline: "nearest" });
+		if (!btw.activeTab) {
+			if (focusTabsAfterCloseRef.current) {
+				document.querySelector<HTMLButtonElement>("[data-inno-btw-trigger]")?.focus({ preventScroll: true });
+			}
+			focusTabsAfterCloseRef.current = false;
+			return;
+		}
+		const activeTrigger = tabStripRef.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]');
+		activeTrigger?.scrollIntoView({ block: "nearest", inline: "nearest" });
+		if (focusTabsAfterCloseRef.current) {
+			activeTrigger?.focus({ preventScroll: true });
+			focusTabsAfterCloseRef.current = false;
+		}
 	}, [btw.activeTab?.id, btw.tabs.length]);
 
 	// Delete confirmation focus management: focus "Cancel" on open, keep Tab
@@ -348,6 +361,7 @@ export function BtwPanel() {
 
 	const closeTab = (tab: BtwTabState) => {
 		if (!tab.draft.trim() && tab.exchanges.length === 0) {
+			focusTabsAfterCloseRef.current = true;
 			btwStore.closeTab(sessionId, tab.id);
 			setConfirmingTabId(null);
 			return;
@@ -356,6 +370,7 @@ export function BtwPanel() {
 	};
 	const confirmClose = () => {
 		if (!confirmingTabId) return;
+		focusTabsAfterCloseRef.current = true;
 		btwStore.closeTab(sessionId, confirmingTabId);
 		setConfirmingTabId(null);
 	};
@@ -396,16 +411,16 @@ export function BtwPanel() {
 					<MessageCircleQuestion size={15} className="text-[var(--inno-accent)]" aria-hidden="true" />
 					<span className="truncate text-xs font-medium text-[var(--inno-text)]">{t("btw.title")}</span>
 					<span className="min-w-0 flex-1 truncate text-[11px] text-[var(--inno-text-subtle)]">{t("btw.subtitle")}</span>
-					<button
-						type="button"
-						className="inno-btw-window-button flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+					<IconButton
+						size="xs"
+						className="inno-btw-window-button shrink-0"
 						title={t("btw.minimize")}
 						aria-label={t("btw.minimize")}
 						onPointerDown={(event) => event.stopPropagation()}
 						onClick={() => btwStore.minimizePanel()}
 					>
 						<Minimize2 size={14} />
-					</button>
+					</IconButton>
 				</div>
 
 				{btw.loadError ? (
@@ -435,50 +450,39 @@ export function BtwPanel() {
 				<div className="inno-btw-tab-strip flex shrink-0 items-center gap-1 border-b border-[var(--inno-border)] px-2">
 					{/* The "+" button stays pinned outside the scroll area so the create
 						entry never scrolls away as tabs accumulate. */}
-					<div ref={tabStripRef} className="min-w-0 flex-1 overflow-x-auto" role="tablist" aria-label={t("btw.tabs")}>
-						<div className="flex min-w-max items-center gap-1 py-1">
-							{btw.tabs.map((tab) => {
-								const active = tab.id === activeTab.id;
-								return (
-									<div
-										key={tab.id}
-										role="tab"
-										aria-selected={active}
-										className={`inno-btw-tab flex h-7 items-center rounded-md text-xs ${active ? "inno-btw-tab-active" : "text-[var(--inno-text-muted)]"}`}
-									>
-										<button
-											type="button"
-											className="h-full max-w-36 truncate px-2 text-left"
-											onClick={() => btwStore.selectTab(sessionId, tab.id)}
-										>
-											{t("btw.tabLabel", { number: tab.number })}
-										</button>
-										<button
-											type="button"
-											className="mr-1 flex h-5 w-5 items-center justify-center rounded text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-											title={t("btw.closeTab", { number: tab.number })}
-											aria-label={t("btw.closeTab", { number: tab.number })}
-											onClick={() => closeTab(tab)}
-										>
-											<X size={12} />
-										</button>
-									</div>
-								);
-							})}
-						</div>
+					<div ref={tabStripRef} className="inno-btw-tab-scroll min-w-0 flex-1 overflow-x-auto">
+						<Tabs
+							id="btw-tabs"
+							variant="pill"
+							size="compact"
+							value={activeTab.id}
+							onValueChange={(tabId) => btwStore.selectTab(sessionId, tabId)}
+							ariaLabel={t("btw.tabs")}
+							className="inno-btw-tabs py-1"
+							items={btw.tabs.map((tab) => ({
+								value: tab.id,
+								label: t("btw.tabLabel", { number: tab.number }),
+								close: {
+									label: t("btw.closeTab", { number: tab.number }),
+									onClose: () => closeTab(tab),
+								},
+							}))}
+						/>
 					</div>
-					<button
-						type="button"
-						className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+					<IconButton
+						size="xs"
+						className="shrink-0"
 						title={t("btw.newTab")}
 						aria-label={t("btw.newTab")}
 						onClick={() => btwStore.createTab(sessionId)}
 					>
 						<Plus size={14} />
-					</button>
+					</IconButton>
 				</div>
 
-				<div
+				<TabPanel
+					id="btw-tabs-panel"
+					labelledBy={getTabTriggerId("btw-tabs", activeTab.id)}
 					ref={listRef}
 					className="inno-btw-thread-list flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3"
 					onScroll={(event) => {
@@ -486,8 +490,6 @@ export function BtwPanel() {
 						nearBottomRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
 						btwStore.setScrollTop(sessionId, activeTab.id, list.scrollTop);
 					}}
-					role="tabpanel"
-					aria-label={t("btw.tabLabel", { number: activeTab.number })}
 				>
 					{activeTab.exchanges.length === 0 ? (
 						<p className="m-auto max-w-56 py-6 text-center text-xs text-[var(--inno-text-subtle)]">{t("btw.emptyHint")}</p>
@@ -525,16 +527,18 @@ export function BtwPanel() {
 													{t("btw.broughtBack")}
 												</span>
 											) : (
-												<button
-													type="button"
-													className="flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-2 py-1 text-xs text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)] disabled:opacity-50"
-													disabled={bringingBackId !== null}
-													title={t("btw.bringBackHint")}
-													onClick={() => bringBack(exchange)}
-												>
-													{bringingBackId === exchange.id ? <Loader2 size={12} className="animate-spin" aria-hidden="true" /> : <CornerUpLeft size={12} aria-hidden="true" />}
-													{t("btw.bringBack")}
-												</button>
+							<Tooltip label={t("btw.bringBackHint")}>
+								<button
+									type="button"
+									className="flex items-center gap-1 rounded-md border border-[var(--inno-border)] px-2 py-1 text-xs text-[var(--inno-text-muted)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)] disabled:opacity-50"
+									disabled={bringingBackId !== null}
+									title={bringingBackId !== null ? t("btw.bringBackHint") : undefined}
+									onClick={() => bringBack(exchange)}
+								>
+									{bringingBackId === exchange.id ? <Loader2 size={12} className="animate-spin" aria-hidden="true" /> : <CornerUpLeft size={12} aria-hidden="true" />}
+									{t("btw.bringBack")}
+								</button>
+							</Tooltip>
 											)}
 										</div>
 									</>
@@ -542,28 +546,30 @@ export function BtwPanel() {
 							</div>
 						</div>
 					))}
-				</div>
+				</TabPanel>
 
 				<div className="flex shrink-0 items-end gap-2 border-t border-[var(--inno-border)] px-3 py-2.5">
-					<textarea
+					<Textarea
 						ref={inputRef}
-						className="max-h-28 min-h-[2.25rem] flex-1 resize-none rounded-lg border border-[var(--inno-border)] bg-[var(--inno-chat-bg)] px-3 py-2 text-sm text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] focus:border-[var(--inno-accent)]"
+						className="max-h-28 min-h-[2.25rem] flex-1 resize-none rounded-lg border border-[var(--inno-border)] bg-[var(--inno-chat-bg)] px-3 py-2 text-sm text-[var(--inno-text)] outline-none placeholder:text-[var(--inno-text-subtle)] focus:border-[var(--inno-border-strong)]"
 						placeholder={t("btw.placeholder")}
 						rows={1}
 						value={activeTab.draft}
 						onChange={(event) => btwStore.setDraft(sessionId, activeTab.id, event.target.value)}
 						onKeyDown={handleKeyDown}
 					/>
-					<button
-						type="button"
-						className="inno-composer-send flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50"
-						title={t("btw.send")}
-						aria-label={t("btw.send")}
-						disabled={!activeTab.draft.trim() || pending}
-						onClick={send}
-					>
-						{pending ? <Loader2 size={15} className="animate-spin" /> : <SendHorizontal size={15} />}
-					</button>
+					<Tooltip label={t("btw.send")}>
+						<button
+							type="button"
+							className="inno-composer-send flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50"
+							aria-label={t("btw.send")}
+							disabled={!activeTab.draft.trim() || pending}
+							title={!activeTab.draft.trim() || pending ? t("btw.send") : undefined}
+							onClick={send}
+						>
+							{pending ? <Loader2 size={15} className="animate-spin" /> : <SendHorizontal size={15} />}
+						</button>
+					</Tooltip>
 				</div>
 				</>
 				) : null}

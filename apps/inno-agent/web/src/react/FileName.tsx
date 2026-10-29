@@ -1,4 +1,5 @@
 import type { HTMLAttributes } from "react";
+import { Tooltip } from "./ui/index.js";
 
 interface FileNameProps extends Omit<HTMLAttributes<HTMLSpanElement>, "children"> {
 	name: string;
@@ -13,13 +14,13 @@ function splitFileName(name: string): { stem: string; extension: string } {
 }
 
 /** Truncates only the filename stem so its extension always remains visible. */
-export function FileName({ name, className, ...props }: FileNameProps) {
+export function FileName({ name, className, title, ...props }: FileNameProps) {
 	const { stem, extension } = splitFileName(name);
-	return (
+	const fileName = (
 		<span {...props} className={`inno-file-name${className ? ` ${className}` : ""}`}>
 			<span className="inno-file-name-stem">{stem}</span>
 			{extension ? <span className="inno-file-name-extension">{extension}</span> : null}
 		</span>
 	);
+	return title ? <Tooltip label={title}>{fileName}</Tooltip> : fileName;
 }
-

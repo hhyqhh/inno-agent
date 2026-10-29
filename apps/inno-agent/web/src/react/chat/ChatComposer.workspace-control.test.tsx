@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { createRef } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { renderWithTooltipProvider as render } from "../test-utils.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-i18next", () => ({

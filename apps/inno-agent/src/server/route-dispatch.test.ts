@@ -3,10 +3,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
-import { createRouteDispatcher, type RouteHandlers } from "./route-dispatch.js";
+import { createRouteDispatcher, requiresAgent, type RouteHandlers } from "./route-dispatch.js";
 
 const routesDir = join(import.meta.dirname, "routes");
-const routeFiles = readdirSync(routesDir).filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"));
+// Fonts is a settings sub-handler; its HTTP routes are tested in fonts.test.ts.
+const routeFiles = readdirSync(routesDir).filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts") && file !== "fonts.ts");
 const req = {} as IncomingMessage;
 const res = {} as ServerResponse;
 
@@ -17,6 +18,7 @@ function makeHandlers() {
 		channels: vi.fn<RouteHandlers["channels"]>().mockResolvedValue(false),
 		skills: vi.fn<RouteHandlers["skills"]>().mockResolvedValue(false),
 		sessions: vi.fn<RouteHandlers["sessions"]>().mockResolvedValue(false),
+		search: vi.fn<RouteHandlers["search"]>().mockResolvedValue(false),
 		wiki: vi.fn<RouteHandlers["wiki"]>().mockResolvedValue(false),
 		learner: vi.fn<RouteHandlers["learner"]>().mockResolvedValue(false),
 		workspaces: vi.fn<RouteHandlers["workspaces"]>().mockResolvedValue(false),
@@ -124,4 +126,32 @@ describe("route prefix dispatch", () => {
 			for (const handler of Object.values(handlers)) expect(handler).not.toHaveBeenCalled();
 		},
 	);
+});
+
+
+describe("Agent readiness boundary", () => {
+	it.each([
+		["GET", "/api/sessions"], ["GET", "/api/sessions/history.jsonl"],
+		["GET", "/api/sessions/history.jsonl/context-usage"],
+		["GET", "/api/workspaces"], ["GET", "/api/workspace/raw?path=test.docx"],
+		["GET", "/api/workspace/word-preview?path=test.docx"],
+		["GET", "/api/workspace/tree"], ["GET", "/api/workspace/activity"],
+		["GET", "/api/search?q=test"], ["GET", "/api/settings"],
+		["POST", "/api/settings/model"], ["PUT", "/api/settings/providers"],
+		["GET", "/api/jobs"], ["POST", "/api/jobs"],
+		["POST", "/api/terminal"], ["GET", "/api/chat/status/history.jsonl"],
+		["POST", "/api/chat/abort"], ["POST", "/api/jobs/run/stop"],
+		["GET", "/api/mcp"], ["GET", "/api/skills"],
+	])("does not wait for Agent: %s %s", (method, path) => {
+		expect(requiresAgent(method, path)).toBe(false);
+	});
+	it.each([
+		["GET", "/api/commands"], ["POST", "/api/chat"], ["POST", "/api/chat/stream"],
+		["POST", "/api/sessions"], ["POST", "/api/sessions/a.jsonl/activate?source=history"],
+		["POST", "/api/sessions/a.jsonl/branch-before-message"], ["POST", "/api/sessions/a.jsonl/generate-topic"],
+		["POST", "/api/btw/ask"], ["POST", "/api/btw/bring-back"],
+		["POST", "/api/bridge/messages"], ["POST", "/api/jobs/a/run"], ["POST", "/api/jobs/a/run/stream"],
+	])("waits for runtime operations: %s %s", (method, path) => {
+		expect(requiresAgent(method, path)).toBe(true);
+	});
 });

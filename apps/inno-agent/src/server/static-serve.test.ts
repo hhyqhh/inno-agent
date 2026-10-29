@@ -64,6 +64,8 @@ describe("serveStatic", () => {
 		["index.html", "text/html; charset=utf-8", "no-cache"],
 		["assets/index-Abcd1234.html", "text/html; charset=utf-8", "no-cache"],
 		["assets/index-Abcd1234.js", "application/javascript; charset=utf-8", "public, max-age=31536000, immutable"],
+		["assets/harfbuzz-Abcd1234.wasm", "application/wasm", "public, max-age=31536000, immutable"],
+		["font.otf", "font/otf", "no-cache"],
 		["notes.txt", "application/octet-stream", "no-cache"],
 	])("preserves content and cache headers for %s", async (name, contentType, cacheControl) => {
 		const path = join(staticRoot, name);

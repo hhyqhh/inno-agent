@@ -1,12 +1,20 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
+import { motion } from "motion/react";
 import { ArrowDown, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { AttachmentRef, ChatMessage, ChatToolRecord, PendingQuestion } from "../../types/chat.js";
 import { workspaceFileUrl } from "../../api/workspace.js";
 import { workspaceStore } from "../../stores/workspace-store.js";
+import { appStore } from "../../stores/app-store.js";
+import { getConversationTitle } from "./conversation-title.js";
 import { buildConversationTurns, ConversationMinimap } from "../ConversationMinimap.js";
 import { useStoreSnapshot } from "../hooks.js";
-import { Spinner } from "../ui/Spinner.js";
+import {
+	Spinner,
+	Tooltip,
+	useUITransition,
+} from "../ui/index.js";
 import { MessageBubble } from "./MessageBubble.js";
 import { JobStreamBubbles } from "./JobStreamBubbles.js";
 import { StreamingBubbles } from "./StreamingBubbles.js";
@@ -14,24 +22,14 @@ import { TodoWidget, extractTodoTasks } from "./TodoWidget.js";
 import { answeredQuestionnaireFromTool } from "../../utils/questionnaire.js";
 import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
 import { TerminalDrawer } from "../terminal/TerminalDrawer.js";
+import { officeDeliverables, type OfficeDeliverable } from "../../utils/office-deliverables.js";
+import { OfficeDocumentCards } from "./OfficeDocumentCards.js";
 
 function traceContainsAssistantText(message: ChatMessage): boolean {
 	if (message.trace?.some((step) => (step.kind === "progress" || step.kind === "answer") && Boolean(step.text?.trim()))) return true;
 	return Boolean(message.traceEvents?.some((record) => (
 		record.event.type === "text_delta" && Boolean(record.event.delta.trim())
 	)));
-}
-
-// The strip regex mirrors UPLOADED_IMAGES_PREFIX_PATTERN in the backend's
-// src/server/upload-prefix.ts (the web bundle cannot import server code) —
-// keep the two in sync when the upload-prefix format changes.
-function firstMessageTitle(messages: ChatMessage[]): string | undefined {
-	const content = messages.find((message) => message.role === "user")?.content
-		.replace(/^\[用户本轮上传了 \d+ 张图片，已保存到工作区：[\s\S]*?\]\s*/, "")
-		.replace(/\s+/g, " ")
-		.trim();
-	if (!content) return undefined;
-	return content.length > 28 ? `${content.slice(0, 28)}...` : content;
 }
 
 interface ChatConversationProps {
@@ -54,9 +52,6 @@ interface ChatConversationProps {
 	topOverlay?: ReactNode;
 	scrollRef: RefObject<HTMLDivElement | null>;
 	onScroll: () => void;
-	onWheel: () => void;
-	onTouchStart: () => void;
-	onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
 	onPauseAutoScroll: () => void;
 	showLatestButton: boolean;
 	onJumpToLatest: () => void;
@@ -69,6 +64,7 @@ interface ChatConversationProps {
 	/** "随便问问" floating panel, rendered above the composer layer. */
 	btwPanel?: ReactNode;
 	onOpenAttachment: (file: AttachmentRef) => void;
+	onOpenDocument?: (file: OfficeDeliverable) => void;
 	onOpenSkill: (skillName: string) => void;
 	onEditMessage: (message: ChatMessage) => void;
 	canRetry: boolean;
@@ -82,6 +78,8 @@ interface ChatConversationProps {
 	sessionOpening?: boolean;
 	/** Existing-workspace switcher rendered next to the title. */
 	workspaceControl?: ReactNode;
+	/** Electron app-level title bar mount. Undefined keeps the browser header inline. */
+	desktopHeaderHost?: HTMLDivElement | null;
 	/** Reserve room for the desktop chrome's workspace button when collapsed. */
 	workspaceCollapsed?: boolean;
 	/** When the session sidebar is collapsed its floating expand button overlaps the header's left edge. */
@@ -94,9 +92,6 @@ export function ChatConversation({
 	topOverlay,
 	scrollRef,
 	onScroll,
-	onWheel,
-	onTouchStart,
-	onPointerDown,
 	onPauseAutoScroll,
 	showLatestButton,
 	onJumpToLatest,
@@ -107,6 +102,7 @@ export function ChatConversation({
 	btwControl,
 	btwPanel,
 	onOpenAttachment,
+	onOpenDocument,
 	onOpenSkill,
 	onEditMessage,
 	canRetry,
@@ -116,10 +112,14 @@ export function ChatConversation({
 	sessionHasTopic = false,
 	sessionOpening = false,
 	workspaceControl,
+	desktopHeaderHost,
 	workspaceCollapsed = false,
 	sidebarCollapsed = false,
 }: ChatConversationProps) {
 	const { t } = useTranslation();
+	const transition = useUITransition("modal");
+	const mode = useStoreSnapshot(appStore, () => appStore.workspaceMode);
+	const titleIsTab = Boolean(desktopHeaderHost) && mode === "full";
 	const [showHistoryLoading, setShowHistoryLoading] = useState(false);
 	useEffect(() => {
 		const shouldShow = chat.isLoadingHistory && chat.messages.length === 0;
@@ -131,10 +131,7 @@ export function ChatConversation({
 		return () => window.clearTimeout(timer);
 	}, [chat.isLoadingHistory, chat.messages.length]);
 	const conversationTurns = useMemo(() => buildConversationTurns(chat.messages), [chat.messages]);
-	const initialTitle = useMemo(() => firstMessageTitle(chat.messages), [chat.messages]);
-	const visibleSessionTitle = (sessionHasTopic || sessionOpening) && sessionTitle
-		? sessionTitle
-		: initialTitle || t("nav.newChat", "新建会话");
+	const visibleSessionTitle = getConversationTitle(chat.messages, sessionTitle, sessionHasTopic || sessionOpening, t("nav.newChat", "新建会话"));
 	const turnIndexByStartMessage = useMemo(
 		() => new Map(conversationTurns.map((turn) => [turn.startMessageIndex, turn.index])),
 		[conversationTurns],
@@ -229,30 +226,49 @@ export function ChatConversation({
 		[chat.messages, chat.activeTools, chat.completedTools],
 	);
 	const activeWorkspaceId = useStoreSnapshot(workspaceStore, () => workspaceStore.activeWorkspaceId);
+	const documentsByOwner = useMemo(() => {
+		const result = new Map<number, OfficeDeliverable[]>();
+		for (const turn of conversationTurns) {
+			const messages = chat.messages.slice(turn.startMessageIndex, turn.endMessageIndex + 1);
+			// The trace owner may hide other assistant fragments from this turn.
+			// Aggregate once so repeated saves produce a single final card.
+			const owner = [...traceTurnPresentation.actionOwnerIndexes].find((index) => index >= turn.startMessageIndex && index <= turn.endMessageIndex)
+				?? [...lastAssistantMessageIndexes].find((index) => index >= turn.startMessageIndex && index <= turn.endMessageIndex);
+			if (owner !== undefined) result.set(owner, officeDeliverables(messages, activeWorkspaceId));
+		}
+		return result;
+	}, [chat.messages, conversationTurns, activeWorkspaceId, traceTurnPresentation, lastAssistantMessageIndexes]);
 	const resolveAttachmentUrl = useCallback(
 		(file: AttachmentRef) => workspaceFileUrl(file.path, activeWorkspaceId ?? undefined),
 		[activeWorkspaceId],
 	);
+	const conversationHeader = (
+		<header className={`inno-conversation-header relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] pr-4 backdrop-blur-md ${workspaceCollapsed ? "pr-14" : ""} ${sidebarCollapsed ? "inno-conversation-header--sidebar-collapsed" : "pl-4"}`}>
+			<div className="inno-conversation-heading flex min-w-0 items-center gap-2.5">
+				{!titleIsTab ? <Tooltip label={visibleSessionTitle}>
+					<motion.span layoutId={desktopHeaderHost ? "inno-conversation-title" : undefined} transition={transition} className="inno-conversation-title min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]">{visibleSessionTitle}</motion.span>
+				</Tooltip> : null}
+				{workspaceControl ? <div aria-hidden={titleIsTab || undefined} inert={titleIsTab} className="inno-conversation-workspace-control shrink-0">{workspaceControl}</div> : null}
+			</div>
+			{btwControl ? <div className="inno-conversation-header-actions ml-auto flex shrink-0 items-center">{btwControl}</div> : null}
+		</header>
+	);
+	const renderedConversationHeader = desktopHeaderHost === undefined
+		? conversationHeader
+		: desktopHeaderHost
+			? createPortal(conversationHeader, desktopHeaderHost)
+			: null;
 
 	return (
 		<section className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--inno-chat-bg)]">
 			{topOverlay}
 			{smartToast}
-			<header className={`inno-conversation-header relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] pr-4 backdrop-blur-md ${workspaceCollapsed ? "pr-14" : ""} ${sidebarCollapsed ? "inno-conversation-header--sidebar-collapsed" : "pl-4"}`}>
-				<div className="inno-conversation-heading flex min-w-0 items-center gap-2.5">
-					<span className="inno-conversation-title min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]" title={visibleSessionTitle}>{visibleSessionTitle}</span>
-					{workspaceControl ? <div className="inno-conversation-workspace-control shrink-0">{workspaceControl}</div> : null}
-				</div>
-				{btwControl ? <div className="ml-auto flex shrink-0 items-center">{btwControl}</div> : null}
-			</header>
+			{renderedConversationHeader}
 			<div className="conversation-stage relative flex-1 min-h-0">
 				<div
 					ref={scrollRef}
 					onScroll={onScroll}
-					onWheel={onWheel}
-					onTouchStart={onTouchStart}
-					onPointerDown={onPointerDown}
-					className="chat-scroll inno-chat-grid h-full min-h-0 overflow-y-scroll px-4 py-4"
+					className="chat-scroll h-full min-h-0 overflow-y-scroll px-4 py-4"
 				>
 					<div data-conversation-content className="mx-auto flex min-w-0 max-w-[780px] flex-col gap-3">
 						{showHistoryLoading ? (
@@ -285,8 +301,9 @@ export function ChatConversation({
 								const isActiveTurnAssistant = activeTurnStartMessage !== undefined && index >= activeTurnStartMessage && message.role === "assistant";
 								const isTurnActionOwner = lastAssistantMessageIndexes.has(index) || traceTurnPresentation.actionOwnerIndexes.has(index);
 								const showActions = message.role === "user" || (isTurnActionOwner && !isActiveTurnAssistant);
+								const documents = !isActiveTurnAssistant ? documentsByOwner.get(index) ?? [] : [];
 								return (
-									<div key={messageKey} data-conversation-turn={turnIndex}>
+									<div key={messageKey} data-conversation-turn={turnIndex} data-entry-id={message.entryId}>
 										<MessageBubble
 											message={message}
 											collapseUserToFirstLine={collapseUserMessages}
@@ -300,6 +317,7 @@ export function ChatConversation({
 											showRetry={canRetry && index === retryOwnerIndex}
 											showActions={showActions}
 											answeredQuestionnaires={traceTurnPresentation.questionnairesByOwner.get(index)}
+											resultContent={onOpenDocument && documents.length ? <OfficeDocumentCards files={documents} onOpen={onOpenDocument} /> : undefined}
 											onRetry={onRetry}
 										/>
 									</div>

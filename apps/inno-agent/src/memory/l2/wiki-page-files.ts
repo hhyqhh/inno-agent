@@ -1,4 +1,6 @@
 import { readdirSync, type Dirent } from "node:fs";
+import { readdir } from "node:fs/promises";
+import { resolveContainedPathAsync } from "../../utils/path-safety.js";
 import { join } from "node:path";
 
 const ROOT_NON_PAGE_FILES = new Set([
@@ -34,5 +36,23 @@ export function listWikiPagePaths(l2DataDir: string): string[] {
 		}
 	};
 	visit(root, "wiki");
+	return paths.sort((a, b) => a.localeCompare(b, "zh-CN"));
+}
+
+/** Non-blocking enumeration for HTTP search and index backfill. */
+export async function listWikiPagePathsAsync(l2DataDir: string): Promise<string[]> {
+	const paths: string[] = [];
+	const visit = async (relativeDir: string): Promise<void> => {
+		const dir = await resolveContainedPathAsync(l2DataDir, relativeDir);
+		if (!dir) return;
+		let entries: Dirent[];
+		try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
+		for (const entry of entries) {
+			const relativePath = `${relativeDir}/${entry.name}`;
+			if (entry.isDirectory()) await visit(relativePath);
+			else if (entry.isFile() && entry.name.endsWith(".md") && !ROOT_NON_PAGE_FILES.has(relativePath)) paths.push(relativePath);
+		}
+	};
+	await visit("wiki");
 	return paths.sort((a, b) => a.localeCompare(b, "zh-CN"));
 }

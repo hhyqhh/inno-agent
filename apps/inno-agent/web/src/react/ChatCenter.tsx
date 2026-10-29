@@ -8,7 +8,7 @@ import {
 	type ChangeEvent,
 	type ClipboardEvent,
 	type KeyboardEvent,
-	type PointerEvent as ReactPointerEvent,
+	type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { MessageCircleQuestion } from "lucide-react";
@@ -29,12 +29,9 @@ import {
 	type WorkspaceSwitchPreview,
 	type WorkspaceSwitchResult,
 } from "../api/workspaces.js";
-import { ApiError } from "../api/client.js";
-import type { PresetMeta } from "../types/presets.js";
 import { arrayBufferToBase64 } from "../api/uploads.js";
 import { uploadWorkspaceFileWithProgress } from "../api/workspace.js";
 import type { AttachmentRef, ChatMessage } from "../types/chat.js";
-import { fetchPresetList, readCachedPresets, removeCachedPreset } from "../utils/preset-cache.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { ChatComposer } from "./chat/ChatComposer.js";
 import { ContextUsage } from "./chat/ContextUsage.js";
@@ -53,6 +50,7 @@ import {
 import { fetchSlashCommands, type SlashCommandItem } from "../api/commands.js";
 import { WorkspaceSwitchConfirm } from "./chat/WorkspaceSwitchConfirm.js";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher.js";
+import { Tooltip } from "./ui/index.js";
 import { BtwPanel } from "./BtwPanel.js";
 import { PermissionModeControl } from "./chat/PermissionModeControl.js";
 import type { WorkspaceChoice } from "./WorkspaceSwitcher.js";
@@ -77,9 +75,6 @@ import { SmartInputOverlay, type SmartPanelState } from "./chat/smart-input/Smar
 import { skillMessageFromContent } from "./chat/skill-message-collapse.js";
 import { parseAgentCommandMessage } from "./chat/agent-command-message.js";
 
-type PresetRefreshStatus = "success" | "error";
-
-
 type WsMode = "temp" | "new" | "existing";
 
 // Remember the user's last workspace choice for a new chat so the bottom
@@ -88,8 +83,11 @@ const LAST_WS_MODE_KEY = "inno.lastWorkspaceMode";
 const LAST_WS_ID_KEY = "inno.lastWorkspaceId";
 
 interface ChatCenterProps {
-	onOpenPresetPanels: () => void | Promise<void>;
 	onPreviewFile: (minimumWidth: number) => void | Promise<void>;
+	/** Electron chat title row is portaled into the app-level window chrome. */
+	desktopHeaderHost?: HTMLDivElement | null;
+	/** Terminal toggle placed beside the chat's "随便问问" control. */
+	terminalControl?: ReactNode;
 }
 
 function readLastWsMode(): WsMode {
@@ -125,10 +123,9 @@ function pendingUploadsFromRefs(refs: AttachmentRef[]): PendingUpload[] {
 	});
 }
 
-export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProps) {
+export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }: ChatCenterProps) {
 	const { t } = useTranslation();
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
-	const welcomeLayoutRef = useRef<HTMLDivElement | null>(null);
 	const resizeFrameRef = useRef<number | null>(null);
 	const draftRef = useRef("");
 	const editTargetRef = useRef<{ sessionId: string; entryId: string } | null>(null);
@@ -137,7 +134,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	const imageInputRef = useRef<HTMLInputElement | null>(null);
 	const scrollRef = useRef<HTMLDivElement | null>(null);
 	const shouldStickToBottomRef = useRef(true);
-	const userScrollGestureRef = useRef(false);
 	const [showLatestButton, setShowLatestButton] = useState(false);
 	const pasteBlockIdRef = useRef(0);
 	const [uploads, setUploads] = useState<PendingUpload[]>([]);
@@ -214,37 +210,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	}, [modelState.models]);
 	const currentModel = modelOptions.find((model) => model.provider === modelState.defaultProvider && model.id === modelState.defaultModel);
 
-	const [presets, setPresets] = useState<PresetMeta[]>(() => readCachedPresets() ?? []);
-	const [presetsLoaded, setPresetsLoaded] = useState(() => readCachedPresets() !== null);
-	const [isLoadingPresets, setIsLoadingPresets] = useState(() => readCachedPresets() === null);
-	const [isRefreshingPresets, setIsRefreshingPresets] = useState(false);
-	const [presetsRefreshError, setPresetsRefreshError] = useState<string | null>(null);
-	const [presetRefreshStatus, setPresetRefreshStatus] = useState<PresetRefreshStatus | null>(null);
-	const presetRefreshStatusTimerRef = useRef<number | null>(null);
-	const presetAutoRefreshStartedRef = useRef(false);
-	const [openingPresetId, setOpeningPresetId] = useState<string | null>(null);
-	const [presetQuery, setPresetQuery] = useState("");
-
-	const cancelPresetRefreshStatusTimer = useCallback(() => {
-		if (presetRefreshStatusTimerRef.current === null) return;
-		window.clearTimeout(presetRefreshStatusTimerRef.current);
-		presetRefreshStatusTimerRef.current = null;
-	}, []);
-
-	const showPresetRefreshStatus = useCallback((status: PresetRefreshStatus) => {
-		cancelPresetRefreshStatusTimer();
-		setPresetRefreshStatus(status);
-		// Keep the failure marker visible until the next refresh attempt. A
-		// successful refresh remains a transient confirmation for five seconds.
-		if (status !== "success") return;
-		presetRefreshStatusTimerRef.current = window.setTimeout(() => {
-			setPresetRefreshStatus(null);
-			presetRefreshStatusTimerRef.current = null;
-		}, 5_000);
-	}, [cancelPresetRefreshStatusTimer]);
-
-	useEffect(() => () => cancelPresetRefreshStatusTimer(), [cancelPresetRefreshStatusTimer]);
-
 	const chat = useStoreSnapshot(chatStore, () => ({
 		messages: chatStore.messages,
 		isSending: chatStore.isSending,
@@ -270,14 +235,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	const workspaces = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
 	}));
-	const loadedPresetIds = useMemo(
-		() => new Set(
-			workspaces.list
-				.filter((workspace) => workspace.id.startsWith("preset-"))
-				.map((workspace) => workspace.id.slice("preset-".length)),
-		),
-		[workspaces.list],
-	);
 	// Active workspace for the current session — drives upload target + button
 	// availability. Synced by sessionsStore on openSession/createSession, and
 	// pre-seeded by the useEffect below when the welcome screen's "existing"
@@ -288,6 +245,17 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	const workspaceTreeError = useStoreSnapshot(workspaceStore, () => workspaceStore.error);
 	const workspaceFiles = useMemo(() => workspaceTree ? flattenWorkspaceFiles(workspaceTree) : [], [workspaceTree]);
 	const isWelcome = sessions.isWelcome;
+	useLayoutEffect(() => {
+		if (!desktopHeaderHost) return;
+		if (isWelcome) {
+			delete desktopHeaderHost.dataset.activeConversation;
+			return;
+		}
+		desktopHeaderHost.dataset.activeConversation = "true";
+		return () => {
+			delete desktopHeaderHost.dataset.activeConversation;
+		};
+	}, [desktopHeaderHost, isWelcome]);
 	const hasConversationStatus = Boolean(chat.pendingQuestion || chat.pendingPermission || sessions.busyBlocker);
 	const btwPanelOpen = useStoreSnapshot(btwStore, () => btwStore.isVisible);
 	// Sidebar/workspace layout shifts (e.g. after desktop window expansion) move
@@ -527,25 +495,15 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		if (el) el.scrollTop = el.scrollHeight;
 	}, [chat.isLoadingHistory, chat.messages.length, sessions.currentSessionId]);
 
-	const markUserScrollGesture = useCallback(() => {
-		userScrollGestureRef.current = true;
-	}, []);
-	const handleScrollerPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-		const el = scrollRef.current;
-		if (el && event.clientX >= el.getBoundingClientRect().right - 24) markUserScrollGesture();
-	}, [markUserScrollGesture]);
 	const handleChatScroll = useCallback(() => {
 		const el = scrollRef.current;
 		if (!el) return;
 		const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
 		if (distanceFromBottom < 96) {
 			shouldStickToBottomRef.current = true;
-			userScrollGestureRef.current = false;
 			setShowLatestButton(false);
 			return;
 		}
-		if (!userScrollGestureRef.current) return;
-		userScrollGestureRef.current = false;
 		shouldStickToBottomRef.current = false;
 		setShowLatestButton(true);
 	}, []);
@@ -557,7 +515,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		const el = scrollRef.current;
 		if (!el) return;
 		shouldStickToBottomRef.current = true;
-		userScrollGestureRef.current = false;
 		setShowLatestButton(false);
 		el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
 	}, []);
@@ -565,14 +522,13 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	const resizeInput = useCallback(() => {
 		const el = inputRef.current;
 		if (!el) return;
-		const minHeight = resizeComposerTextarea(el);
+		resizeComposerTextarea(el);
 		// Switching to a scrollable textarea changes its usable line width by the
 		// native scrollbar gutter. Refresh the smart-input layers after that style
 		// change so their wrapping and caret coordinates stay in the same viewport.
 		engineRef.current?.syncLayout();
 		const composer = el.closest<HTMLElement>(".inno-composer");
 		if (!composer) return;
-		const textareaHeight = el.getBoundingClientRect().height;
 		const composerHeight = composer.getBoundingClientRect().height;
 		const attachmentRow = composer.querySelector<HTMLElement>(".inno-composer-attachments");
 		const attachmentHeight = attachmentRow
@@ -597,14 +553,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 				stickToBottomNow();
 			}
 		}
-		const welcomeLayout = welcomeLayoutRef.current;
-		if (!welcomeLayout) return;
-		// The attachment row is an independent, variable-height block above the
-		// textarea. Exclude it from the baseline so adding/removing a file cannot
-		// leave a stale welcome-page offset behind when a bubble is rebuilt.
-		const baseComposerHeight = composerHeight - textareaHeight - attachmentHeight + minHeight;
-		const composerGrowth = Math.max(0, composerHeight - baseComposerHeight);
-		welcomeLayout.style.setProperty("--inno-welcome-composer-half-growth", `${composerGrowth / 2}px`);
 	}, [stickToBottomNow]);
 
 	// Coalesce layout reads/writes while the user types or deletes rapidly.
@@ -819,10 +767,10 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	const highlightWorkspace = useCallback((paths: string[] | null) => {
 		window.dispatchEvent(new CustomEvent("inno-smart-highlight", { detail: paths }));
 	}, []);
-	const openSmartFilePreview = useCallback((path: string) => {
+	const openSmartFilePreview = useCallback((path: string, workspaceId = workspaceStore.activeWorkspaceId) => {
 		appStore.setRightPanelTab("preview");
 		workspaceStore.clearStreamingPreview();
-		void workspaceStore.selectFile(path);
+		void workspaceStore.selectFile(path, () => true, workspaceId);
 		void onPreviewFile(SMART_FILE_PREVIEW_WIDTH);
 	}, [onPreviewFile]);
 	const openChatAttachmentPreview = useCallback((file: AttachmentRef) => {
@@ -885,79 +833,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 		return { workspaceId: wsExistingId };
 	}, [wsMode, wsName, wsExistingId, t]);
 
-	const loadPresets = useCallback(async (forceRefresh = false) => {
-		setPresetsRefreshError(null);
-		if (forceRefresh) {
-			cancelPresetRefreshStatusTimer();
-			setPresetRefreshStatus(null);
-		}
-		if (!forceRefresh) {
-			const cached = readCachedPresets();
-			if (cached !== null) {
-				setPresets(cached);
-				setPresetsLoaded(true);
-				setIsLoadingPresets(false);
-				return;
-			}
-		}
-		if (forceRefresh) {
-			setIsRefreshingPresets(true);
-		} else {
-			setIsLoadingPresets(true);
-		}
-		try {
-			const next = await fetchPresetList(forceRefresh);
-			setPresets(next);
-			setPresetsLoaded(true);
-			if (forceRefresh) {
-				showPresetRefreshStatus("success");
-			}
-		} catch {
-			// Keep the last successful list visible and avoid leaking transport
-			// details such as the English "fetch failed" into the localized UI.
-			setPresetsRefreshError(t("presets.refreshFailed"));
-			showPresetRefreshStatus("error");
-		} finally {
-			setIsLoadingPresets(false);
-			setIsRefreshingPresets(false);
-		}
-	}, [cancelPresetRefreshStatusTimer, showPresetRefreshStatus, t]);
-
-	// The welcome screen renders the preset catalog as one-click workspace
-	// cards. Cached cards render immediately; a forced refresh updates them in
-	// the background once per app mount and reuses the same success/error
-	// indicator as manual refresh. ChatCenter stays mounted across session
-	// changes, so this also runs when the app restores an existing session.
-	useEffect(() => {
-		if (presetAutoRefreshStartedRef.current) return;
-		presetAutoRefreshStartedRef.current = true;
-		void loadPresets(true);
-	}, [loadPresets]);
-
-	const openPreset = useCallback((presetId: string) => {
-		setWsError("");
-		setOpeningPresetId(presetId);
-		void (async () => {
-			try {
-				await Promise.all([
-					sessionsStore.createSessionWith({ presetId }),
-					onOpenPresetPanels(),
-				]);
-			} catch (err) {
-				const unavailable = err instanceof ApiError
-					&& err.status === 404
-					&& err.data?.code === "PRESET_UNAVAILABLE";
-				if (unavailable) {
-					setPresets((current) => current.filter((preset) => preset.id !== presetId));
-					removeCachedPreset(presetId);
-				} else {
-					setWsError(err instanceof Error ? err.message : t("chat.errOpenPreset"));
-				}
-			} finally {
-				setOpeningPresetId(null);
-			}
-		})();
-	}, [onOpenPresetPanels, t]);
 
 	const handleSend = useCallback(() => {
 		const engine = engineRef.current;
@@ -1111,6 +986,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 				if (skippedTotal > 0) {
 					showSmartToast(t("chat.smartInput.uploadSkippedCount", "有 {{count}} 个文件未上传成功，未随消息发送，已回到附件栏可重试", { count: skippedTotal }), true);
 				}
+				sessionsStore.showPendingSession(targetSessionId, messageContent);
 				void chatStore.send(messageContent, imagesToSend, targetSessionId, attachments);
 			} catch (error) {
 				setWsError(error instanceof Error ? error.message : t("chat.errCreateSession"));
@@ -1559,17 +1435,22 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 	const smartToastNode = smartToast ? (
 		<div className={`inno-smart-toast ${smartToast.error ? "is-error" : ""}`} role="status">{smartToast.message}</div>
 	) : null;
-	const btwControl = !isWelcome && sessions.currentSessionId && (!window.innoDesktop || appLayout.workspaceMode !== "collapsed") ? (
-		<button
-			type="button"
-			className={`inno-conversation-btw-control flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50 ${btwPanelOpen ? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : ""}`}
-			title={t("btw.title")}
-			aria-label={t("btw.title")}
-			aria-expanded={btwPanelOpen}
-			onClick={() => void btwStore.openOrRestore(sessions.currentSessionId)}
-		>
-			<MessageCircleQuestion size={16} />
-		</button>
+	const btwControl = !isWelcome && sessions.currentSessionId ? (
+		<div className="flex items-center gap-2">
+			<Tooltip label={t("btw.title")} side="bottom">
+				<button
+					type="button"
+					data-inno-btw-trigger=""
+					className={`inno-conversation-btw-control flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:opacity-50 ${btwPanelOpen ? "bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : ""}`}
+					aria-label={t("btw.title")}
+					aria-expanded={btwPanelOpen}
+					onClick={() => void btwStore.openOrRestore(sessions.currentSessionId)}
+				>
+					<MessageCircleQuestion size={16} />
+				</button>
+			</Tooltip>
+			{terminalControl}
+		</div>
 	) : undefined;
 	const smartOverlayNode = smartInputEnabled ? (
 		<SmartInputOverlay
@@ -1606,23 +1487,10 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 			{smartOverlayNode}
 			<ChatWelcome
 				topOverlay={scheduledRunBanner}
-				welcomeLayoutRef={welcomeLayoutRef}
 				questionHint={questionHint}
 				busyBlocker={busyBlocker}
 				smartToast={smartToastNode}
 				composer={renderComposer(t("chat.welcomePlaceholder"))}
-				presets={presets}
-				presetsLoaded={presetsLoaded}
-				isLoadingPresets={isLoadingPresets}
-				isRefreshingPresets={isRefreshingPresets}
-				presetsRefreshError={presetsRefreshError}
-				presetRefreshStatus={presetRefreshStatus}
-				loadedPresetIds={loadedPresetIds}
-				onRefreshPresets={() => void loadPresets(true)}
-				openingPresetId={openingPresetId}
-				onOpenPreset={openPreset}
-				presetQuery={presetQuery}
-				onPresetQueryChange={setPresetQuery}
 				wsError={wsError}
 			/>
 			</>
@@ -1641,9 +1509,6 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 			collapseUserMessages={currentSessionMeta?.origin === "scheduler"}
 			scrollRef={scrollRef}
 			onScroll={handleChatScroll}
-			onWheel={markUserScrollGesture}
-			onTouchStart={markUserScrollGesture}
-			onPointerDown={handleScrollerPointerDown}
 			onPauseAutoScroll={pauseAutoScroll}
 			showLatestButton={showLatestButton}
 			onJumpToLatest={jumpToLatest}
@@ -1654,6 +1519,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 			btwControl={btwControl}
 			btwPanel={<BtwPanel />}
 			onOpenAttachment={openChatAttachmentPreview}
+			onOpenDocument={(file) => openSmartFilePreview(file.path, file.workspaceId)}
 			onOpenSkill={openSkillPanel}
 			onEditMessage={handleEditMessage}
 			canRetry={Boolean(chat.lastUserPrompt) && !chat.isSending && !chat.pendingQuestion && !chat.pendingPermission && !isUploading}
@@ -1663,6 +1529,7 @@ export function ChatCenter({ onOpenPresetPanels, onPreviewFile }: ChatCenterProp
 			sessionHasTopic={currentSessionMeta?.hasTopic === true}
 			sessionOpening={sessions.openingSessionId === sessions.currentSessionId}
 			workspaceControl={headerWorkspaceControl}
+			desktopHeaderHost={desktopHeaderHost}
 			workspaceCollapsed={appLayout.workspaceMode === "collapsed"}
 			sidebarCollapsed={appLayout.sidebarCollapsed}
 		/>

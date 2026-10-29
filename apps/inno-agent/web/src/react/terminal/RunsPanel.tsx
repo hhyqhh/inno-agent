@@ -4,6 +4,7 @@ import { Archive, ChevronRight, RefreshCw, X } from "lucide-react";
 import { archiveRun, getRun, listRuns } from "../../api/terminal.js";
 import { notebookStore } from "../../stores/notebook-store.js";
 import type { RunRecord } from "../../types/terminal.js";
+import { Button, IconButton, Tooltip } from "../ui/index.js";
 
 interface RunsPanelProps {
 	sessionId: string;
@@ -84,21 +85,24 @@ export function RunsPanel({ sessionId, onClose }: RunsPanelProps) {
 			<div className="flex h-8 items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-workspace-chrome)] px-2 text-xs text-[var(--inno-text-muted)]">
 				<span className="font-medium text-[var(--inno-text)]">{t("terminal.runs.title")}</span>
 				<span className="text-[11px] text-[var(--inno-text-subtle)]">{t("terminal.runs.count", { count: runs.length })}</span>
-				<button
+				<IconButton
+					size="xs"
+					aria-label={t("common.refresh")}
+					title={t("common.refresh")}
 					onClick={() => void load()}
 					disabled={loading}
-					className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)] disabled:opacity-40"
-					title={t("common.refresh")}
+					className="ml-auto"
 				>
 					<RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-				</button>
-				<button
-					onClick={onClose}
-					className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
+				</IconButton>
+				<IconButton
+					size="xs"
+					aria-label={t("common.close")}
 					title={t("common.close")}
+					onClick={onClose}
 				>
 					<X size={12} />
-				</button>
+				</IconButton>
 			</div>
 
 			<div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)] divide-x divide-[var(--inno-border)]">
@@ -118,7 +122,9 @@ export function RunsPanel({ sessionId, onClose }: RunsPanelProps) {
 							>
 								<span className={`shrink-0 rounded px-1 py-0.5 font-mono ${badge.cls}`}>{badge.text}</span>
 								<div className="min-w-0 flex-1">
-									<div className="truncate font-mono text-[var(--inno-text)]" title={r.command}>{r.command}</div>
+									<Tooltip label={r.command}>
+										<div className="truncate font-mono text-[var(--inno-text)]">{r.command}</div>
+									</Tooltip>
 									<div className="truncate text-[10px] text-[var(--inno-text-subtle)]">{formatTime(r.startedAt)} · {formatDuration(r.startedAt, r.endedAt)}{r.sourceFile ? ` · ${r.sourceFile}` : ""}</div>
 								</div>
 								<ChevronRight size={12} className="mt-0.5 shrink-0 text-[var(--inno-text-subtle)]" />
@@ -136,17 +142,20 @@ export function RunsPanel({ sessionId, onClose }: RunsPanelProps) {
 								<div className="text-[var(--inno-text-muted)]">
 									exit={detail.exitCode ?? "(none)"} · {formatDuration(detail.startedAt, detail.endedAt)} · {detail.sourceFile ? t("terminal.runs.source", { file: detail.sourceFile }) : t("terminal.runs.noSource")}
 								</div>
-								<div className="truncate text-[10px] text-[var(--inno-text-subtle)]" title={detail.cwd}>cwd: {detail.cwd}</div>
+								<Tooltip label={`cwd: ${detail.cwd}`}>
+									<div className="truncate text-[10px] text-[var(--inno-text-subtle)]">cwd: {detail.cwd}</div>
+								</Tooltip>
 							</div>
 							<div className="flex items-center gap-2 border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1">
-								<button
+								<Button
+									size="xs"
+									variant="primary"
 									onClick={() => void handleArchive()}
 									disabled={archiveBusy}
-									className="flex h-6 items-center gap-1 rounded-md inno-primary-button px-2 text-[11px] font-medium text-white transition-colors disabled:opacity-50"
 								>
 									<Archive size={12} />
 									{archiveBusy ? t("terminal.runs.archiving") : t("terminal.runs.archiveAsNote")}
-								</button>
+								</Button>
 								{archiveMsg ? <span className="text-[10px] text-[var(--inno-text-muted)]">{archiveMsg}</span> : null}
 							</div>
 							<pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-[var(--inno-surface-muted)] p-3 font-mono text-[11px] leading-snug text-[var(--inno-text)]">

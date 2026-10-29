@@ -1,0 +1,65 @@
+.inno-pdf-preview {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	color: var(--inno-text);
+	background: var(--inno-workspace-bg);
+	container-type: inline-size;
+}
+.inno-pdf-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	flex-shrink: 0;
+	gap: 4px 12px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--inno-border);
+	background: var(--inno-surface);
+	font-size: var(--text-sm);
+}
+.inno-pdf-control-group { display: flex; align-items: center; gap: 4px; }
+.inno-pdf-page-input.inno-ui-input { width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
+.inno-pdf-page-count { min-width: 32px; color: var(--inno-text-subtle); font-variant-numeric: tabular-nums; }
+.inno-pdf-zoom { min-width: 48px; text-align: center; color: var(--inno-text-muted); font-variant-numeric: tabular-nums; }
+.inno-pdf-body { position: relative; display: flex; flex: 1; min-height: 0; }
+.inno-pdf-main { position: relative; flex: 1; min-width: 0; }
+.inno-pdf-scroll { position: absolute; inset: 0; overflow: auto; overscroll-behavior: contain; }
+.inno-pdf-scroll:focus-visible { outline: 2px solid var(--inno-accent); outline-offset: -2px; }
+/* Theme the reading surface, preserving the document's original paper and ink. */
+.inno-pdf-preview .pdfViewer { padding: 12px 0; }
+/* Tailwind preflight sets border-box globally. PDF.js measures paper as a
+   content box: otherwise its 9px borders shrink the canvas by 18px while the
+   text layer keeps the full viewport size, offsetting selection and links. */
+.inno-pdf-preview .pdfViewer .page { box-sizing: content-box; border-color: transparent; box-shadow: var(--inno-shadow-soft); }
+/* PDF text spans can overlap (especially CJK runs). Composite the selection
+   once at layer opacity so overlapping spans do not produce dark blue blocks. */
+.inno-pdf-preview .textLayer { opacity: 0.25; }
+.inno-pdf-preview .textLayer ::selection { background: var(--inno-accent); }
+.inno-pdf-preview .textLayer ::-moz-selection { background: var(--inno-accent); }
+.inno-pdf-preview .textLayer br::selection { background: transparent; }
+.inno-pdf-preview .textLayer br::-moz-selection { background: transparent; }
+.inno-pdf-navigation { display: flex; flex-direction: column; flex-shrink: 0; width: 224px; min-height: 0; border-right: 1px solid var(--inno-border); background: var(--inno-surface); }
+.inno-pdf-navigation-header { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 8px; border-bottom: 1px solid var(--inno-border); }
+.inno-pdf-navigation-content { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
+.inno-pdf-navigation-content ul { list-style: none; margin: 0; padding: 0; }
+.inno-pdf-navigation-content .inno-pdf-outline-children { padding-left: 12px; }
+.inno-pdf-outline-row { display: flex; align-items: center; min-height: 32px; gap: 4px; }
+.inno-pdf-outline-disclosure { display: flex; align-items: center; justify-content: center; flex: 0 0 28px; }
+.inno-pdf-outline-link.inno-menu-option { align-self: stretch; flex: 1; min-width: 0; white-space: nowrap; text-align: start; }
+.inno-pdf-navigation-note { padding: 8px; font-size: var(--text-sm); color: var(--inno-text-subtle); }
+.inno-pdf-thumbnail.inno-menu-option { display: flex; flex-direction: column; gap: 8px; width: 100%; padding-block: 12px; }
+.inno-pdf-thumbnail canvas { display: block; width: 120px; min-height: 120px; height: auto; box-shadow: var(--inno-shadow-soft); pointer-events: none; }
+.inno-pdf-thumbnail[aria-current="page"] { background: var(--inno-accent-soft); color: var(--inno-accent); }
+.inno-pdf-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 24px; background: var(--inno-workspace-bg); color: var(--inno-text-muted); font-size: var(--text-sm); }
+@container (max-width: 460px) {
+	.inno-pdf-fit-label { display: none; }
+	.inno-pdf-toolbar { padding-inline: 8px; gap: 4px 8px; }
+	.inno-pdf-page-input.inno-ui-input { width: 40px; }
+	.inno-pdf-page-count { min-width: 28px; }
+	.inno-pdf-zoom { min-width: 40px; }
+}
+@container (max-width: 640px) {
+	.inno-pdf-navigation { position: absolute; inset-block: 0; left: 0; z-index: 5; max-width: 80%; box-shadow: var(--inno-shadow-panel); }
+}

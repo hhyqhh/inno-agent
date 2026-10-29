@@ -19,6 +19,7 @@
  */
 
 import { lstatSync, realpathSync } from "node:fs";
+import { lstat, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 export function isWithin(root: string, target: string): boolean {
@@ -108,4 +109,30 @@ export function resolveContainedPath(baseDir: string, userPath: string): string 
 	} catch {
 		return null;
 	}
+}
+
+/** Async counterpart for request-time reads; dangling links still fail closed. */
+export async function resolveContainedPathAsync(baseDir: string, userPath: string): Promise<string | null> {
+	const canonicalize = async (target: string): Promise<string | null> => {
+		let ancestor = target;
+		for (;;) {
+			try {
+				await lstat(ancestor);
+			} catch (err) {
+				const code = (err as NodeJS.ErrnoException).code;
+				if (code !== "ENOENT" && code !== "ENOTDIR") return null;
+				const parent = dirname(ancestor);
+				if (parent === ancestor) return null;
+				ancestor = parent;
+				continue;
+			}
+			// lstat succeeded, so realpath failure (including a dangling link) fails closed.
+			try { return resolve(await realpath(ancestor), relative(ancestor, target)); } catch { return null; }
+		}
+	};
+	const base = resolve(baseDir);
+	const target = resolve(base, userPath);
+	if (!isWithin(base, target)) return null;
+	const [canonicalBase, canonicalTarget] = await Promise.all([canonicalize(base), canonicalize(target)]);
+	return canonicalBase && canonicalTarget && isWithin(canonicalBase, canonicalTarget) ? target : null;
 }

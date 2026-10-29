@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { renderWithTooltipProvider as render } from "../test-utils.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-i18next", () => ({
@@ -52,7 +53,7 @@ describe("WorkspaceSwitchConfirm", () => {
 		expect(screen.queryByRole("checkbox", { name: /notes.md/ })).toBeNull();
 	});
 
-	it("renders per-file results after the workspace has switched", () => {
+	it("renders per-file results after the workspace has switched", async () => {
 		const result: WorkspaceSwitchResult = {
 			switched: true,
 			sessionId: "session-1",
@@ -66,6 +67,7 @@ describe("WorkspaceSwitchConfirm", () => {
 		expect(screen.getByText("工作区已切换")).toBeTruthy();
 		fireEvent.click(screen.getByText("查看具体路径"));
 		expect(screen.getByText("conflict")).toBeTruthy();
-		expect(screen.getByTitle("Target file already exists")).toBeTruthy();
+		fireEvent.pointerMove(screen.getByText(/Target file already exists/), { clientX: 1, clientY: 1, pointerType: "mouse" });
+		await waitFor(() => expect(screen.getByRole("tooltip").textContent).toContain("Target file already exists"));
 	});
 });

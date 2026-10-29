@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { createServer as createHttpServer, request as httpRequest, type Server } from "node:http";
+import { createServer as createHttpServer, request as httpRequest, type Server, type ServerResponse } from "node:http";
 import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -28,6 +28,8 @@ let child: ChildProcess;
 let childLog = "";
 let providerServer: Server;
 let providerRequests = 0;
+let startupResponse: ServerResponse | undefined;
+let startupReleased = false;
 
 function requestLogs(requestId: string): Array<Record<string, unknown>> {
 	const dir = join(home, "data", "log");
@@ -58,6 +60,11 @@ beforeAll(async () => {
 	home = mkdtempSync(join(tmpdir(), "inno-smoke-home-"));
 	workspace = mkdtempSync(join(tmpdir(), "inno-smoke-ws-"));
 	providerServer = createHttpServer((req, res) => {
+		if (req.url === "/startup") {
+			startupResponse = res;
+			if (startupReleased) res.end("ready");
+			return;
+		}
 		providerRequests += 1;
 		req.resume();
 		res.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -86,6 +93,23 @@ beforeAll(async () => {
 		}),
 		"utf-8",
 	);
+
+	// Hold a real extension session_start hook to reproduce slow Agent startup
+	// without timing assumptions or production-only test switches.
+	mkdirSync(join(home, "config", "extensions"), { recursive: true });
+	writeFileSync(join(home, "config", "extensions", "startup-gate.ts"), `
+export default function (pi) {
+	pi.on("session_start", async () => {
+		await fetch("http://127.0.0.1:${providerPort}/startup");
+	});
+}
+`);
+	mkdirSync(join(workspace, ".tmp"), { recursive: true });
+	writeFileSync(join(workspace, ".tmp", "startup-preview.txt"), "preview during Agent startup");
+	mkdirSync(join(home, "data", "sessions"), { recursive: true });
+	writeFileSync(join(home, "data", "sessions", "startup-history.jsonl"), JSON.stringify({
+		type: "session", version: 3, id: "startup-history", timestamp: new Date().toISOString(), cwd: workspace,
+	}) + "\n");
 
 	// Emit a synthetic response error only for an explicitly marked request.
 	// This tests the defensive listener, not a client-disconnect crash claim.
@@ -165,6 +189,57 @@ describe("server smoke", () => {
 		expect(await res.json()).toEqual({ status: "ok" });
 	});
 
+	it("serves history, settings and file previews while Agent session_start is blocked", async () => {
+		try {
+			const initial = await fetch(`http://127.0.0.1:${port}/api/settings`, { signal: AbortSignal.timeout(5_000) });
+			expect(initial.status).toBe(200);
+			expect(((await initial.json()) as { availableModels: unknown[] }).availableModels).toEqual(expect.arrayContaining([expect.objectContaining({ id: "dummy-model" })]));
+			const deadline = Date.now() + 15_000;
+			while (!startupResponse && Date.now() < deadline) await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+			expect(startupResponse, childLog).toBeDefined();
+			for (const path of ["/api/sessions", "/api/sessions/startup-history.jsonl", "/api/workspaces", "/api/jobs", "/api/channels", "/api/settings", "/api/chat/status/missing.jsonl", "/api/workspace/tree"]) {
+				const res = await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(3_000) });
+				expect(res.status, path).toBe(200);
+				await res.arrayBuffer();
+			}
+			const preview = await fetch(`http://127.0.0.1:${port}/api/workspace/raw?path=startup-preview.txt`, { signal: AbortSignal.timeout(3_000) });
+			expect(preview.status).toBe(200);
+			expect(await preview.text()).toBe("preview during Agent startup");
+			const saveTheme = await fetch(`http://127.0.0.1:${port}/api/settings/theme`, {
+				method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: "dark" }), signal: AbortSignal.timeout(3_000),
+			});
+			expect(saveTheme.status).toBe(200);
+			const providers = await fetch(`http://127.0.0.1:${port}/api/settings/providers`, {
+				method: "PUT", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(3_000),
+				body: JSON.stringify({ providerId: "startup-provider", makeDefault: true, baseUrl: "http://127.0.0.1:1", apiKey: "startup-key", models: [{ id: "startup-model" }] }),
+			});
+			expect(providers.status).toBe(200);
+			const model = await fetch(`http://127.0.0.1:${port}/api/settings/model`, {
+				method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(3_000),
+				body: JSON.stringify({ provider: "startup-provider", model: "startup-model" }),
+			});
+			expect(model.status).toBe(200);
+
+			let commandsFinished = false;
+			const commands = api("/api/commands").then((res) => { commandsFinished = true; return res; });
+			await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+			expect(commandsFinished).toBe(false);
+			startupReleased = true;
+			startupResponse!.end("ready");
+			expect((await commands).status).toBe(200);
+			const settings = await (await api("/api/settings")).json() as { defaultProvider: string; defaultModel: string };
+			expect(settings).toMatchObject({ defaultProvider: "startup-provider", defaultModel: "startup-model" });
+			// Restore the provider fixture used by the remaining smoke scenarios.
+			await fetch(`http://127.0.0.1:${port}/api/settings/model`, {
+				method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: "dummy", model: "dummy-model" }),
+			});
+			await fetch(`http://127.0.0.1:${port}/api/settings/providers/startup-provider`, { method: "DELETE" });
+		} finally {
+			startupReleased = true;
+			startupResponse?.end("ready");
+		}
+	}, 30_000);
+
 	it("GET /api/settings returns 200 with provider API keys redacted", async () => {
 		const res = await api("/api/settings");
 		expect(res.status).toBe(200);
@@ -181,6 +256,12 @@ describe("server smoke", () => {
 		const res = await api("/api/sessions");
 		expect(res.status).toBe(200);
 	}, 60_000);
+
+	it("GET /api/search remains reachable through prefix route dispatch", async () => {
+		const res = await api("/api/search?category=workspace");
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ results: [], total: 0, counts: {} });
+	});
 
 	it("GET /api/sessions/:id returns 404 for a missing session", async () => {
 		const res = await api("/api/sessions/no-such-session.jsonl");

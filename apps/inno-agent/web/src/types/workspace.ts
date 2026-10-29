@@ -13,10 +13,15 @@ export interface WorkspaceTree extends WorkspaceTreeNode {
 	children: WorkspaceTreeNode[];
 }
 
+export interface WorkspaceActivity {
+	files: Array<{ path: string; lastSeenAt: string }>;
+	trackingIncomplete: boolean;
+}
+
 export type WorkspaceFileKind = "markdown" | "html" | "pdf" | "image" | "office" | "text" | "binary";
 
 /** Specific office format, used to pick the right client-side renderer. */
-export type WorkspaceOfficeFormat = "docx" | "xlsx" | "pptx";
+export type WorkspaceOfficeFormat = "doc" | "docx" | "xlsx" | "pptx";
 
 export interface WorkspaceFileDetail {
 	path: string;
@@ -29,7 +34,7 @@ export interface WorkspaceFileDetail {
 	updatedAt: string;
 	content?: string;
 	url?: string;
-	/** For pptx: URL returning per-slide SVG JSON. */
+	/** Word: converted PDF bytes. PPTX: per-slide SVG JSON. */
 	previewUrl?: string;
 }
 

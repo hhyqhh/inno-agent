@@ -12,6 +12,7 @@ import { ChannelsSettings } from "./ChannelsSettings.js";
 import { McpSettings } from "./McpSettings.js";
 import { AboutSettings } from "./AboutSettings.js";
 import { SmartInputSettings } from "./SmartInputSettings.js";
+import { Tooltip } from "../ui/index.js";
 
 const TABS: { id: SettingsTab; icon: React.ReactNode }[] = [
 	{ id: "general", icon: <Settings2 size={15} /> },
@@ -67,15 +68,16 @@ export function SettingsOverlay() {
 				className="relative flex h-[min(680px,88vh)] w-[min(980px,92vw)] overflow-hidden rounded-[20px] bg-[var(--inno-card-bg)] shadow-[0_16px_48px_rgba(0,0,0,0.22)] max-md:h-[var(--inno-viewport-height,100dvh)] max-md:w-full max-md:flex-col max-md:rounded-none"
 				onClick={(event) => event.stopPropagation()}
 			>
-				<button
-					type="button"
-					onClick={() => appStore.closeSettings()}
-					title={t("common.close")}
-					aria-label={t("common.close")}
-					className="absolute right-3.5 top-3.5 z-[5] max-md:right-2 max-md:top-[calc(7px+env(safe-area-inset-top,0px))] max-md:h-11 max-md:w-11 max-md:bg-[var(--inno-sidebar-bg)] flex h-[30px] w-[30px] items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
-				>
-					<X size={17} />
-				</button>
+				<Tooltip label={t("common.close")} side="bottom">
+					<button
+						type="button"
+						onClick={() => appStore.closeSettings()}
+						aria-label={t("common.close")}
+						className="absolute right-3.5 top-3.5 z-[5] max-md:right-2 max-md:top-[calc(7px+env(safe-area-inset-top,0px))] max-md:h-11 max-md:w-11 max-md:bg-[var(--inno-sidebar-bg)] flex h-[30px] w-[30px] items-center justify-center rounded-full text-[var(--inno-text-subtle)] transition-colors hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+					>
+						<X size={17} />
+					</button>
+				</Tooltip>
 
 				{/* Left nav — horizontal tab strip on phones, icon rail on narrow desktop */}
 				<aside className="flex w-[208px] shrink-0 flex-col gap-0.5 overflow-y-auto bg-[var(--inno-sidebar-bg)] px-3 py-5 md:max-[820px]:w-[64px] md:max-[820px]:px-2 max-md:w-full max-md:flex-row max-md:items-center max-md:overflow-x-auto max-md:overflow-y-hidden max-md:pb-2 max-md:pt-[calc(8px+env(safe-area-inset-top,0px))] max-md:pr-16">
@@ -83,20 +85,21 @@ export function SettingsOverlay() {
 					{TABS.map(({ id, icon }) => {
 						const active = activeSettingsTab === id;
 						return (
-							<button
-								key={id}
-								onClick={() => appStore.setSettingsTab(id)}
-								title={t(`settings.tabs.${id}`)}
-								className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-[9px] text-[13.5px] transition-colors md:max-[820px]:justify-center ${
-									active
-										? "bg-[var(--inno-sidebar-active)] font-medium text-[var(--inno-text)]"
-										: "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
-								}`}
-							>
-								{icon}
-								<span className="md:max-[820px]:hidden">{t(`settings.tabs.${id}`)}</span>
-								{id === "lab" ? <span className="inno-smart-beta md:max-[820px]:hidden">Beta</span> : null}
-							</button>
+							<Tooltip key={id} label={t(`settings.tabs.${id}`)} side="right">
+								<button
+									onClick={() => appStore.setSettingsTab(id)}
+									aria-label={t(`settings.tabs.${id}`)}
+									className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-[9px] text-[13.5px] transition-colors md:max-[820px]:justify-center ${
+										active
+											? "bg-[var(--inno-sidebar-active)] font-medium text-[var(--inno-text)]"
+											: "text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface)] hover:text-[var(--inno-text)]"
+									}`}
+								>
+									{icon}
+									<span className="md:max-[820px]:hidden">{t(`settings.tabs.${id}`)}</span>
+									{id === "lab" ? <span className="inno-smart-beta md:max-[820px]:hidden">Beta</span> : null}
+								</button>
+							</Tooltip>
 						);
 					})}
 				</aside>

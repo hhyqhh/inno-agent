@@ -135,7 +135,7 @@ describe.skipIf(!nodeSqliteFts5Available())("L3 store + recall (node:sqlite + FT
 	it("index state round-trips", () => {
 		expect(store!.getIndexState("s1")).toBeNull();
 		store!.setIndexState("s1", 123, 456, 7);
-		expect(store!.getIndexState("s1")).toEqual({ lastOffset: 123, lastMtimeMs: 456, chunkCount: 7 });
+		expect(store!.getIndexState("s1")).toEqual({ lastOffset: 123, lastMtimeMs: 456, chunkCount: 7, indexVersion: 0 });
 	});
 
 	function writeSession(name: string, lines: unknown[]): string {
@@ -152,7 +152,7 @@ describe.skipIf(!nodeSqliteFts5Available())("L3 store + recall (node:sqlite + FT
 		};
 	}
 
-	it("indexSession extracts user/assistant text and skips thinking/toolCall noise", () => {
+	it("indexSession extracts user/assistant text and skips thinking/toolCall noise", async () => {
 		const path = writeSession("sess_a.jsonl", [
 			messageEvent("user", "今天学习了机器学习的基础概念"),
 			{
@@ -170,32 +170,32 @@ describe.skipIf(!nodeSqliteFts5Available())("L3 store + recall (node:sqlite + FT
 			{ type: "message", timestamp: "2026-08-01T10:00:02Z", message: { role: "toolResult", content: "noise" } },
 		]);
 
-		const written = indexSession(store!, path);
+		const written = await indexSession(store!, path);
 		expect(written).toBe(2);
 		expect(store!.chunkCount()).toBe(2);
 		expect(store!.searchLexical("机器学习")).toHaveLength(1);
 		expect(store!.searchLexical("内部推理")).toHaveLength(0);
 	});
 
-	it("indexSession skips unchanged files (mtime-gated incremental indexing)", () => {
+	it("indexSession skips unchanged files (mtime-gated incremental indexing)", async () => {
 		const path = writeSession("sess_b.jsonl", [messageEvent("user", "今天学习了机器学习的基础概念")]);
-		expect(indexSession(store!, path)).toBe(1);
+		expect(await indexSession(store!, path)).toBe(1);
 		// Same mtime → skipped entirely.
-		expect(indexSession(store!, path)).toBe(0);
+		expect(await indexSession(store!, path)).toBe(0);
 	});
 
-	it("indexAllSessions backfills a directory of session files", () => {
+	it("indexAllSessions backfills a directory of session files", async () => {
 		writeSession("sess_c.jsonl", [messageEvent("user", "今天学习了机器学习的基础概念")]);
 		writeSession("sess_d.jsonl", [messageEvent("user", "晚上复习了线性代数的特征值分解")]);
 		writeFileSync(join(sessionDir, "not-a-session.txt"), "ignored", "utf-8");
 
-		const summary = indexAllSessions(store!, sessionDir);
+		const summary = await indexAllSessions(store!, sessionDir);
 		expect(summary).toEqual({ sessions: 2, chunks: 2 });
 	});
 
-	it("end-to-end: indexed history is recallable from a later session", () => {
+	it("end-to-end: indexed history is recallable from a later session", async () => {
 		writeSession("sess_old.jsonl", [messageEvent("user", "上周我们讨论了机器学习的学习笔记")]);
-		indexAllSessions(store!, sessionDir);
+		await indexAllSessions(store!, sessionDir);
 
 		const results = recall(store, "机器学习", { excludeSessionId: "sess_new.jsonl" });
 		expect(results).toHaveLength(1);
@@ -206,5 +206,58 @@ describe.skipIf(!nodeSqliteFts5Available())("L3 store + recall (node:sqlite + FT
 
 	it("formatRecallForPrompt returns empty string when there is nothing to inject", () => {
 		expect(formatRecallForPrompt([])).toBe("");
+	});
+
+	it("reindexes an unchanged file when its stored index version is obsolete", async () => {
+		const path = writeSession("version.jsonl", [messageEvent("user", "needle upgrade")]);
+		await indexSession(store!, path);
+		const previous = store!.getIndexState("version.jsonl")!;
+		store!.setIndexState("version.jsonl", previous.lastOffset, previous.lastMtimeMs, 1, 2);
+		expect(await indexSession(store!, path)).toBe(1);
+		expect(store!.getIndexState("version.jsonl")!.indexVersion).toBe(3);
+		expect(await indexSession(store!, path)).toBe(0);
+	});
+
+	it("indexes only the active branch and preserves its visible message entry IDs", async () => {
+		const path = writeSession("branch.jsonl", [
+			{ ...messageEvent("user", "original question"), id: "q", parentId: null },
+			{ ...messageEvent("assistant", "abandoned branch", "stop"), id: "old", parentId: "q" },
+			{ ...messageEvent("assistant", "current branch", "stop"), id: "new", parentId: "q" },
+		]);
+		expect(await indexSession(store!, path)).toBe(2);
+		expect(store!.searchLexical("abandoned")).toEqual([]);
+		expect(store!.searchLexical("current")[0]).toMatchObject({ entryId: "new", role: "assistant" });
+	});
+
+	it("keeps short messages searchable in the UI while excluding them from prompt recall", async () => {
+		const path = writeSession("short.jsonl", [{ ...messageEvent("user", "你好"), id: "short", parentId: null }]);
+		await indexSession(store!, path);
+		expect(store!.searchLexical("你好", 12, 1)).toMatchObject([{ entryId: "short", text: "你好" }]);
+		expect(recall(store, "你好")).toEqual([]);
+	});
+
+	it("keeps the final visible entry ID when a tool continuation ends without more text", async () => {
+		const path = writeSession("continuation.jsonl", [
+			{ ...messageEvent("assistant", "needle before tool", "toolUse"), id: "part", parentId: null },
+			{ ...messageEvent("assistant", "", "stop"), id: "final", parentId: "part" },
+		]);
+		await indexSession(store!, path);
+		expect(store!.searchLexical("needle")[0]).toMatchObject({ entryId: "final", text: "needle before tool" });
+	});
+
+	it("migrates a legacy SQLite database without losing existing indexed content", async () => {
+		upsert("legacy", ["needle legacy content"]);
+		store!.setIndexState("legacy", 123, 456, 1);
+		store!.close();
+		store = null;
+		const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite");
+		const legacy = new DatabaseSync(join(l3Dir, "memory.db"));
+		legacy.exec("ALTER TABLE chunks DROP COLUMN entry_id; ALTER TABLE index_state DROP COLUMN index_version;");
+		legacy.close();
+		store = await openL3Store(l3Dir);
+		expect(store!.searchLexical("needle")[0].sessionId).toBe("legacy");
+		expect(store!.getIndexState("legacy")).toMatchObject({ indexVersion: 0, chunkCount: 1 });
+		store!.upsertChunk({ id: "new:0", sessionId: "new", role: "user", text: "needle migrated content", ts: 1, entryId: "entry" });
+		expect(store!.searchLexical("migrated")[0].entryId).toBe("entry");
 	});
 });

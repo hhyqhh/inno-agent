@@ -3,6 +3,7 @@ import { Fragment, useCallback, useContext, useEffect, useId, useRef, useState, 
 import { useTranslation } from "react-i18next";
 import { mermaid, type MermaidConfig } from "@streamdown/mermaid";
 import { StreamdownContext, type CustomRendererProps } from "streamdown";
+import { SegmentedControl } from "../ui/index.js";
 import {
 	downloadBlob,
 	MarkdownFullscreenDialog,
@@ -12,7 +13,6 @@ import {
 	ToolbarIconButton,
 	ToolbarMenu,
 	ToolbarMenuItem,
-	ToolbarSegmentedButton,
 	markdownControlEnabled,
 	markdownToolbarEnabled,
 } from "./shared.js";
@@ -56,8 +56,7 @@ function MermaidToolbar({
 	onCopy,
 	onDownload,
 	onFullscreen,
-	onMoreToggle,
-	onMoreClose,
+	onMoreOpenChange,
 	canDownload,
 	canReset,
 	canCopy,
@@ -78,8 +77,7 @@ function MermaidToolbar({
 	onCopy: () => void | Promise<void>;
 	onDownload: () => void;
 	onFullscreen: () => void;
-	onMoreToggle: () => void;
-	onMoreClose: () => void;
+	onMoreOpenChange: (open: boolean) => void;
 	canDownload: boolean;
 	canReset: boolean;
 	canCopy: boolean;
@@ -94,10 +92,16 @@ function MermaidToolbar({
 	const panZoomDisabled = view === "code";
 	return (
 		<MarkdownToolbar label={t("markdown.mermaidView", "Mermaid 视图")}>
-			<div className="inno-markdown-toolbar-group inno-markdown-toolbar-group--modes" role="tablist" aria-label={t("markdown.mermaidView", "Mermaid 视图")}>
-					<ToolbarSegmentedButton label={t("markdown.mermaidChart", "图表")} showLabel selected={view === "chart"} onClick={() => onViewChange("chart")}><Workflow size={14} /></ToolbarSegmentedButton>
-					<ToolbarSegmentedButton label={t("markdown.mermaidCode", "代码")} showLabel selected={view === "code"} onClick={() => onViewChange("code")}><Code2 size={14} /></ToolbarSegmentedButton>
-			</div>
+			<SegmentedControl
+				variant="toolbar"
+				ariaLabel={t("markdown.mermaidView", "Mermaid 视图")}
+				value={view}
+				onValueChange={onViewChange}
+				items={[
+					{ value: "chart", ariaLabel: t("markdown.mermaidChart", "图表"), label: <><Workflow size={14} /><span className="inno-markdown-toolbar-button-label">{t("markdown.mermaidChart", "图表")}</span></> },
+					{ value: "code", ariaLabel: t("markdown.mermaidCode", "代码"), label: <><Code2 size={14} /><span className="inno-markdown-toolbar-button-label">{t("markdown.mermaidCode", "代码")}</span></> },
+				]}
+			/>
 			{panZoomEnabled ? (
 				<>
 					<MarkdownToolbarGroup>
@@ -113,13 +117,16 @@ function MermaidToolbar({
 					{copyEnabled ? <ToolbarIconButton label={copied ? t("markdown.copied", "已复制") : t("markdown.copyCode", "复制代码")} showLabel disabled={!canCopy} onClick={onCopy}>
 						{copied ? <Check size={14} /> : <Copy size={14} />}
 					</ToolbarIconButton> : null}
-					{hasMoreActions ? <div className="inno-markdown-toolbar-menu-anchor">
-							<ToolbarIconButton label={t("markdown.moreTools", "更多")} showLabel menu expanded={moreOpen} aria-controls={moreId} onClick={onMoreToggle}><MoreHorizontal size={14} /></ToolbarIconButton>
-						<ToolbarMenu id={moreId} open={moreOpen} onClose={onMoreClose} label={t("markdown.moreTools", "更多")}>
+					{hasMoreActions ? <ToolbarMenu
+						trigger={<ToolbarIconButton label={t("markdown.moreTools", "更多")} showLabel menu expanded={moreOpen} aria-controls={moreId}><MoreHorizontal size={14} /></ToolbarIconButton>}
+						id={moreId}
+						open={moreOpen}
+						onOpenChange={onMoreOpenChange}
+						label={t("markdown.moreTools", "更多")}
+					>
 							{downloadEnabled ? <ToolbarMenuItem label={t("markdown.downloadDiagram", "下载图表")} disabled={!canDownload} onClick={onDownload}><Download size={14} /></ToolbarMenuItem> : null}
 							{fullscreenEnabled && !isFullscreen ? <ToolbarMenuItem label={t("markdown.fullscreen", "全屏查看")} onClick={onFullscreen}><Maximize2 size={14} /></ToolbarMenuItem> : null}
-						</ToolbarMenu>
-					</div> : null}
+					</ToolbarMenu> : null}
 				</MarkdownToolbarGroup>
 			) : null}
 		</MarkdownToolbar>
@@ -363,7 +370,8 @@ export function MermaidArtifactRenderer({ code, isIncomplete }: CustomRendererPr
 			view={view}
 			zoom={zoom}
 			isFullscreen={isFullscreen}
-			moreOpen={moreOpen}
+			// Keep the background toolbar from opening a second portaled menu.
+			moreOpen={moreOpen && isFullscreen === fullscreen}
 			moreId={id}
 			onViewChange={setView}
 			onZoomChange={(delta) => setZoom((value) => clampMermaidZoom(value + delta))}
@@ -371,8 +379,7 @@ export function MermaidArtifactRenderer({ code, isIncomplete }: CustomRendererPr
 			onCopy={() => void handleCopy()}
 			onDownload={handleDownload}
 			onFullscreen={openFullscreen}
-			onMoreToggle={() => setMoreOpen((value) => !value)}
-			onMoreClose={() => setMoreOpen(false)}
+			onMoreOpenChange={setMoreOpen}
 			canDownload={Boolean(code.trim())}
 			canReset={zoom !== 1 || pan.x !== 0 || pan.y !== 0}
 			canCopy={Boolean(code.trim())}

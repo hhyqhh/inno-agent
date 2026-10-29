@@ -30,7 +30,7 @@ describe("WorkspaceSwitcher conversation mode", () => {
 				onImport={vi.fn()}
 			/>,
 		);
-		fireEvent.click(screen.getByTitle("workspace.switch"));
+		fireEvent.click(screen.getByRole("button", { name: "项目一" }));
 		expect(screen.getAllByText("项目一").length).toBeGreaterThanOrEqual(2);
 		expect(screen.getByText("项目二")).toBeTruthy();
 		expect(screen.getByText("临时工作区")).toBeTruthy();
@@ -50,8 +50,8 @@ describe("WorkspaceSwitcher conversation mode", () => {
 				onChange={onChange}
 			/>,
 		);
-		fireEvent.click(screen.getByTitle("workspace.switch"));
-		fireEvent.click(screen.getByTitle(".tmp"));
+		fireEvent.click(screen.getByRole("button", { name: "workspace.tempWorkspaceLabel" }));
+		fireEvent.click(screen.getByRole("option", { name: "临时工作区" }));
 		expect(onChange).not.toHaveBeenCalled();
 		expect(screen.queryByRole("menu")).toBeNull();
 	});

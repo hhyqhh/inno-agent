@@ -61,7 +61,10 @@ export interface ForceSimulationOptions {
 export const DEFAULT_FORCE_OPTIONS: ForceSimulationOptions = {
 	repulsion: 6_600,
 	repulsionCutoff: 440,
-	centerStrength: 0.005,
+	// At 0.005 the layout cools before disconnected seed communities return:
+	// isolated pages remain hundreds of pixels beyond the connected graph.
+	// Stronger gravity closes that gap; repulsion/collisions retain separation.
+	centerStrength: 0.03,
 	groupStrength: 0,
 	velocityDecay: 0.72,
 	alphaDecay: 0.022,

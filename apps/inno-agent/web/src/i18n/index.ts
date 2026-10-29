@@ -2,6 +2,8 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import zhCN from "./locales/zh-CN.json";
 import en from "./locales/en.json";
+import type { FileApplications } from "../../../src/shared/desktop-files.js";
+import type { SearchResult } from "../../../src/shared/search.js";
 
 const STORAGE_KEY = "inno.locale";
 type SupportedLocale = "zh-CN" | "en";
@@ -19,10 +21,21 @@ type CloseDialogCopy = {
 };
 
 type DesktopBridge = {
+	resizeWindow?(action: "start" | "update" | "end" | "cancel", edge?: "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw"): void;
+	setThemePreference?(preference: "light" | "dark" | "system"): Promise<"light" | "dark" | null>;
 	setCloseDialogCopy(copy: CloseDialogCopy): void;
 	expandWindowWidth(side: "left" | "right", additionalWidth: number): Promise<boolean>;
 	getWindowWidthCapacity(side: "left" | "right"): Promise<number>;
+	isFullScreen?(): Promise<boolean>;
+	onFullScreenChange?(callback: (isFullScreen: boolean) => void): () => void;
 	openLocalFile(file: File): Promise<boolean>;
+	openWorkspaceFile?(path: string, workspaceId: string | null, applicationId?: string): Promise<boolean>;
+	getWorkspaceFileApplications?(path: string, workspaceId: string | null): Promise<FileApplications | null>;
+	revealWorkspaceFile?(path: string, workspaceId: string | null): Promise<boolean>;
+	openSearchWindow(theme: "light" | "dark"): Promise<boolean>;
+	closeSearchWindow(): void;
+	openSearchResult(result: SearchResult): void;
+	onSearchNavigation(callback: (result: SearchResult) => void): () => void;
 };
 
 declare global {

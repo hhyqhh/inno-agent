@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, Plus, ExternalLink, RefreshCw, Check } from "lucide-react";
 import { settingsStore } from "../../stores/settings-store.js";
 import { probeProviderModels } from "../../api/settings.js";
 import type { InnoProviderModel as ProviderModel, InnoProviderSettings } from "../../types/settings.js";
-import { checkboxCls } from "../ui/checkbox.js";
+import { Button, Checkbox, IconButton, Input, SearchableSelect, Select, SelectContent, SelectOption, SelectTrigger, SelectValue } from "../ui/index.js";
 import { formatTokens } from "./shared.js";
 import { PROVIDER_PRESETS, findPreset, type ProviderPreset } from "./provider-presets.js";
 import { inferModelMetadata } from "./model-metadata.js";
@@ -60,7 +60,6 @@ function formFromPreset(preset: ProviderPreset, existingProviders: Record<string
 	};
 }
 
-const inputCls = "w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1.5 text-xs text-[var(--inno-text)] focus:border-[var(--inno-accent)] focus:outline-none";
 const labelCls = "mb-0.5 block text-xs text-[var(--inno-text-muted)]";
 
 /**
@@ -76,32 +75,10 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const [fetchedModels, setFetchedModels] = useState<string[] | null>(null);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
-	const [activeModelIndex, setActiveModelIndex] = useState(-1);
 	const [probing, setProbing] = useState(false);
 	const [probeError, setProbeError] = useState<string | null>(null);
 	const [formError, setFormError] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
-	const modelPickerRef = useRef<HTMLDivElement>(null);
-
-	// Close the fetched-model listbox on outside click or Escape while open.
-	useEffect(() => {
-		if (!modelPickerOpen) return;
-		function onPointerDown(event: MouseEvent) {
-			if (modelPickerRef.current && !modelPickerRef.current.contains(event.target as Node)) {
-				setModelPickerOpen(false);
-			}
-		}
-		function onKeyDown(event: KeyboardEvent) {
-			if (event.key === "Escape") setModelPickerOpen(false);
-		}
-		document.addEventListener("mousedown", onPointerDown);
-		document.addEventListener("keydown", onKeyDown);
-		return () => {
-			document.removeEventListener("mousedown", onPointerDown);
-			document.removeEventListener("keydown", onKeyDown);
-		};
-	}, [modelPickerOpen]);
-
 	const existingProviders = providers;
 
 	function reset() {
@@ -141,34 +118,12 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 		setModelPickerOpen(false);
 	}
 
-	function toggleModelPicker() {
-		setModelPickerOpen((open) => {
-			if (!open && fetchedModels?.length) {
-				setActiveModelIndex(Math.max(0, fetchedModels.indexOf(form?.modelId ?? "")));
-			}
-			return !open;
-		});
-	}
-
-	/** Combobox keyboard navigation: arrows move the active option, Enter selects. */
+	/** Arrow keys open the shared model selector from the editable model field. */
 	function handleModelKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
 		if (!fetchedModels?.length) return;
 		if (event.key === "ArrowDown" || event.key === "ArrowUp") {
 			event.preventDefault();
-			if (!modelPickerOpen) {
-				setModelPickerOpen(true);
-				setActiveModelIndex(Math.max(0, fetchedModels.indexOf(form?.modelId ?? "")));
-				return;
-			}
-			const delta = event.key === "ArrowDown" ? 1 : -1;
-			setActiveModelIndex((index) => {
-				const next = Math.min(fetchedModels.length - 1, Math.max(0, index + delta));
-				document.getElementById(`inno-probed-model-${next}`)?.scrollIntoView({ block: "nearest" });
-				return next;
-			});
-		} else if (event.key === "Enter" && modelPickerOpen && activeModelIndex >= 0) {
-			event.preventDefault();
-			selectModel(fetchedModels[activeModelIndex]);
+			setModelPickerOpen(true);
 		}
 	}
 
@@ -302,8 +257,9 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 									<>
 										<div>
 											<label className={labelCls}>{t("settings.form.providerId")}</label>
-											<input
-												className={inputCls}
+											<Input
+												size="sm"
+												className="w-full"
 												value={form.providerId}
 												onChange={(e) => setForm({ ...form, providerId: e.target.value })}
 												required
@@ -311,8 +267,9 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 										</div>
 										<div>
 											<label className={labelCls}>{t("settings.form.baseUrl")}</label>
-											<input
-												className={inputCls}
+											<Input
+												size="sm"
+												className="w-full"
 												type="url"
 												placeholder="https://api.example.com/v1"
 												value={form.baseUrl}
@@ -333,8 +290,9 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 											</a>
 										)}
 									</div>
-									<input
-										className={inputCls}
+									<Input
+										size="sm"
+										className="w-full"
 										type="password"
 										placeholder={existingProviders[form.providerId] ? t("settings.form.apiKeyPreserved") ?? "" : "sk-..."}
 										value={form.apiKey}
@@ -359,46 +317,43 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 													: t("settings.wizard.fetchModels", "拉取模型列表")}
 										</button>
 									</div>
-									<div className="relative" ref={modelPickerRef}>
-										<input
-											className={`${inputCls}${fetchedModels?.length ? " pr-8" : ""}`}
-											role="combobox"
-											aria-controls="inno-probed-models"
-											aria-expanded={modelPickerOpen}
-											aria-activedescendant={modelPickerOpen && activeModelIndex >= 0 ? `inno-probed-model-${activeModelIndex}` : undefined}
+									<div className="relative">
+										<Input
+											size="sm"
+											className={`w-full${fetchedModels?.length ? " pr-8" : ""}`}
 											placeholder={t("settings.wizard.modelPlaceholder", "输入或从拉取的列表中选择") ?? ""}
 											value={form.modelId}
 											onChange={(e) => applyModel(e.target.value)}
 											onKeyDown={handleModelKeyDown}
 										/>
 										{fetchedModels?.length ? (
-											<button
-												type="button"
-												aria-label={modelPickerOpen ? t("settings.wizard.collapseModelList", "收起模型列表") : t("settings.wizard.expandModelList", "展开模型列表")}
-												className="absolute right-0 top-0 flex h-full w-8 items-center justify-center text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]"
-												onClick={toggleModelPicker}
-											>
-												<ChevronDown size={14} className={`transition-transform${modelPickerOpen ? " rotate-180" : ""}`} />
-											</button>
-										) : null}
-										{modelPickerOpen && fetchedModels?.length ? (
-											<div id="inno-probed-models" role="listbox" className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] p-1 shadow-lg">
-												{fetchedModels.map((id, index) => (
-													<button
-														key={id}
-														id={`inno-probed-model-${index}`}
-														type="button"
-														role="option"
-														aria-selected={form.modelId === id}
-																className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]${index === activeModelIndex ? " bg-[var(--inno-surface-muted)]" : ""}`}
-														onMouseEnter={() => setActiveModelIndex(index)}
-														onClick={() => selectModel(id)}
-															>
-																<span className="block truncate">{id}</span>
-																{form.modelId === id && <Check size={14} className="shrink-0 text-[var(--inno-accent)]" />}
-															</button>
-												))}
-											</div>
+											<SearchableSelect
+												trigger={(
+													<IconButton
+														variant="ghost"
+														size="xs"
+														className="absolute right-0 top-0"
+														aria-label={modelPickerOpen ? t("settings.wizard.collapseModelList", "收起模型列表") : t("settings.wizard.expandModelList", "展开模型列表")}
+														title={modelPickerOpen ? t("settings.wizard.collapseModelList", "收起模型列表") : t("settings.wizard.expandModelList", "展开模型列表")}
+													>
+														<ChevronDown size={14} className={`transition-transform${modelPickerOpen ? " rotate-180" : ""}`} />
+													</IconButton>
+												)}
+												sections={[{
+													id: "fetched-models",
+													options: fetchedModels.map((id) => ({ value: id, label: id })),
+												}]}
+												value={form.modelId}
+												open={modelPickerOpen}
+												onOpenChange={setModelPickerOpen}
+												onValueChange={selectModel}
+												searchPlaceholder={t("settings.wizard.searchFetchedModels", "搜索已获取的模型")}
+													clearSearchLabel={t("common.clearSearch", "清除搜索")}
+													emptyMessage={t("settings.wizard.noMatchingModels", "没有匹配的模型")}
+												ariaLabel={t("settings.wizard.selectFetchedModel", "选择已获取的模型")}
+												align="end"
+												maxListHeight={224}
+											/>
 										) : null}
 									</div>
 									{preset.modelHint && <p className="mt-1 text-xs text-[var(--inno-text-subtle)]">{preset.modelHint}</p>}
@@ -427,52 +382,55 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 										{preset.id !== "custom" && (
 											<div>
 												<label className={labelCls}>{t("settings.form.providerId")}</label>
-												<input className={inputCls} value={form.providerId} onChange={(e) => setForm({ ...form, providerId: e.target.value })} />
+												<Input size="sm" value={form.providerId} onChange={(e) => setForm({ ...form, providerId: e.target.value })} />
 											</div>
 										)}
 										<div>
 											<label className={labelCls}>{t("settings.form.apiType", "API Type")}</label>
-											<select className={inputCls} value={form.api} onChange={(e) => setForm({ ...form, api: e.target.value })}>
-												{apiOptions.map((api) => <option key={api} value={api}>{api}</option>)}
-											</select>
+										<Select value={form.api} onValueChange={(api) => setForm({ ...form, api })}>
+											<SelectTrigger className="w-full text-xs" aria-label={t("settings.form.apiType", "API Type")}><SelectValue /></SelectTrigger>
+											<SelectContent>
+												{apiOptions.map((api) => <SelectOption key={api} value={api} label={api} />)}
+											</SelectContent>
+										</Select>
 										</div>
 										{preset.id !== "custom" && (
 											<div className="col-span-2">
 												<label className={labelCls}>{t("settings.form.baseUrl")}</label>
-												<input className={inputCls} value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} />
+												<Input size="sm" value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} />
 											</div>
 										)}
 										<div>
 											<label className={labelCls}>{t("settings.form.contextWindow")}</label>
-											<input className={inputCls} value={form.contextWindow} onChange={(e) => setForm({ ...form, contextWindow: e.target.value })} />
+											<Input size="sm" value={form.contextWindow} onChange={(e) => setForm({ ...form, contextWindow: e.target.value })} />
 										</div>
 										<div>
 											<label className={labelCls}>{t("settings.form.maxTokens")}</label>
-											<input className={inputCls} value={form.maxTokens} onChange={(e) => setForm({ ...form, maxTokens: e.target.value })} />
+											<Input size="sm" value={form.maxTokens} onChange={(e) => setForm({ ...form, maxTokens: e.target.value })} />
 										</div>
 										<div className="col-span-2 flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
-											<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
-											<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.supportsImages} onChange={(e) => setForm({ ...form, supportsImages: e.target.checked })} /> {t("settings.form.supportsImages")}</label>
-											<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
-											<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
+											<label className="flex items-center gap-1.5"><Checkbox checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
+											<label className="flex items-center gap-1.5"><Checkbox checked={form.supportsImages} onChange={(e) => setForm({ ...form, supportsImages: e.target.checked })} /> {t("settings.form.supportsImages")}</label>
+											<label className="flex items-center gap-1.5"><Checkbox checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
+											<label className="flex items-center gap-1.5"><Checkbox checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
 										</div>
 									</div>
 								)}
 
 								<label className="mt-1 flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
-									<input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} />
+									<Checkbox checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} />
 									{t("settings.form.makeDefault")}
 								</label>
 							</div>
 
 							{formError ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div> : null}
 							<div className="mt-3 flex gap-2">
-								<button className="rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void handleSave()}>
+								<Button variant="primary" size="sm" disabled={saving} onClick={() => void handleSave()}>
 									{saving ? t("settings.savingProvider") : t("settings.saveProvider")}
-								</button>
-								<button className="rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" onClick={() => { setExpanded(false); reset(); }}>
+								</Button>
+								<Button variant="secondary" size="sm" onClick={() => { setExpanded(false); reset(); }}>
 									{t("common.cancel", "Cancel")}
-								</button>
+								</Button>
 							</div>
 						</div>
 					)}

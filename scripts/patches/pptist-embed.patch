@@ -1,0 +1,318 @@
+diff --git a/src/App.vue b/src/App.vue
+index 660741e..34a2a1a 100644
+--- a/src/App.vue
++++ b/src/App.vue
+@@ -33,6 +33,7 @@ const { slides } = storeToRefs(slidesStore)
+ const { screening } = storeToRefs(screenStore)
+
+ const isAudienceMode = new URLSearchParams(window.location.search).get('mode') === 'audience'
++const isEmbed = new URLSearchParams(window.location.search).has('embed')
+
+ if (import.meta.env.MODE !== 'development') {
+   window.onbeforeunload = () => false
+@@ -46,6 +47,12 @@ onMounted(async () => {
+     }])
+     screenStore.setScreening(true)
+   }
++  else if (isEmbed) {
++    // Embedded mode keeps the blank deck the embed bridge set at startup;
++    // the bundled demo slides must not be fetched and overwrite it.
++    await deleteDiscardedDB()
++    snapshotStore.initSnapshotDatabase()
++  }
+   else {
+     const slides = await api.getMockData('slides')
+     slidesStore.setSlides(slides)
+diff --git a/src/embed.ts b/src/embed.ts
+new file mode 100644
+index 0000000..9d9404d
+--- /dev/null
++++ b/src/embed.ts
+@@ -0,0 +1,50 @@
++/** Same-origin embed bridge. Import completion comes from the importer. */
++import useImport from '@/hooks/useImport'
++import { useSlidesStore } from '@/store'
++import { watch } from 'vue'
++import { nanoid } from 'nanoid'
++
++export function setupEmbed() {
++  const params = new URLSearchParams(location.search)
++  if (!params.has('embed')) return
++  const origin = window.location.origin
++  let loaded = false
++  let importing = false
++  const send = (data: Record<string, unknown>, transfer: Transferable[] = []) => window.parent.postMessage(data, origin, transfer)
++  const store = useSlidesStore()
++  const snapshot = () => JSON.parse(JSON.stringify({ slides: store.slides, theme: store.theme, viewportSize: store.viewportSize, viewportRatio: store.viewportRatio }))
++  store.setSlides([{ id: nanoid(10), elements: [] }])
++  // Immediate mutation reporting avoids the old 2.5s/800ms blind windows,
++  // where early edits or an immediate tab close silently lost a draft.
++  watch(() => [store.slides, store.theme, store.viewportSize, store.viewportRatio], () => {
++    if (loaded && !importing) send({ type: 'pptist:change' })
++  }, { deep: true, flush: 'sync' })
++  window.addEventListener('message', (event) => {
++    if (event.origin !== origin || event.source !== window.parent) return
++    const data = event.data
++    if (!data || typeof data !== 'object') return
++    if (data.type === 'pptist:load' && data.buffer instanceof ArrayBuffer && !importing) {
++      importing = true
++      loaded = false
++      const file = new File([data.buffer], data.name || 'deck.pptx')
++      useImport().importPPTXFile([file], {
++        cover: true,
++        onComplete: () => {
++          // Keep original text boxes fixed: automatic DOM measurement otherwise
++          // changes geometry merely by mounting the incomplete imported view.
++          for (const slide of store.slides) for (const el of slide.elements) if (el.type === 'text') el.fixedHeight = true
++          importing = false
++          loaded = true
++          send({ type: 'pptist:loaded', snapshot: snapshot() })
++        },
++        onError: (error) => { importing = false; send({ type: 'pptist:error', error: String(error) }) },
++      })
++    }
++    if (data.type === 'pptist:export' && loaded) {
++      // The host patches supported changes into the original package; rebuilding
++      // with PptxGenJS drops objects which pptxtojson did not import.
++      send({ type: 'pptist:exported', requestId: data.requestId, snapshot: snapshot() })
++    }
++  })
++  send({ type: 'pptist:ready' })
++}
+diff --git a/src/hooks/useExport.ts b/src/hooks/useExport.ts
+index 4c74ffb..63402e5 100644
+--- a/src/hooks/useExport.ts
++++ b/src/hooks/useExport.ts
+@@ -605,18 +605,23 @@ export default () => {
+             const [startX, startY] = start
+             const [endX, endY] = end
+
+-            const originW = el.width / ((endX - startX) / ratioPx2Inch.value)
+-            const originH = el.height / ((endY - startY) / ratioPx2Inch.value)
++            // clip.range is 0-100 percent of the original image (same
++            // semantics as ImageStylePanel.vue), not canvas px — dividing it
++            // by ratioPx2Inch only lines up when the viewport is 1000px wide,
++            // and produces a wrong srcRect (partly missing image) for decks
++            // imported with any other slide width.
++            const originW = el.width / ((endX - startX) / 100)
++            const originH = el.height / ((endY - startY) / 100)
+
+             options.w = originW / ratioPx2Inch.value
+             options.h = originH / ratioPx2Inch.value
+
+             options.sizing = {
+               type: 'crop',
+-              x: startX / ratioPx2Inch.value * originW / ratioPx2Inch.value,
+-              y: startY / ratioPx2Inch.value * originH / ratioPx2Inch.value,
+-              w: (endX - startX) / ratioPx2Inch.value * originW / ratioPx2Inch.value,
+-              h: (endY - startY) / ratioPx2Inch.value * originH / ratioPx2Inch.value,
++              x: startX / 100 * originW / ratioPx2Inch.value,
++              y: startY / 100 * originH / ratioPx2Inch.value,
++              w: (endX - startX) / 100 * originW / ratioPx2Inch.value,
++              h: (endY - startY) / 100 * originH / ratioPx2Inch.value,
+             }
+           }
+
+diff --git a/src/hooks/useImport.ts b/src/hooks/useImport.ts
+index 810d4c8..6a9211c 100644
+--- a/src/hooks/useImport.ts
++++ b/src/hooks/useImport.ts
+@@ -645,7 +645,7 @@ export default () => {
+   }
+
+   // 导入PPTX文件
+-  const importPPTXFile = (files: FileList | File[], options?: { cover?: boolean; fixedViewport?: boolean }) => {
++  const importPPTXFile = (files: FileList | File[], options?: { cover?: boolean; fixedViewport?: boolean; onComplete?: () => void; onError?: (error: unknown) => void }) => {
+     const defaultOptions = {
+       cover: false,
+       fixedViewport: false, 
+@@ -663,7 +663,9 @@ export default () => {
+     }
+     
+     const reader = new FileReader()
++    reader.onerror = () => { exporting.value = false; options?.onError?.(reader.error) }
+     reader.onload = async e => {
++      try {
+       let json = null
+       try {
+         json = await parse(e.target!.result as ArrayBuffer, {
+@@ -676,6 +678,7 @@ export default () => {
+       catch {
+         exporting.value = false
+         message.error('无法正确读取 / 解析该文件')
++        options?.onError?.(new Error('Unable to parse presentation'))
+         return
+       }
+
+@@ -1367,6 +1370,8 @@ export default () => {
+       else addSlidesFromData(slides)
+
+       exporting.value = false
++      options?.onComplete?.()
++      } catch (error) { exporting.value = false; options?.onError?.(error) }
+     }
+     reader.readAsArrayBuffer(file)
+   }
+diff --git a/src/main.ts b/src/main.ts
+index c18fad9..2a780d6 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -6,11 +6,13 @@ import 'prosemirror-view/style/prosemirror.css'
+ import 'animate.css'
+ import '@/assets/styles/prosemirror.scss'
+ import '@/assets/styles/global.scss'
+-import '@/assets/styles/font.scss'
++// Embedded builds use installed fonts; avoid downloading 37MB of webfonts.
+
+ import Directive from '@/directive'
++import { setupEmbed } from './embed'
+
+ const app = createApp(App)
+ app.use(Directive)
+ app.use(createPinia())
+ app.mount('#app')
++setupEmbed()
+diff --git a/src/views/Editor/EditorHeader/index.vue b/src/views/Editor/EditorHeader/index.vue
+index ad6ea2a..2dd3511 100644
+--- a/src/views/Editor/EditorHeader/index.vue
++++ b/src/views/Editor/EditorHeader/index.vue
+@@ -3,16 +3,6 @@
+     <div class="left">
+       <Popover trigger="click" placement="bottom-start" v-model:value="mainMenuVisible">
+         <template #content>
+-          <div class="main-menu">
+-            <div class="ai-menu" @click="openAIPPTDialog(); mainMenuVisible = false">
+-              <div class="icon"><i-custom:click /></div>
+-              <div class="aippt-content">
+-                <div class="aippt"><span>AIPPT</span></div>
+-                <div class="aippt-subtitle">输入一句话，智能生成演示文稿</div>
+-              </div>
+-            </div>
+-          </div>
+-          <Divider :margin="10" />
+           <div class="import-section">
+             <div class="import-label">导入文件</div>
+             <div class="import-grid">
+@@ -86,9 +76,6 @@
+           <div class="arrow-btn"><i-icon-park-outline:down class="arrow" /></div>
+         </Popover>
+       </div>
+-      <div class="menu-item" v-tooltip="'AI生成PPT'" @click="openAIPPTDialog(); mainMenuVisible = false">
+-        <span class="text ai">AI</span>
+-      </div>
+       <div class="menu-item" v-tooltip="'导出'" @click="setDialogForExport('pptx')">
+         <i-icon-park-outline:download class="icon" />
+       </div>
+diff --git a/src/views/Editor/Remark/Editor.vue b/src/views/Editor/Remark/Editor.vue
+index c7eaf74..5a80fbb 100644
+--- a/src/views/Editor/Remark/Editor.vue
++++ b/src/views/Editor/Remark/Editor.vue
+@@ -65,9 +65,13 @@ const hideMenuInstance = () => {
+   if (menuInstance.value) menuInstance.value.hide()
+ }
+
+-const handleInput = debounce(function() {
++const updateModel = function() {
+   emit('update', editorView.dom.innerHTML)
+-}, 300, { trailing: true })
++}
++// The host can save/close immediately after input. Embedded edits must reach
++// the single slide store synchronously, before a model snapshot is requested.
++const handleInput = new URLSearchParams(location.search).has('embed')
++  ? updateModel : debounce(updateModel, 300, { trailing: true })
+
+ const handleFocus = () => {
+   mainStore.setDisableHotkeysState(true)
+diff --git a/src/views/Editor/index.vue b/src/views/Editor/index.vue
+index cdb05c9..ab85b81 100644
+--- a/src/views/Editor/index.vue
++++ b/src/views/Editor/index.vue
+@@ -1,7 +1,7 @@
+ <template>
+   <div class="pptist-editor">
+-    <EditorHeader class="layout-header" />
+-    <div class="layout-content">
++    <EditorHeader v-if="!isEmbed" class="layout-header" />
++    <div class="layout-content" :style="isEmbed ? { height: '100%' } : undefined">
+       <Thumbnails class="layout-content-left" />
+       <div class="layout-content-center">
+         <CanvasTool class="center-top" />
+@@ -26,7 +26,7 @@
+   <LatexEditorDialog />
+
+   <Modal
+-    :visible="!!dialogForExport" 
++    :visible="!isEmbed && !!dialogForExport" 
+     :width="680"
+     @closed="closeExportDialog()"
+   >
+@@ -71,6 +71,9 @@ import ImageLibPanel from './ImageLibPanel.vue'
+ import AIPPTDialog from './AIPPTDialog.vue'
+ import Modal from '@/components/Modal.vue'
+
++// Embedded file actions belong to the host's preserving save path. Hiding
++// the standalone exporter prevents a second, lossy PptxGenJS download path.
++const isEmbed = new URLSearchParams(location.search).has('embed')
+ const mainStore = useMainStore()
+ const {
+   dialogForExport,
+diff --git a/src/views/components/element/ProsemirrorEditor.vue b/src/views/components/element/ProsemirrorEditor.vue
+index 1b4798f..c1e87e9 100644
+--- a/src/views/components/element/ProsemirrorEditor.vue
++++ b/src/views/components/element/ProsemirrorEditor.vue
+@@ -56,13 +56,17 @@ let editorView: EditorView
+ // 聚焦时取消全局快捷键事件
+ // 输入文字时同步数据到vuex
+ // 点击鼠标和键盘时同步富文本状态到工具栏
+-const handleInput = debounce(function(isHanldeHistory = false) {
++const updateModel = function(isHanldeHistory = false) {
+   if (props.value.replace(/ style=\"\"/g, '') === editorView.dom.innerHTML.replace(/ style=\"\"/g, '')) return
+   emit('update', {
+     value: editorView.dom.innerHTML,
+     ignore: isHanldeHistory,
+   })
+-}, 300, { trailing: true })
++}
++// The host can save/close immediately after input. Embedded edits must reach
++// the single slide store synchronously, before a model snapshot is requested.
++const handleInput = new URLSearchParams(location.search).has('embed')
++  ? updateModel : debounce(updateModel, 300, { trailing: true })
+
+ const handleFocus = () => {
+   // 多选且按下了ctrl或shift键时，不禁用全局快捷键
+@@ -295,6 +299,14 @@ onMounted(() => {
+       click: handleClick,
+       mouseup: handleMouseup,
+     },
++    // A keydown happens before its text transaction. Publish after applying
++    // the transaction so immediate saves include the final character and IME.
++    ...(new URLSearchParams(location.search).has('embed') ? {
++      dispatchTransaction: (transaction) => {
++        editorView.updateState(editorView.state.apply(transaction))
++        if (transaction.docChanged) handleInput()
++      },
++    } : {}),
+     editable: () => props.editable,
+   })
+   if (props.autoFocus) editorView.focus()
+diff --git a/src/views/components/element/TableElement/EditableTable.vue b/src/views/components/element/TableElement/EditableTable.vue
+index 38d4be7..58d7384 100644
+--- a/src/views/components/element/TableElement/EditableTable.vue
++++ b/src/views/components/element/TableElement/EditableTable.vue
+@@ -701,10 +701,14 @@ onUnmounted(() => {
+ })
+
+ // 单元格文字输入时更新表格数据
+-const handleInput = debounce(function(value, rowIndex, colIndex) {
++const updateModel = function(value: string, rowIndex: number, colIndex: number) {
+   tableCells.value[rowIndex][colIndex].text = value
+   emit('change', tableCells.value)
+-}, 300, { trailing: true })
++}
++// The host can save/close immediately after input. Embedded edits must reach
++// the single slide store synchronously, before a model snapshot is requested.
++const handleInput = new URLSearchParams(location.search).has('embed')
++  ? updateModel : debounce(updateModel, 300, { trailing: true })
+
+ // 插入来自Excel的数据，表格的行/列数不够时自动补足
+ const insertExcelData = (data: string[][], rowIndex: number, colIndex: number) => {

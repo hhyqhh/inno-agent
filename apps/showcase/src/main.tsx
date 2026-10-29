@@ -18,6 +18,7 @@ themeStore.apply("innospark");
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { TooltipProvider } from "@inno-web/react/ui/Tooltip.js";
 import { App } from "./App.js";
 
 const rootEl = document.getElementById("root");
@@ -25,6 +26,8 @@ if (!rootEl) throw new Error("Missing #root element");
 
 createRoot(rootEl).render(
 	<StrictMode>
-		<App />
+		<TooltipProvider delayDuration={450} skipDelayDuration={250}>
+			<App />
+		</TooltipProvider>
 	</StrictMode>,
 );

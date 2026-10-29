@@ -6,6 +6,7 @@ import { ApiError } from "../../api/client.js";
 import { chatStore } from "../../stores/chat-store.js";
 import { sessionsStore } from "../../stores/sessions-store.js";
 import { findJobById, runJobInConversation } from "../jobs/runJobInConversation.js";
+import { Button } from "../ui/index.js";
 
 /** Claim the slot slightly before the deadline so the client wins the race
  *  against the server-side headless auto-execution. */
@@ -158,23 +159,23 @@ export function ScheduledRunBanner() {
 							</div>
 						</div>
 						<div className="flex items-center gap-1.5 px-3">
-							<button
-								type="button"
-								className="flex items-center gap-1 rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:cursor-wait disabled:opacity-60"
+							<Button
+								size="xs"
+								variant="primary"
 								disabled={Boolean(busyId)}
 								onClick={() => void handleRun(run)}
 							>
 								<Play size={12} />
 								{t("jobs.pending.runNow")}
-							</button>
-							<button
-								type="button"
-								className="rounded-md px-2 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] disabled:cursor-wait disabled:opacity-60"
+							</Button>
+							<Button
+								size="xs"
+								variant="ghost"
 								disabled={Boolean(busyId)}
 								onClick={() => void handleSkip(run)}
 							>
 								{t("jobs.pending.skip")}
-							</button>
+							</Button>
 						</div>
 					</div>
 				);

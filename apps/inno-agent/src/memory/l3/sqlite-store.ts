@@ -17,7 +17,7 @@
 
 import { logger } from "../../logger.js";
 import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 
 /** A single retrievable unit of past conversation. */
 export interface L3Chunk {
@@ -28,6 +28,8 @@ export interface L3Chunk {
 	text: string;
 	/** Epoch millis of the source message. */
 	ts: number;
+	/** PI session-tree entry backing the visible message. */
+	entryId?: string;
 }
 
 /** A lexical search hit. `bm25` is the raw FTS5 score (lower = more relevant). */
@@ -37,6 +39,7 @@ export interface L3SearchHit {
 	role: "user" | "assistant";
 	text: string;
 	ts: number;
+	entryId?: string;
 	/** Raw bm25() value from FTS5; more negative = stronger lexical match. */
 	bm25: number;
 }
@@ -103,7 +106,8 @@ CREATE TABLE IF NOT EXISTS chunks (
 	session_id TEXT NOT NULL,
 	role TEXT NOT NULL,
 	text TEXT NOT NULL,
-	ts INTEGER NOT NULL
+	ts INTEGER NOT NULL,
+	entry_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_session ON chunks(session_id);
 
@@ -129,6 +133,7 @@ CREATE TABLE IF NOT EXISTS index_state (
 	last_offset INTEGER NOT NULL,
 	last_mtime_ms INTEGER NOT NULL,
 	chunk_count INTEGER NOT NULL,
+	index_version INTEGER NOT NULL DEFAULT 0,
 	updated_at INTEGER NOT NULL
 );
 `;
@@ -144,6 +149,18 @@ export class L3Store {
 	private constructor(db: SqliteDatabase) {
 		this.db = db;
 		this.db.exec(SCHEMA);
+		this.ensureSearchIndexColumns();
+	}
+
+	private ensureSearchIndexColumns(): void {
+		const chunkColumns = this.db.prepare("PRAGMA table_info(chunks)").all();
+		if (!chunkColumns.some((column) => column.name === "entry_id")) {
+			this.db.exec("ALTER TABLE chunks ADD COLUMN entry_id TEXT");
+		}
+		const stateColumns = this.db.prepare("PRAGMA table_info(index_state)").all();
+		if (!stateColumns.some((column) => column.name === "index_version")) {
+			this.db.exec("ALTER TABLE index_state ADD COLUMN index_version INTEGER NOT NULL DEFAULT 0");
+		}
 	}
 
 	static async open(l3DataDir: string): Promise<L3Store | null> {
@@ -160,7 +177,7 @@ export class L3Store {
 		}
 		if (!DatabaseSync) return null;
 		try {
-			mkdirSync(l3DataDir, { recursive: true });
+			await mkdir(l3DataDir, { recursive: true });
 			const db = new DatabaseSync(join(l3DataDir, "memory.db"));
 			db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
 			return new L3Store(db);
@@ -181,16 +198,16 @@ export class L3Store {
 		const segmented = segmentForFts(chunk.text);
 		if (existing && typeof existing.rowid === "number") {
 			this.db
-				.prepare("UPDATE chunks SET session_id = ?, role = ?, text = ?, ts = ? WHERE id = ?")
-				.run(chunk.sessionId, chunk.role, chunk.text, chunk.ts, chunk.id);
+				.prepare("UPDATE chunks SET session_id = ?, role = ?, text = ?, ts = ?, entry_id = ? WHERE id = ?")
+				.run(chunk.sessionId, chunk.role, chunk.text, chunk.ts, chunk.entryId ?? null, chunk.id);
 			this.db.prepare("DELETE FROM chunks_fts WHERE rowid = ?").run(existing.rowid);
 			this.db.prepare("INSERT INTO chunks_fts(rowid, tokens) VALUES (?, ?)").run(existing.rowid, segmented);
 			return;
 		}
 
 		const info = this.db
-			.prepare("INSERT INTO chunks(id, session_id, role, text, ts) VALUES (?, ?, ?, ?, ?)")
-			.run(chunk.id, chunk.sessionId, chunk.role, chunk.text, chunk.ts);
+			.prepare("INSERT INTO chunks(id, session_id, role, text, ts, entry_id) VALUES (?, ?, ?, ?, ?, ?)")
+			.run(chunk.id, chunk.sessionId, chunk.role, chunk.text, chunk.ts, chunk.entryId ?? null);
 		const rowid = Number(info.lastInsertRowid);
 		this.db.prepare("INSERT INTO chunks_fts(rowid, tokens) VALUES (?, ?)").run(rowid, segmented);
 	}
@@ -233,7 +250,7 @@ export class L3Store {
 	 * caller's responsibility (see recall.ts), so we expose the raw bm25 value
 	 * rather than a within-result-set normalization.
 	 */
-	searchLexical(query: string, limit = 8): L3SearchHit[] {
+	searchLexical(query: string, limit = 8, minTextLength = 8): L3SearchHit[] {
 		const match = buildMatchExpression(query);
 		if (!match) return [];
 		let rows: Record<string, unknown>[];
@@ -241,14 +258,14 @@ export class L3Store {
 			rows = this.db
 				.prepare(
 					`SELECT c.id AS id, c.session_id AS session_id, c.role AS role,
-					        c.text AS text, c.ts AS ts, bm25(chunks_fts) AS bm25
+					        c.text AS text, c.ts AS ts, c.entry_id AS entry_id, bm25(chunks_fts) AS bm25
 					 FROM chunks_fts
 					 JOIN chunks c ON c.rowid = chunks_fts.rowid
-					 WHERE chunks_fts MATCH ?
+					 WHERE chunks_fts MATCH ? AND length(c.text) >= ?
 					 ORDER BY bm25
 					 LIMIT ?`,
 				)
-				.all(match, limit);
+				.all(match, minTextLength, limit);
 		} catch (err) {
 			logger.warn({ err }, `[L3] search failed: ${err instanceof Error ? err.message : String(err)}`);
 			return [];
@@ -259,36 +276,39 @@ export class L3Store {
 			role: r.role === "assistant" ? "assistant" : "user",
 			text: String(r.text),
 			ts: Number(r.ts),
+			entryId: typeof r.entry_id === "string" ? r.entry_id : undefined,
 			bm25: Number(r.bm25),
 		}));
 	}
 
 	/** Read incremental-index bookkeeping for a session file. */
-	getIndexState(sessionId: string): { lastOffset: number; lastMtimeMs: number; chunkCount: number } | null {
+	getIndexState(sessionId: string): { lastOffset: number; lastMtimeMs: number; chunkCount: number; indexVersion: number } | null {
 		const row = this.db
-			.prepare("SELECT last_offset, last_mtime_ms, chunk_count FROM index_state WHERE session_id = ?")
-			.get(sessionId) as { last_offset?: number; last_mtime_ms?: number; chunk_count?: number } | undefined;
+			.prepare("SELECT last_offset, last_mtime_ms, chunk_count, index_version FROM index_state WHERE session_id = ?")
+			.get(sessionId) as { last_offset?: number; last_mtime_ms?: number; chunk_count?: number; index_version?: number } | undefined;
 		if (!row) return null;
 		return {
 			lastOffset: Number(row.last_offset ?? 0),
 			lastMtimeMs: Number(row.last_mtime_ms ?? 0),
 			chunkCount: Number(row.chunk_count ?? 0),
+			indexVersion: Number(row.index_version ?? 0),
 		};
 	}
 
 	/** Persist incremental-index bookkeeping for a session file. */
-	setIndexState(sessionId: string, lastOffset: number, lastMtimeMs: number, chunkCount: number): void {
+	setIndexState(sessionId: string, lastOffset: number, lastMtimeMs: number, chunkCount: number, indexVersion = 0): void {
 		this.db
 			.prepare(
-				`INSERT INTO index_state(session_id, last_offset, last_mtime_ms, chunk_count, updated_at)
-				 VALUES (?, ?, ?, ?, ?)
+				`INSERT INTO index_state(session_id, last_offset, last_mtime_ms, chunk_count, index_version, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?)
 				 ON CONFLICT(session_id) DO UPDATE SET
 				   last_offset = excluded.last_offset,
 				   last_mtime_ms = excluded.last_mtime_ms,
 				   chunk_count = excluded.chunk_count,
+				   index_version = excluded.index_version,
 				   updated_at = excluded.updated_at`,
 			)
-			.run(sessionId, lastOffset, lastMtimeMs, chunkCount, Date.now());
+			.run(sessionId, lastOffset, lastMtimeMs, chunkCount, indexVersion, Date.now());
 	}
 
 	/** Total indexed chunk count (for diagnostics). */

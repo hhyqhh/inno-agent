@@ -1,5 +1,5 @@
 import { apiFetch } from "./client.js";
-import type { PptxPreviewResult, WorkspaceFileDetail, WorkspaceTree, WorkspaceTreeNode } from "../types/workspace.js";
+import type { PptxPreviewResult, WorkspaceActivity, WorkspaceFileDetail, WorkspaceTree, WorkspaceTreeNode } from "../types/workspace.js";
 
 function qs(workspaceId?: string): string {
 	return workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
@@ -11,6 +11,10 @@ function withWorkspace<T extends Record<string, unknown>>(body: T, workspaceId?:
 
 export async function getWorkspaceTree(workspaceId?: string): Promise<WorkspaceTree> {
 	return apiFetch<WorkspaceTree>(`/api/workspace/tree${qs(workspaceId)}`);
+}
+
+export async function getWorkspaceActivity(workspaceId?: string): Promise<WorkspaceActivity> {
+	return apiFetch<WorkspaceActivity>(`/api/workspace/activity${qs(workspaceId)}`);
 }
 
 export async function getWorkspaceFile(path: string, workspaceId?: string, forceText = false): Promise<WorkspaceFileDetail> {
@@ -52,6 +56,24 @@ export async function saveWorkspaceFile(path: string, content: string, workspace
 	return apiFetch("/api/workspace/file", {
 		method: "PUT",
 		body: JSON.stringify(withWorkspace({ path, content }, workspaceId)),
+	});
+}
+
+/** Save binary file bytes (WYSIWYG office editors) over the same PUT route. */
+export async function saveWorkspaceFileBinary(path: string, bytes: Blob | ArrayBuffer | Uint8Array, workspaceId?: string, options?: { confirmOverwrite?: boolean; createOnly?: boolean; expectedUpdatedAt?: string }): Promise<{ path: string; saved: boolean; size: number; updatedAt: string; backupPath?: string }> {
+	let buf: ArrayBuffer;
+	if (bytes instanceof Blob) buf = await bytes.arrayBuffer();
+	else if (bytes instanceof Uint8Array) buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+	else buf = bytes;
+	let binary = "";
+	const view = new Uint8Array(buf);
+	const CHUNK = 0x8000;
+	for (let i = 0; i < view.length; i += CHUNK) {
+		binary += String.fromCharCode(...view.subarray(i, i + CHUNK));
+	}
+	return apiFetch("/api/workspace/file", {
+		method: "PUT",
+		body: JSON.stringify(withWorkspace({ path, contentBase64: btoa(binary), ...options }, workspaceId)),
 	});
 }
 

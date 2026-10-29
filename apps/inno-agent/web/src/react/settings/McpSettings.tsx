@@ -6,8 +6,7 @@ import { mcpStore } from "../../stores/mcp-store.js";
 import { useStoreSnapshot } from "../hooks.js";
 import type { InnoSettings } from "../../types/settings.js";
 import type { McpServerEntry, McpServerView, McpServerRuntimeStatus } from "../../types/mcp.js";
-import { Switch } from "../ui/Switch.js";
-import { inputCls, textareaCls } from "../ui/input.js";
+import { Button, IconButton, Input, Select, SelectContent, SelectOption, SelectTrigger, SelectValue, Switch, Textarea, Tooltip } from "../ui/index.js";
 import { SettingsSection, SettingsCard, SettingsRow } from "./primitives.js";
 
 /* ---------- Master switch ---------- */
@@ -201,8 +200,8 @@ function ServerForm({
 				</button>
 			</div>
 
-			<input
-				className={inputCls}
+			<Input
+				size="sm"
 				value={form.name}
 				onChange={(e) => patch({ name: e.target.value })}
 				placeholder={t("settings.mcp.namePlaceholder") ?? ""}
@@ -211,8 +210,8 @@ function ServerForm({
 			/>
 
 			{form.jsonMode ? (
-				<textarea
-					className={`${textareaCls} min-h-40 font-mono`}
+				<Textarea
+					className="min-h-40 font-mono"
 					value={form.json}
 					onChange={(e) => patch({ json: e.target.value })}
 					placeholder='{ "command": "npx", "args": ["-y", "some-mcp-server"] }'
@@ -234,22 +233,22 @@ function ServerForm({
 
 					{form.transport === "stdio" ? (
 						<>
-							<input
-								className={inputCls}
+							<Input
+								size="sm"
 								value={form.command}
 								onChange={(e) => patch({ command: e.target.value })}
 								placeholder={t("settings.mcp.commandPlaceholder") ?? ""}
 								autoComplete="off"
 							/>
-							<textarea
-								className={`${textareaCls} min-h-14 font-mono`}
+							<Textarea
+								className="min-h-14 font-mono"
 								value={form.args}
 								onChange={(e) => patch({ args: e.target.value })}
 								placeholder={t("settings.mcp.argsPlaceholder") ?? ""}
 								spellCheck={false}
 							/>
-							<textarea
-								className={`${textareaCls} min-h-14 font-mono`}
+							<Textarea
+								className="min-h-14 font-mono"
 								value={form.env}
 								onChange={(e) => patch({ env: e.target.value })}
 								placeholder={t("settings.mcp.envPlaceholder") ?? ""}
@@ -258,15 +257,15 @@ function ServerForm({
 						</>
 					) : (
 						<>
-							<input
-								className={inputCls}
+							<Input
+								size="sm"
 								value={form.url}
 								onChange={(e) => patch({ url: e.target.value })}
 								placeholder={t("settings.mcp.urlPlaceholder") ?? ""}
 								autoComplete="off"
 							/>
-							<textarea
-								className={`${textareaCls} min-h-14 font-mono`}
+							<Textarea
+								className="min-h-14 font-mono"
 								value={form.headers}
 								onChange={(e) => patch({ headers: e.target.value })}
 								placeholder={t("settings.mcp.headersPlaceholder") ?? ""}
@@ -276,24 +275,28 @@ function ServerForm({
 					)}
 
 					<div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-2">
-						<select
-							className={inputCls}
-							value={form.lifecycle}
-							onChange={(e) => patch({ lifecycle: e.target.value as FormState["lifecycle"] })}
+						<Select
+							value={form.lifecycle || "__default"}
+							onValueChange={(value) => patch({ lifecycle: value === "__default" ? "" : value as FormState["lifecycle"] })}
 						>
-							<option value="">{t("settings.mcp.lifecycleDefault")}</option>
-							<option value="eager">{t("settings.mcp.lifecycleEager")}</option>
-							<option value="keep-alive">{t("settings.mcp.lifecycleKeepAlive")}</option>
-							<option value="lazy-keep-alive">{t("settings.mcp.lifecycleLazyKeepAlive")}</option>
-						</select>
-						<select
-							className={inputCls}
-							value={form.directTools}
-							onChange={(e) => patch({ directTools: e.target.value as FormState["directTools"] })}
+							<SelectTrigger className="w-full text-sm" aria-label={t("settings.mcp.lifecycleDefault")}><SelectValue /></SelectTrigger>
+							<SelectContent>
+								<SelectOption value="__default" label={t("settings.mcp.lifecycleDefault")} />
+								<SelectOption value="eager" label={t("settings.mcp.lifecycleEager")} />
+								<SelectOption value="keep-alive" label={t("settings.mcp.lifecycleKeepAlive")} />
+								<SelectOption value="lazy-keep-alive" label={t("settings.mcp.lifecycleLazyKeepAlive")} />
+							</SelectContent>
+						</Select>
+						<Select
+							value={form.directTools || "__proxy"}
+							onValueChange={(value) => patch({ directTools: value === "__proxy" ? "" : value as FormState["directTools"] })}
 						>
-							<option value="">{t("settings.mcp.directProxy")}</option>
-							<option value="all">{t("settings.mcp.directAll")}</option>
-						</select>
+							<SelectTrigger className="w-full text-sm" aria-label={t("settings.mcp.directProxy")}><SelectValue /></SelectTrigger>
+							<SelectContent>
+								<SelectOption value="__proxy" label={t("settings.mcp.directProxy")} />
+								<SelectOption value="all" label={t("settings.mcp.directAll")} />
+							</SelectContent>
+						</Select>
 					</div>
 				</>
 			)}
@@ -301,20 +304,22 @@ function ServerForm({
 			{error ? <p className="text-xs text-[var(--inno-danger)]">{error}</p> : null}
 
 			<div className="flex min-w-0 flex-wrap items-center gap-2">
-				<button
+				<Button
+					variant="primary"
 					disabled={saving || !canSave}
 					onClick={() => void handleSave()}
-					className="flex h-8 shrink-0 items-center rounded-md inno-primary-button px-3 text-sm text-white disabled:opacity-50"
+					className="shrink-0"
 				>
 					{saving ? t("common.loading") : t("common.save")}
-				</button>
-				<button
+				</Button>
+				<Button
+					variant="secondary"
 					disabled={saving}
 					onClick={onDone}
-					className="flex h-8 shrink-0 items-center rounded-md border border-[var(--inno-border)] px-3 text-sm text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+					className="shrink-0"
 				>
 					{t("common.cancel")}
-				</button>
+				</Button>
 			</div>
 		</div>
 	);
@@ -373,11 +378,12 @@ function ServerRow({ view, onEdit }: { view: McpServerView; onEdit: () => void }
 			<div className="min-w-0 flex-1">
 				<div className="flex flex-wrap items-center gap-2">
 					{runtimeStatus ? (
-						<span
-							className="inline-block h-2 w-2 shrink-0 rounded-full"
-							style={{ backgroundColor: STATUS_COLORS[runtimeStatus] }}
-							title={t(`settings.mcp.status.${runtimeStatus}`)}
-						/>
+						<Tooltip label={t(`settings.mcp.status.${runtimeStatus}`)}>
+							<span
+								className="inline-block h-2 w-2 shrink-0 rounded-full"
+								style={{ backgroundColor: STATUS_COLORS[runtimeStatus] }}
+							/>
+						</Tooltip>
 					) : null}
 					<span className="text-sm font-medium text-[var(--inno-text)]">{view.name}</span>
 					<span className="rounded border border-[var(--inno-border)] px-1.5 py-0.5 text-xs uppercase text-[var(--inno-text-subtle)]">
@@ -419,20 +425,23 @@ function ServerRow({ view, onEdit }: { view: McpServerView; onEdit: () => void }
 			<div className="flex shrink-0 items-center gap-1.5">
 				{view.source.editable ? (
 					<>
-						<button
-							onClick={onEdit}
-							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+						<IconButton
+							size="xs"
+							aria-label={t("common.edit")}
 							title={t("common.edit")}
+							onClick={onEdit}
 						>
 							<Pencil size={13} />
-						</button>
-						<button
-							onClick={() => setConfirmDelete(true)}
-							className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-danger)]"
+						</IconButton>
+						<IconButton
+							variant="danger"
+							size="xs"
+							aria-label={t("common.delete")}
 							title={t("common.delete")}
+							onClick={() => setConfirmDelete(true)}
 						>
 							<Trash2 size={13} />
-						</button>
+						</IconButton>
 						<Switch checked={!disabled} onChange={(v) => void handleToggle(v)} disabled={busy} aria-label={view.name} />
 					</>
 				) : null}
@@ -468,13 +477,14 @@ function McpServersCard() {
 						<p className="mt-1 break-all text-xs text-[var(--inno-text-subtle)]">{overview.configPath}</p>
 					) : null}
 				</div>
-				<button
+				<Button
+					variant="primary"
 					onClick={() => setFormOpen({ ...EMPTY_FORM })}
-					className="flex h-8 shrink-0 items-center gap-1 rounded-md inno-primary-button px-3 text-sm text-white"
+					className="shrink-0"
 				>
 					<Plus size={13} />
 					{t("settings.mcp.addServer")}
-				</button>
+				</Button>
 			</div>
 
 			{overview?.configError ? (

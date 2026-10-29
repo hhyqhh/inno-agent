@@ -4,7 +4,7 @@ import { Trash2, Pencil, X, ChevronDown, ChevronRight } from "lucide-react";
 import { settingsStore } from "../../stores/settings-store.js";
 import type { InnoModelInfo, InnoProviderModel as ProviderModel, InnoSettings } from "../../types/settings.js";
 import { useStoreSnapshot } from "../hooks.js";
-import { checkboxCls } from "../ui/checkbox.js";
+import { Button, Checkbox, IconButton, Input, Select, SelectContent, SelectOption, SelectTrigger, SelectValue } from "../ui/index.js";
 import { SettingsSection, SettingsCard } from "./primitives.js";
 import { formatTokens, modelKey } from "./shared.js";
 import { AddProviderWizard, ProviderIcon } from "./AddProviderWizard.js";
@@ -12,7 +12,6 @@ import { findPreset } from "./provider-presets.js";
 
 const apiOptions = ["openai-completions", "openai-responses", "anthropic-messages"];
 
-const inputCls = "w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1.5 text-xs text-[var(--inno-text)] focus:border-[var(--inno-accent)] focus:outline-none";
 const labelCls = "mb-0.5 block text-xs text-[var(--inno-text-muted)]";
 
 interface ModelEditFormState {
@@ -105,34 +104,36 @@ function ModelEditForm({ model, settings, onClose }: {
 					<ProviderIcon providerId={model.provider} size={22} />
 					<span className="text-xs font-medium text-[var(--inno-text)]">{t("settings.editModel", "Edit Model")}</span>
 				</div>
-				<button className="flex h-6 w-6 items-center justify-center rounded text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={onClose}><X size={14} /></button>
+				<IconButton size="xs" aria-label={t("common.close", "关闭")} title={t("common.close", "关闭")} onClick={onClose}>
+					<X size={14} />
+				</IconButton>
 			</div>
 			<div className="grid grid-cols-2 gap-2">
 				<div>
 					<label className={labelCls}>{t("settings.form.modelId")}</label>
-					<input className={inputCls} value={form.modelId} onChange={(e) => setForm({ ...form, modelId: e.target.value })} />
+					<Input size="sm" value={form.modelId} onChange={(e) => setForm({ ...form, modelId: e.target.value })} />
 				</div>
 				<div>
 					<label className={labelCls}>{t("settings.form.modelName")}</label>
-					<input className={inputCls} value={form.modelName} onChange={(e) => setForm({ ...form, modelName: e.target.value })} />
+					<Input size="sm" value={form.modelName} onChange={(e) => setForm({ ...form, modelName: e.target.value })} />
 				</div>
 				<div className="col-span-2">
 					<label className={labelCls}>
 						{t("settings.form.apiKey")} {provider?.apiKey ? <span className="text-[var(--inno-text-subtle)]">(••••••••)</span> : null}
 					</label>
-					<input className={inputCls} type="password" placeholder={provider?.apiKey ? t("settings.form.apiKeyPreserved") ?? "" : ""} value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} />
+					<Input size="sm" type="password" placeholder={provider?.apiKey ? t("settings.form.apiKeyPreserved") ?? "" : ""} value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} />
 				</div>
 				<div className="col-span-2">
 					<label className={labelCls}>{t("settings.form.baseUrl")}</label>
-					<input className={inputCls} value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} />
+					<Input size="sm" value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} />
 				</div>
 				<div>
 					<label className={labelCls}>{t("settings.form.contextWindow")}</label>
-					<input className={inputCls} value={form.contextWindow} onChange={(e) => setForm({ ...form, contextWindow: e.target.value })} />
+					<Input size="sm" value={form.contextWindow} onChange={(e) => setForm({ ...form, contextWindow: e.target.value })} />
 				</div>
 				<div>
 					<label className={labelCls}>{t("settings.form.maxTokens")}</label>
-					<input className={inputCls} value={form.maxTokens} onChange={(e) => setForm({ ...form, maxTokens: e.target.value })} />
+					<Input size="sm" value={form.maxTokens} onChange={(e) => setForm({ ...form, maxTokens: e.target.value })} />
 				</div>
 			</div>
 
@@ -144,32 +145,35 @@ function ModelEditForm({ model, settings, onClose }: {
 				<div className="mt-1.5 grid gap-2 rounded-md bg-[var(--inno-surface-muted)] p-2.5">
 					<div>
 						<label className={labelCls}>{t("settings.form.apiType", "API Type")}</label>
-						<select className={inputCls} value={form.api} onChange={(e) => setForm({ ...form, api: e.target.value })}>
-							{apiOptions.map((api) => <option key={api} value={api}>{api}</option>)}
-						</select>
+						<Select value={form.api} onValueChange={(api) => setForm({ ...form, api })}>
+							<SelectTrigger className="w-full text-xs" aria-label={t("settings.form.apiType", "API Type")}><SelectValue /></SelectTrigger>
+							<SelectContent>
+								{apiOptions.map((api) => <SelectOption key={api} value={api} label={api} />)}
+							</SelectContent>
+						</Select>
 					</div>
 					<div className="flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
-						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
-						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.supportsImages} onChange={(e) => setForm({ ...form, supportsImages: e.target.checked })} /> {t("settings.form.supportsImages")}</label>
-						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
-						<label className="flex items-center gap-1.5"><input type="checkbox" className={checkboxCls} checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
+						<label className="flex items-center gap-1.5"><Checkbox checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
+						<label className="flex items-center gap-1.5"><Checkbox checked={form.supportsImages} onChange={(e) => setForm({ ...form, supportsImages: e.target.checked })} /> {t("settings.form.supportsImages")}</label>
+						<label className="flex items-center gap-1.5"><Checkbox checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
+						<label className="flex items-center gap-1.5"><Checkbox checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
 					</div>
 					<p className="text-xs text-[var(--inno-text-subtle)]">{t("settings.form.supportsImagesHint")}</p>
 				</div>
 			)}
 
 			<label className="mt-2 flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
-				<input type="checkbox" className={checkboxCls} checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} />
+				<Checkbox checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} />
 				{t("settings.form.makeDefault")}
 			</label>
 			{formError ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div> : null}
 			<div className="mt-2 flex gap-2">
-				<button className="rounded-md inno-primary-button px-3 py-1.5 text-xs text-white disabled:opacity-50" disabled={saving} onClick={() => void handleSave()}>
+				<Button variant="primary" size="sm" disabled={saving} onClick={() => void handleSave()}>
 					{saving ? t("settings.savingProvider") : t("settings.saveProvider")}
-				</button>
-				<button className="rounded-md border border-[var(--inno-border)] px-3 py-1.5 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]" onClick={onClose}>
+				</Button>
+				<Button variant="secondary" size="sm" onClick={onClose}>
 					{t("common.cancel", "Cancel")}
-				</button>
+				</Button>
 			</div>
 		</div>
 	);
@@ -245,25 +249,30 @@ export function ModelsSettings({ settings }: { settings: InnoSettings }) {
 													<div className="text-xs text-[var(--inno-text-muted)]">{formatTokens(model.contextWindow)} context · {formatTokens(model.maxTokens)} max</div>
 												</div>
 												<div className="flex items-center gap-1.5">
-													<button
-														className="flex h-7 w-7 items-center justify-center rounded text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)] group-hover:opacity-100"
-														title={t("common.edit", "Edit")}
-														onClick={() => setEditingModel(key)}
-													>
-														<Pencil size={14} />
-													</button>
-													{!current && (
-														<button
-															className="flex h-7 w-7 items-center justify-center rounded text-[var(--inno-text-subtle)] opacity-0 transition-opacity hover:bg-[var(--inno-danger-bg)] hover:text-[var(--inno-danger)] group-hover:opacity-100"
-															title={t("common.delete", "Delete")}
-															onClick={() => {
-																if (window.confirm(t("settings.confirmDelete", { id: `${model.provider}/${model.id}` }) ?? "")) {
-																	void settingsStore.deleteModel(model.provider, model.id);
-																}
-															}}
-														>
-															<Trash2 size={14} />
-														</button>
+								<IconButton
+									size="xs"
+									className="opacity-0 transition-opacity group-hover:opacity-100"
+									title={t("common.edit", "Edit")}
+									aria-label={t("common.edit", "Edit")}
+									onClick={() => setEditingModel(key)}
+								>
+									<Pencil size={14} />
+								</IconButton>
+								{!current && (
+									<IconButton
+										variant="danger"
+										size="xs"
+										className="opacity-0 transition-opacity group-hover:opacity-100"
+										title={t("common.delete", "Delete")}
+										aria-label={t("common.delete", "Delete")}
+										onClick={() => {
+										if (window.confirm(t("settings.confirmDelete", { id: `${model.provider}/${model.id}` }) ?? "")) {
+											void settingsStore.deleteModel(model.provider, model.id);
+										}
+									}}
+									>
+										<Trash2 size={14} />
+									</IconButton>
 													)}
 													{!current && (
 														<button

@@ -1,4 +1,4 @@
-import { readJson, writeJson } from "../storage/file-store.js";
+import { readJson, readJsonAsync, writeJson } from "../storage/file-store.js";
 import { collapseInnoSlashCommand } from "../agent/inno-extension.js";
 import type { SessionMessageSummary } from "./session-model.js";
 
@@ -66,7 +66,17 @@ export function mergeSessionAgentCommands(
 	sessionId: string,
 	messages: SessionMessageSummary[],
 ): SessionMessageSummary[] {
-	const pending = [...(read(dataDir)[sessionId] ?? [])];
+	return restoreCommands(messages, read(dataDir)[sessionId] ?? []);
+}
+
+export async function loadSessionAgentCommandsAsync(dataDir: string): Promise<void> {
+	// Share the existing owner/cache; a concurrent synchronous write wins over this read.
+	const metadata = cache ?? await readJsonAsync<SessionAgentCommandsMetadata>(agentCommandsMetadataPath(dataDir), {});
+	cache ??= metadata;
+}
+
+function restoreCommands(messages: SessionMessageSummary[], entries: SessionAgentCommandEntry[]): SessionMessageSummary[] {
+	const pending = [...entries];
 	return messages.map((message) => {
 		if (message.role !== "user") return message;
 		const index = pending.findIndex((entry) =>

@@ -1,8 +1,10 @@
-import { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, ipcMain, screen } from "electron";
+import { listFileApplications, openFileInApplication } from "./open-with.js";
+import { getWindowResizeBounds, WINDOW_RESIZE_EDGES } from "./window-resize.js";
+import { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, nativeTheme, ipcMain, screen } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { createServer as createNetServer } from "node:net";
-import { join, dirname } from "node:path";
+import { join, dirname, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -61,11 +63,60 @@ function ensureConfig() {
 
 // ── 全局状态 ──────────────────────────────────────────────────────────────────
 let mainWindow = null;
+let searchWindow = null;
 let loadingWindow = null;
 let serverProcess = null;
 let tray = null;
 let isQuitting = false;
 let isCloseDialogOpen = false;
+let pendingSearchNavigation = null;
+let windowResize = null;
+
+// Native resize borders are very narrow. The renderer's transparent inner
+// hit strip forwards gestures here; it never owns or supplies window bounds.
+// Read the real screen cursor so resizing left/top is stable as the content
+// origin moves, and CSS zoom/display scaling cannot compound the delta.
+ipcMain.on("inno-resize-window", (event, request) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
+    || !request || !["start", "update", "end", "cancel"].includes(request.action)) return;
+  if (request.action === "cancel") { windowResize = null; return; }
+  if (mainWindow.isFullScreen() || mainWindow.isMaximized() || !mainWindow.isResizable()) {
+    windowResize = null;
+    return;
+  }
+  if (request.action === "start") {
+    if (!WINDOW_RESIZE_EDGES.includes(request.edge)) return;
+    windowResize = { bounds: mainWindow.getBounds(), point: screen.getCursorScreenPoint(), edge: request.edge };
+    return;
+  }
+  if (!windowResize) return;
+  const point = screen.getCursorScreenPoint();
+  mainWindow.setBounds(getWindowResizeBounds(
+    windowResize.bounds, windowResize.edge,
+    { x: point.x - windowResize.point.x, y: point.y - windowResize.point.y },
+    mainWindow.getMinimumSize(), mainWindow.getMaximumSize(),
+  ), false);
+  if (request.action === "end") windowResize = null;
+});
+// The renderer's default is light. Leaving nativeTheme on its system default
+// gave a light app macOS's dark window outline when the OS was dark.
+// The existing renderer preference owner updates this through the bridge.
+nativeTheme.themeSource = "light";
+
+function syncWindowBackgrounds() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setBackgroundColor(nativeTheme.shouldUseDarkColors ? "#202020" : "#f8fafd");
+  if (searchWindow && !searchWindow.isDestroyed()) searchWindow.setBackgroundColor(nativeTheme.shouldUseDarkColors ? "#171717" : "#f5f7fa");
+}
+nativeTheme.on("updated", syncWindowBackgrounds);
+
+ipcMain.handle("inno-set-theme-preference", (event, preference) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
+    || !["light", "dark", "system"].includes(preference)) return null;
+  nativeTheme.themeSource = preference;
+  syncWindowBackgrounds();
+  return nativeTheme.shouldUseDarkColors ? "dark" : "light";
+});
+
 let closeDialogCopy = {
   title: "关闭 Inno Agent",
   message: "要如何关闭 Inno Agent？",
@@ -104,6 +155,66 @@ ipcMain.handle("inno-open-path", (event, path) => {
   return shell.openPath(path);
 });
 
+// All native actions resolve the original file in its owning workspace.
+function isWorkspaceFileRequest(event, request) {
+  return !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents
+    && !!request && typeof request.path === "string" && !!request.path
+    && (request.workspaceId == null || typeof request.workspaceId === "string");
+}
+async function resolveWorkspaceFile(request) {
+  const params = new URLSearchParams({ path: request.path });
+  if (request.workspaceId) params.set("workspaceId", request.workspaceId);
+  const response = await fetch(`http://localhost:${serverPort}/api/workspace/file-location?${params}`, {
+    signal: AbortSignal.timeout(10_000), redirect: "error",
+  });
+  if (!response.ok) throw new Error("File unavailable");
+  const result = await response.json();
+  if (typeof result.absolutePath !== "string" || !isAbsolute(result.absolutePath)) throw new Error("Invalid file location");
+  return result.absolutePath;
+}
+
+ipcMain.handle("inno-workspace-file-applications", async (event, request) => {
+  if (!isWorkspaceFileRequest(event, request)) return null;
+  try {
+    const path = await resolveWorkspaceFile(request);
+    let apps;
+    let unavailable = false;
+    try { apps = await listFileApplications(path); }
+    catch { apps = [{ id: "system-default", name: "", isDefault: true }]; unavailable = true; }
+    const applications = await Promise.all(apps.map(async (entry) => {
+      if (entry.icon) return entry;
+      try { return { ...entry, icon: (await app.getFileIcon(entry.id === "system-default" ? path : entry.id, { size: "small" })).toDataURL() }; }
+      catch { return entry; }
+    }));
+    return { applications, unavailable, fileManager: process.platform === "darwin" ? "finder" : process.platform === "win32" ? "explorer" : "files" };
+  } catch { return null; }
+});
+
+ipcMain.handle("inno-open-workspace-file", async (event, request) => {
+  if (!isWorkspaceFileRequest(event, request) || (request.applicationId != null && typeof request.applicationId !== "string")) return false;
+  try {
+    const path = await resolveWorkspaceFile(request);
+    if (!request.applicationId || request.applicationId === "system-default") return (await shell.openPath(path)) === "";
+    // A renderer cannot substitute an executable: only current system-registered
+    // applications for this particular file are accepted.
+    const apps = await listFileApplications(path);
+    if (!apps.some((entry) => entry.id === request.applicationId)) return false;
+    await openFileInApplication(path, request.applicationId);
+    return true;
+  } catch { return false; }
+});
+
+ipcMain.handle("inno-reveal-workspace-file", async (event, request) => {
+  if (!isWorkspaceFileRequest(event, request)) return false;
+  try { shell.showItemInFolder(await resolveWorkspaceFile(request)); return true; }
+  catch { return false; }
+});
+
+ipcMain.handle("inno-is-full-screen", (event) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return false;
+  return mainWindow.isFullScreen();
+});
+
 ipcMain.on("inno-close-dialog-copy", (_event, copy) => {
   if (!isCloseDialogCopy(copy)) return;
   closeDialogCopy = {
@@ -117,6 +228,102 @@ ipcMain.on("inno-close-dialog-copy", (_event, copy) => {
     },
     remember: copy.remember,
   };
+});
+
+function isSearchResult(value) {
+  if (!value || typeof value !== "object") return false;
+  if (typeof value.id !== "string" || typeof value.title !== "string"
+    || typeof value.subtitle !== "string" || typeof value.snippet !== "string") return false;
+  if (!["conversation", "workspace", "file", "knowledge"].includes(value.category)) return false;
+  if (value.category === "conversation") return typeof value.sessionId === "string";
+  if (value.category === "workspace") return typeof value.workspaceId === "string";
+  if (value.category === "file") return typeof value.workspaceId === "string" && typeof value.path === "string";
+  return typeof value.path === "string";
+}
+
+function sendPendingSearchNavigation() {
+  if (!pendingSearchNavigation || !mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isLoading()) return;
+  const result = pendingSearchNavigation;
+  pendingSearchNavigation = null;
+  mainWindow.webContents.send("inno-search-navigate", result);
+}
+
+function bindSearchShortcut(window) {
+  window.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.key?.toLowerCase() !== "k") return;
+    if (!(input.meta || input.control) || input.alt || input.shift) return;
+    event.preventDefault();
+    void window.webContents.executeJavaScript("document.documentElement.dataset.theme")
+      .then((theme) => openSearchWindow(theme === "dark" ? "dark" : "light"))
+      .catch(() => openSearchWindow());
+  });
+}
+
+function openSearchWindow(theme = "light") {
+  const backgroundColor = theme === "dark" ? "#171717" : "#f5f7fa";
+  if (searchWindow && !searchWindow.isDestroyed()) {
+    searchWindow.setBackgroundColor(backgroundColor);
+    if (searchWindow.isMinimized()) searchWindow.restore();
+    searchWindow.show();
+    searchWindow.focus();
+    return;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) openMainWindow();
+
+  searchWindow = new BrowserWindow({
+    width: 800,
+    height: 640,
+    center: true,
+    minWidth: 560,
+    minHeight: 420,
+    title: "Inno Agent Search",
+    modal: false,
+    titleBarStyle: process.platform === "darwin" ? "hidden" : undefined,
+    trafficLightPosition: process.platform === "darwin" ? { x: 16, y: 12 } : undefined,
+    backgroundColor,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: join(__dirname, "preload.cjs"),
+      zoomFactor: 1,
+    },
+  });
+  const searchWindowUrl = new URL(`http://localhost:${serverPort}/`);
+  searchWindowUrl.searchParams.set("window", "search");
+  if (process.platform === "darwin") searchWindowUrl.searchParams.set("macTitlebar", "1");
+  searchWindow.loadURL(searchWindowUrl.toString());
+  searchWindow.webContents.on("did-finish-load", () => {
+    if (searchWindow && !searchWindow.isDestroyed()) searchWindow.webContents.setZoomFactor(1);
+  });
+  bindSearchShortcut(searchWindow);
+  searchWindow.on("closed", () => { searchWindow = null; });
+  searchWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const protocol = new URL(url).protocol;
+      if (protocol === "https:" || protocol === "http:") shell.openExternal(url);
+    } catch { /* deny unparseable URL */ }
+    return { action: "deny" };
+  });
+  searchWindow.show();
+  searchWindow.focus();
+}
+
+ipcMain.handle("inno-open-search-window", (event, theme) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) return false;
+  openSearchWindow(theme === "dark" ? "dark" : "light");
+  return true;
+});
+
+ipcMain.on("inno-close-search-window", (event) => {
+  if (searchWindow && event.sender === searchWindow.webContents) searchWindow.close();
+});
+
+ipcMain.on("inno-search-open-result", (event, result) => {
+  if (!searchWindow || event.sender !== searchWindow.webContents || !isSearchResult(result)) return;
+  pendingSearchNavigation = result;
+  showMainWindow();
+  sendPendingSearchNavigation();
+  searchWindow?.close();
 });
 
 const MAX_WINDOW_EXPANSION = 1200;
@@ -135,6 +342,7 @@ function isWindowExpansionRequest(value) {
 
 ipcMain.handle("inno-expand-window-width", (event, request) => {
   if (!isWindowExpansionRequest(request)
+    || windowResize
     || !mainWindow
     || mainWindow.isDestroyed()
     || event.sender !== mainWindow.webContents) {
@@ -318,20 +526,34 @@ function openMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    minWidth: 800,
+    // Match the 560px chat minimum plus the persistent 52px desktop rail.
+    // The old native 800px floor blocked shrinking before renderer layout ran.
+    minWidth: 612,
     minHeight: 600,
     title: "Inno Agent",
     // Keep the macOS traffic lights, but let the renderer own the area below
     // them so the app no longer gets the separate native title-bar strip.
     titleBarStyle: process.platform === "darwin" ? "hidden" : undefined,
     trafficLightPosition: process.platform === "darwin" ? { x: 16, y: 18 } : undefined,
-    backgroundColor: "#0f1117",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#202020" : "#f8fafd",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       preload: join(__dirname, "preload.cjs"),
       zoomFactor: 1,
     },
+  });
+
+  mainWindow.on("enter-full-screen", () => {
+    windowResize = null;
+    if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("inno-full-screen-change", true);
+  });
+  mainWindow.on("blur", () => { windowResize = null; });
+  mainWindow.on("maximize", () => { windowResize = null; });
+  mainWindow.webContents.on("render-process-gone", () => { windowResize = null; });
+  mainWindow.webContents.on("did-start-loading", () => { windowResize = null; });
+  mainWindow.on("leave-full-screen", () => {
+    if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("inno-full-screen-change", false);
   });
 
   mainWindow.loadURL(`http://localhost:${serverPort}`);
@@ -342,7 +564,9 @@ function openMainWindow() {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.setZoomFactor(1);
     }
+    sendPendingSearchNavigation();
   });
+  bindSearchShortcut(mainWindow);
 
   // 原生右键菜单：Electron 默认不弹出系统菜单，这里补上文本编辑的基础项。
   mainWindow.webContents.on("context-menu", (event, params) => {
@@ -379,7 +603,7 @@ function openMainWindow() {
       quitApplication();
     }
   });
-  mainWindow.on("closed", () => { mainWindow = null; });
+  mainWindow.on("closed", () => { windowResize = null; mainWindow = null; });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     // Only http(s) may leave the app — file://, smb:// and custom schemes
     // handed to shell.openExternal can trigger OS-level handlers (issue #162).
@@ -445,7 +669,12 @@ async function startServer(onReady) {
   serverProcess = spawn(process.execPath, [serverScript, "--server", "--port", String(serverPort)], {
     // INNO_DESKTOP marks the desktop (Electron) runtime: gates desktop-only
     // capabilities like computer-use (see plugins.computerUse in config.ts).
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", INNO_DESKTOP: "1" },
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      INNO_DESKTOP: "1",
+      ...(app.isPackaged ? { INNO_BUNDLED_TOOLS_DIR: process.resourcesPath } : {}),
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
 

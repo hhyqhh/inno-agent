@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { FilePlus2, Cpu, TerminalSquare, Zap, GraduationCap, BookOpen, CalendarClock, Puzzle, Settings, History, BookmarkPlus } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { MenuOption, Tooltip } from "../ui/index.js";
 import type { SlashPaletteEntry } from "./slash-palette-utils.js";
 
 export interface SlashCommandPaletteProps {
@@ -79,7 +80,7 @@ export function SlashCommandPalette({ entries, activeIndex, query, onSelect, onA
 	return (
 		<div
 			ref={paletteRef}
-			className="inno-composer-model-menu inno-slash-palette"
+			className="inno-popover-surface inno-slash-palette"
 			role="listbox"
 			aria-label={t("chat.slashPalette.ariaLabel")}
 		>
@@ -99,14 +100,13 @@ export function SlashCommandPalette({ entries, activeIndex, query, onSelect, onA
 										{entry.group === "app" ? t("chat.slashPalette.appGroup") : t("chat.slashPalette.agentGroup")}
 									</div>
 								) : null}
-								<button
-									type="button"
+								<MenuOption
 									role="option"
 									aria-selected={index === activeIndex}
 									data-active={index === activeIndex}
-									className={`inno-composer-model-option ${
+									className={`inno-slash-command-option ${
 										index === activeIndex
-											? "is-selected"
+										? "is-selected"
 											: ""
 									}`}
 									onMouseEnter={() => {
@@ -119,11 +119,13 @@ export function SlashCommandPalette({ entries, activeIndex, query, onSelect, onA
 									<span className="shrink-0 text-[var(--inno-text-muted)]">{entryIcon(entry)}</span>
 									<span className="shrink-0 font-medium">/{entry.name}</span>
 									{entry.description ? (
-										<span className="min-w-0 flex-1 truncate text-right text-xs text-[var(--inno-text-muted)]" title={entry.description}>
-											{entry.description}
-										</span>
+										<Tooltip label={entry.description}>
+											<span className="min-w-0 flex-1 truncate text-right text-xs text-[var(--inno-text-muted)]">
+												{entry.description}
+											</span>
+										</Tooltip>
 									) : null}
-								</button>
+								</MenuOption>
 							</div>
 						);
 					})

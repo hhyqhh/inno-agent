@@ -13,15 +13,16 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import {
-	createContext,
 	type ComponentProps,
+	forwardRef,
+	type ReactElement,
 	type ReactNode,
 	type SVGProps,
 	useContext,
 	useEffect,
-	useId,
 	useRef,
 } from "react";
+import { DropdownMenu, DropdownMenuActionItem, DropdownMenuContent, DropdownMenuTrigger, Tooltip } from "../ui/index.js";
 import type { ControlsConfig, IconMap } from "streamdown";
 
 type ToolbarButtonProps = Omit<ComponentProps<"button">, "children" | "onClick" | "type" | "aria-label" | "title" | "aria-pressed" | "aria-haspopup" | "aria-expanded">;
@@ -33,12 +34,12 @@ export interface ToolbarIconButtonProps extends ToolbarButtonProps {
 	showLabel?: boolean;
 	menu?: boolean;
 	expanded?: boolean;
-	onClick: () => void | Promise<void>;
+	onClick?: ComponentProps<"button">["onClick"];
 	children: ReactNode;
 }
 
 /** The single icon-button primitive used by every Markdown toolbar. */
-export function ToolbarIconButton({
+export const ToolbarIconButton = forwardRef<HTMLButtonElement, ToolbarIconButtonProps>(function ToolbarIconButton({
 	label,
 	title: titleOverride,
 	active,
@@ -49,17 +50,19 @@ export function ToolbarIconButton({
 	children,
 	className = "",
 	...buttonProps
-}: ToolbarIconButtonProps) {
-	return (
+}, ref) {
+	const tooltipLabel = titleOverride ?? (!showLabel ? label : undefined);
+	const button = (
 		<button
 			{...buttonProps}
+			ref={ref}
 			type="button"
 			aria-label={label}
-			aria-pressed={active ?? false}
+			aria-pressed={active}
 			aria-haspopup={menu ? "menu" : undefined}
 			aria-expanded={menu ? expanded : undefined}
-			title={titleOverride ?? label}
-			onClick={() => void onClick()}
+			title={buttonProps.disabled ? tooltipLabel : undefined}
+			onClick={onClick}
 			data-inno-toolbar-button=""
 			className={`inno-markdown-toolbar-button${active ? " is-active" : ""}${showLabel ? " has-label" : ""}${className ? ` ${className}` : ""}`}
 		>
@@ -67,44 +70,8 @@ export function ToolbarIconButton({
 			{showLabel ? <span className="inno-markdown-toolbar-button-label">{label}</span> : null}
 		</button>
 	);
-}
-
-export interface ToolbarSegmentedButtonProps extends ToolbarButtonProps {
-	label: string;
-	selected: boolean;
-	showLabel?: boolean;
-	onClick: () => void | Promise<void>;
-	children: ReactNode;
-}
-
-/** Icon-only mode button for preview/source/split and chart/code switches. */
-export function ToolbarSegmentedButton({
-	label,
-	selected,
-	showLabel = false,
-	onClick,
-	children,
-	className = "",
-	...buttonProps
-}: ToolbarSegmentedButtonProps) {
-	return (
-		<button
-			{...buttonProps}
-			type="button"
-			role="tab"
-			aria-label={label}
-			aria-pressed={selected}
-			aria-selected={selected}
-			title={label}
-			onClick={() => void onClick()}
-			data-inno-toolbar-segment=""
-			className={`inno-markdown-toolbar-segment${selected ? " is-active" : ""}${showLabel ? " has-label" : ""}${className ? ` ${className}` : ""}`}
-		>
-			{children}
-			{showLabel ? <span className="inno-markdown-toolbar-button-label">{label}</span> : null}
-		</button>
-	);
-}
+	return tooltipLabel && !buttonProps.disabled ? <Tooltip label={tooltipLabel}>{button}</Tooltip> : button;
+});
 
 export function MarkdownToolbar({ children, label, className = "" }: { children: ReactNode; label?: string; className?: string }) {
 	return (
@@ -122,87 +89,30 @@ export function MarkdownToolbarDivider() {
 	return <span className="inno-markdown-toolbar-divider" aria-hidden="true" />;
 }
 
-const ToolbarMenuCloseContext = createContext<(() => void) | null>(null);
-
 export function ToolbarMenu({
+	trigger,
 	open,
-	onClose,
+	onOpenChange,
 	label,
 	id,
 	children,
 	className = "",
 }: {
+	trigger: ReactElement;
 	open: boolean;
-	onClose: () => void;
+	onOpenChange: (open: boolean) => void;
 	label: string;
 	id?: string;
 	children: ReactNode;
 	className?: string;
 }) {
-	const generatedId = useId();
-	const menuRef = useRef<HTMLDivElement>(null);
-	const returnFocusRef = useRef<HTMLElement | null>(null);
-	const wasOpenRef = useRef(false);
-	const onCloseRef = useRef(onClose);
-	onCloseRef.current = onClose;
-
-	useEffect(() => {
-		if (!open) {
-			if (wasOpenRef.current) {
-				wasOpenRef.current = false;
-				returnFocusRef.current?.focus();
-			}
-			return;
-		}
-		if (!wasOpenRef.current) {
-			returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-			wasOpenRef.current = true;
-		}
-		const menu = menuRef.current;
-		const firstItem = menu?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
-		const focusFrame = typeof window !== "undefined" ? window.setTimeout(() => firstItem?.focus(), 0) : undefined;
-		const closeOnOutsidePointer = (event: PointerEvent) => {
-			const target = event.target as Node | null;
-			if (menu?.contains(target) || menu?.parentElement?.contains(target)) return;
-			onCloseRef.current();
-		};
-		const closeOnKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				event.preventDefault();
-				onCloseRef.current();
-				return;
-			}
-			if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-			const items = Array.from(menu?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []);
-			if (!items.length) return;
-			event.preventDefault();
-			const current = items.indexOf(document.activeElement as HTMLButtonElement);
-			const next = event.key === "ArrowDown"
-				? items[(current + 1 + items.length) % items.length]
-				: items[(current - 1 + items.length) % items.length];
-			next?.focus();
-		};
-		document.addEventListener("pointerdown", closeOnOutsidePointer);
-		document.addEventListener("keydown", closeOnKeyDown);
-		return () => {
-			if (focusFrame !== undefined) window.clearTimeout(focusFrame);
-			document.removeEventListener("pointerdown", closeOnOutsidePointer);
-			document.removeEventListener("keydown", closeOnKeyDown);
-		};
-	}, [open]);
-
-	if (!open) return null;
 	return (
-		<div
-			ref={menuRef}
-			id={id ?? generatedId}
-			role="menu"
-			aria-label={label}
-			data-inno-toolbar-menu=""
-			className={`inno-markdown-toolbar-menu${className ? ` ${className}` : ""}`}
-		>
-			<ToolbarMenuCloseContext.Provider value={onClose}>{children}</ToolbarMenuCloseContext.Provider>
-		</div>
+		<DropdownMenu open={open} onOpenChange={onOpenChange}>
+			<DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+			<DropdownMenuContent id={id} aria-label={label} align="end" side="bottom" className={`inno-markdown-toolbar-menu${className ? ` ${className}` : ""}`}>
+				{children}
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 }
 
@@ -217,23 +127,15 @@ export function ToolbarMenuItem({
 	onClick: () => void | Promise<void>;
 	children: ReactNode;
 }) {
-	const close = useContext(ToolbarMenuCloseContext);
 	return (
-		<button
-			type="button"
-			role="menuitem"
-			aria-label={label}
+		<DropdownMenuActionItem
 			disabled={disabled}
-			onClick={() => {
-				void onClick();
-				close?.();
-			}}
+			onSelect={() => void onClick()}
 			data-inno-toolbar-menu-item=""
 			className="inno-markdown-toolbar-menu-item"
-		>
-			<span aria-hidden="true">{children}</span>
-			<span>{label}</span>
-		</button>
+			icon={children}
+			label={label}
+		/>
 	);
 }
 
@@ -332,8 +234,19 @@ export function MarkdownFullscreenDialog({
 }) {
 	useFullscreenDialog(open, onClose);
 	if (!open || typeof document === "undefined") return null;
+	const hasMacWindowControls = Boolean(
+		window.innoDesktop && /Mac/i.test(window.navigator.platform),
+	);
 	return createPortal(
-		<div role="dialog" aria-modal="true" aria-label={ariaLabel ?? title} className="inno-markdown-fullscreen">
+		<div
+			role="dialog"
+			aria-modal="true"
+			aria-label={ariaLabel ?? title}
+			className={`inno-markdown-fullscreen${hasMacWindowControls ? " is-macos-window" : ""}`}
+		>
+			{/* A horizontal inset still puts tools in the native traffic-light row.
+			    Reserve the existing window-chrome height for every fullscreen viewer. */}
+			{hasMacWindowControls ? <div className="inno-markdown-fullscreen-titlebar" aria-hidden="true" /> : null}
 			<div className="inno-markdown-fullscreen-header">
 				<span className="inno-markdown-fullscreen-title">{title}</span>
 				<div className="inno-markdown-fullscreen-actions">

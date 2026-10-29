@@ -99,7 +99,44 @@ describe("SessionsStore navigation", () => {
 		mocks.getSession.mockResolvedValue(session("active.jsonl"));
 		const store = new SessionsStoreImpl();
 		await store.openSession("active.jsonl", { historyMode: "none" });
-		expect(store.contextUsageRevision).toBe(1);
+		await vi.waitFor(() => expect(store.contextUsageRevision).toBe(1));
+	});
+
+	it("finishes history loading before Agent activation and ignores stale activation", async () => {
+		let finishActivation!: () => void;
+		mocks.activateSession.mockImplementationOnce(() => new Promise<void>((resolve) => { finishActivation = resolve; }));
+		mocks.getSession.mockImplementation(async (id) => session(id));
+		const store = new SessionsStoreImpl();
+		await store.openSession("slow.jsonl", { historyMode: "none" });
+		expect(mocks.chatLoadHistory).toHaveBeenCalledWith([], "slow.jsonl");
+		expect(mocks.chatSetLoadingHistory).toHaveBeenLastCalledWith(false);
+		expect(store.contextUsageRevision).toBe(0);
+		const activationSignal = mocks.activateSession.mock.calls[0][1] as AbortSignal;
+		expect(activationSignal.aborted).toBe(false);
+		await store.openSession("next.jsonl", { historyMode: "none" });
+		expect(activationSignal.aborted).toBe(true);
+		const revision = store.contextUsageRevision;
+		finishActivation();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(store.currentSessionId).toBe("next.jsonl");
+		expect(store.contextUsageRevision).toBe(revision);
+	});
+
+	it("shows a first message immediately without duplicating the pending session", () => {
+		const store = new SessionsStoreImpl();
+		store.showPendingSession("pending.jsonl", "  First prompt  ");
+		store.showPendingSession("pending.jsonl", "Latest preview");
+		expect(store.sessions).toHaveLength(1);
+		expect(store.sessions[0]).toMatchObject({ id: "pending.jsonl", name: "First prompt", preview: "Latest preview", messageCount: 1, channels: ["web"], origin: "web" });
+	});
+
+	it("keeps a recorded session title and channel when moving its latest preview to the top", () => {
+		const store = new SessionsStoreImpl();
+		store.sessions = [{ ...session("old.jsonl"), name: "Manual title", hasTopic: true, channels: ["feishu"], origin: "feishu", messageCount: 4 }, session("other.jsonl")];
+		store.showPendingSession("old.jsonl", "New message");
+		expect(store.sessions.map((item) => item.id)).toEqual(["old.jsonl", "other.jsonl"]);
+		expect(store.sessions[0]).toMatchObject({ name: "Manual title", preview: "New message", messageCount: 4, channels: ["feishu"], origin: "feishu" });
 	});
 
 	it("keeps refreshing while a preview topic waits for its upgrade", async () => {

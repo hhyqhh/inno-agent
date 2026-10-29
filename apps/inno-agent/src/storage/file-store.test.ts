@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { appendJsonl, readJson, readJsonl, readJsonlTail, writeJson } from "./file-store.js";
+import { appendJsonl, readJson, readJsonAsync, readJsonl, readJsonlAsync, readJsonlTail, readTextAsync, writeJson } from "./file-store.js";
 
 let dir: string;
 
@@ -12,6 +12,21 @@ beforeEach(() => {
 
 afterEach(() => {
 	rmSync(dir, { recursive: true, force: true });
+});
+
+describe("asynchronous readers", () => {
+	it("uses defaults for missing files and malformed JSON", async () => {
+		expect(await readTextAsync(join(dir, "missing"), "default")).toBe("default");
+		expect(await readJsonAsync(join(dir, "missing"), { fallback: true })).toEqual({ fallback: true });
+		writeFileSync(join(dir, "broken.json"), "not JSON");
+		expect(await readJsonAsync(join(dir, "broken.json"), [])).toEqual([]);
+	});
+	it("reads JSON and skips malformed JSONL records without losing valid entries", async () => {
+		writeJson(join(dir, "valid.json"), { value: "你好" });
+		expect(await readJsonAsync(join(dir, "valid.json"), {})).toEqual({ value: "你好" });
+		writeFileSync(join(dir, "records.jsonl"), '{"n":1}\ninvalid\n{"n":2}\n');
+		expect(await readJsonlAsync(join(dir, "records.jsonl"))).toEqual([{ n: 1 }, { n: 2 }]);
+	});
 });
 
 describe("appendJsonl rotation", () => {

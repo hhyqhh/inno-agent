@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MarkdownArtifact } from "./MarkdownArtifact.js";
+import { renderWithTooltipProvider as render } from "./test-utils.js";
 import { isEnhancedCodeLanguage } from "./MarkdownRuntime.js";
 import { settingsStore } from "../stores/settings-store.js";
 
@@ -59,6 +60,41 @@ describe("MarkdownArtifact", () => {
 
 		expect(container.querySelector('[data-inno-code-block]')).not.toBeNull();
 		expect(container.querySelector(".inno-markdown-code-fallback")).toBeNull();
+	});
+
+	it("opens only one tools menu for a fullscreen Mermaid diagram", async () => {
+		const { getByRole } = render(<MarkdownArtifact content={"```mermaid\nflowchart LR\nA --> B\n```"} />);
+		// The Mermaid renderer is a separate lazy chunk. A cold worktree must
+		// finish importing it before this toolbar-interaction assertion.
+		await waitFor(() => expect(getByRole("button", { name: "更多" })).not.toBeNull(), { timeout: 5_000 });
+		fireEvent.pointerDown(getByRole("button", { name: "更多" }), { button: 0, pointerType: "mouse" });
+		fireEvent.click(getByRole("menuitem", { name: "全屏查看" }));
+		const dialog = getByRole("dialog", { name: "Mermaid 全屏查看" });
+		fireEvent.pointerDown(dialog.querySelector<HTMLButtonElement>('button[aria-label="更多"]')!, { button: 0, pointerType: "mouse" });
+		expect(document.querySelectorAll('[role="menu"]')).toHaveLength(1);
+		expect(getByRole("menu").textContent).not.toContain("全屏查看");
+	});
+
+	it("uses one language header in fullscreen and restores the inline code on exit", async () => {
+		const { container, getByRole } = render(<MarkdownArtifact content={"```python\nprint(1)\n```"} />);
+		await waitFor(() => expect(container.querySelector('[data-inno-code-block]')).not.toBeNull());
+		fireEvent.pointerDown(getByRole("button", { name: "更多" }), { button: 0, pointerType: "mouse" });
+		fireEvent.click(getByRole("menuitem", { name: "全屏查看" }));
+		const dialog = getByRole("dialog", { name: "代码全屏查看" });
+		expect(dialog.querySelector(".inno-markdown-fullscreen-title")?.textContent).toBe("python");
+		expect(dialog.querySelector('[data-streamdown="code-block-header"]')).toBeNull();
+		expect(dialog.querySelector('.inno-code-fullscreen [data-inno-code-body]')?.textContent).toContain("print(1)");
+		expect(dialog.querySelector('button[aria-label="运行代码"]')).not.toBeNull();
+		fireEvent.pointerDown(dialog.querySelector<HTMLButtonElement>('button[aria-label="更多"]')!, { button: 0, pointerType: "mouse" });
+		expect(document.querySelectorAll('[role="menu"]')).toHaveLength(1);
+		expect(document.querySelector('[role="menu"]')?.textContent).not.toContain("全屏查看");
+		fireEvent.keyDown(document, { key: "Escape" });
+		// Escape also exits the fullscreen viewer. Reopen to exercise its button.
+		fireEvent.pointerDown(getByRole("button", { name: "更多" }), { button: 0, pointerType: "mouse" });
+		fireEvent.click(getByRole("menuitem", { name: "全屏查看" }));
+		fireEvent.click(getByRole("dialog").querySelector<HTMLButtonElement>('button[aria-label="退出全屏"]')!);
+		expect(container.querySelector('[data-streamdown="code-block-header"]')?.textContent).toContain("python");
+		expect(container.querySelector('[data-inno-code-body]')?.textContent).toContain("print(1)");
 	});
 
 	it("keeps an HTML artifact when it is followed by an SVG artifact", async () => {
@@ -170,18 +206,19 @@ describe("MarkdownArtifact", () => {
 		expect(frame?.getAttribute("srcdoc")).toContain("Content-Security-Policy");
 		expect(frame?.getAttribute("srcdoc")).not.toContain("http-equiv=\"refresh\"");
 		expect(container.textContent).toContain("课程卡片");
-		expect(getByRole("tab", { name: "预览" })).not.toBeNull();
-		expect(getByRole("tab", { name: "预览" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("预览");
-		expect(getByRole("tab", { name: "查看源码" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("查看源码");
-		expect(queryByRole("tab", { name: "分屏查看" })).toBeNull();
+		expect(getByRole("radio", { name: "预览" })).not.toBeNull();
+		expect(getByRole("radio", { name: "预览" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("预览");
+		expect(getByRole("radio", { name: "查看源码" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("查看源码");
+		expect(queryByRole("radio", { name: "分屏查看" })).toBeNull();
 		expect(getByRole("button", { name: "复制源码" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("复制源码");
 		expect(getByRole("button", { name: "更多" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("更多");
 		const enableInteractiveButton = getByRole("button", { name: "启用交互预览" });
 		expect(enableInteractiveButton.closest("[data-inno-markdown-toolbar]")).not.toBeNull();
-		expect(enableInteractiveButton.getAttribute("title")).toContain("受限沙盒");
+		fireEvent.pointerMove(enableInteractiveButton, { clientX: 1, clientY: 1, pointerType: "mouse" });
+		await waitFor(() => expect(getByRole("tooltip").textContent).toContain("受限沙盒"));
 		fireEvent.click(enableInteractiveButton);
 		expect(getByRole("button", { name: "重置交互预览" })).not.toBeNull();
-		fireEvent.click(getByRole("button", { name: "更多" }));
+		fireEvent.pointerDown(getByRole("button", { name: "更多" }), { button: 0, pointerType: "mouse" });
 		expect(getByRole("menuitem", { name: "分屏查看" })).not.toBeNull();
 		expect(getByRole("menuitem", { name: "全屏查看" })).not.toBeNull();
 		expect(container.querySelector("iframe")?.getAttribute("sandbox")).toBe("allow-scripts");
@@ -255,16 +292,16 @@ describe("MarkdownArtifact", () => {
 		await waitFor(() => {
 			expect(container.querySelector(".inno-mermaid-suspense-placeholder")).toBeNull();
 			expect(container.querySelector("[data-inno-mermaid-preview]")).not.toBeNull();
-			expect(getByRole("tab", { name: "图表" })).not.toBeNull();
+			expect(getByRole("radio", { name: "图表" })).not.toBeNull();
 			expect(getByRole("button", { name: "复制代码" })).not.toBeNull();
 			expect(getByRole("button", { name: "重置视图" })).not.toBeNull();
 		}, { timeout: 5000 });
-		fireEvent.click(getByRole("tab", { name: "代码" }));
+		fireEvent.click(getByRole("radio", { name: "代码" }));
 		expect(container.querySelector("[data-inno-mermaid-source]")).not.toBeNull();
 		expect(getByRole("button", { name: "缩小" })).toHaveProperty("disabled", true);
 		expect(getByRole("button", { name: "放大" })).toHaveProperty("disabled", true);
 		expect(getByRole("button", { name: "重置视图" })).toHaveProperty("disabled", true);
-		fireEvent.click(getByRole("tab", { name: "图表" }));
+		fireEvent.click(getByRole("radio", { name: "图表" }));
 		expect(getByRole("button", { name: "缩小" })).toHaveProperty("disabled", false);
 		expect(getByRole("button", { name: "放大" })).toHaveProperty("disabled", false);
 		expect(container.textContent).toContain("图示如下");
@@ -340,7 +377,7 @@ describe("MarkdownArtifact", () => {
 			fireEvent.pointerUp(panSurface, { pointerId: 1, clientX: 140, clientY: 130 });
 			fireEvent.click(getByRole("button", { name: "重置视图" }));
 			await waitFor(() => expect(container.querySelector<HTMLIFrameElement>('[data-inno-artifact="plantuml"] iframe')?.style.transform).toBe(""));
-			fireEvent.click(getByRole("button", { name: "更多" }));
+			fireEvent.pointerDown(getByRole("button", { name: "更多" }), { button: 0, pointerType: "mouse" });
 			fireEvent.click(getByRole("menuitem", { name: "全屏查看" }));
 			const fullscreenDialog = getByRole("dialog");
 			await waitFor(() => expect(fullscreenDialog.querySelector("iframe")).not.toBeNull());
@@ -377,12 +414,12 @@ describe("MarkdownArtifact", () => {
 		expect(headings[1]?.id).toMatch(/^inno-.+-价格-2$/);
 	});
 
-	it("shows source context and asks before opening an external link", () => {
+	it("shows source context and asks before opening an external link", async () => {
 		const open = vi.spyOn(window, "open").mockImplementation(() => null);
 		const { getByRole, getByText } = render(<MarkdownArtifact content="[参考来源](https://example.com/article)" />);
 		const link = getByRole("link", { name: "参考来源" });
-		fireEvent.mouseEnter(link.parentElement!);
-		expect(getByRole("tooltip").textContent).toContain("example.com");
+		fireEvent.pointerMove(link, { clientX: 1, clientY: 1, pointerType: "mouse" });
+		await waitFor(() => expect(getByRole("tooltip").textContent).toContain("example.com"));
 		fireEvent.click(link);
 		expect(open).not.toHaveBeenCalled();
 		expect(getByRole("dialog", { name: "打开外部链接确认" })).not.toBeNull();
@@ -396,18 +433,18 @@ describe("MarkdownArtifact", () => {
 		const copyButton = getByRole("button", { name: "复制为富文本" });
 		const moreButton = getByRole("button", { name: "更多" });
 		expect(copyButton).not.toBeNull();
-		expect(copyButton.getAttribute("aria-pressed")).toBe("false");
-		expect(copyButton.getAttribute("title")).toBe("复制为富文本");
+		expect(copyButton.getAttribute("aria-pressed")).toBeNull();
+		expect(copyButton.getAttribute("title")).toBeNull();
 		expect(moreButton.getAttribute("aria-haspopup")).toBe("menu");
 		expect(moreButton.getAttribute("aria-expanded")).toBe("false");
 		expect(queryByRole("menuitem", { name: "导出 Excel" })).toBeNull();
-		fireEvent.click(moreButton);
-		await waitFor(() => expect(document.activeElement?.getAttribute("role")).toBe("menuitem"));
+		fireEvent.pointerDown(moreButton, { button: 0, pointerType: "mouse" });
+		await waitFor(() => expect(moreButton.getAttribute("aria-expanded")).toBe("true"));
 		expect(getByRole("menuitem", { name: "导出 Excel" })).not.toBeNull();
 		expect(getByRole("menuitem", { name: "全屏查看表格" })).not.toBeNull();
 		fireEvent.keyDown(document, { key: "Escape" });
 		expect(queryByRole("menu")).toBeNull();
-		fireEvent.click(moreButton);
+		fireEvent.pointerDown(moreButton, { button: 0, pointerType: "mouse" });
 		fireEvent.click(getByRole("menuitem", { name: "全屏查看表格" }));
 		expect(getByRole("dialog", { name: "表格全屏查看" })).not.toBeNull();
 		expect(getByRole("dialog", { name: "表格全屏查看" }).querySelector(".inno-markdown-toolbar-button-label")?.textContent).toBe("复制为富文本");

@@ -9,6 +9,7 @@ import type {
 	WorkspaceSwitchPreview,
 	WorkspaceSwitchResult,
 } from "../../api/workspaces.js";
+import { IconButton, Radio, Tooltip } from "../ui/index.js";
 
 export interface WorkspaceSwitchConfirmProps {
 	preview?: WorkspaceSwitchPreview | null;
@@ -81,16 +82,20 @@ export function WorkspaceSwitchConfirm({
 							<h2 id={titleId} className="text-[15px] font-semibold">{t("chat.workspaceSwitch.title", "切换会话工作区")}</h2>
 							{preview ? (
 								<div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
-									<span className="max-w-[190px] truncate" title={preview.sourceWorkspace.name}>{preview.sourceWorkspace.name}</span>
+									<Tooltip label={preview.sourceWorkspace.name}>
+										<span className="max-w-[190px] truncate">{preview.sourceWorkspace.name}</span>
+									</Tooltip>
 									<MoveRight size={13} aria-hidden="true" />
-									<span className="max-w-[190px] truncate font-medium text-[var(--inno-text)]" title={preview.targetWorkspace.name}>{preview.targetWorkspace.name}</span>
+									<Tooltip label={preview.targetWorkspace.name}>
+										<span className="max-w-[190px] truncate font-medium text-[var(--inno-text)]">{preview.targetWorkspace.name}</span>
+									</Tooltip>
 								</div>
 							) : null}
 						</div>
 					</div>
-					<button ref={closeRef} type="button" aria-label={t("common.close", "关闭")} title={t("common.close", "关闭")} disabled={executing} className="rounded-lg p-1.5 text-[var(--inno-text-subtle)] hover:bg-[var(--inno-surface-muted)] disabled:opacity-40" onClick={onCancel}>
+					<IconButton ref={closeRef} size="sm" aria-label={t("common.close", "关闭")} title={t("common.close", "关闭")} disabled={executing} onClick={onCancel}>
 						<X size={17} />
-					</button>
+					</IconButton>
 				</div>
 
 				{loading || !preview ? (
@@ -119,7 +124,9 @@ export function WorkspaceSwitchConfirm({
 									<div key={file.path} className={`border-b border-[var(--inno-border)] px-3 py-2.5 last:border-b-0 ${file.selectable ? "" : "opacity-55"}`}>
 										<div className="flex items-center gap-2.5">
 											<Folder size={14} className="shrink-0 text-[var(--inno-text-subtle)]" aria-hidden="true" />
-											<span className="min-w-0 flex-1 truncate font-mono text-[11px]" title={file.path}>{file.path}</span>
+											<Tooltip label={file.path}>
+												<span className="min-w-0 flex-1 truncate font-mono text-[11px]">{file.path}</span>
+											</Tooltip>
 											<span className="shrink-0 rounded-full bg-[var(--inno-surface-muted)] px-2 py-0.5 text-[10px] text-[var(--inno-text-muted)]">{accessLabel(file.access, t)}</span>
 											{file.exists && file.selectable ? null : <span className="shrink-0 text-[10px] text-[var(--inno-danger,var(--inno-accent))]">{t("chat.workspaceSwitch.missing", "已不存在或不可处理")}</span>}
 										</div>
@@ -134,7 +141,7 @@ export function WorkspaceSwitchConfirm({
 														: t("chat.workspaceSwitch.action.move", "移动");
 													return (
 														<label key={value} className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] ${checked ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)]" : "border-[var(--inno-border)] hover:bg-[var(--inno-surface-muted)]"}`}>
-															<input type="radio" name={`workspace-file-action-${file.path}`} value={value} checked={checked} disabled={executing || finished} onChange={() => onFileActionChange(file.path, value)} />
+										<Radio name={`workspace-file-action-${file.path}`} value={value} checked={checked} disabled={executing || finished} onChange={() => onFileActionChange(file.path, value)} />
 															<span className="truncate">{label}</span>
 														</label>
 													);
@@ -151,7 +158,7 @@ export function WorkspaceSwitchConfirm({
 								<div className="mt-4 rounded-xl border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-3.5 py-3 text-xs">
 									<div className="flex items-center gap-2 font-medium text-[var(--inno-text)]"><Check size={15} className="text-[var(--inno-success,var(--inno-accent))]" />{t("chat.workspaceSwitch.resultTitle", "工作区已切换")}</div>
 									{counts ? <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[var(--inno-text-muted)]"><span>{t("chat.workspaceSwitch.resultSuccess", "成功 {{count}}", { count: counts.success })}</span><span>{t("chat.workspaceSwitch.resultConflict", "冲突跳过 {{count}}", { count: counts.conflicts })}</span><span>{t("chat.workspaceSwitch.resultFailure", "失败 {{count}}", { count: counts.failures })}</span><span>{t("chat.workspaceSwitch.resultMissing", "缺失 {{count}}", { count: counts.missing })}</span></div> : null}
-									{result.files.length > 0 ? <details className="mt-2"><summary className="cursor-pointer text-[var(--inno-text-muted)]">{t("chat.workspaceSwitch.resultDetails", "查看具体路径")}</summary><ul className="mt-2 max-h-44 space-y-1 overflow-y-auto">{result.files.map((file) => <li key={`${file.path}-${file.status}`} className="flex gap-2"><span className="shrink-0">{resultLabel(file.status, t)}</span><span className="min-w-0 truncate font-mono text-[10px]" title={file.path}>{file.path}</span>{file.error ? <span className="min-w-0 truncate text-[var(--inno-danger,var(--inno-accent))]" title={file.error}>— {file.error}</span> : null}</li>)}</ul></details> : null}
+									{result.files.length > 0 ? <details className="mt-2"><summary className="cursor-pointer text-[var(--inno-text-muted)]">{t("chat.workspaceSwitch.resultDetails", "查看具体路径")}</summary><ul className="mt-2 max-h-44 space-y-1 overflow-y-auto">{result.files.map((file) => <li key={`${file.path}-${file.status}`} className="flex gap-2"><span className="shrink-0">{resultLabel(file.status, t)}</span><Tooltip label={file.path}><span className="min-w-0 truncate font-mono text-[10px]">{file.path}</span></Tooltip>{file.error ? <Tooltip label={file.error}><span className="min-w-0 truncate text-[var(--inno-danger,var(--inno-accent))]">— {file.error}</span></Tooltip> : null}</li>)}</ul></details> : null}
 									{result.trackingIncomplete ? <p className="mt-2 text-[11px] text-[var(--inno-warning,var(--inno-accent))]">{t("chat.workspaceSwitch.trackingIncomplete", "部分历史文件访问无法可靠还原，文件统计可能不完整。")}</p> : null}
 								</div>
 							) : null}

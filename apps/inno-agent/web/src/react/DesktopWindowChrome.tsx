@@ -1,45 +1,128 @@
 import type { ReactNode } from "react";
-import { PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { motion } from "motion/react";
+import { ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SquarePen } from "lucide-react";
+import { IconButton, Tooltip, useUITransition } from "./ui/index.js";
+import type { WorkspaceMode } from "../stores/app-store.js";
 
 interface DesktopWindowChromeProps {
 	showWorkspaceControl: boolean;
+	showSidebarControl: boolean;
+	showNewChatControl: boolean;
+	showChatHeader: boolean;
+	hasOpenConversation?: boolean;
+	isDesktopWindow: boolean;
 	sidebarCollapsed: boolean;
+	newChatLabel: string;
+	sidebarExpandLabel: string;
+	sidebarCollapseLabel: string;
 	workspaceCollapsed: boolean;
+	workspaceOpenLabel: string;
+	workspaceCollapseLabel: string;
+	backLabel: string;
+	forwardLabel: string;
+	canNavigateBack: boolean;
+	canNavigateForward: boolean;
 	btwControl?: ReactNode;
+	terminalControl?: ReactNode;
+	workspaceTabs?: ReactNode;
+	workspaceMode?: WorkspaceMode;
+	workspaceFullLabel?: string;
+	workspaceRestoreLabel?: string;
+	onWorkspaceModeChange?: (mode: WorkspaceMode) => void;
+	onHeaderHostChange?: (host: HTMLDivElement | null) => void;
 	onToggleSidebar: () => void;
+	onNewChat: () => void;
+	onNavigateBack: () => void;
+	onNavigateForward: () => void;
 	onToggleWorkspace: () => void;
 }
 
 /**
- * Renderer-owned macOS window chrome. Electron keeps the traffic lights in
- * the hidden title-bar area; the overlay is limited to the renderer control
- * so the page headers below remain reliable drag surfaces and click targets.
- *
- * The sidebar toggle only renders while the sidebar is collapsed — the
- * expanded sidebar carries its own collapse button inside its header, so no
- * floating control ever overlaps the brand row (reference-app pattern).
+ * Renderer-owned desktop toolbar. macOS keeps its traffic lights in the
+ * hidden native title bar; Windows keeps its standard native title bar above
+ * this toolbar. Browser layouts keep their local chat header.
  */
 export function DesktopWindowChrome({
 	showWorkspaceControl,
+	showSidebarControl,
+	showNewChatControl,
+	showChatHeader,
+	hasOpenConversation = false,
+	isDesktopWindow,
 	sidebarCollapsed,
+	newChatLabel,
+	sidebarExpandLabel,
+	sidebarCollapseLabel,
 	workspaceCollapsed,
+	workspaceOpenLabel,
+	workspaceCollapseLabel,
+	backLabel,
+	forwardLabel,
+	canNavigateBack,
+	canNavigateForward,
 	btwControl,
+	terminalControl,
+	workspaceTabs,
+	workspaceMode,
+	workspaceFullLabel,
+	workspaceRestoreLabel,
+	onWorkspaceModeChange,
+	onHeaderHostChange,
 	onToggleSidebar,
+	onNewChat,
+	onNavigateBack,
+	onNavigateForward,
 	onToggleWorkspace,
 }: DesktopWindowChromeProps) {
+	const showSidebarToggle = isDesktopWindow ? showSidebarControl : sidebarCollapsed;
+	const showNavigationControls = isDesktopWindow;
+	const transition = useUITransition("modal");
+
 	return (
-		<div className="inno-window-chrome" aria-label="窗口工具栏">
-			{sidebarCollapsed ? (
+		<div className={`inno-window-chrome${showNewChatControl ? " has-new-chat-control" : ""}${hasOpenConversation ? " has-conversation-tabs" : ""}`} aria-label="窗口工具栏">
+			{isDesktopWindow && showChatHeader ? (
+				<>
+					<div className="inno-window-chrome-chat-header" ref={onHeaderHostChange} />
+					<div className="inno-window-chrome-divider" aria-hidden="true" />
+				</>
+			) : null}
+			{showNavigationControls || showSidebarToggle ? (
 				<div className="inno-window-chrome-bar">
-					<button
-						type="button"
-						className="inno-window-chrome-button"
-						title="展开侧栏"
-						aria-label="展开侧栏"
-						onClick={onToggleSidebar}
-					>
-						<PanelLeftOpen size={15} />
-					</button>
+					{showNavigationControls ? (
+						<>
+							<Tooltip label={backLabel} side="bottom">
+								<button type="button" className="inno-window-chrome-button" aria-label={backLabel} disabled={!canNavigateBack} onClick={onNavigateBack}>
+									<ArrowLeft size={15} />
+								</button>
+							</Tooltip>
+							<Tooltip label={forwardLabel} side="bottom">
+								<button type="button" className="inno-window-chrome-button" aria-label={forwardLabel} disabled={!canNavigateForward} onClick={onNavigateForward}>
+									<ArrowRight size={15} />
+								</button>
+							</Tooltip>
+						</>
+					) : null}
+					{showSidebarToggle ? (
+						<Tooltip label={sidebarCollapsed ? sidebarExpandLabel : sidebarCollapseLabel} side="bottom">
+							<button
+								type="button"
+								className="inno-window-chrome-button"
+								aria-label={sidebarCollapsed ? sidebarExpandLabel : sidebarCollapseLabel}
+								aria-controls="session-sidebar"
+								aria-expanded={!sidebarCollapsed}
+								onClick={onToggleSidebar}
+							>
+								{sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+							</button>
+						</Tooltip>
+					) : null}
+					{showNewChatControl ? (
+						<Tooltip label={newChatLabel} side="bottom">
+							<button type="button" className="inno-window-chrome-button" aria-label={newChatLabel} onClick={onNewChat}>
+								<SquarePen size={15} />
+							</button>
+						</Tooltip>
+					) : null}
 				</div>
 			) : null}
 			{btwControl ? (
@@ -47,17 +130,46 @@ export function DesktopWindowChrome({
 					{btwControl}
 				</div>
 			) : null}
+			{isDesktopWindow && showWorkspaceControl && workspaceMode ? (
+				<>
+					{/* A sibling plate can sit below every moving control; painting it
+					    on the tab track covered the earlier question/terminal buttons. */}
+					<div className="inno-window-chrome-drag-plate" aria-hidden="true" />
+					<div className="inno-window-chrome-preview-terminal">{terminalControl}</div>
+					<motion.div layout={hasOpenConversation ? "position" : false} layoutDependency={`${workspaceMode}:${sidebarCollapsed}`} transition={transition} className="inno-window-chrome-preview-tabs">
+						{/* A single moving track keeps the separator and tabs together
+						    throughout maximize/restore, including the welcome screen. */}
+						<div className="inno-window-chrome-preview-divider" aria-hidden="true" />
+						<div className="inno-window-chrome-preview-tab-content" aria-hidden={workspaceCollapsed || undefined} inert={workspaceCollapsed || undefined}>
+							{workspaceTabs}
+						</div>
+					</motion.div>
+					{!workspaceCollapsed ? <IconButton
+						size="xs"
+						className="inno-window-chrome-preview-fullscreen"
+						title={workspaceMode === "full" ? workspaceRestoreLabel ?? "Restore preview" : workspaceFullLabel ?? "Maximize preview"}
+						aria-label={workspaceMode === "full" ? workspaceRestoreLabel ?? "Restore preview" : workspaceFullLabel ?? "Maximize preview"}
+						aria-pressed={workspaceMode === "full"}
+						onClick={() => onWorkspaceModeChange?.(workspaceMode === "full" ? "half" : "full")}
+					>
+						{workspaceMode === "full" ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+					</IconButton> : null}
+				</>
+			) : null}
+			{/* Keep workspace visibility in the upper toolbar so opening and closing
+			    stay in the same place in split and full views. */}
 			{showWorkspaceControl ? (
-				<button
-					type="button"
-					className="inno-window-chrome-button inno-window-chrome-workspace-button"
-					title={workspaceCollapsed ? "打开工作区" : "收起工作区"}
-					aria-label={workspaceCollapsed ? "打开工作区" : "收起工作区"}
-					aria-pressed={!workspaceCollapsed}
-					onClick={onToggleWorkspace}
-				>
-					{workspaceCollapsed ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}
-				</button>
+				<Tooltip label={workspaceCollapsed ? workspaceOpenLabel : workspaceCollapseLabel} side="bottom">
+					<button
+						type="button"
+						className="inno-window-chrome-button inno-window-chrome-workspace-button"
+						aria-label={workspaceCollapsed ? workspaceOpenLabel : workspaceCollapseLabel}
+						aria-expanded={!workspaceCollapsed}
+						onClick={onToggleWorkspace}
+					>
+						{workspaceCollapsed ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}
+					</button>
+				</Tooltip>
 			) : null}
 		</div>
 	);

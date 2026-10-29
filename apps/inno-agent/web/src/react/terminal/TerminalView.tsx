@@ -28,13 +28,13 @@ const TERMINAL_THEMES: Record<ThemeId, ITheme> = {
 		brightCyan: "#06b6d4", brightWhite: "#1f1f1f",
 	},
 	dark: {
-		background: "#131415", foreground: "#e8eaed", cursor: "#c4c7cb",
-		cursorAccent: "#131415", selectionBackground: "#3a3d42",
-		black: "#1e2023", red: "#f28b82", green: "#81c995", yellow: "#f9ab00",
+		background: "#171717", foreground: "#ececec", cursor: "#c5c5c5",
+		cursorAccent: "#171717", selectionBackground: "#3b3b3b",
+		black: "#262626", red: "#f39a92", green: "#8bd3a0", yellow: "#f7bd55",
 		blue: "#a8c7fa", magenta: "#c58af9", cyan: "#78d9ec", white: "#c4c7cb",
-		brightBlack: "#5f6368", brightRed: "#f6aea9", brightGreen: "#a8dab5",
+		brightBlack: "#979797", brightRed: "#f6aea9", brightGreen: "#a8dab5",
 		brightYellow: "#fdd663", brightBlue: "#c4ddfc", brightMagenta: "#dab5fb",
-		brightCyan: "#a5e5f2", brightWhite: "#e8eaed",
+		brightCyan: "#a5e5f2", brightWhite: "#ececec",
 	},
 };
 
@@ -78,14 +78,30 @@ export function TerminalView({ innoSessionId, workspaceId, className }: Terminal
 		// Connect (idempotent if same session is already wired).
 		void terminalStore.connect(innoSessionId, workspaceId, term.cols, term.rows);
 
-		// Resize tracking
-		const ro = new ResizeObserver(() => {
+		// Resize tracking. A splitter drag resizes the host every frame; refitting
+		// xterm (DOM measure + canvas redraw + WS resize) at that rate drops
+		// frames, so refresh periodically mid-drag. On release the dragging body
+		// class is already gone, so the final resize delivery snaps to the
+		// committed layout.
+		let resizeTimer = 0;
+		const refit = () => {
 			try {
 				fit.fit();
 				terminalStore.resize(term.cols, term.rows);
 			} catch {
 				// ignore transient layout errors
 			}
+		};
+		const ro = new ResizeObserver(() => {
+			if (document.body.classList.contains("workspace-resizing") || document.body.classList.contains("inno-ui-resizing-columns")) {
+				if (resizeTimer === 0) resizeTimer = window.setTimeout(() => { resizeTimer = 0; refit(); }, 150);
+				return;
+			}
+			if (resizeTimer !== 0) {
+				clearTimeout(resizeTimer);
+				resizeTimer = 0;
+			}
+			refit();
 		});
 		ro.observe(host);
 
@@ -95,6 +111,7 @@ export function TerminalView({ innoSessionId, workspaceId, className }: Terminal
 		});
 
 		return () => {
+			if (resizeTimer !== 0) clearTimeout(resizeTimer);
 			ro.disconnect();
 			offOutput();
 			offTheme();

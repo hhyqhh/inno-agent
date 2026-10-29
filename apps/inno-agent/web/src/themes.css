@@ -14,8 +14,11 @@
 	--inno-surface-muted: #f1f4f9;
 	--inno-surface-raised: #fbfcfe;
 	--inno-sidebar-bg: #f8fafd;
+	--inno-sidebar-expanded-bg: #f8fafd;
+	--inno-sidebar-preview-bg: #f5f7fa;
 	--inno-sidebar-active: #dde3ea;
 	--inno-chat-bg: #ffffff;
+	--inno-window-chrome-bg: #f8fafd;
 	--inno-workspace-bg: #f8fafd;
 	--inno-workspace-chrome: #f1f4f9;
 	--inno-border: #e5e9f0;
@@ -30,6 +33,7 @@
 	--inno-warning: #b06000;
 	--inno-danger: #c5221f;
 	--inno-shadow-soft: 0 1px 2px rgba(60, 64, 67, 0.06), 0 8px 24px rgba(60, 64, 67, 0.08);
+	--inno-shadow-panel: 0 0 0 1px rgba(60, 64, 67, 0.08), 0 0 6px rgba(60, 64, 67, 0.08), 0 2px 6px rgba(60, 64, 67, 0.08);
 	--inno-ring: 0 0 0 3px rgba(11, 87, 208, 0.14);
 	--inno-scrollbar-thumb: rgba(60, 64, 67, 0.16);
 	--inno-scrollbar-thumb-hover: rgba(60, 64, 67, 0.28);
@@ -39,9 +43,6 @@
 	/* Brand & decorative tokens (InnoSpark harness) */
 	--inno-brand-1: #6b93ff;
 	--inno-brand-2: #584cff;
-	--inno-glow-1: rgba(168, 199, 250, 0.55);
-	--inno-glow-2: rgba(198, 218, 251, 0.35);
-	--inno-glow-3: rgba(230, 240, 254, 0.18);
 	--inno-user-bubble-bg: #e9eef6;
 	--inno-card-bg: #ffffff;
 	--inno-chip-bg: #f1f4f9;
@@ -57,48 +58,50 @@
 
 /* ─── Dark ─── */
 :root[data-theme="dark"] {
-	--inno-background: #131415;
-	--inno-surface: #1e2023;
-	--inno-surface-muted: #2a2c30;
-	--inno-surface-raised: #26282d;
-	--inno-sidebar-bg: #17181b;
-	--inno-sidebar-active: #33363c;
-	--inno-chat-bg: #131415;
-	--inno-workspace-bg: #17181b;
-	--inno-workspace-chrome: #26282d;
-	--inno-border: #3a3d42;
-	--inno-border-strong: #4a4e55;
-	--inno-text: #e8eaed;
-	--inno-text-muted: #c4c7cb;
-	--inno-text-subtle: #9aa0a6;
-	--inno-accent: #a8c7fa;
-	--inno-accent-soft: #26364a;
-	--inno-tech: #a8c7fa;
-	--inno-success: #81c995;
-	--inno-warning: #f9ab00;
-	--inno-danger: #f28b82;
-	--inno-shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
-	--inno-ring: 0 0 0 3px rgba(168, 199, 250, 0.25);
+	--inno-background: #171717;
+	--inno-surface: #303030;
+	--inno-surface-muted: #3a3a3a;
+	--inno-surface-raised: #383838;
+	--inno-sidebar-bg: #202020;
+	--inno-sidebar-expanded-bg: #252525;
+	--inno-sidebar-preview-bg: #202020;
+	--inno-sidebar-rail-bg: #282828;
+	--inno-sidebar-active: #3a3a3a;
+	--inno-chat-bg: #171717;
+	--inno-window-chrome-bg: #282828;
+	--inno-workspace-bg: #202020;
+	--inno-workspace-chrome: #2c2c2c;
+	--inno-border: #3b3b3b;
+	--inno-border-strong: #555555;
+	--inno-text: #ececec;
+	--inno-text-muted: #c5c5c5;
+	--inno-text-subtle: #979797;
+	--inno-accent: #aecbfa;
+	--inno-accent-soft: #2d333c;
+	--inno-tech: #aecbfa;
+	--inno-success: #8bd3a0;
+	--inno-warning: #f7bd55;
+	--inno-danger: #f39a92;
+	--inno-shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 24px rgba(0, 0, 0, 0.24);
+	--inno-shadow-panel: 0 6px 20px rgba(0, 0, 0, 0.16);
+	--inno-shadow-composer: 0 1px 3px rgba(0, 0, 0, 0.24), 0 8px 24px rgba(0, 0, 0, 0.14);
+	--inno-ring: 0 0 0 3px rgba(174, 203, 250, 0.28);
 	--inno-scrollbar-thumb: rgba(232, 234, 237, 0.18);
 	--inno-scrollbar-thumb-hover: rgba(232, 234, 237, 0.3);
-	--inno-selection-bg: rgba(168, 199, 250, 0.25);
-	--inno-grid-color: rgba(232, 234, 237, 0.04);
+	--inno-selection-bg: rgba(174, 203, 250, 0.25);
+	--inno-grid-color: rgba(255, 255, 255, 0.035);
 
 	/* Brand & decorative tokens (InnoSpark harness) */
 	--inno-brand-1: #8ab4f8;
 	--inno-brand-2: #c58af9;
-	--inno-glow-1: rgba(138, 180, 248, 0.16);
-	--inno-glow-2: rgba(197, 138, 249, 0.08);
-	--inno-glow-3: rgba(138, 180, 248, 0.04);
-	--inno-user-bubble-bg: #26282d;
-	--inno-card-bg: #1e2023;
-	--inno-chip-bg: #2a2c30;
-	--inno-primary-bg: #ffffff;
-	--inno-primary-fg: #1f1f1f;
+	--inno-user-bubble-bg: #303030;
+	--inno-card-bg: #2a2a2a;
+	--inno-chip-bg: #383838;
+	--inno-primary-bg: #e6e9ed;
+	--inno-primary-fg: #1d2024;
 	--inno-primary-bg-hover: #ffffff;
 	--inno-send-bg: #e8eaed;
-	--inno-send-fg: #1f1f1f;
+	--inno-send-fg: #1d2024;
 	--inno-send-bg-hover: #ffffff;
-	--inno-shadow-composer: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
 	color-scheme: dark;
 }

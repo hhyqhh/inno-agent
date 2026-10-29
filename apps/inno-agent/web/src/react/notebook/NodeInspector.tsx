@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { notebookStore } from "../../stores/notebook-store.js";
 import { useStoreSnapshot } from "../hooks.js";
+import { Button } from "../ui/index.js";
 
 export function NodeInspector() {
 	const { t } = useTranslation();
@@ -37,13 +38,14 @@ export function NodeInspector() {
 					</div>
 				</div>
 			) : null}
-			<button
-				className="rounded-md inno-primary-button px-3 py-1.5 text-sm text-white disabled:opacity-50"
+			<Button
+				variant="primary"
+				size="sm"
 				disabled={node.type === "tag"}
 				onClick={() => void notebookStore.selectPage(node.id)}
 			>
 				{t("notebook.inspector.openPage")}
-			</button>
+			</Button>
 		</aside>
 	);
 }

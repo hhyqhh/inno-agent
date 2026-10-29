@@ -1,8 +1,13 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderWithTooltipProvider as render } from "../test-utils.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MessageBubble } from "./MessageBubble.js";
 import type { ChatMessage } from "../../types/chat.js";
+
+vi.mock("react-i18next", () => ({
+	useTranslation: () => ({ t: (key: string, fallback?: string) => fallback ?? key }),
+}));
 
 afterEach(cleanup);
 
@@ -30,11 +35,12 @@ describe("sent Agent command bubbles", () => {
 		expect(document.querySelector(".inno-smart-agent-ref-args")?.textContent).toBe("请帮我规划课程");
 	});
 
-	it("keeps native command hints on non-skill bubbles", () => {
+	it("shows the command hint on non-skill bubbles", async () => {
 		const chip = renderCommand("/recall");
 
 		expect(chip?.textContent).toContain("回顾对话");
-		expect(chip?.getAttribute("title")).toBe("查找并回顾以前的对话");
+		fireEvent.pointerMove(chip!, { clientX: 1, clientY: 1, pointerType: "mouse" });
+		await waitFor(() => expect(screen.getByRole("tooltip").textContent).toContain("查找并回顾以前的对话"));
 	});
 
 	it("opens the skill detail panel from the assistant timeline row", () => {

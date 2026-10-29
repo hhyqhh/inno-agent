@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { resolveContainedPathAsync } from "../utils/path-safety.js";
 import { randomUUID } from "node:crypto";
-import { ensureDir, readJson, writeJson } from "../storage/file-store.js";
+import { ensureDir, readJson, readJsonAsync, writeJson } from "../storage/file-store.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -140,8 +141,19 @@ export class WorkspaceRegistry {
 	 * map is treated as bound to the shared temp workspace (the unbound fallback).
 	 */
 	listWorkspaces(allSessionIds?: string[]): WorkspaceWithSessions[] {
-		const reg = this.loadRegistry();
-		const map = this.loadSessionMap();
+		return this.enrichWorkspaces(this.loadRegistry(), this.loadSessionMap(), allSessionIds);
+	}
+
+	/** Search reads the existing registry asynchronously; persistence keeps its single owner. */
+	async listWorkspacesAsync(): Promise<WorkspaceWithSessions[]> {
+		const [registry, sessionMap] = await Promise.all([
+			readJsonAsync<RegistryFile>(this.registryPath(), { workspaces: [] }),
+			readJsonAsync<SessionWorkspaceMap>(this.sessionMapPath(), {}),
+		]);
+		return this.enrichWorkspaces(registry, sessionMap);
+	}
+
+	private enrichWorkspaces(reg: RegistryFile, map: SessionWorkspaceMap, allSessionIds?: string[]): WorkspaceWithSessions[] {
 		const sessionsByWs = new Map<string, string[]>();
 		for (const [sessionId, workspaceId] of Object.entries(map)) {
 			const arr = sessionsByWs.get(workspaceId) ?? [];
@@ -181,6 +193,10 @@ export class WorkspaceRegistry {
 		const rel = relative(resolve(this.workspaceDir), resolved);
 		if (rel.startsWith("..")) return null;
 		return resolved;
+	}
+
+	async resolveWorkspaceDirAsync(workspace: WorkspaceMeta): Promise<string | null> {
+		return resolveContainedPathAsync(this.workspaceDir, workspace.relPath);
 	}
 
 	/**

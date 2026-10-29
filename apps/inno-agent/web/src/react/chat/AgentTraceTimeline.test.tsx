@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderWithTooltipProvider as render } from "../test-utils.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatTraceStep } from "../../types/chat.js";
 
 vi.mock("react-i18next", () => ({
@@ -11,7 +12,14 @@ vi.mock("react-i18next", () => ({
 
 import { AgentTraceTimeline } from "./AgentTraceTimeline.js";
 
-afterEach(cleanup);
+beforeEach(() => {
+	vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+});
+afterEach(() => {
+	cleanup();
+	vi.restoreAllMocks();
+	vi.unstubAllGlobals();
+});
 
 const thinking: ChatTraceStep = {
 	id: "thinking:0",
@@ -22,6 +30,112 @@ const thinking: ChatTraceStep = {
 };
 
 describe("AgentTraceTimeline", () => {
+	const officeTool: ChatTraceStep = {
+		id: "office:create", kind: "tool", status: "completed", title: "office_create_document",
+		toolName: "office_create_document", args: { path: "我的妈妈.pptx", slides: [{ title: "我的妈妈" }] },
+		partialResult: { content: [{ type: "text", text: "正在创建" }] },
+		result: { content: [{ type: "text", text: "已生成 slide 文档：我的妈妈.pptx。" }], details: { created: "我的妈妈.pptx" } },
+	};
+
+	it.each(["light", "dark"])("shows readable results before optional raw data in %s theme", (theme) => {
+		document.documentElement.setAttribute("data-theme", theme);
+		try {
+			render(<AgentTraceTimeline steps={[officeTool]} />);
+			fireEvent.click(screen.getByRole("button", { name: /展开创建文档/ }));
+			expect(screen.getByText("已生成 slide 文档：我的妈妈.pptx。")).toBeTruthy();
+			expect(screen.queryByText("正在创建")).toBeNull();
+			expect(document.querySelector(".inno-trace-payload")).toBeNull();
+			fireEvent.click(screen.getByRole("button", { name: "原始数据" }));
+			expect(screen.getByRole("tabpanel").textContent).toContain('"slides"');
+			const argsTab = screen.getByRole("tab", { name: "参数" });
+			fireEvent.keyDown(argsTab, { key: "End" });
+			expect(screen.getByRole("tab", { name: "结果" }).getAttribute("aria-selected")).toBe("true");
+			expect(screen.getByRole("tabpanel").textContent).toContain('"details"');
+			expect(document.querySelectorAll(".inno-trace-payload")).toHaveLength(1);
+			fireEvent.click(screen.getByRole("button", { name: "原始数据" }));
+			expect(screen.queryByRole("tabpanel")).toBeNull();
+		} finally {
+			document.documentElement.removeAttribute("data-theme");
+		}
+	});
+
+	it("copies the selected payload and reports clipboard failures", async () => {
+		const writeText = vi.fn().mockResolvedValue(undefined);
+		vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+		render(<AgentTraceTimeline steps={[officeTool]} />);
+		fireEvent.click(screen.getByRole("button", { name: /展开创建文档/ }));
+		fireEvent.click(screen.getByRole("button", { name: "原始数据" }));
+		fireEvent.click(screen.getByRole("tab", { name: "结果" }));
+		fireEvent.click(screen.getByRole("button", { name: "复制原始数据" }));
+		await waitFor(() => expect(screen.getByRole("status").textContent).toBe("已复制"));
+		expect(writeText).toHaveBeenCalledWith(JSON.stringify(officeTool.result, null, 2));
+		writeText.mockRejectedValueOnce(new Error("permission denied"));
+		fireEvent.click(screen.getByRole("button", { name: "复制原始数据" }));
+		await waitFor(() => expect(screen.getByRole("status").textContent).toContain("复制失败"));
+	});
+
+	it("keeps structured results and question data accessible for unknown tools", () => {
+		render(<AgentTraceTimeline steps={[{ ...officeTool, toolName: "custom_tool", result: { records: [1, 2] }, questionParams: { questions: [{ header: "方向", question: "选择方向", options: [] }] } }]} />);
+		fireEvent.click(screen.getByRole("button", { name: /展开custom_tool/ }));
+		expect(screen.getByText("返回了结构化数据，可查看原始数据")).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: "原始数据" }));
+		fireEvent.click(screen.getByRole("tab", { name: "结果" }));
+		expect(screen.getByRole("tabpanel").textContent).toContain('"records"');
+		fireEvent.click(screen.getByRole("tab", { name: "提问" }));
+		expect(screen.getByRole("tabpanel").textContent).toContain("选择方向");
+	});
+
+	it("shows error text immediately and replaces partial output when the final result arrives", () => {
+		const view = render(<AgentTraceTimeline steps={[{ ...officeTool, status: "running", result: undefined }]} />);
+		fireEvent.click(screen.getByRole("button", { name: /展开执行中/ }));
+		expect(screen.getByText("正在创建")).toBeTruthy();
+		view.rerender(<AgentTraceTimeline steps={[{ ...officeTool, status: "error", result: "文档保存失败" }]} />);
+		expect(screen.getByText("文档保存失败")).toBeTruthy();
+		expect(screen.getByText("错误")).toBeTruthy();
+		expect(screen.queryByText("正在创建")).toBeNull();
+		expect(document.querySelector(".inno-trace-tool-details.has-error")).not.toBeNull();
+		expect(document.querySelector(".inno-trace-row.is-error")).not.toBeNull();
+		expect(document.querySelector(".inno-trace-payload")).toBeNull();
+	});
+
+	it("offers full text only when content overflows and keeps short durations readable", () => {
+		vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(600);
+		vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(190);
+		render(<AgentTraceTimeline steps={[{ ...officeTool, result: "长结果\n".repeat(20) }, { ...thinking, durationMs: 100 }]} />);
+		expect(screen.getByRole("button", { name: /展开思考完成/ }).textContent).toContain("<1 秒");
+		fireEvent.click(screen.getByRole("button", { name: /展开创建文档/ }));
+		fireEvent.click(screen.getByRole("button", { name: "展开全文" }));
+		expect(document.querySelector(".inno-trace-readable.is-expanded")).not.toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "收起全文" }));
+		expect(document.querySelector(".inno-trace-readable.is-clipped")).not.toBeNull();
+	});
+
+	it("does not hide structured error diagnostics behind raw data", () => {
+		render(<AgentTraceTimeline steps={[{ ...officeTool, status: "error", result: { error: "permission denied" } }]} />);
+		fireEvent.click(screen.getByRole("button", { name: /展开失败/ }));
+		expect(screen.getByText(/permission denied/)).toBeTruthy();
+		expect(screen.queryByRole("tabpanel")).toBeNull();
+	});
+
+	it.each(["light", "dark"])("hides the settled card in %s theme without hiding the answer or real errors", (theme) => {
+		const previousTheme = document.documentElement.getAttribute("data-theme");
+		document.documentElement.setAttribute("data-theme", theme);
+		try {
+			render(<AgentTraceTimeline showText steps={[
+				{ id: "answer", kind: "answer", status: "completed", title: "回复", text: "文档已完成" },
+				{ id: "settled", kind: "system", status: "completed", title: "settled", eventType: "agent_settled", eventDetail: { aborted: false } },
+				{ id: "failure", kind: "error", status: "error", title: "请求失败", text: "provider timeout" },
+			]} />);
+			expect(screen.queryByText("settled")).toBeNull();
+			expect(screen.queryByRole("button", { name: /settled/ })).toBeNull();
+			expect(screen.getByText("文档已完成")).toBeTruthy();
+			expect(screen.getByRole("button", { name: /请求失败/ })).toBeTruthy();
+		} finally {
+			if (previousTheme === null) document.documentElement.removeAttribute("data-theme");
+			else document.documentElement.setAttribute("data-theme", previousTheme);
+		}
+	});
+
 	it("renders a collapsed one-line row and expands the full payload inline", () => {
 		render(<AgentTraceTimeline steps={[thinking]} />);
 

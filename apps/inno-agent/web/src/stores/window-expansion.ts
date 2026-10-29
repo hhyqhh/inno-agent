@@ -1,8 +1,8 @@
 import { appStore, type WorkspaceMode } from "./app-store.js";
 import {
 	CHAT_BASELINE_WIDTH,
-	SIDEBAR_WIDTH,
 	getEffectiveWorkspaceWidth,
+	getSidebarLayoutWidth,
 } from "./app-layout.js";
 
 export type WindowExpansionSide = "left" | "right";
@@ -30,14 +30,14 @@ function waitForViewportWidth(minWidth: number): Promise<boolean> {
 	});
 }
 
-async function expandRightPanelWindow(requiredWidth: number, additionalWidth: number): Promise<boolean> {
+async function expandRightPanelWindow(requiredWidth: number, additionalWidth: number, preserveRightEdge: boolean): Promise<boolean> {
 	if (typeof window === "undefined") return false;
 	const expandWindowWidth = window.innoDesktop?.expandWindowWidth;
 	if (!expandWindowWidth) return false;
 
 	const getWindowWidthCapacity = window.innoDesktop?.getWindowWidthCapacity;
 	if (!getWindowWidthCapacity) {
-		const expanded = await expandWindowWidth("right", additionalWidth);
+		const expanded = await expandWindowWidth(preserveRightEdge ? "left" : "right", additionalWidth);
 		return expanded && await waitForViewportWidth(requiredWidth);
 	}
 
@@ -47,10 +47,13 @@ async function expandRightPanelWindow(requiredWidth: number, additionalWidth: nu
 	]);
 	let remainingWidth = additionalWidth;
 
-	// Keep the existing right edge stable whenever possible. If the window is
-	// already at the display's right edge, consume the left-side capacity next
-	// so the right workspace can still grow by moving the window left.
-	for (const [expansionSide, capacity] of [["right", rightCapacity], ["left", leftCapacity]] as const) {
+	// Opening a panel can use either side. A splitter release must keep the
+	// right edge fixed: growing right by the same amount as the panel cancelled
+	// the splitter's leftward move and left the body at its old screen position.
+	const expansions: ReadonlyArray<readonly [WindowExpansionSide, number]> = preserveRightEdge
+		? [["left", leftCapacity]]
+		: [["right", rightCapacity], ["left", leftCapacity]];
+	for (const [expansionSide, capacity] of expansions) {
 		if (remainingWidth <= 0) break;
 		const expansionWidth = Math.min(remainingWidth, Math.max(0, Math.round(capacity)));
 		if (expansionWidth <= 0) continue;
@@ -77,12 +80,17 @@ export async function ensureWindowForPanel(
 	side: WindowExpansionSide,
 	requestedWorkspaceWidth?: number,
 	requestedWorkspaceMode?: WorkspaceMode,
+	options: { preserveRightEdge?: boolean } = {},
 ): Promise<PanelSpaceResult> {
 	const currentSidebarCollapsed = appStore.sidebarCollapsed;
 	const currentWorkspaceMode = appStore.workspaceMode;
 	const workspaceWidth = requestedWorkspaceWidth ?? appStore.workspaceWidth;
 	const workspaceMode = requestedWorkspaceMode ?? currentWorkspaceMode;
-	const leftWidth = currentSidebarCollapsed && side !== "left" ? 0 : SIDEBAR_WIDTH;
+	const leftWidth = getSidebarLayoutWidth(
+		currentSidebarCollapsed && side !== "left",
+		Boolean(typeof window !== "undefined" && window.innoDesktop),
+		appStore.sidebarWidth,
+	);
 	const rightWidth = currentWorkspaceMode === "collapsed" && side !== "right"
 		? 0
 		: getEffectiveWorkspaceWidth(workspaceWidth, workspaceMode === "collapsed" ? "half" : workspaceMode);
@@ -96,7 +104,7 @@ export async function ensureWindowForPanel(
 	pendingExpansion = side;
 	try {
 		const expanded = side === "right"
-			? await expandRightPanelWindow(requiredWidth, additionalWidth)
+			? await expandRightPanelWindow(requiredWidth, additionalWidth, options.preserveRightEdge === true)
 			: typeof window !== "undefined" && window.innoDesktop?.expandWindowWidth
 				? await window.innoDesktop.expandWindowWidth(side, additionalWidth)
 					&& await waitForViewportWidth(requiredWidth)

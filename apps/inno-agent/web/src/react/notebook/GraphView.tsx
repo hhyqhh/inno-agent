@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Scan, Shuffle, RefreshCw, Network, Tag } from "lucide-react";
+import { Scan, Focus, Shuffle, RefreshCw, Network, Tag } from "lucide-react";
 import { Spinner } from "../ui/Spinner.js";
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
 import { ForceSimulation, type SimLink, type SimNode } from "./force-simulation.js";
+import { focusDefaultGraph } from "./graph-viewport.js";
 import type { WikiGraphEdge, WikiGraphNode } from "../../types/wiki.js";
 import { notebookStore } from "../../stores/notebook-store.js";
 import { useStoreSnapshot } from "../hooks.js";
+import { Button, SegmentedControl } from "../ui/index.js";
 
 type NodeCategory = "source" | "entity" | "concept" | "comparison" | "synthesis" | "analysis" | "tag";
 type GraphColorMode = "type" | "community";
@@ -98,7 +100,12 @@ function cyStyle(theme: GraphTheme): cytoscape.StylesheetJson {
 				"background-color": "data(color)",
 				label: "data(label)",
 				color: theme.labelColor,
-				"font-size": 10,
+				"font-size": 12,
+				// At overview scale, suppress unreadable text rather than rendering
+				// a cloud of tiny labels. Hover/selection still reveals the title.
+				"min-zoomed-font-size": 10,
+				"text-wrap": "ellipsis",
+				"text-max-width": "144px",
 				"text-margin-y": 5,
 				"text-valign": "bottom",
 				"text-halign": "center",
@@ -120,6 +127,9 @@ function cyStyle(theme: GraphTheme): cytoscape.StylesheetJson {
 				"border-color": theme.accent,
 				"border-width": 3,
 				label: "data(fullLabel)",
+				"min-zoomed-font-size": 0,
+				"text-wrap": "wrap",
+				"text-max-width": "240px",
 			},
 		},
 		{
@@ -131,7 +141,15 @@ function cyStyle(theme: GraphTheme): cytoscape.StylesheetJson {
 			style: {
 				"border-color": theme.hl,
 				"border-width": 3,
+			},
+		},
+		{
+			selector: "node.focus",
+			style: {
 				label: "data(fullLabel)",
+				"min-zoomed-font-size": 0,
+				"text-wrap": "wrap",
+				"text-max-width": "240px",
 			},
 		},
 		{
@@ -205,7 +223,16 @@ function buildElements(nodes: WikiGraphNode[], edges: WikiGraphEdge[]): ElementD
 		.filter((node) => node.type !== "tag")
 		.map((node) => degree.get(node.id) ?? node.degree ?? 0)
 		.sort((a, b) => a - b);
-	const labelThreshold = Math.max(3, pageDegrees[Math.floor(pageDegrees.length * 0.6)] ?? 3);
+	const labelThreshold = Math.max(3, pageDegrees[Math.floor(pageDegrees.length * 0.8)] ?? 3);
+	const communityHubs = new Map<number, WikiGraphNode>();
+	for (const node of nodes) {
+		if (node.type === "tag") continue;
+		const community = node.community ?? 0;
+		const hub = communityHubs.get(community);
+		if (!hub || (degree.get(node.id) ?? node.degree ?? 0) > (degree.get(hub.id) ?? hub.degree ?? 0)) {
+			communityHubs.set(community, node);
+		}
+	}
 	const maxWeight = Math.max(...uniqueEdges.filter((edge) => edge.type === "link").map((edge) => edge.weight ?? 1), 1);
 	const nodeIds = new Set(nodes.map((n) => n.id));
 	const nodeCommunities = new Map(nodes.map((node) => [node.id, node.community ?? 0]));
@@ -213,7 +240,10 @@ function buildElements(nodes: WikiGraphNode[], edges: WikiGraphEdge[]): ElementD
 	const els: ElementDefinition[] = nodes.map((n) => {
 		const nodeDegree = degree.get(n.id) ?? n.degree ?? 0;
 		const fullLabel = n.title || n.id;
-		const showLabel = graphCategory(n.type) === "source" || n.type === "analysis" || nodeDegree >= labelThreshold;
+		// Labelling every source clutters the readable default scale. Keep hubs
+		// and analysis titles, and reveal other names only on hover/selection.
+		const showLabel = n.type === "analysis" || nodeDegree >= labelThreshold
+			|| communityHubs.get(n.community ?? 0)?.id === n.id;
 		const seed = seedPositions.get(n.id) ?? { x: 0, y: 0 };
 		return {
 			data: {
@@ -356,6 +386,9 @@ export function GraphView() {
 	if (!simRef.current) simRef.current = new ForceSimulation();
 	const simNodesRef = useRef<cytoscape.NodeSingular[]>([]);
 	const rafRef = useRef<number | null>(null);
+	const pendingDefaultViewRef = useRef(false);
+	const selectedNodeIdRef = useRef(state.selectedNodeId);
+	selectedNodeIdRef.current = state.selectedNodeId;
 
 	const [visibleCategories, setVisibleCategories] = useState<Set<NodeCategory>>(
 		() => new Set(DEFAULT_VISIBLE),
@@ -379,7 +412,8 @@ export function GraphView() {
 		const cy = cytoscape({
 			container: containerRef.current,
 			elements,
-			minZoom: 0.2,
+			layout: { name: "preset", fit: false },
+			minZoom: 0.05,
 			maxZoom: 2.5,
 			style: cyStyle(readGraphTheme()),
 		});
@@ -398,14 +432,20 @@ export function GraphView() {
 		// gesture (used below for tag nodes, which stay in graph view).
 		const coarsePointer = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
 		const highlightNeighborhood = (node: cytoscape.NodeSingular) => {
+			cy.elements().removeClass("hl").removeClass("focus");
 			cy.elements(":visible").addClass("dim");
-			node.removeClass("dim").addClass("hl");
+			node.removeClass("dim").addClass("hl").addClass("focus");
 			const neighborhood = node.openNeighborhood().filter(":visible");
 			neighborhood.removeClass("dim").addClass("hl");
 		};
 		const clearHighlight = () => {
-			cy.elements().removeClass("dim").removeClass("hl");
+			cy.elements().removeClass("dim").removeClass("hl").removeClass("focus");
 		};
+		// Only renderer gestures cancel the pending camera update. Listening to
+		// generic pan/zoom would also cancel our own programmatic viewport changes.
+		cy.on("dragpan scrollzoom pinchzoom tapstart grab", () => {
+			pendingDefaultViewRef.current = false;
+		});
 
 		cy.on("tap", "node", (evt) => {
 			const id = evt.target.id() as string;
@@ -441,6 +481,13 @@ export function GraphView() {
 			if (rafRef.current !== null) return;
 			const frame = () => {
 				if (!cyRef.current || !sim.running) {
+					// Seed communities are widely spaced, then the force layout
+					// contracts them. Fit the settled subject once, unless the user
+					// has already taken control of the camera.
+					if (cyRef.current && pendingDefaultViewRef.current) {
+						pendingDefaultViewRef.current = false;
+						focusDefaultGraph(cy, selectedNodeIdRef.current);
+					}
 					rafRef.current = null;
 					return;
 				}
@@ -499,6 +546,7 @@ export function GraphView() {
 				rafRef.current = null;
 			}
 			sim.stop();
+			pendingDefaultViewRef.current = false;
 			simNodesRef.current = [];
 			cy.destroy();
 			cyRef.current = null;
@@ -534,7 +582,8 @@ export function GraphView() {
 			}
 		});
 		simNodesRef.current = syncSimulation(cy, sim, colorMode);
-		cy.fit(cy.elements(":visible"), 32);
+		focusDefaultGraph(cy, selectedNodeIdRef.current);
+		pendingDefaultViewRef.current = true;
 		sim.reheat(colorMode === "community" ? 0.35 : 0.6);
 		(cy.scratch("innoStartTicking") as (() => void) | undefined)?.();
 	}, [colorMode, elements, visibleCategories]);
@@ -548,7 +597,11 @@ export function GraphView() {
 			const ele = cy.getElementById(state.selectedNodeId);
 			if (ele.nonempty()) {
 				ele.select();
-				cy.animate({ center: { eles: ele }, duration: 250 });
+				if (pendingDefaultViewRef.current) {
+					focusDefaultGraph(cy, state.selectedNodeId);
+				} else {
+					cy.animate({ center: { eles: ele }, duration: 250 });
+				}
 			}
 		}
 	}, [state.selectedNodeId]);
@@ -557,7 +610,7 @@ export function GraphView() {
 	useEffect(() => {
 		const cy = cyRef.current;
 		if (!cy) return;
-		cy.elements().removeClass("dim").removeClass("hl");
+		cy.elements().removeClass("dim").removeClass("hl").removeClass("focus");
 		if (!state.searchQuery || state.highlight.size === 0) return;
 		cy.nodes(":visible").forEach((n) => {
 			if (state.highlight.has(n.id())) {
@@ -570,7 +623,15 @@ export function GraphView() {
 	}, [state.searchQuery, state.highlight]);
 
 	function fit() {
-		cyRef.current?.fit(undefined, 32);
+		pendingDefaultViewRef.current = false;
+		cyRef.current?.fit(cyRef.current.elements(":visible"), 32);
+	}
+
+	function resetView() {
+		const cy = cyRef.current;
+		if (!cy) return;
+		focusDefaultGraph(cy, state.selectedNodeId);
+		pendingDefaultViewRef.current = Boolean(simRef.current?.running);
 	}
 
 	function reLayout() {
@@ -585,7 +646,8 @@ export function GraphView() {
 			});
 		}
 		simNodesRef.current = syncSimulation(cy, sim, colorMode);
-		cy.fit(cy.elements(":visible"), 32);
+		focusDefaultGraph(cy, state.selectedNodeId);
+		pendingDefaultViewRef.current = true;
 		sim.reheat(0.8);
 		(cy.scratch("innoStartTicking") as (() => void) | undefined)?.();
 	}
@@ -616,64 +678,55 @@ export function GraphView() {
 	return (
 		<div className="relative flex h-full min-h-0 flex-col overflow-hidden">
 			<div className="@container flex w-full min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap border-b border-[var(--inno-border)] bg-[var(--inno-surface)] px-3 py-2 text-xs text-[var(--inno-text-muted)]">
-				<button className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={fit} title={t("notebook.graph.fit")}>
+				<Button variant="secondary" size="xs" className="shrink-0" aria-label={t("notebook.graph.resetView")} onClick={resetView} title={t("notebook.graph.resetView")}>
+					<Focus size={14} />
+					<span className="hidden @[1050px]:inline">{t("notebook.graph.resetView")}</span>
+				</Button>
+				<Button variant="secondary" size="xs" className="shrink-0" aria-label={t("notebook.graph.fit")} onClick={fit} title={t("notebook.graph.fit")}>
 					<Scan size={14} />
 					<span className="hidden @[1050px]:inline">{t("notebook.graph.fit")}</span>
-				</button>
-				<button className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={reLayout} title={t("notebook.graph.relayout")}>
+				</Button>
+				<Button variant="secondary" size="xs" className="shrink-0" aria-label={t("notebook.graph.relayout")} onClick={reLayout} title={t("notebook.graph.relayout")}>
 					<Shuffle size={14} />
 					<span className="hidden @[1050px]:inline">{t("notebook.graph.relayout")}</span>
-				</button>
-				<button className="inline-flex items-center gap-1 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2 py-1 hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]" onClick={() => void notebookStore.loadGraph()} title={t("notebook.graph.refresh")}>
+				</Button>
+				<Button variant="secondary" size="xs" className="shrink-0" aria-label={t("notebook.graph.refresh")} onClick={() => void notebookStore.loadGraph()} title={t("notebook.graph.refresh")}>
 					<RefreshCw size={14} />
 					<span className="hidden @[1050px]:inline">{t("notebook.graph.refresh")}</span>
-				</button>
+				</Button>
 				<div className="mx-1 h-4 w-px bg-[var(--inno-surface-muted)]" />
-				<div className="inline-flex rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] p-0.5">
-					<button
-						type="button"
-						onClick={() => setColorMode("type")}
-						className={`inline-flex items-center gap-1 rounded px-2 py-0.5 ${colorMode === "type" ? "bg-[var(--inno-surface)] text-[var(--inno-text)] shadow-sm" : "text-[var(--inno-text-subtle)]"}`}
-						title={t("notebook.graph.colorType")}
-						aria-pressed={colorMode === "type"}
-					>
-						<Tag size={13} />
-						<span className="hidden @[900px]:inline">{t("notebook.graph.colorType")}</span>
-					</button>
-					<button
-						type="button"
-						onClick={() => setColorMode("community")}
-						className={`inline-flex items-center gap-1 rounded px-2 py-0.5 ${colorMode === "community" ? "bg-[var(--inno-surface)] text-[var(--inno-text)] shadow-sm" : "text-[var(--inno-text-subtle)]"}`}
-						title={t("notebook.graph.colorCommunity")}
-						aria-pressed={colorMode === "community"}
-					>
-						<Network size={13} />
-						<span className="hidden @[900px]:inline">{t("notebook.graph.colorCommunity")}</span>
-					</button>
-				</div>
+				<SegmentedControl
+					value={colorMode}
+					onValueChange={setColorMode}
+					ariaLabel={t("notebook.graph.colorMode")}
+					items={[
+						{ value: "type", ariaLabel: t("notebook.graph.colorType"), title: t("notebook.graph.colorType"), label: <><Tag size={13} /><span className="hidden @[900px]:inline">{t("notebook.graph.colorType")}</span></> },
+						{ value: "community", ariaLabel: t("notebook.graph.colorCommunity"), title: t("notebook.graph.colorCommunity"), label: <><Network size={13} /><span className="hidden @[900px]:inline">{t("notebook.graph.colorCommunity")}</span></> },
+					]}
+				/>
 				<div className="mx-1 h-4 w-px bg-[var(--inno-surface-muted)]" />
 				<span className="text-[var(--inno-text-subtle)]">{t("notebook.graph.show")}</span>
 				{ALL_CATEGORIES.map((cat) => {
 					const active = visibleCategories.has(cat);
 					const color = TYPE_COLORS[cat];
 					return (
-						<button
+						<Button
 							key={cat}
-							type="button"
+							variant={active ? "primary" : "secondary"}
+							size="xs"
+							shape="pill"
+							aria-pressed={active}
 							onClick={() => toggleCategory(cat)}
-							className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${
-								active
-									? "border-[var(--inno-border-strong)] bg-[var(--inno-surface)] text-[var(--inno-text)] hover:bg-[var(--inno-surface-muted)]"
-									: "border-[var(--inno-border)] bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)] line-through hover:bg-[var(--inno-surface-muted)]"
-							}`}
+							className="inno-filter-button inno-graph-category-filter shrink-0"
 							title={t(`notebook.types.${cat}`)}
 						>
 							<span
+								aria-hidden="true"
 								className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
 								style={{ backgroundColor: color, opacity: active ? 1 : 0.4 }}
 							/>
-							<span className="hidden @[1050px]:inline">{t(`notebook.types.${cat}`)}</span>
-						</button>
+							<span className={`hidden @[1050px]:inline ${active ? "" : "line-through"}`}>{t(`notebook.types.${cat}`)}</span>
+						</Button>
 					);
 				})}
 				<div className="ml-auto hidden shrink-0 text-right @[900px]:block">
@@ -707,12 +760,14 @@ export function GraphView() {
 							</span>
 						) : null}
 						{displayNode.type !== "tag" ? (
-							<button
-								className="ml-auto shrink-0 rounded-md inno-primary-button px-2 py-0.5 text-xs text-white"
+							<Button
+								variant="primary"
+								size="xs"
+								className="ml-auto shrink-0"
 								onClick={() => void notebookStore.selectPage(displayNode.id)}
 							>
 								{t("notebook.inspector.openPage")}
-							</button>
+							</Button>
 						) : null}
 					</div>
 				) : null}

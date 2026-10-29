@@ -1,5 +1,6 @@
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
 import { logger } from "../logger.js";
 
 /**
@@ -85,14 +86,14 @@ export function appendJsonl<T>(filePath: string, record: T, options?: { maxBytes
 	appendFileSync(filePath, JSON.stringify(record) + "\n", "utf-8");
 }
 
-function parseJsonlLines<T>(raw: string, filePath: string): T[] {
+function parseJsonlLines<T>(raw: string): T[] {
 	const records: T[] = [];
 	for (const line of raw.split("\n")) {
 		if (!line.trim()) continue;
 		try {
 			records.push(JSON.parse(line) as T);
 		} catch (err) {
-			logger.warn({ err }, `skipping malformed JSONL line in ${filePath}`);
+			logger.warn("skipping malformed JSONL line");
 		}
 	}
 	return records;
@@ -105,7 +106,7 @@ export function readJsonl<T>(filePath: string): T[] {
 	if (!existsSync(filePath)) {
 		return [];
 	}
-	return parseJsonlLines(readFileSync(filePath, "utf-8"), filePath);
+	return parseJsonlLines(readFileSync(filePath, "utf-8"));
 }
 
 /**
@@ -119,7 +120,7 @@ export function readJsonlTail<T>(filePath: string, maxBytes: number): T[] {
 	}
 	const size = statSync(filePath).size;
 	if (size <= maxBytes) {
-		return parseJsonlLines(readFileSync(filePath, "utf-8"), filePath);
+		return parseJsonlLines(readFileSync(filePath, "utf-8"));
 	}
 	const start = size - maxBytes;
 	const fd = openSync(filePath, "r");
@@ -133,7 +134,7 @@ export function readJsonlTail<T>(filePath: string, maxBytes: number): T[] {
 	}
 	const lines = raw.split("\n");
 	lines.shift(); // drop the possibly-partial first line of the window
-	return parseJsonlLines(lines.join("\n"), filePath);
+	return parseJsonlLines(lines.join("\n"));
 }
 
 /**
@@ -152,6 +153,31 @@ export function writeText(filePath: string, content: string): void {
 export function readText(filePath: string, defaultValue: string = ""): string {
 	if (!existsSync(filePath)) return defaultValue;
 	return readFileSync(filePath, "utf-8");
+}
+
+/** Request paths must not block the event loop while reading persisted data. */
+export async function readTextAsync(filePath: string, defaultValue = ""): Promise<string> {
+	try {
+		return await readFile(filePath, "utf-8");
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === "ENOENT") return defaultValue;
+		throw err;
+	}
+}
+
+export async function readJsonAsync<T>(filePath: string, defaultValue: T): Promise<T> {
+	const raw = await readTextAsync(filePath);
+	if (!raw) return defaultValue;
+	try {
+		return JSON.parse(raw) as T;
+	} catch {
+		logger.warn("failed to parse JSON file");
+		return defaultValue;
+	}
+}
+
+export async function readJsonlAsync<T>(filePath: string): Promise<T[]> {
+	return parseJsonlLines(await readTextAsync(filePath));
 }
 
 /**

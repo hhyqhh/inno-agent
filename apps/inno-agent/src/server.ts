@@ -1,3 +1,5 @@
+import { warmWordPreviews, stopWordPreviews, closeWordPreviews } from "./office/word-preview.js";
+import { killSharedUnoSidecar } from "./office/uno-sidecar.js";
 // Register source-map-support so that compiled JS stack traces and
 // pino-caller call sites map back to the original TS source locations.
 import "source-map-support/register.js";
@@ -20,6 +22,9 @@ import {
 	getSession,
 	getActivePromptToken,
 	initSession,
+	syncConfig,
+	refreshConfiguredProviders,
+	switchModel,
 	isQueueTaskCancelled,
 	reloadResources,
 	setPromptEventObserver,
@@ -40,7 +45,7 @@ import { seedManagedMcpConfig } from "./mcp/mcp-config-store.js";
 import { CronScheduler } from "./scheduler/cron-scheduler.js";
 import { HttpError, json } from "./server/http-helpers.js";
 import { serveStatic } from "./server/static-serve.js";
-import { createRouteDispatcher } from "./server/route-dispatch.js";
+import { createRouteDispatcher, requiresAgent } from "./server/route-dispatch.js";
 import {
 	safeJoinReal,
 	slugifySkillName,
@@ -53,6 +58,7 @@ import { handleSettingsRoutes } from "./server/routes/settings.js";
 import { handleSkillsRoutes } from "./server/routes/skills.js";
 import { handleWorkspacesRoutes } from "./server/routes/workspaces.js";
 import { handleSessionsRoutes } from "./server/routes/sessions.js";
+import { handleSearchRoutes } from "./server/routes/search.js";
 import { handleLearnerRoutes } from "./server/routes/learner.js";
 import { handleWikiRoutes } from "./server/routes/wiki.js";
 import { handlePresetsRoutes } from "./server/routes/presets.js";
@@ -60,12 +66,12 @@ import { handlePracticeRoutes } from "./server/routes/practice.js";
 import { handleChatRoutes } from "./server/routes/chat.js";
 import { handleCommandsRoutes } from "./server/routes/commands.js";
 import { handleBtwRoutes } from "./server/routes/btw.js";
+import { parseSessionContent, type ParsedSession } from "./server/session-parser.js";
 import { mergeSessionAgentCommands } from "./server/agent-command-store.js";
 import { recordToolWorkspaceActivity } from "./server/workspace-activity-store.js";
 import { stripUploadedImagesPrefix } from "./server/upload-prefix.js";
 import {
 	mergeChannels,
-	selectActiveSessionEntries,
 	TOPIC_UPGRADE_MESSAGE_THRESHOLD,
 	type SessionChannel,
 	type SessionChannelMetadata,
@@ -104,7 +110,7 @@ installFetchLogger();
 
 const parsed = parseRuntimeArgs(process.argv.slice(2));
 const paths = resolveRuntimePaths(parsed.options);
-applyRuntimeEnvironment(paths);
+await applyRuntimeEnvironment(paths);
 
 // Port is resolved from CLI / env only — config.json is read lazily.
 const port = parsed.options.port
@@ -145,6 +151,7 @@ let dispatcher: PersonalChannelDispatcher | null = null;
 
 let bootstrapped = false;
 let bootstrapPromise: Promise<void> | null = null;
+let agentReadyPromise: Promise<void> | null = null;
 let bridgeToken: string | undefined;
 
 /** Convert a raw PI SDK event to a ChannelStreamEvent for channel streaming replies. */
@@ -288,9 +295,32 @@ async function ensureBootstrapped(): Promise<void> {
 		}
 		migrateReminderChannels();
 
+		// Passive APIs need stores, not extension/MCP session_start hooks. Publish
+		// application readiness before starting the Agent on the next event loop.
+		bootstrapped = true;
+		logger.info("[inno-server] application bootstrap complete");
+		void contentHubCatalog.warm();
+		void ensureAgentReady().catch((err) => {
+			logger.warn({ err }, "[inno-server] background agent initialization failed");
+		});
+	})().catch((err) => {
+		logger.error({ err }, "[inno-server] application bootstrap failed");
+		bootstrapPromise = null;
+		throw err;
+	});
+	return bootstrapPromise;
+}
+
+/** Only runtime operations wait here; failed Agent startup leaves data APIs usable. */
+function ensureAgentReady(): Promise<void> {
+	if (agentReadyPromise) return agentReadyPromise;
+	agentReadyPromise = (async () => {
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		await ensureBootstrapped();
 		// ---- agent session ----
 		logger.info("[inno-server] initializing agent session...");
-		await initSession(config, paths, channelRegistry, {
+		const initialConfig = config;
+		await initSession(initialConfig, paths, channelRegistry, {
 			sandbox: parsed.options.sandbox,
 			extensionDeps: {
 				workspaceRegistry,
@@ -300,7 +330,17 @@ async function ensureBootstrapped(): Promise<void> {
 			},
 		});
 
-		// ---- post-init: dispatcher, channels, cron, WebSocket ----
+		// Settings can change while session_start hooks are still pending.
+		syncConfig(config);
+		if (config !== initialConfig) {
+			await refreshConfiguredProviders(config);
+			const activeModel = getSession().model;
+			if (activeModel?.provider !== config.defaultProvider || activeModel?.id !== config.defaultModel) {
+				await switchModel(config.defaultProvider, config.defaultModel);
+			}
+		}
+
+		// ---- post-init: dispatcher, channels, cron ----
 		const channelsDataDir = join(dataDir, "channels");
 		ensureDir(channelsDataDir);
 		dispatcher = new PersonalChannelDispatcher({
@@ -374,18 +414,12 @@ async function ensureBootstrapped(): Promise<void> {
 		logger.info({ channels: channelRegistry.all().map((c) => c.name).join(", ") || "none" }, "[inno-server] channels");
 		logger.info({ jobCount: jobStore.list().length }, "[inno-server] jobs loaded");
 
-		bootstrapped = true;
-		logger.info("[inno-server] bootstrap complete");
-		// Simple Mode cards and the remote skill library are warmed in the
-		// background. Never make the first meaningful API response wait on GitHub.
-		void contentHubCatalog.warm();
+		logger.info("[inno-server] agent initialization complete");
 	})().catch((err) => {
-		logger.error({ err }, "[inno-server] bootstrap failed");
-		bootstrapPromise = null; // allow retry on next request
+		agentReadyPromise = null; // Retry runtime operations without recreating stores.
 		throw err;
 	});
-
-	return bootstrapPromise;
+	return agentReadyPromise;
 }
 
 // ---------------------------------------------------------------------------
@@ -415,8 +449,8 @@ async function reloadFeishuChannel(): Promise<void> {
 
 	if (dispatcher) {
 		feishuChannel.onMessage((msg) => dispatcher!.handle(feishuChannel!, msg));
+		feishuChannel.start();
 	}
-	feishuChannel.start();
 	logger.info("[feishu] channel hot-reloaded with new credentials");
 
 	// Auto-discover default target if none exists yet (fixes first-time setup
@@ -458,40 +492,6 @@ function sessionFileFromId(sessionDir: string, id: string): string | null {
 	const fileName = basename(id);
 	if (fileName !== id || !fileName.endsWith(".jsonl")) return null;
 	return safeJoinReal(sessionDir, fileName);
-}
-
-function textFromContent(content: unknown): string {
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
-	return content
-		.map((part) => {
-			if (!part || typeof part !== "object") return "";
-			const record = part as Record<string, unknown>;
-			return record.type === "text" && typeof record.text === "string" ? record.text : "";
-		})
-		.filter(Boolean)
-		.join("\n")
-		.trim();
-}
-
-function imagesFromContent(content: unknown): Array<{ previewUrl: string; mimeType: string }> {
-	if (!Array.isArray(content)) return [];
-	const result: Array<{ previewUrl: string; mimeType: string }> = [];
-	for (const part of content) {
-		if (!part || typeof part !== "object") continue;
-		const record = part as Record<string, unknown>;
-		if (
-			record.type === "image" &&
-			typeof record.data === "string" &&
-			typeof record.mimeType === "string"
-		) {
-			result.push({
-				previewUrl: `data:${record.mimeType};base64,${record.data}`,
-				mimeType: record.mimeType,
-			});
-		}
-	}
-	return result;
 }
 
 function parseSkillFrontmatter(content: string): Record<string, string | boolean> {
@@ -920,7 +920,7 @@ function listProjectSkills(): unknown[] {
  * upload UI stuck on "uploading". Fire-and-forget keeps the request snappy.
  */
 function scheduleSkillsReload(): void {
-	void reloadResources().catch((err) => {
+	void ensureAgentReady().then(() => reloadResources()).catch((err) => {
 		logger.warn({ err }, "[inno-server] skills reload failed");
 	});
 }
@@ -939,192 +939,11 @@ function writeSessionTopic(id: string, topic: string, generated = false, extra?:
 	writeJson(sessionTopicMetadataPath(), metadata);
 }
 
-function parseSessionFile(filePath: string): { summary: SessionSummary; messages: SessionMessageSummary[] } | null {
+function parseSessionFile(filePath: string): ParsedSession | null {
 	try {
-		const raw = readFileSync(filePath, "utf-8");
-		const lines = raw.split("\n").filter((line) => line.trim().length > 0);
-		const entries = selectActiveSessionEntries(lines.map((line) => JSON.parse(line) as Record<string, unknown>));
-		const messages: SessionMessageSummary[] = [];
-		const channels = new Set<SessionChannel>();
-		let createdAt = "";
-		let lastMessageAt = "";
-
-		// Aggregator for the in-progress assistant turn. PI splits one assistant
-		// turn into multiple JSONL entries (thinking + toolCalls + toolResults
-		// + final text), so we merge them back into a single bubble.
-		let pendingAssistant: SessionMessageSummary | null = null;
-		const finalizeAssistant = () => {
-			if (pendingAssistant) {
-				messages.push(pendingAssistant);
-				pendingAssistant = null;
-			}
-		};
-		const ensureAssistant = (timestamp: number, entryId?: string): SessionMessageSummary => {
-			if (!pendingAssistant) {
-				pendingAssistant = { role: "assistant", content: "", timestamp, entryId };
-			} else if (entryId) {
-				pendingAssistant.entryId = entryId;
-			}
-			return pendingAssistant;
-		};
-
-		for (const entry of entries) {
-			const timestamp = typeof entry.timestamp === "string" ? entry.timestamp : "";
-			if (!createdAt && timestamp) createdAt = timestamp;
-			// Detect channel ONLY from structured JSON fields written by the system
-			// (message.channel / message.source / message.api / message.model).
-			// We intentionally do NOT substring-match the raw line for natural-language
-			// keywords like "飞书" / "scheduled" — those appear in ordinary user/assistant
-			// text and would falsely tag a web session as a feishu/scheduler session.
-			// Verified on unmodified code: a learner asking "飞书的英文名?" (user text)
-			// or a reply that merely mentions "飞书" (assistant text) both got mislabeled
-			// as channel=feishu even though origin stayed web. The authoritative channel
-			// record lives in channels.json (via recordCurrentSessionChannel); this
-			// detection is only a best-effort hint for legacy sessions that predate it.
-			let entryChannel: SessionChannel | undefined;
-			const msgObj = entry.type === "message" && entry.message && typeof entry.message === "object"
-				? entry.message as Record<string, unknown>
-				: undefined;
-			const channelField = typeof msgObj?.channel === "string" ? (msgObj.channel as string) : "";
-			const sourceField = typeof msgObj?.source === "string" ? (msgObj.source as string) : "";
-			const apiField = typeof msgObj?.api === "string" ? (msgObj.api as string) : "";
-			const modelField = typeof msgObj?.model === "string" ? (msgObj.model as string) : "";
-			if (channelField === "feishu") {
-				channels.add("feishu");
-				entryChannel = "feishu";
-			}
-			if (channelField === "wechat" || channelField === "wecom") {
-				channels.add("wechat");
-				entryChannel = entryChannel ?? "wechat";
-			}
-			if (channelField === "qq") {
-				channels.add("qq");
-				entryChannel = entryChannel ?? "qq";
-			}
-			if (sourceField === "web" || channelField === "web") {
-				channels.add("web");
-				entryChannel = entryChannel ?? "web";
-			}
-			// Scheduler-authored assistant messages carry a synthetic api/model marker.
-			if (apiField === "inno-background" || modelField === "scheduler") {
-				channels.add("scheduler");
-				entryChannel = entryChannel ?? "scheduler";
-			}
-
-			if (!msgObj) continue;
-			if (timestamp) lastMessageAt = timestamp;
-			const message = msgObj;
-			const role = message.role;
-			const ts = timestamp ? Date.parse(timestamp) : Date.now();
-
-			if (role === "user") {
-				finalizeAssistant();
-				const content = textFromContent(message.content);
-				if (!content) continue;
-				const images = imagesFromContent(message.content);
-				const msg: SessionMessageSummary = {
-					role: "user",
-					content,
-					timestamp: ts,
-					channel: entryChannel,
-					entryId: typeof entry.id === "string" ? entry.id : undefined,
-					parentEntryId: typeof entry.parentId === "string" ? entry.parentId : null,
-				};
-				if (images.length > 0) msg.images = images;
-				messages.push(msg);
-				continue;
-			}
-
-			if (role === "assistant") {
-				const pending = ensureAssistant(ts, typeof entry.id === "string" ? entry.id : undefined);
-				if (entryChannel && !pending.channel) pending.channel = entryChannel;
-				const content = message.content;
-				if (Array.isArray(content)) {
-					for (const part of content) {
-						if (!part || typeof part !== "object") continue;
-						const block = part as Record<string, unknown>;
-						if (block.type === "text" && typeof block.text === "string") {
-							pending.content = pending.content
-								? `${pending.content}\n${block.text}`
-								: block.text;
-						} else if (block.type === "thinking" && typeof block.thinking === "string") {
-							pending.thinking = pending.thinking
-								? `${pending.thinking}\n${block.thinking}`
-								: block.thinking;
-						} else if (block.type === "toolCall") {
-							const toolCallId = typeof block.id === "string" ? block.id : "";
-							const toolName = typeof block.name === "string" ? block.name : "tool";
-							const args = block.arguments;
-							pending.tools = pending.tools ?? [];
-							pending.tools.push({
-								toolCallId,
-								toolName,
-								args,
-								contentOffset: pending.content.length,
-							});
-						}
-					}
-				} else if (typeof content === "string" && content) {
-					pending.content = pending.content ? `${pending.content}\n${content}` : content;
-				}
-				pending.timestamp = ts;
-				if (typeof message.stopReason === "string") pending.stopReason = message.stopReason;
-				// If this assistant entry ended the turn (stopReason "stop"), finalize.
-				if (typeof message.stopReason === "string" && message.stopReason !== "toolUse") {
-					finalizeAssistant();
-				}
-				continue;
-			}
-
-			if (role === "toolResult") {
-				const pending = ensureAssistant(ts);
-				const toolCallId = typeof message.toolCallId === "string" ? message.toolCallId : "";
-				const toolName = typeof message.toolName === "string" ? message.toolName : "tool";
-				// PI keeps a tool's structured details alongside its text content. Keep
-				// those details in session history so completed questionnaires can be
-				// rendered with the selected options, and the todo widget can rebuild
-				// its task list, after the session is reopened.
-				const result = (toolName === "ask_user_question" || toolName === "todo") && message.details !== undefined
-					? message.details
-					: textFromContent(message.content) || message.content;
-				const isError = Boolean(message.isError);
-				pending.tools = pending.tools ?? [];
-				const existing = pending.tools.find((t) => t.toolCallId === toolCallId);
-				if (existing) {
-					existing.result = result;
-					existing.isError = isError;
-				} else {
-					pending.tools.push({ toolCallId, toolName, args: undefined, result, isError });
-				}
-				continue;
-			}
-		}
-		finalizeAssistant();
-
-		// Filter out empty assistant entries (no text, no thinking, no tools).
-		const filtered = messages.filter((m) =>
-			m.role === "user" ? !!m.content : (m.content || m.thinking || (m.tools && m.tools.length > 0)),
-		);
-
-		const displayMessages = mergeSessionAgentCommands(dataDir, basename(filePath), filtered);
-		const firstUser = displayMessages.find((message) => message.role === "user");
-		const preview = firstUser?.content.trim() ?? "";
-		const name = preview ? (preview.length > 48 ? `${preview.slice(0, 45)}...` : preview) : basename(filePath);
-		const stat = statSync(filePath);
-		const fallbackTime = stat.mtime.toISOString();
-		return {
-			summary: {
-				id: basename(filePath),
-				name,
-				createdAt: createdAt || fallbackTime,
-				updatedAt: lastMessageAt || createdAt || fallbackTime,
-				messageCount: filtered.length,
-				preview,
-				channels: channels.size > 0 ? Array.from(channels) : [],
-			},
-			messages: displayMessages,
-		};
-	} catch (err) {
+		return parseSessionContent(filePath, readText(filePath), statSync(filePath).mtime.toISOString(),
+			(messages) => mergeSessionAgentCommands(dataDir, basename(filePath), messages));
+	} catch {
 		return null;
 	}
 }
@@ -1284,8 +1103,8 @@ ${excerpt}
  *
  * Two passes, both guarded by `_pendingAutoTopics`:
  * 1. First pass: no topic recorded yet and ≥2 messages (the first exchange).
- *    Persist the user's first-message preview immediately so the UI never
- *    shows a model-generated placeholder or a session-file id.
+ *    Ask the model for a useful title as soon as the first reply is available;
+ *    fall back to the user's first-message preview if generation fails.
  * 2. Upgrade pass: the existing preview is auto-generated (never a manual
  *    rename), hasn't been upgraded yet, and the conversation has grown to
  *    TOPIC_UPGRADE_MESSAGE_THRESHOLD messages — generate a richer summary
@@ -1307,9 +1126,7 @@ function maybeAutoGenerateTopic(sessionId: string): void {
 			const parsed = parseSessionFile(sessionPath);
 			if (!parsed || parsed.messages.length < 2) return;
 			if (existing && parsed.messages.length < TOPIC_UPGRADE_MESSAGE_THRESHOLD) return;
-			const topic = existing
-				? await generateSessionTopic(parsed.summary, parsed.messages)
-				: fallbackTopicFromMessages(parsed.messages, parsed.summary);
+			const topic = await generateSessionTopic(parsed.summary, parsed.messages);
 			writeSessionTopic(sessionId, topic, true, existing ? { upgraded: true } : undefined);
 			logger.info(`[auto-topic] ${sessionId} → ${topic}${existing ? " (upgraded)" : ""}`);
 		} catch (err) {
@@ -1459,6 +1276,11 @@ const { dispatch: dispatchRoutes } = createRouteDispatcher({
 		sessionFileFromId, releaseQueueFromQuestionBlockedTurn, runQueueOpWithTimeout,
 	}),
 
+	// --- Unified local search API ---
+	search: (req, res, method, url) => handleSearchRoutes(req, res, method, url, {
+		dataDir, paths, workspaceRegistry,
+	}),
+
 	// --- Wiki + L2 raw upload API (extracted to server/routes/wiki.ts) ---
 	wiki: (req, res, method, url) => handleWikiRoutes(req, res, method, url, { l2DataDir }),
 
@@ -1547,11 +1369,14 @@ const server = createServer(async (req, response) => {
 		}
 
 		// --- Lazy bootstrap on first API request ---
-		// All /api/* endpoints need the agent session and data stores.
+		// Data APIs only need application stores. Agent hooks must not block
+		// history, file previews, settings, search, or terminal access.
 		// Static files and SPA fallback skip this so no directories are
 		// created until the user actually interacts with the web UI.
 		if (url.startsWith("/api/")) {
 			await ensureBootstrapped();
+			if (requiresAgent(method, url)) await ensureAgentReady();
+			if (res.destroyed) return;
 		}
 
 		if (await dispatchRoutes(req, res, method, url)) return;
@@ -1748,12 +1573,23 @@ installProcessFallbacks({
 const gracefulShutdown = createGracefulShutdownHandler({
 	server,
 	wss,
-	exit: (code) => process.exit(code),
+	// SIGTERM the UNO sidecar (its own handler shuts soffice down) before the
+	// servers close; closeWordPreviews then stops the resident renderer.
+	cleanup: () => killSharedUnoSidecar(),
+	exit: (code) => {
+		// Stop the resident renderer and remove its private profile on normal shutdown.
+		const deadline = setTimeout(() => process.exit(code), 1_000);
+		deadline.unref();
+		void closeWordPreviews().catch(() => undefined).finally(() => process.exit(code));
+	},
 });
+process.once("exit", stopWordPreviews);
 process.on("SIGTERM", gracefulShutdown);
 process.on("SIGINT", gracefulShutdown);
 
 server.listen(port, () => {
+	// Prewarm outside the request path; the HTTP server remains immediately usable.
+	void warmWordPreviews(paths.dataDir).catch(() => logger.debug("Word preview engine not prewarmed"));
 	console.log(`[inno-server] listening on http://localhost:${port}`);
 	console.log(`[inno-server] config: ${paths.configPath}`);
 });

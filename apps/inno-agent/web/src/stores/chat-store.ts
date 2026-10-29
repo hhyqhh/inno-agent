@@ -1,14 +1,18 @@
 import { EventEmitter } from "./event-emitter.js";
 import { streamChat, abortChat, getChatStatus, streamSessionEvents, submitChatQuestion, submitChatPermission, formatQuestionnaireAsPrompt } from "../api/chat.js";
+import { stopJobRun } from "../api/jobs.js";
+import { getSession } from "../api/sessions.js";
 import type { InlineImage } from "../api/chat.js";
 import type { ChatAttachments, ChatMessage, ChatStreamEvent, ChatToolRecord, ChatTraceStep, PendingPermission, PendingQuestion, PermissionDecisionKind, QuestionnaireResult, StreamEventEnvelope, StreamSnapshot, WorkspaceFileChange } from "../types/chat.js";
 import { notebookStore } from "./notebook-store.js";
 import { appStore } from "./app-store.js";
+import { sessionsStore } from "./sessions-store.js";
 import { workspaceStore, type StreamingWorkspacePreview } from "./workspace-store.js";
 import { ensureWindowForPanel } from "./window-expansion.js";
 import { applyChatTraceEvent, finalizeTraceSteps, traceStepsFromEvents, traceTerminalState } from "../utils/chat-trace.js";
 import type { JobRunStreamEvent } from "../types/jobs.js";
 import { skillMessageFromContent } from "../react/chat/skill-message-collapse.js";
+import { isOfficePreviewAsset, officeFileType } from "../utils/office-deliverables.js";
 
 function hasAttachmentFiles(attachments?: ChatAttachments): boolean {
 	return Boolean(attachments && (attachments.bindings.some((binding) => binding.files.length > 0) || attachments.loose.length > 0));
@@ -153,7 +157,6 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 
 	async send(prompt: string, images?: InlineImage[], sessionIdOverride?: string | null, attachments?: ChatAttachments): Promise<void> {
 		if ((!prompt.trim() && !images?.length && !hasAttachmentFiles(attachments)) || this.isSending) return;
-		const { sessionsStore } = await import("./sessions-store.js");
 		const targetSessionId = sessionIdOverride === undefined
 			? sessionsStore.currentSessionId
 			: sessionIdOverride;
@@ -240,7 +243,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		const sessionId = this.jobStreamSessionId;
 		this.jobStreamController?.abort();
 		if (sessionId) {
-			void import("../api/jobs.js").then((module) => module.stopJobRun(sessionId).catch(() => {}));
+			void stopJobRun(sessionId).catch(() => {});
 		}
 	}
 
@@ -646,7 +649,6 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 	}
 
 	private async reloadCanonicalHistory(owner: ActiveStreamOwner, finalMessageCount?: number, finalRevision?: string): Promise<boolean> {
-		const { getSession } = await import("../api/sessions.js");
 		for (let attempt = 0; attempt < RECONNECT_DELAYS_MS.length; attempt++) {
 			try {
 				const session = await getSession(owner.sessionId);
@@ -775,7 +777,7 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.wikiInvalidated = false;
 		this.emit("change", undefined);
 		if (shouldRefreshWiki) void notebookStore.loadAll();
-		void import("./sessions-store.js").then((module) => module.sessionsStore.refreshUntilTopic(owner.sessionId));
+		void sessionsStore.refreshUntilTopic(owner.sessionId);
 	}
 
 	private _handleStreamEvent(event: ChatStreamEvent, owner: ActiveStreamOwner, occurredAt?: string) {
@@ -1030,6 +1032,9 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		const filePath = extractToolFilePath(args) ?? extractToolFilePath(rawArgsText);
 		if (filePath) this.fileToolPaths.set(toolCallId, filePath);
 		const resolvedPath = this.fileToolPaths.get(toolCallId);
+		// Office writes used to steal focus before completion (and render output
+		// opened a second PDF tab). Deliver them as chat cards after the turn.
+		if (resolvedPath && (officeFileType(resolvedPath) || isOfficePreviewAsset(resolvedPath))) return;
 		const content = extractToolContent(args) ?? extractToolContent(rawArgsText);
 		if (!resolvedPath && content === undefined) return;
 		const hasContent = typeof content === "string" && content.length > 0;
@@ -1071,6 +1076,11 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		this.flushPreviewChange();
 		const rawArgsText = this.fileToolArgText.get(toolCallId);
 		const filePath = this.fileToolPaths.get(toolCallId) ?? extractToolFilePath(result) ?? extractToolFilePath(rawArgsText);
+		if (filePath && (officeFileType(filePath) || isOfficePreviewAsset(filePath))) {
+			this.fileToolArgText.delete(toolCallId);
+			this.fileToolPaths.delete(toolCallId);
+			return;
+		}
 		if (!filePath && this.workspacePreviewId !== `tool-${toolCallId}`) return;
 		const previewId = `tool-${toolCallId}`;
 		const isActivePreview = this.workspacePreviewId === previewId;
@@ -1092,8 +1102,10 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 		if (!event.changes.length || (event.toolCallId && this.completedFileToolIds.has(event.toolCallId))) return;
 		const eventPreviewId = event.toolCallId ? `tool-${event.toolCallId}` : null;
 		const previewId = eventPreviewId && this.workspacePreviewId === eventPreviewId ? eventPreviewId : null;
-		const target = pickOpenableWorkspaceChange(event.changes);
-		this.setStreamingActivity("正在刷新文件预览", target?.path ?? "");
+		const quietOfficeChange = event.toolName?.startsWith("office_") === true;
+		const target = quietOfficeChange ? undefined : pickOpenableWorkspaceChange(event.changes.filter((change) =>
+			!officeFileType(change.path) && !isOfficePreviewAsset(change.path)));
+		this.setStreamingActivity(target ? "正在刷新文件预览" : "正在更新文件列表", target?.path ?? "");
 		if (previewId) workspaceStore.finishStreamingPreview(previewId, "done");
 		if (previewId) {
 			this.streamingTarget = "chat";
@@ -1540,10 +1552,20 @@ function pickOpenableWorkspaceChange(changes: WorkspaceFileChange[]): WorkspaceF
 async function openChangedWorkspacePath(filePath?: string, previewId?: string, isCurrent: () => boolean = () => true): Promise<void> {
 	try {
 		if (!isCurrent()) return;
-		await revealWorkspacePreview();
+		const workspaceId = workspaceStore.activeWorkspaceId;
+		// A change without an auto-open target only refreshes the tree. Office
+		// generation must leave both panel layout and current file selection alone.
+		if (filePath) await revealWorkspacePreview();
+		if (!isCurrent() || workspaceStore.activeWorkspaceId !== workspaceId) return;
 		if (previewId) workspaceStore.clearStreamingPreview(previewId);
-		await workspaceStore.loadTree(isCurrent);
-		if (!isCurrent()) return;
+		// A completed turn releases its stream owner before a slow tree request
+		// returns. File data belongs to the workspace, so keep that response valid
+		// and refresh activity directly rather than relying on a mounted start page.
+		await Promise.all([
+			workspaceStore.loadTree(() => workspaceStore.activeWorkspaceId === workspaceId),
+			workspaceStore.loadActivity(),
+		]);
+		if (!isCurrent() || workspaceStore.activeWorkspaceId !== workspaceId) return;
 		if (filePath) await workspaceStore.selectFile(filePath, isCurrent);
 	} catch {
 		if (previewId && isCurrent()) workspaceStore.finishStreamingPreview(previewId, "error");

@@ -72,7 +72,13 @@
 				}
 			],
 			"category": "public.app-category.productivity",
-			"darkModeSupport": true
+			"darkModeSupport": true,
+			"extraResources": [
+				{
+					"from": "vendor/libreoffice/darwin-arm64",
+					"to": "libreoffice"
+				}
+			]
 		},
 		"dmg": {
 			"title": "Inno Agent"
@@ -105,6 +111,12 @@
 					"arch": [
 						"x64"
 					]
+				}
+			],
+			"extraResources": [
+				{
+					"from": "vendor/libreoffice/win32-x64",
+					"to": "libreoffice"
 				}
 			]
 		},

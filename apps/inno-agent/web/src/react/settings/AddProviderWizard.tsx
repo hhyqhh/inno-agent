@@ -1,3 +1,5 @@
+import { ThinkingLevelField } from "./ThinkingLevelField.js";
+import type { InnoThinkingLevel } from "../../types/settings.js";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, Plus, ExternalLink, RefreshCw, Check } from "lucide-react";
@@ -28,6 +30,7 @@ export function ProviderIcon({ providerId, size = 28 }: { providerId: string; si
 }
 
 interface WizardFormState {
+	thinkingLevel?: InnoThinkingLevel;
 	providerId: string;
 	baseUrl: string;
 	apiKey: string;
@@ -106,6 +109,7 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 		setForm({
 			...form,
 			modelId,
+			thinkingLevel: undefined,
 			contextWindow: String(meta.contextWindow),
 			maxTokens: String(meta.maxTokens),
 			reasoning: meta.reasoning,
@@ -170,6 +174,7 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 				id: form.modelId.trim(),
 				name: form.modelId.trim(),
 				reasoning: form.reasoning,
+				thinkingLevel: form.thinkingLevel,
 				input: form.supportsImages ? ["text", "image"] : ["text"],
 				contextWindow: Math.trunc(contextWindow),
 				maxTokens: Math.trunc(maxTokens),
@@ -414,6 +419,7 @@ export function AddProviderWizard({ providers }: { providers: Record<string, Inn
 											<label className="flex items-center gap-1.5"><Checkbox checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
 											<label className="flex items-center gap-1.5"><Checkbox checked={form.bypassProxy} onChange={(e) => setForm({ ...form, bypassProxy: e.target.checked })} /> {t("settings.form.bypassProxy")}</label>
 										</div>
+										<ThinkingLevelField enabled={form.reasoning} value={form.thinkingLevel} onChange={thinkingLevel => setForm({ ...form, thinkingLevel })} />
 									</div>
 								)}
 

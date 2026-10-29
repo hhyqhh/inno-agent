@@ -1,3 +1,5 @@
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+import { parseThinkingLevel } from "./agent/thinking-settings.js";
 import { chmodSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RuntimePaths } from "./runtime.js";
@@ -11,6 +13,8 @@ export interface InnoModelConfig {
 	id: string;
 	name: string;
 	reasoning: boolean;
+	/** Optional manual effort preference; omit to preserve existing defaults. */
+	thinkingLevel?: ModelThinkingLevel;
 	input: InnoModelInput[];
 	contextWindow: number;
 	maxTokens: number;
@@ -363,6 +367,7 @@ export function normalizeModelConfig(model: Partial<InnoModelConfig> & { id: str
 		id,
 		name: (model.name?.trim() || id),
 		reasoning: Boolean(model.reasoning),
+		...(model.thinkingLevel !== undefined ? { thinkingLevel: parseThinkingLevel(model.thinkingLevel) } : {}),
 		input: supportsImages ? ["text", "image"] : ["text"],
 		contextWindow: contextWindow !== undefined && Number.isFinite(contextWindow) && contextWindow > 0 ? Math.trunc(contextWindow) : 128000,
 		maxTokens: maxTokens !== undefined && Number.isFinite(maxTokens) && maxTokens > 0 ? Math.trunc(maxTokens) : 8192,

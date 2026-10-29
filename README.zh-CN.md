@@ -102,6 +102,8 @@ npm run dev:server & npm run web:dev
 
 ## 配置
 
+模型的可选推理强度设置及接口兼容说明见[推理强度配置](docs/reasoning-effort.md)。
+
 `runtime/config/config.json`(模板:[`config.example.json`](./config.example.json)):
 
 ```json

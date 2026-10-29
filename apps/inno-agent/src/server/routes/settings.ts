@@ -1,5 +1,6 @@
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { probeProviderModels } from "../../agent/model-probe.js";
+import { parseThinkingLevel } from "../../agent/thinking-settings.js";
 import {
 	getAvailableModels,
 	getSessionIfInitialized,
@@ -69,6 +70,7 @@ function providerModelToRuntimeModel(model: InnoModelConfig, provider: string, b
 		name: model.name,
 		provider,
 		reasoning: model.reasoning,
+		thinkingLevel: model.thinkingLevel,
 		input: model.input,
 		contextWindow: model.contextWindow,
 		maxTokens: model.maxTokens,
@@ -161,6 +163,7 @@ function parseModelConfig(value: unknown): InnoModelConfig {
 		id,
 		name: typeof record.name === "string" && record.name.trim() ? record.name.trim() : id,
 		reasoning: Boolean(record.reasoning),
+		...(record.thinkingLevel !== undefined ? { thinkingLevel: parseThinkingLevel(record.thinkingLevel) } : {}),
 		input: ("input" in record)
 			? (Array.isArray(record.input) && record.input.includes("image") ? ["text", "image"] : ["text"])
 			: ["text", "image"],
@@ -266,7 +269,11 @@ export async function handleSettingsRoutes(
 
 	if ((method === "PUT" || method === "POST" || method === "PATCH") && url === "/api/settings/providers") {
 		const body = (await readBody(req)) as Record<string, unknown>;
-		const payload = parseProviderPayload(body);
+		let payload: ReturnType<typeof parseProviderPayload>;
+		try { payload = parseProviderPayload(body); } catch (err) {
+			json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+			return true;
+		}
 		save(saveConfig(
 			paths.configPath,
 			upsertProvider(config, payload.providerId, payload.provider, {
@@ -276,10 +283,13 @@ export async function handleSettingsRoutes(
 			}),
 		));
 		applyProviderProxyBypass(config);
-		if (getSessionIfInitialized()) await refreshConfiguredProviders(config);
-		if (payload.makeDefault && getSessionIfInitialized()) {
-			await switchModel(config.defaultProvider, config.defaultModel);
-			save(saveConfig(paths.configPath, setDefaultModel(config, config.defaultProvider, config.defaultModel)));
+		const session = getSessionIfInitialized();
+		if (session) await refreshConfiguredProviders(config);
+		const active = session?.model;
+		const editingActive = active?.provider === payload.providerId && payload.provider.models.some(m => m.id === active.id);
+		if (session && (payload.makeDefault || editingActive)) {
+			await switchModel(payload.makeDefault ? config.defaultProvider : active!.provider, payload.makeDefault ? config.defaultModel : active!.id);
+			if (payload.makeDefault) save(saveConfig(paths.configPath, setDefaultModel(config, config.defaultProvider, config.defaultModel)));
 		}
 		json(res, 200, buildSafeSettings(config));
 		return true;

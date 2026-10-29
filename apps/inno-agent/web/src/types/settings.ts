@@ -1,8 +1,11 @@
+export type InnoThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface InnoModelInfo {
 	id: string;
 	name: string;
 	provider: string;
 	reasoning: boolean;
+	thinkingLevel?: InnoThinkingLevel;
 	input: Array<"text" | "image">;
 	contextWindow: number;
 	maxTokens: number;
@@ -13,6 +16,7 @@ export interface InnoProviderModel {
 	id: string;
 	name: string;
 	reasoning: boolean;
+	thinkingLevel?: InnoThinkingLevel;
 	input: Array<"text" | "image">;
 	contextWindow: number;
 	maxTokens: number;

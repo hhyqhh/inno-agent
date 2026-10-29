@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { InnoConfig } from "../config.js";
 import { logger } from "../logger.js";
+import { manualThinkingLevelMap } from "./thinking-settings.js";
 
 const INNO_MANAGED_MARKER = "__inno_managed";
 
@@ -79,6 +80,7 @@ export function syncProvidersForSubagents(config: InnoConfig): void {
 				id: m.id,
 				name: m.name,
 				reasoning: m.reasoning,
+				thinkingLevelMap: manualThinkingLevelMap(m.thinkingLevel),
 				input: m.input,
 				contextWindow: m.contextWindow,
 				maxTokens: m.maxTokens,

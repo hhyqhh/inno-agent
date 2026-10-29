@@ -5,7 +5,7 @@
  * for a coherent body merge when bodies differ, rejects destructive shrinkage,
  * and locks identity fields to their on-disk values.
  */
-import { complete } from "@earendil-works/pi-ai/compat";
+import { completeWikiLlm as complete } from "./wiki-llm-compat.js";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 

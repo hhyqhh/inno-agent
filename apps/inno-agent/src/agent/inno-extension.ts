@@ -28,6 +28,7 @@ import { permissionBridge, type PermissionAskDetails } from "./permission-bridge
 import { checkWorkspaceMutationPath } from "./workspace-path-guard.js";
 import { INNO_SYSTEM_PROMPT, ONBOARDING_GUIDE, WEB_ACCESS_PROMPT_HINT } from "./system-prompt.js";
 import { syncProvidersForSubagents } from "./provider-sync.js";
+import { manualThinkingLevelMap, setThinkingLevelResolver } from "./thinking-settings.js";
 import { questionBridge } from "./question-bridge.js";
 import { logger } from "../logger.js";
 import type { ChannelRegistry } from "../channels/channel.js";
@@ -237,6 +238,10 @@ export function createInnoExtension(
 	deps?: InnoExtensionDeps,
 ): ExtensionFactory {
 	return async (pi: ExtensionAPI) => {
+		setThinkingLevelResolver(model => {
+			const configured = configHolder.current.providers[model.provider]?.models.find(m => m.id === model.id);
+			return configured?.reasoning ? configured.thinkingLevel : undefined;
+		});
 		// 1. Register configured backend model providers.
 		const config = configHolder.current;
 		for (const [providerId, providerConfig] of Object.entries(config.providers)) {
@@ -250,6 +255,7 @@ export function createInnoExtension(
 					id: m.id,
 					name: m.name,
 					reasoning: m.reasoning,
+					thinkingLevelMap: manualThinkingLevelMap(m.thinkingLevel),
 					input: m.input,
 					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 					contextWindow: m.contextWindow,
@@ -261,7 +267,14 @@ export function createInnoExtension(
 			});
 		}
 
+		pi.on("session_start", async (_event, ctx) => {
+			if (!ctx.model) return;
+			const preference = configHolder.current.providers[ctx.model.provider]?.models.find(m => m.id === ctx.model!.id);
+			if (preference?.reasoning && preference.thinkingLevel !== undefined) pi.setThinkingLevel(preference.thinkingLevel);
+		});
 		pi.on("model_select", async (event) => {
+			const preference = configHolder.current.providers[event.model.provider]?.models.find(m => m.id === event.model.id);
+			if (preference?.reasoning && preference.thinkingLevel !== undefined) pi.setThinkingLevel(preference.thinkingLevel);
 			const cfg = configHolder.current;
 			if (!cfg.providers[event.model.provider]) return;
 			try {

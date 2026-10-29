@@ -1,4 +1,6 @@
-import type { AssistantMessage, Model, ProviderStreamOptions } from "@earendil-works/pi-ai";
+import { complete, completeSimple } from "@earendil-works/pi-ai/compat";
+import { getConfiguredThinkingLevel } from "../../agent/thinking-settings.js";
+import type { AssistantMessage, Context, Model, ProviderStreamOptions } from "@earendil-works/pi-ai";
 
 const ANTHROPIC_CLEAN_EOF_ERROR = "Anthropic stream ended before message_stop";
 
@@ -54,4 +56,12 @@ export function isWikiLlmResponseAccepted(
 	response: Pick<AssistantMessage, "stopReason" | "errorMessage">,
 ): boolean {
 	return response.stopReason !== "error" || response.errorMessage === ANTHROPIC_CLEAN_EOF_ERROR;
+}
+
+/** Preserve the legacy raw completion when unset. A manual choice uses SDK
+ * provider-neutral reasoning conversion, shared by every L2 background path. */
+export function completeWikiLlm(model: Model<any>, context: Context, options: ProviderStreamOptions = {}): Promise<AssistantMessage> {
+	const level = model.reasoning ? getConfiguredThinkingLevel(model) : undefined;
+	if (level === undefined) return complete(model, context, options);
+	return completeSimple(model, context, { ...options, reasoning: level === "off" ? undefined : level });
 }

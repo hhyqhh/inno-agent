@@ -113,6 +113,8 @@ npm run dev:server & npm run web:dev
 
 ## Configuration
 
+Optional per-model reasoning effort is described in [Reasoning effort](docs/reasoning-effort.md).
+
 `runtime/config/config.json` (template: [`config.example.json`](./config.example.json)):
 
 ```json

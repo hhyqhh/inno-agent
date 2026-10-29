@@ -878,3 +878,28 @@ describe("server smoke", () => {
 		}
 	}, 30_000);
 });
+
+it("roundtrips and clears optional per-model effort without changing the original reasoning flag", async () => {
+ const original = JSON.parse(readFileSync(join(home, "config", "config.json"), "utf-8"));
+ const provider = original.providers.dummy;
+ const save = (thinkingLevel: unknown, extra = {}) => fetch(`http://127.0.0.1:${port}/api/settings/providers`, {
+  method: "PUT", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ providerId: "dummy", ...provider, preserveApiKey: true, models: [{ ...provider.models[0], thinkingLevel, ...extra }], makeDefault: false }),
+ });
+ try {
+  const saved = await save("low");
+  expect(saved.status).toBe(200);
+  const settings = await saved.json() as any;
+  expect(settings.configuredModels.find((m: any) => m.id === "dummy-model").thinkingLevel).toBe("low");
+  expect(settings.providers.dummy.models[0].reasoning).toBe(provider.models[0].reasoning);
+  expect(JSON.parse(readFileSync(join(home, "config", "config.json"), "utf-8")).providers.dummy.models[0].thinkingLevel).toBe("low");
+  const invalid = await save("none");
+  expect(invalid.status).toBe(400);
+  const cleared = await save(undefined);
+  expect(cleared.status).toBe(200);
+  const clearedSettings = await cleared.json() as any;
+  expect(clearedSettings.providers.dummy.models[0]).not.toHaveProperty("thinkingLevel");
+ } finally {
+  await save(undefined);
+ }
+});

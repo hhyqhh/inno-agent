@@ -764,6 +764,20 @@
 		"loaded": "Loaded"
 	},
 	"settings": {
+    "thinking": {
+      "level": "Reasoning effort (optional)",
+      "default": "Default (keep existing behavior)",
+      "hint": "Enable “Supports reasoning” to use this setting. The list contains manual choices, not detected model capabilities: supported values depend on the model, provider and API type. Some models do not allow effort control or disabling reasoning. Default keeps the existing chat and background-task behavior; it does not guarantee that reasoning parameters are omitted. An explicit choice also applies to knowledge-base calls. Check provider documentation: unsupported values may return an API error, and higher effort may increase latency and token usage.",
+      "levels": {
+        "off": "Off",
+        "minimal": "Minimal",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "xhigh": "Extra high",
+        "max": "Maximum"
+      }
+    },
 		"title": "Settings",
 		"refresh": "Refresh",
 		"loading": "Loading settings…",

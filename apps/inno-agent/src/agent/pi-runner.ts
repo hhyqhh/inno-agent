@@ -22,6 +22,7 @@ import { basename, join, resolve } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInnoExtension, expandInnoSlashCommand, INNO_SLASH_COMMAND_NAMES, type ConfigHolder, type InnoExtensionDeps } from "./inno-extension.js";
 import { createMcpStatusExtension, loadMcpAdapterExtension } from "./mcp-extension.js";
+import { manualThinkingLevelMap } from "./thinking-settings.js";
 import { createObservabilityExtension, createPromptObserver, obsLogger } from "./observability-extension.js";
 import type { InnoConfig } from "../config.js";
 import { isCodemodeEnabled } from "../config.js";
@@ -402,6 +403,9 @@ export async function initSession(
 	// made pi-mcp-adapter's proxy tool return "MCP not initialized" after the
 	// first "new chat".)
 	const bindSessionExtensions = async (target: AgentSession): Promise<void> => {
+		const model = target.model;
+		const preference = model && configHolder.current.providers[model.provider]?.models.find(m => m.id === model.id);
+		if (preference?.reasoning && preference.thinkingLevel !== undefined) target.setThinkingLevel(preference.thinkingLevel);
 		await target.bindExtensions({
 			commandContextActions: {
 				waitForIdle: () => target.agent.waitForIdle(),
@@ -459,6 +463,7 @@ function modelConfigToProviderModel(model: InnoConfig["providers"][string]["mode
 		id: model.id,
 		name: model.name,
 		reasoning: model.reasoning,
+		thinkingLevelMap: manualThinkingLevelMap(model.thinkingLevel),
 		input: model.input,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: model.contextWindow,
@@ -1053,6 +1058,8 @@ export async function switchModel(provider: string, modelId: string): Promise<vo
 		throw new Error(`Model ${provider}/${modelId} not found`);
 	}
 	await _runtime.session.setModel(model);
+	const preference = _configHolder?.current.providers[provider]?.models.find(m => m.id === modelId);
+	if (preference?.reasoning && preference.thinkingLevel !== undefined) _runtime.session.setThinkingLevel(preference.thinkingLevel);
 	logger.info({ provider, modelId }, "Model switched");
 }
 

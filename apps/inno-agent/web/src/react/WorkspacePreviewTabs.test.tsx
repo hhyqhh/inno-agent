@@ -103,6 +103,27 @@ describe("Workspace preview tab activation", () => {
 		expect(isStartTabKey(workspaceStore.activePreviewPath)).toBe(true);
 		expect(workspaceStore.selectFile).not.toHaveBeenCalled();
 	});
+	it("preserves scroll, focus and file drafts when the tab row enters and leaves a sidebar drag", () => {
+		appStore.workspaceMode = "full";
+		sessionsStore.currentSessionId = "session-a";
+		sessionsStore.sessions = [{ id: "session-a", name: "Conversation", hasTopic: true }] as typeof sessionsStore.sessions;
+		workspaceStore.previewTabs[0].isEditing = true;
+		workspaceStore.previewTabs[0].editBuffer = "unsaved draft";
+		const { rerender } = render(<WorkspacePreviewTabs />);
+		const strip = screen.getByRole("tablist");
+		const plus = screen.getByRole("button", { name: "workspaceStart.open" });
+		strip.scrollLeft = 82;
+		plus.focus();
+		for (const resizing of [true, false, true, false]) {
+			rerender(<WorkspacePreviewTabs resizing={resizing} />);
+			expect(screen.getByRole("tablist")).toBe(strip);
+			expect(strip.scrollLeft).toBe(82);
+			expect(document.activeElement).toBe(plus);
+		}
+		fireEvent.click(plus);
+		expect(workspaceStore.previewTabs.filter(isStartTab)).toHaveLength(1);
+		expect(workspaceStore.previewTabs[0].editBuffer).toBe("unsaved draft");
+	});
 	it("collapses only when closing the final start page", () => {
 		const collapse = vi.spyOn(appStore, "setWorkspaceMode");
 		workspaceStore.openStartPage();

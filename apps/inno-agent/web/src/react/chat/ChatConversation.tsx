@@ -117,7 +117,7 @@ export function ChatConversation({
 	sidebarCollapsed = false,
 }: ChatConversationProps) {
 	const { t } = useTranslation();
-	const transition = useUITransition("modal");
+	const transition = useUITransition("layout");
 	const mode = useStoreSnapshot(appStore, () => appStore.workspaceMode);
 	const titleIsTab = Boolean(desktopHeaderHost) && mode === "full";
 	const [showHistoryLoading, setShowHistoryLoading] = useState(false);

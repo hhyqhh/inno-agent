@@ -1,4 +1,4 @@
-import { Component, lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useDragDropManager } from "react-dnd";
@@ -30,6 +30,7 @@ interface WorkspacePanelProps {
 	showTerminalToggle?: boolean;
 	onModeChange(mode: WorkspaceMode): void;
 	onWidthChange(width: number): void;
+	onResizingChange?(resizing: boolean): void;
 	onPreviewFile(width: number): void | Promise<void>;
 }
 
@@ -155,15 +156,22 @@ function WorkspaceContentFallback() {
 	);
 }
 
-function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPreviewFile, showFileTree = true, merged = false, showTerminalToggle = true }: WorkspacePanelProps) {
+function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onResizingChange, onPreviewFile, showFileTree = true, merged = false, showTerminalToggle = true }: WorkspacePanelProps) {
 	const { t } = useTranslation();
 	const dndManager = useDragDropManager();
 	const [isResizing, setIsResizing] = useState(false);
+	// CSS moves the strip during a splitter gesture, including native expansion
+	// after release. Disable its Motion projection for that whole interval:
+	// hiding transforms in CSS left old projection offsets ready to reappear.
+	useLayoutEffect(() => {
+		onResizingChange?.(isResizing);
+		return () => onResizingChange?.(false);
+	}, [isResizing, onResizingChange]);
 	const [resizeDragWidth, setResizeDragWidth] = useState(width);
 	const panelRef = useRef<HTMLElement | null>(null);
 	const layoutRef = useRef<HTMLElement | null>(null);
 	const resizePreviewRef = useRef<HTMLDivElement | null>(null);
-	const resizeBoundsRef = useRef({ top: 0, right: 0, bottom: 0, widthOffset: 0 });
+	const resizeBoundsRef = useRef({ top: 0, right: 0, bottom: 0, widthOffset: 0, layoutLeft: 0 });
 	const [resizeFullscreenReady, setResizeFullscreenReady] = useState(false);
 	const resizeRequestedWidthRef = useRef<number | null>(null);
 	const resizeStartRef = useRef<WorkspaceResizeStart | null>(null);
@@ -184,16 +192,23 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 		if (!layout) return;
 		const displayWidth = nextDragWidth - resizeBoundsRef.current.widthOffset;
 		const edgeX = window.innerWidth - resizeBoundsRef.current.right - displayWidth;
-		// Read the root before invalidating its layout. Previously this read
-		// separated two geometry writes, forcing an extra layout before the
-		// controls' required post-position measurement below.
-		const layoutLeft = layout.getBoundingClientRect().left;
+		const deferred = resizePreviewWidthRef.current !== null;
+		// The root origin is stable within a gesture (refreshed on window resize).
+		// Only the visible deferred plate needs fresh layout measurements. Keep
+		// that root read before writes to avoid an extra forced layout there too.
+		const layoutLeft = deferred ? layout.getBoundingClientRect().left : resizeBoundsRef.current.layoutLeft;
 		layout.style.setProperty("--inno-workspace-drag-width", `${nextDragWidth}px`);
 		layout.style.setProperty("--inno-workspace-live-width", `${resizeLiveWidthRef.current ?? nextDragWidth}px`);
 		layout.style.setProperty("--inno-workspace-drag-left", `${edgeX - layoutLeft}px`);
-		layout.toggleAttribute("data-workspace-resize-overlay", resizePreviewWidthRef.current !== null);
+		// Enable drag selectors only after every coordinate exists. The same
+		// owner removes the selectors before deleting their variables below.
+		document.body.classList.add("workspace-resizing");
+		layout.toggleAttribute("data-workspace-resize-overlay", deferred);
 		const preview = resizePreviewRef.current;
 		if (preview) preview.style.width = `${displayWidth}px`;
+		// During ordinary live resizing the plate is hidden. Measuring it here
+		// used to force a document layout immediately after every width write.
+		if (!deferred) return;
 		// Measure the controls without changing the tab track's layout. Padding
 		// the track to paint a plate both covered its earlier siblings and let
 		// long tab lists run into the fixed window buttons (the narrow case).
@@ -215,6 +230,10 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	}, []);
 
 	const clearDragGeometry = useCallback(() => {
+		// React batches the end state, so passive-effect cleanup can run later.
+		// Deleting drag-left while .workspace-resizing still matched made left
+		// invalid (auto): the right-anchored tab strip flashed at the far right.
+		document.body.classList.remove("workspace-resizing");
 		const layout = layoutRef.current;
 		if (!layout) return;
 		layout.removeAttribute("data-workspace-resize-overlay");
@@ -357,6 +376,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 			if (event.key === "Escape") finishResize(false);
 		};
 		const handleWindowResize = () => {
+			resizeBoundsRef.current.layoutLeft = layoutRef.current?.getBoundingClientRect().left ?? 0;
 			// Left expansion moves the window origin. Recompute local coordinates
 			// so toolbar, preview and the stationary screen-space right edge agree.
 			if (!resizeStartRef.current && resizePreviewWidthRef.current !== null) {
@@ -370,7 +390,6 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 			}
 		};
 
-		document.body.classList.add("workspace-resizing");
 		window.addEventListener("pointermove", handlePointerMove);
 		window.addEventListener("pointerup", handlePointerUp);
 		window.addEventListener("pointercancel", handlePointerCancel);
@@ -379,7 +398,6 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 		window.addEventListener("resize", handleWindowResize);
 		return () => {
 			cancelPendingMove();
-			document.body.classList.remove("workspace-resizing");
 			// Unmounting mid-drag must not strand the vars on the layout root;
 			// regular endings already cleared them in finishResize.
 			clearDragGeometry();
@@ -410,13 +428,14 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 		const startWidth = clampResizeWidth(liveWidth, mode, Math.max(liveWidth, layoutMaxWidth));
 		resizeMaxWidthRef.current = Math.max(startWidth, layoutMaxWidth);
 		const bounds = panelRef.current?.getBoundingClientRect();
+		layoutRef.current = panelRef.current?.closest<HTMLElement>(".app-layout") ?? null;
 		resizeBoundsRef.current = {
 			top: bounds?.top ?? 0,
 			right: bounds?.width ? window.innerWidth - bounds.right : 0,
 			bottom: bounds?.height ? window.innerHeight - bounds.bottom : 0,
 			widthOffset: bounds?.width ? startWidth - bounds.width : 0,
+			layoutLeft: layoutRef.current?.getBoundingClientRect().left ?? 0,
 		};
-		layoutRef.current = panelRef.current?.closest<HTMLElement>(".app-layout") ?? null;
 		setResizeDragWidth(startWidth);
 		resizeStartRef.current = {
 			pointerId: event.pointerId,
@@ -540,7 +559,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 	}, [dndManager]);
 
 	return (
-		<aside ref={panelRef} id="workspace-preview" aria-hidden={collapsed || conversationActive || undefined} inert={collapsed || conversationActive || undefined} className={`workspace-panel inno-workspace-scope ${merged ? "workspace-panel--merged" : collapsed ? "" : "inno-desktop-panel-surface"} relative flex h-full min-h-0 min-w-0 flex-col ${isResizing ? "workspace-resize-preview-active" : ""} ${collapsed ? "overflow-visible border-l-0 bg-transparent" : "overflow-hidden border-l border-[var(--inno-border)] bg-[var(--inno-workspace-bg)]"}`}>
+		<aside ref={panelRef} id="workspace-preview" data-state={collapsed ? "closed" : "open"} aria-hidden={collapsed || conversationActive || undefined} inert={collapsed || conversationActive || undefined} className={`workspace-panel inno-workspace-scope ${merged ? "workspace-panel--merged" : collapsed ? "" : "inno-desktop-panel-surface"} relative flex h-full min-h-0 min-w-0 flex-col ${isResizing ? "workspace-resize-preview-active" : ""} ${collapsed ? "overflow-visible border-l-0 bg-transparent" : "overflow-hidden border-l border-[var(--inno-border)] bg-[var(--inno-workspace-bg)]"}`}>
 			{resizePreviewPortal}
 			{mode === "half" || mode === "quarter" ? (
 				<Tooltip label={resizeLabel} side="right" align="start" sideOffset={3} contentClassName="workspace-resize-tooltip" open={isResizing ? false : undefined}>
@@ -600,7 +619,7 @@ function WorkspacePanelContent({ mode, width, onModeChange, onWidthChange, onPre
 				id={`${WORKSPACE_PREVIEW_TABS_ID}-panel`}
 				labelledBy={merged && activePreview ? getTabTriggerId(WORKSPACE_PREVIEW_TABS_ID, activePreview) : undefined}
 				aria-label={activePreview ? undefined : t("files.previewTabs")}
-				className={`flex-1 min-h-0 overflow-hidden bg-[var(--inno-workspace-bg)] ${collapsed ? "invisible" : ""}`}
+				className="flex-1 min-h-0 overflow-hidden bg-[var(--inno-workspace-bg)]"
 				style={settledWidth !== null ? { width: settledWidth } : undefined}
 			>
 				{shouldMountContent ? (

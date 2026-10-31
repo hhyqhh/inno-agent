@@ -1,3 +1,4 @@
+import { motion } from "motion/react";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { FileCode2, FileText, Image, LoaderCircle, Plus, Sparkles, FolderOpen, MessageSquare } from "lucide-react";
@@ -8,13 +9,15 @@ import { sessionsStore } from "../stores/sessions-store.js";
 import { chatStore } from "../stores/chat-store.js";
 import { getConversationTitle } from "./chat/conversation-title.js";
 import { useStoreSnapshot } from "./hooks.js";
-import { ContextMenu, IconButton, Tabs, focusWithoutTooltip, getTabTriggerId, type ContextMenuItem } from "./ui/index.js";
+import { ContextMenu, IconButton, Tabs, focusWithoutTooltip, getTabTriggerId, type ContextMenuItem, useUITransition } from "./ui/index.js";
 
 export const WORKSPACE_PREVIEW_TABS_ID = "workspace-previews";
 export const STREAMING_PREVIEW_TAB = "__generated-preview__";
+const MotionIconButton = motion.create(IconButton);
 
-export function WorkspacePreviewTabs() {
+export function WorkspacePreviewTabs({ resizing = false }: { resizing?: boolean }) {
 	const { t } = useTranslation();
+	const transition = useUITransition("layout");
 	const root = useRef<HTMLDivElement>(null);
 	const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; path: string } | null>(null);
 	const state = useStoreSnapshot(workspaceStore, () => ({ tabs: workspaceStore.previewTabs, active: workspaceStore.activePreviewPath, stream: workspaceStore.streamingPreview, surface: workspaceStore.activeSurface }));
@@ -81,7 +84,7 @@ export function WorkspacePreviewTabs() {
 				id={WORKSPACE_PREVIEW_TABS_ID}
 				ariaLabel={t("files.previewTabs")}
 				variant="browser"
-				animateLayout={hasConversation}
+				animateLayout={hasConversation && !resizing}
 				value={value}
 				onValueChange={(path) => {
 					if (path === WORKSPACE_CONVERSATION_TAB) { workspaceStore.setActiveSurface("conversation"); return; }
@@ -115,7 +118,9 @@ export function WorkspacePreviewTabs() {
 					...(state.stream ? [{ value: STREAMING_PREVIEW_TAB, ariaLabel: state.stream.title, label: <><Sparkles size={14} /><span className="truncate">{state.stream.title}</span></>, close: { label: t("files.closePreview", { name: state.stream.title }), onClose: () => workspaceStore.clearStreamingPreview() }, onContextMenu: (event: MouseEvent) => openMenu(event, STREAMING_PREVIEW_TAB) }] : []),
 				]}
 			/>
-			<IconButton size="xs" className="shrink-0" title={t("workspaceStart.open")} aria-label={t("workspaceStart.open")} onClick={() => workspaceStore.newStartPage()}><Plus size={16} /></IconButton>
+			{/* Keep the new-tab button in the same projection as the scroll viewport;
+			    otherwise overflow disappearing moves it to the final position at once. */}
+			<MotionIconButton layout={hasConversation && !resizing ? "position" : false} transition={transition} size="xs" className="shrink-0" title={t("workspaceStart.open")} aria-label={t("workspaceStart.open")} onClick={() => workspaceStore.newStartPage()}><Plus size={16} /></MotionIconButton>
 			{ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={menuItems()} onClose={() => setCtxMenu(null)} />}
 		</div>
 	);

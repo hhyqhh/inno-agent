@@ -177,12 +177,17 @@ describe("Workspace header controls", () => {
 		for (let i = 0; i < 2; i++) {
 			fireEvent.click(screen.getByRole("button", { name: "workspace.collapseWorkspace" }));
 			expect(panel.classList.contains("hidden")).toBe(false);
-			expect(panel.classList.contains("invisible")).toBe(true);
+			// Closing disables interaction immediately, but CSS keeps the pinned
+			// document painted until the panel's width transition finishes.
+			expect(panel.parentElement?.dataset.state).toBe("closed");
+			expect(panel.parentElement?.getAttribute("aria-hidden")).toBe("true");
+			expect(panel.classList.contains("invisible")).toBe(false);
 			expect(panel.style.width).toBe("517px");
 			// The width must survive beyond the open animation's fallback timer.
 			if (i === 0) await act(async () => { await new Promise(resolve => setTimeout(resolve, 320)); });
 			expect(panel.style.width).toBe("517px");
 			fireEvent.click(screen.getByRole("button", { name: "workspace.openWorkspace" }));
+			expect(panel.parentElement?.dataset.state).toBe("open");
 			expect(panel.classList.contains("invisible")).toBe(false);
 			expect(parseFloat(panel.style.width)).toBeGreaterThan(0);
 			expect(screen.getByRole("article", { name: "File preview" })).toBe(preview);
@@ -415,10 +420,12 @@ describe("Workspace drag to fullscreen", () => {
 			const previewX = window.innerWidth - parseFloat(preview.style.right) - parseFloat(preview.style.width);
 			expect(Number.parseFloat(layout.style.getPropertyValue("--inno-workspace-drag-left"))).toBe(previewX);
 			expect(layout.hasAttribute("data-workspace-resize-overlay")).toBe(clientX < edge);
-			// Without toolbar controls mounted, the plate still backs the divider
-			// with 4px padding and follows the same edge through reversal.
-			expect(Number.parseFloat(layout.style.getPropertyValue("--inno-drag-plate-left"))).toBe(previewX - 4);
-			expect(layout.style.getPropertyValue("--inno-drag-plate-width")).toBe("19px");
+			// Only deferred previews reveal the plate; ordinary live resizing
+			// skips its layout measurements entirely.
+			if (clientX < edge) {
+				expect(Number.parseFloat(layout.style.getPropertyValue("--inno-drag-plate-left"))).toBe(previewX - 4);
+				expect(layout.style.getPropertyValue("--inno-drag-plate-width")).toBe("19px");
+			}
 		}
 		expect(layout.style.getPropertyValue("--inno-workspace-drag-width")).toBe("540px");
 		resizePointer(window, "pointermove", edge - 24);
@@ -510,6 +517,7 @@ describe("Workspace resize render and persistence cost", () => {
 		const unsubscribe = appStore.on("change", notify);
 		try {
 			resizePointer(handle, "pointerdown", 800);
+			const measure = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
 			const renders = previewRenders.mock.calls.length;
 			for (let x = 792; x >= 704; x -= 8) {
 				resizePointer(window, "pointermove", x);
@@ -520,6 +528,9 @@ describe("Workspace resize render and persistence cost", () => {
 			expect(previewRenders).toHaveBeenCalledTimes(renders);
 			expect(notify).not.toHaveBeenCalled();
 			expect(storage).not.toHaveBeenCalled();
+			// Direct moves need no synchronous root/toolbar geometry reads. Limit
+			// the assertion to this owner; Tooltip has its own positioning reads.
+			expect(measure.mock.contexts).not.toContain(layout);
 			resizePointer(window, "pointerup", 700);
 			expect(layout.getAttribute("data-width")).toBe("620");
 			expect(notify).toHaveBeenCalledTimes(1);
@@ -544,6 +555,29 @@ describe("Workspace resize render and persistence cost", () => {
 		expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("");
 		expect(storage).not.toHaveBeenCalled();
 	});
+
+	it.each(["pointerup", "pointercancel", "blur", "Escape"])("never exposes active drag positioning without its edge coordinate during %s", async (ending) => {
+		const view = render(<PersistentLayout />);
+		const layout = view.container.firstElementChild as HTMLElement;
+		resizePointer(screen.getByRole("separator", { name: "workspace.resize" }), "pointerdown", 800);
+		resizePointer(window, "pointermove", 700);
+		await flushFrame();
+		// Read within the same native event, before React's batched end state
+		// commits. A later act()/RAF-only check misses this invalid CSS interval.
+		let invalidPosition = false;
+		const readRelease = () => {
+			invalidPosition = document.body.classList.contains("workspace-resizing")
+				&& !layout.style.getPropertyValue("--inno-workspace-drag-left");
+		};
+		const eventName = ending === "Escape" ? "keydown" : ending;
+		window.addEventListener(eventName, readRelease);
+		try {
+			if (ending === "Escape") fireEvent.keyDown(window, { key: "Escape" });
+			else if (ending === "blur") fireEvent.blur(window);
+			else resizePointer(window, ending, 700);
+			expect(invalidPosition).toBe(false);
+		} finally { window.removeEventListener(eventName, readRelease); }
+	});
 });
 
 describe("Workspace deferred resize handoff", () => {
@@ -559,7 +593,7 @@ describe("Workspace deferred resize handoff", () => {
 		vi.unstubAllGlobals();
 	});
 
-	function HandoffLayout({ onCommit }: { onCommit: (width: number) => void }) {
+	function HandoffLayout({ onCommit, onResizingChange }: { onCommit: (width: number) => void; onResizingChange: (resizing: boolean) => void }) {
 		const [width, setWidth] = useState(588);
 		const changeMode = useCallback(() => {}, []);
 		const commit = useCallback((nextWidth: number) => {
@@ -567,19 +601,20 @@ describe("Workspace deferred resize handoff", () => {
 			onCommit(nextWidth);
 		}, [onCommit]);
 		return <div className="app-layout" data-width={width}><InnoDndProvider><WorkspacePanel mode="half" width={width}
-			onModeChange={changeMode} onWidthChange={commit} onPreviewFile={vi.fn()} /></InnoDndProvider></div>;
+			onModeChange={changeMode} onWidthChange={commit} onResizingChange={onResizingChange} onPreviewFile={vi.fn()} /></InnoDndProvider></div>;
 	}
 
 	function startHandoff(onCommit = vi.fn()) {
+		const onResizingChange = vi.fn();
 		let resolveExpansion!: (expanded: boolean) => void;
 		const expand = vi.fn(() => new Promise<boolean>((resolve) => { resolveExpansion = resolve; }));
 		vi.stubGlobal("innoDesktop", { getWindowWidthCapacity: vi.fn(async () => 300), expandWindowWidth: expand });
-		const view = render(<HandoffLayout onCommit={onCommit} />);
+		const view = render(<HandoffLayout onCommit={onCommit} onResizingChange={onResizingChange} />);
 		const layout = view.container.firstElementChild as HTMLElement;
 		const handle = screen.getByRole("separator", { name: "workspace.resize" });
 		vi.spyOn(handle.closest("aside")!, "getBoundingClientRect").mockReturnValue(new DOMRect(612, 48, 585, 700));
 		resizePointer(handle, "pointerdown", 612);
-		return { layout, expand, onCommit, resolveExpansion: (value: boolean) => resolveExpansion(value), unmount: view.unmount };
+		return { layout, expand, onCommit, onResizingChange, resolveExpansion: (value: boolean) => resolveExpansion(value), unmount: view.unmount };
 	}
 
 	it.each(["light", "dark"])("holds the preview through native expansion and hands off to the body without a release jump (%s)", async (theme) => {
@@ -637,6 +672,31 @@ describe("Workspace deferred resize handoff", () => {
 		expect(layout.getAttribute("data-width")).toBe("588");
 		expect(document.querySelector(".workspace-resize-preview")).toBeNull();
 		expect(layout.hasAttribute("data-workspace-resize-overlay")).toBe(false);
+	});
+
+	it("keeps toolbar projection disabled after release until the native handoff completes", async () => {
+		const { onResizingChange, resolveExpansion } = startHandoff();
+		await act(async () => { await Promise.resolve(); });
+		expect(onResizingChange).toHaveBeenLastCalledWith(true);
+		resizePointer(window, "pointerup", 432);
+		await flushFrame();
+		expect(onResizingChange).toHaveBeenLastCalledWith(true);
+		vi.stubGlobal("innerWidth", 1380);
+		fireEvent.resize(window);
+		expect(onResizingChange).toHaveBeenLastCalledWith(true);
+		await act(async () => { resolveExpansion(true); });
+		await flushFrame();
+		await flushFrame();
+		expect(onResizingChange).toHaveBeenLastCalledWith(false);
+	});
+
+	it.each(["pointercancel", "blur", "unmount"])("releases the toolbar projection lock on %s", (cancel) => {
+		const { onResizingChange, unmount } = startHandoff();
+		expect(onResizingChange).toHaveBeenLastCalledWith(true);
+		if (cancel === "unmount") unmount();
+		else if (cancel === "blur") fireEvent.blur(window);
+		else resizePointer(window, "pointercancel", 612);
+		expect(onResizingChange).toHaveBeenLastCalledWith(false);
 	});
 
 	it("does not let an old native expansion commit after the panel unmounts", async () => {

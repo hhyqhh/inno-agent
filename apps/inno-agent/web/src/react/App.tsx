@@ -72,6 +72,8 @@ function MainApp() {
 	const isDesktopWindow = Boolean(window.innoDesktop);
 	const isWindowsDesktop = isDesktopWindow && /Win/i.test(window.navigator.platform);
 	const [isMacFullScreen, setIsMacFullScreen] = useState(false);
+	const [workspaceResizing, setWorkspaceResizing] = useState(false);
+	const [sidebarResizing, setSidebarResizing] = useState(false);
 	useEffect(() => {
 		const desktop = window.innoDesktop;
 		if (!desktop?.isFullScreen || !desktop.onFullScreenChange || !/Mac/i.test(window.navigator.platform)) return;
@@ -209,7 +211,10 @@ function MainApp() {
 				? CHAT_BASELINE_WIDTH + getSidebarLayoutWidth(false, true, appStore.sidebarWidth) - 1 : CHAT_ONLY_BP;
 			if (window.innerWidth > sidebarBreakpoint) return;
 			if (!appStore.sidebarCollapsed) appStore.setSidebarCollapsed(true);
-			if (window.innerWidth <= CHAT_ONLY_BP && appStore.workspaceMode !== "collapsed") {
+			// Desktop fitting owns the preview minimum (including its 52px rail).
+			// Reusing the browser breakpoint here closed a still-fitting preview
+			// before that owner could downgrade it to the narrow split.
+			if (!isDesktopWindow && window.innerWidth <= CHAT_ONLY_BP && appStore.workspaceMode !== "collapsed") {
 				appStore.setWorkspaceMode("collapsed");
 			}
 		};
@@ -437,6 +442,7 @@ function MainApp() {
 		showTerminalToggle={!isDesktopWindow}
 		onModeChange={setWorkspaceMode}
 		onWidthChange={setWorkspaceWidth}
+		onResizingChange={setWorkspaceResizing}
 		onPreviewFile={openFilePreview}
 	/>;
 
@@ -453,6 +459,7 @@ function MainApp() {
 					} as React.CSSProperties}
 				>
 					<SessionSidebar
+						onResizingChange={setSidebarResizing}
 						onPreviewFile={openFilePreview}
 						collapsed={app.sidebarCollapsed}
 						isDesktopWindow={isDesktopWindow}
@@ -476,7 +483,7 @@ function MainApp() {
 						hasOpenConversation={hasOpenConversation}
 						isDesktopWindow={isDesktopWindow}
 						terminalControl={desktopTerminalControl}
-						workspaceTabs={<WorkspacePreviewTabs />}
+						workspaceTabs={<WorkspacePreviewTabs resizing={workspaceResizing || sidebarResizing} />}
 						workspaceMode={app.workspaceMode}
 						workspaceFullLabel={t("workspace.full")}
 						workspaceRestoreLabel={t("workspace.half")}

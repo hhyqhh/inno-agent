@@ -28,9 +28,10 @@ new file mode 100644
 index 0000000..9d9404d
 --- /dev/null
 +++ b/src/embed.ts
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,62 @@
 +/** Same-origin embed bridge. Import completion comes from the importer. */
 +import useImport from '@/hooks/useImport'
++import useExport from '@/hooks/useExport'
 +import { useSlidesStore } from '@/store'
 +import { watch } from 'vue'
 +import { nanoid } from 'nanoid'
@@ -50,7 +51,13 @@ index 0000000..9d9404d
 +  watch(() => [store.slides, store.theme, store.viewportSize, store.viewportRatio], () => {
 +    if (loaded && !importing) send({ type: 'pptist:change' })
 +  }, { deep: true, flush: 'sync' })
-+  window.addEventListener('message', (event) => {
++  window.addEventListener('keydown', (event) => {
++    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
++      event.preventDefault()
++      send({ type: 'pptist:save-request' })
++    }
++  }, true)
++  window.addEventListener('message', async (event) => {
 +    if (event.origin !== origin || event.source !== window.parent) return
 +    const data = event.data
 +    if (!data || typeof data !== 'object') return
@@ -72,9 +79,14 @@ index 0000000..9d9404d
 +      })
 +    }
 +    if (data.type === 'pptist:export' && loaded) {
-+      // The host patches supported changes into the original package; rebuilding
-+      // with PptxGenJS drops objects which pptxtojson did not import.
-+      send({ type: 'pptist:exported', requestId: data.requestId, snapshot: snapshot() })
++      // Use the same complete exporter as PPTist's standalone editor.
++      // Return bytes to the host; only the host writes workspace files.
++      try {
++        const buffer = await useExport().exportPPTX(store.slides, false, false, true)
++        if (!(buffer instanceof ArrayBuffer)) throw new Error('Invalid PPTX export')
++        send({ type: 'pptist:exported', requestId: data.requestId, buffer }, [buffer])
++      }
++      catch (error) { send({ type: 'pptist:error', requestId: data.requestId, error: String(error) }) }
 +    }
 +  })
 +  send({ type: 'pptist:ready' })
@@ -83,6 +95,15 @@ diff --git a/src/hooks/useExport.ts b/src/hooks/useExport.ts
 index 4c74ffb..63402e5 100644
 --- a/src/hooks/useExport.ts
 +++ b/src/hooks/useExport.ts
+@@ -481,7 +481,7 @@
+   }
+
+   // 导出PPTX文件
+-  const exportPPTX = (_slides: Slide[], masterOverwrite: boolean, ignoreMedia: boolean) => {
++  const exportPPTX = (_slides: Slide[], masterOverwrite: boolean, ignoreMedia: boolean, asBuffer = false) => {
+     exporting.value = true
+     const pptx = new pptxgen()
+     setPPTXLayout(pptx)
 @@ -605,18 +605,23 @@ export default () => {
              const [startX, startY] = start
              const [endX, endY] = end
@@ -113,6 +134,19 @@ index 4c74ffb..63402e5 100644
              }
            }
 
+@@ -998,6 +1003,12 @@
+       }
+     }
+
++    if (asBuffer) {
++      // Await archive/media serialization and propagate failures to the host.
++      // A successful message must carry actual PPTX bytes, not a model snapshot.
++      return pptx.write({ outputType: 'arraybuffer' }).finally(() => exporting.value = false)
++    }
++
+     setTimeout(() => {
+       pptx.writeFile({ fileName: `${title.value}.pptx` }).then(() => exporting.value = false).catch(() => {
+         exporting.value = false
 diff --git a/src/hooks/useImport.ts b/src/hooks/useImport.ts
 index 810d4c8..6a9211c 100644
 --- a/src/hooks/useImport.ts
@@ -250,8 +284,8 @@ index cdb05c9..ab85b81 100644
  import AIPPTDialog from './AIPPTDialog.vue'
  import Modal from '@/components/Modal.vue'
 
-+// Embedded file actions belong to the host's preserving save path. Hiding
-+// the standalone exporter prevents a second, lossy PptxGenJS download path.
++// Embedded file actions belong to the host. The bridge returns the complete
++// export bytes, avoiding a separate browser download as a second save path.
 +const isEmbed = new URLSearchParams(location.search).has('embed')
  const mainStore = useMainStore()
  const {

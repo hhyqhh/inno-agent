@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
-import { motion } from "motion/react";
 import { ArrowLeft, ArrowRight, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SquarePen } from "lucide-react";
-import { IconButton, Tooltip, useUITransition } from "./ui/index.js";
+import { IconButton, Tooltip } from "./ui/index.js";
 import type { WorkspaceMode } from "../stores/app-store.js";
 
 interface DesktopWindowChromeProps {
@@ -76,7 +75,6 @@ export function DesktopWindowChrome({
 }: DesktopWindowChromeProps) {
 	const showSidebarToggle = isDesktopWindow ? showSidebarControl : sidebarCollapsed;
 	const showNavigationControls = isDesktopWindow;
-	const transition = useUITransition("modal");
 
 	return (
 		<div className={`inno-window-chrome${showNewChatControl ? " has-new-chat-control" : ""}${hasOpenConversation ? " has-conversation-tabs" : ""}`} aria-label="窗口工具栏">
@@ -136,14 +134,21 @@ export function DesktopWindowChrome({
 					    on the tab track covered the earlier question/terminal buttons. */}
 					<div className="inno-window-chrome-drag-plate" aria-hidden="true" />
 					<div className="inno-window-chrome-preview-terminal">{terminalControl}</div>
-					<motion.div layout={hasOpenConversation ? "position" : false} layoutDependency={`${workspaceMode}:${sidebarCollapsed}`} transition={transition} className="inno-window-chrome-preview-tabs">
+					{/* The track is a plain box: its left/right insets tween through CSS
+					    on the sidebar grid's curve. Motion projection here measured its
+					    snapshot at the START of each toggle, so the next toggle projected
+					    the full distance in reverse, pinning the visual at the old
+					    position while the CSS tween ran underneath — and the inner
+					    viewport's clamped scrollLeft clipped the first tab's leading
+					    characters at rest.*/}
+					<div className="inno-window-chrome-preview-tabs">
 						{/* A single moving track keeps the separator and tabs together
 						    throughout maximize/restore, including the welcome screen. */}
 						<div className="inno-window-chrome-preview-divider" aria-hidden="true" />
 						<div className="inno-window-chrome-preview-tab-content" aria-hidden={workspaceCollapsed || undefined} inert={workspaceCollapsed || undefined}>
 							{workspaceTabs}
 						</div>
-					</motion.div>
+					</div>
 					{!workspaceCollapsed ? <IconButton
 						size="xs"
 						className="inno-window-chrome-preview-fullscreen"

@@ -99,6 +99,7 @@ interface SessionSidebarProps {
 	isDesktopWindow: boolean;
 	onOpenSearch: () => void;
 	onPreviewFile: (minimumWidth: number) => void | Promise<void>;
+	onResizingChange?: (resizing: boolean) => void;
 	chatContent?: ReactNode;
 	workspaceContent?: ReactNode;
 }
@@ -835,7 +836,7 @@ function SidebarUserMenu({ compact = false }: { compact?: boolean }) {
 
 /* ── Main sidebar ── */
 
-export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, onPreviewFile, chatContent, workspaceContent }: SessionSidebarProps) {
+export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, onPreviewFile, onResizingChange, chatContent, workspaceContent }: SessionSidebarProps) {
 	const uiTransition = useUITransition();
 	const panelTransition = useUITransition("modal");
 	const dndManager = useDragDropManager();
@@ -926,17 +927,19 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, onPre
 	}, [preview.schedulePointerClose]);
 	const startSidebarResize = useCallback(() => {
 		sidebarResizingRef.current = true;
+		onResizingChange?.(true);
 		preview.cancelClose();
-	}, [preview.cancelClose]);
+	}, [onResizingChange, preview.cancelClose]);
 	const finishSidebarResize = useCallback((point: ResizePoint | null) => {
 		sidebarResizingRef.current = false;
+		onResizingChange?.(false);
 		if (!point) return;
 		const containsPointer = [desktopPanelRef.current, desktopRailRef.current].some((element) => {
 			const rect = element?.getBoundingClientRect();
 			return rect && point.clientX >= rect.left && point.clientX <= rect.right && point.clientY >= rect.top && point.clientY <= rect.bottom;
 		});
 		if (!containsPointer) preview.schedulePointerClose();
-	}, [preview.schedulePointerClose]);
+	}, [onResizingChange, preview.schedulePointerClose]);
 	const resizeSidebar = useCallback((width: number) => appStore.setSidebarWidth(width), []);
 	const handleCollapseTransitionEnd = useCallback((part: "panel" | "chatTrack") => {
 		if (!collapsed || !isCollapsing || page !== "chat") return;

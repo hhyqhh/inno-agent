@@ -19,11 +19,11 @@ vi.mock("./WorkspaceBrowser.js", () => ({
 	),
 }));
 
-function Layout({ onPreviewFile = vi.fn() }: { onPreviewFile?: (width: number) => void }) {
+function Layout({ onPreviewFile = vi.fn(), onResizingChange }: { onPreviewFile?: (width: number) => void; onResizingChange?: (resizing: boolean) => void }) {
 	const collapsed = useStoreSnapshot(appStore, () => appStore.sidebarCollapsed);
 	return (
 		<InnoDndProvider>
-			<SessionSidebar collapsed={collapsed} isDesktopWindow onOpenSearch={vi.fn()} onPreviewFile={onPreviewFile} chatContent={<div>Chat</div>} />
+			<SessionSidebar onResizingChange={onResizingChange} collapsed={collapsed} isDesktopWindow onOpenSearch={vi.fn()} onPreviewFile={onPreviewFile} chatContent={<div>Chat</div>} />
 		</InnoDndProvider>
 	);
 }
@@ -184,6 +184,21 @@ describe("Desktop sidebar message/file navigation", () => {
 		expect(panel.getAttribute("aria-label")).toBe(committedView === "files" ? "nav.files" : "nav.chat");
 		expect(panel.classList.contains("is-pinned")).toBe(true);
 		expect(container.querySelector("#session-sidebar-panel")).toBe(panel);
+	});
+
+	it.each(["pointerup", "pointercancel", "blur", "Escape"])("releases the toolbar drag state on %s", (end) => {
+		appStore.workspaceMode = "full";
+		const onResizingChange = vi.fn();
+		render(<Layout onResizingChange={onResizingChange} />);
+		pointer(screen.getByRole("separator", { name: "sidebar.resize" }), "pointerdown", 300);
+		expect(onResizingChange.mock.calls).toEqual([[true]]);
+		pointer(window, "pointermove", 380);
+		if (end === "Escape") fireEvent.keyDown(window, { key: "Escape" });
+		else if (end === "blur") fireEvent.blur(window);
+		else pointer(window, end, 380);
+		expect(onResizingChange.mock.calls).toEqual([[true], [false]]);
+		expect(appStore.sidebarWidth).toBe(end === "pointerup" ? 326 : 246);
+		expect(document.body.classList.contains("inno-ui-resizing-columns")).toBe(false);
 	});
 
 	it("shares the resized width between messages, files and both hover preview entry points", async () => {

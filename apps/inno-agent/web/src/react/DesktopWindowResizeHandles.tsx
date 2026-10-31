@@ -5,6 +5,7 @@ type ResizeAction = "end" | "cancel";
 
 /** Invisible inner hit targets supplement the OS's thin window border. */
 export function DesktopWindowResizeHandles({ disabled = false }: { disabled?: boolean }) {
+	const desktop = Boolean(window.innoDesktop);
 	const resizeWindow = window.innoDesktop?.resizeWindow;
 	const gesture = useRef<{ pointerId: number; element: HTMLElement } | null>(null);
 	const frame = useRef(0);
@@ -19,6 +20,42 @@ export function DesktopWindowResizeHandles({ disabled = false }: { disabled?: bo
 		delete document.body.dataset.windowResizing;
 		document.body.style.removeProperty("--inno-window-resize-cursor");
 	}, [resizeWindow]);
+
+	useEffect(() => {
+		if (!desktop) return;
+		let settleFrame = 0;
+		let previousWidth = window.innerWidth;
+		const resize = () => {
+			// Native fitting places the toolbar border immediately, while the
+			// right-anchored preview still animates its width and trails behind.
+			// Only shrinking needs a fitted preview width. Opening a preview can
+			// expand the native window first; suppressing that resize also erased
+			// its subsequent opening animation. Manual growth uses the gesture flag.
+			const shrinking = window.innerWidth < previousWidth;
+			previousWidth = window.innerWidth;
+			cancelAnimationFrame(settleFrame);
+			if (!shrinking) {
+				settleFrame = 0;
+				delete document.body.dataset.windowLayoutResizing;
+				return;
+			}
+			document.body.dataset.windowLayoutResizing = "";
+			// Cover the last IPC shrink arriving after pointerup, until the
+			// fitted React layout has painted.
+			settleFrame = requestAnimationFrame(() => {
+				settleFrame = requestAnimationFrame(() => {
+					settleFrame = 0;
+					delete document.body.dataset.windowLayoutResizing;
+				});
+			});
+		};
+		window.addEventListener("resize", resize);
+		return () => {
+			window.removeEventListener("resize", resize);
+			cancelAnimationFrame(settleFrame);
+			delete document.body.dataset.windowLayoutResizing;
+		};
+	}, [desktop]);
 
 	useEffect(() => {
 		if (!resizeWindow || disabled) return;

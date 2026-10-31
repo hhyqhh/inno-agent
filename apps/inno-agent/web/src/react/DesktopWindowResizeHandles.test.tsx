@@ -63,4 +63,73 @@ describe("desktop outer resize targets", () => {
 		rerender(<DesktopWindowResizeHandles />);
 		expect(container.childElementCount).toBe(0);
 	});
+
+	it.each(["light", "dark"])("keeps native resize layout synchronous until the final layout paints (%s)", async (theme) => {
+		const originalTheme = document.documentElement.getAttribute("data-theme");
+		document.documentElement.setAttribute("data-theme", theme);
+		try {
+			const { container } = render(<DesktopWindowResizeHandles />);
+			pointer(container.querySelector('[data-edge="e"]')!, "pointerdown");
+			vi.stubGlobal("innerWidth", window.innerWidth - 40);
+			fireEvent.resize(window);
+			await frame();
+			expect(document.body.hasAttribute("data-window-layout-resizing")).toBe(true);
+			pointer(window, "pointerup");
+			expect(document.body.dataset.windowResizing).toBeUndefined();
+			// The main process may deliver the final fitted viewport after release.
+			vi.stubGlobal("innerWidth", window.innerWidth - 20);
+			fireEvent.resize(window);
+			await frame();
+			expect(document.body.hasAttribute("data-window-layout-resizing")).toBe(true);
+			await frame();
+			expect(document.body.hasAttribute("data-window-layout-resizing")).toBe(false);
+		} finally {
+			if (originalTheme === null) document.documentElement.removeAttribute("data-theme");
+			else document.documentElement.setAttribute("data-theme", originalTheme);
+		}
+	});
+
+	it("covers OS viewport resize without a pointer gesture or the custom resize bridge", async () => {
+		vi.stubGlobal("innoDesktop", {});
+		render(<DesktopWindowResizeHandles disabled />);
+		vi.stubGlobal("innerWidth", window.innerWidth - 40);
+		fireEvent.resize(window);
+		expect(document.body.hasAttribute("data-window-layout-resizing")).toBe(true);
+		await frame();
+		await frame();
+		expect(document.body.hasAttribute("data-window-layout-resizing")).toBe(false);
+		expect(resize).not.toHaveBeenCalled();
+	});
+
+	it("cleans up the viewport resize listener and pending animation frames on unmount", async () => {
+		const { unmount } = render(<DesktopWindowResizeHandles />);
+		vi.stubGlobal("innerWidth", window.innerWidth - 40);
+		fireEvent.resize(window);
+		unmount();
+		expect(document.body.hasAttribute("data-window-layout-resizing")).toBe(false);
+		fireEvent.resize(window);
+		await frame();
+		expect(document.body.hasAttribute("data-window-layout-resizing")).toBe(false);
+	});
+
+	it("preserves preview opening animations when the native window expands automatically", () => {
+		render(<DesktopWindowResizeHandles />);
+		vi.stubGlobal("innerWidth", window.innerWidth + 200);
+		fireEvent.resize(window);
+		expect(document.body.hasAttribute("data-window-layout-resizing")).toBe(false);
+		// A preview may be opened immediately after a preceding shrink.
+		vi.stubGlobal("innerWidth", window.innerWidth - 40);
+		fireEvent.resize(window);
+		expect(document.body.hasAttribute("data-window-layout-resizing")).toBe(true);
+		vi.stubGlobal("innerWidth", window.innerWidth + 200);
+		fireEvent.resize(window);
+		expect(document.body.hasAttribute("data-window-layout-resizing")).toBe(false);
+	});
+
+	it("leaves browser resize transitions alone", () => {
+		vi.stubGlobal("innoDesktop", undefined);
+		render(<DesktopWindowResizeHandles />);
+		fireEvent.resize(window);
+		expect(document.body.hasAttribute("data-window-layout-resizing")).toBe(false);
+	});
 });

@@ -96,12 +96,16 @@ export function Tabs<Value extends string>({
 	className = "",
 }: TabsProps<Value>) {
 	const buttons = useRef<Array<HTMLButtonElement | null>>([]);
-	const transition = useUITransition("modal");
+	const transition = useUITransition(variant === "browser" ? "layout" : "modal");
 	const selectedIndex = items.findIndex((item) => item.value === value && !item.disabled);
 	const firstEnabledIndex = items.findIndex((item) => !item.disabled);
 
 	return (
-		<div
+		// The scroll viewport must resize with its projected parent. Snapping its
+		// width changes clipping and clamps scrollLeft before the tabs have moved.
+		<motion.div
+			layout={animateLayout}
+			transition={transition}
 			id={`${id}-list`}
 			role="tablist"
 			aria-label={ariaLabel}
@@ -164,7 +168,7 @@ export function Tabs<Value extends string>({
 				);
 				return item.title && !item.disabled ? <Tooltip key={item.value} label={item.title}>{trigger}</Tooltip> : trigger;
 			})}
-		</div>
+		</motion.div>
 	);
 }
 

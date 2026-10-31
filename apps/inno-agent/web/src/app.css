@@ -1850,9 +1850,12 @@ inno-app-shell {
 	overflow: hidden;
 	clip-path: inset(0 0 0 0);
 	visibility: visible;
+	/* Its width follows the chat shell's collapsing grid track, which uses the
+	   sidebar grid's curve; interpolating on the modal curve let the two copies
+	   of the same edge drift apart mid-toggle. */
 	transition:
-		width var(--inno-dur-modal) var(--inno-ease-in-out),
-		clip-path var(--inno-dur-modal) var(--inno-ease-in-out),
+		width 220ms cubic-bezier(0.4, 0, 0.2, 1),
+		clip-path 220ms cubic-bezier(0.4, 0, 0.2, 1),
 		visibility 0s;
 }
 
@@ -1907,8 +1910,12 @@ inno-app-shell {
 	background: var(--inno-chat-bg);
 	opacity: 1;
 	visibility: visible;
-	transition: width var(--inno-dur-modal) var(--inno-ease-in-out),
-		border-left-color var(--inno-dur-modal) var(--inno-ease-in-out),
+	/* The panel's width is 100% of the workbench, whose growth is driven by the
+	   chat shell's grid track on the sidebar grid's curve. Interpolating width
+	   on the modal curve let the preview's left edge swim against the grid
+	   while the sidebar collapsed in the full view. */
+	transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1),
+		border-left-color 220ms cubic-bezier(0.4, 0, 0.2, 1),
 		opacity var(--inno-dur-fast) ease, visibility 0s;
 }
 
@@ -1924,15 +1931,40 @@ inno-app-shell {
 	border-left-color: transparent;
 }
 
-/* While dragging the splitter the toolbar pieces pinned to the border must
-   track it frame by frame; keep only the open/close/maximize transitions. */
+/* Live geometry must share one timeline, including the question action's
+   independent right tween. Keep the normal exit once fitting closes preview;
+   suppressing that width transition made a minimum-width preview disappear. */
 .workspace-resizing .inno-desktop-workbench > .workspace-panel--merged,
 .workspace-resizing .inno-desktop-chat-content,
 .workspace-resizing .inno-window-chrome-preview-divider,
 .workspace-resizing .inno-window-chrome-preview-terminal,
 .workspace-resizing .inno-window-chrome-preview-tabs,
-.workspace-resizing .app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header > .inno-conversation-header {
+.workspace-resizing .inno-conversation-header-actions,
+.workspace-resizing .app-layout--desktop.app-layout--chat > .inno-desktop-chat-shell,
+.workspace-resizing .app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header > .inno-conversation-header,
+:is([data-window-resizing], [data-window-layout-resizing]) .app-layout--desktop:not(.app-layout--workspace-collapsed) :is(
+	.inno-desktop-workbench > .workspace-panel--merged,
+	.inno-desktop-chat-content,
+	.inno-window-chrome-preview-divider,
+	.inno-window-chrome-preview-terminal,
+	.inno-window-chrome-preview-tabs,
+	.inno-conversation-header-actions,
+	.inno-desktop-chat-shell,
+	.inno-window-chrome-chat-header > .inno-conversation-header
+) {
 	transition: none;
+}
+
+.workspace-panel > .inno-ui-tab-panel {
+	visibility: visible;
+	transition: visibility 0s;
+}
+
+/* Keep the pinned document painted while its owner slides out. Immediate
+   visibility:hidden left an empty pane for the entire closing animation. */
+.workspace-panel[data-state="closed"] > .inno-ui-tab-panel {
+	visibility: hidden;
+	transition-delay: var(--inno-dur-modal);
 }
 
 .workspace-panel--merged > .inno-ui-tab-panel,
@@ -2111,10 +2143,11 @@ inno-app-shell {
 }
 
 /* The question action follows the terminal via the header's trailing padding.
-   Animate both with the preview's curve so the gap stays fixed during motion. */
+   Animate both with the preview's layout curve so the gap stays fixed during
+   motion and the title clearance lands with the sidebar grid. */
 .app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header > .inno-conversation-header {
 	transition: padding-left 220ms cubic-bezier(0.4, 0, 0.2, 1),
-		padding-right var(--inno-dur-modal) var(--inno-ease-in-out);
+		padding-right 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header .inno-workspace-switcher-trigger {
@@ -2130,7 +2163,7 @@ inno-app-shell {
 	top: calc(var(--inno-window-chrome-control-top) - 1px);
 	right: var(--inno-chat-action-right);
 	margin-left: 0;
-	transition: right var(--inno-dur-modal) var(--inno-ease-in-out);
+	transition: right 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .app-layout--desktop.app-layout--chat.app-layout--workspace-full .inno-conversation-header-actions {
@@ -2327,7 +2360,7 @@ inno-app-shell {
 	z-index: 1;
 	display: flex;
 	align-items: center;
-	transition: right var(--inno-dur-modal) var(--inno-ease-in-out), opacity var(--inno-dur-fast) ease, visibility 0s linear var(--inno-dur-fast);
+	transition: right 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity var(--inno-dur-fast) ease, visibility 0s linear var(--inno-dur-fast);
 }
 
 .app-layout--workspace-half .inno-window-chrome-preview-terminal,
@@ -2346,7 +2379,8 @@ inno-app-shell {
 .inno-window-chrome-preview-tabs {
 	position: absolute;
 	top: var(--inno-window-chrome-control-top);
-	left: calc(100% - var(--workspace-w) + 10px);
+	/* Match the drag strip's divider offset so releasing needs no 1px tween. */
+	left: calc(100% - var(--workspace-w) + 11px);
 	right: calc(16px + var(--inno-window-chrome-control-size) * 2 + 12px);
 	z-index: 1;
 	height: var(--inno-window-chrome-control-size);
@@ -2358,7 +2392,10 @@ inno-app-shell {
 	   (title-bar behavior, matching the chat header overlay). */
 	-webkit-app-region: drag;
 	pointer-events: auto;
-	transition: left var(--inno-dur-modal) var(--inno-ease-in-out), right var(--inno-dur-modal) var(--inno-ease-in-out), opacity var(--inno-dur-fast) ease, visibility 0s;
+	/* Positional travels follow the sidebar grid's curve: in the full view the
+	   track's left derives from the sidebar width and must land in step with
+	   the panel edge and the session column, not on the modal curve. */
+	transition: left 220ms cubic-bezier(0.4, 0, 0.2, 1), right 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity var(--inno-dur-fast) ease, visibility 0s;
 }
 
 /* Toolbar and preview share the drag geometry even when the host window
@@ -2382,7 +2419,6 @@ inno-app-shell {
    measured edge, including the desktop shell's inset and deferred expansion. */
 .workspace-resizing .inno-window-chrome-preview-tabs {
 	left: calc(var(--inno-workspace-drag-left) + 11px);
-	transform: none !important;
 }
 
 .workspace-resizing .inno-window-chrome-preview-terminal {
@@ -2594,6 +2630,7 @@ inno-app-shell {
 }
 
 @media (prefers-reduced-motion: reduce) {
+	.workspace-panel > .inno-ui-tab-panel,
 	.inno-desktop-chat-content,
 	.inno-desktop-workbench > .workspace-panel--merged,
 	.app-layout--desktop.app-layout--chat .inno-window-chrome-preview-divider,
@@ -6026,7 +6063,8 @@ inno-workspace-panel textarea {
 /* Follow the pointer directly instead of replaying the collapse animation. */
 .inno-ui-resizing-columns .app-layout--desktop > .inno-desktop-sidebar,
 .inno-ui-resizing-columns .app-layout--desktop > .inno-desktop-chat-shell,
-.inno-ui-resizing-columns .inno-desktop-sidebar-panel {
+.inno-ui-resizing-columns .inno-desktop-sidebar-panel,
+.inno-ui-resizing-columns .inno-window-chrome-preview-tabs {
 	transition: none !important;
 }
 

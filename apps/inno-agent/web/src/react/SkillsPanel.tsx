@@ -2,8 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DragDropManager } from "dnd-core";
 import { Tree, type NodeRendererProps } from "react-arborist";
-import { RefreshCw, Upload, Trash2, ChevronLeft, File, FileText, FileType, Folder, FolderOpen, Globe, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Download, Check, FileCode2, Search, Puzzle } from "lucide-react";
+import { RefreshCw, Upload, Trash2, ChevronLeft, File, FileText, FileType, Folder, FolderOpen, Globe, Pencil, Save, X, PanelLeftClose, PanelLeftOpen, Download, Check, FileCode2, Search, Puzzle, WandSparkles } from "lucide-react";
 import { skillsStore } from "../stores/skills-store.js";
+import { appStore } from "../stores/app-store.js";
+import { chatStore } from "../stores/chat-store.js";
+import { sessionsStore } from "../stores/sessions-store.js";
 import { skillRawUrl } from '../api/skills.js';
 import type { SkillInfo, SkillLibraryItem } from "../types/skills.js";
 import type { WorkspaceFileDetail, WorkspaceFileKind, WorkspaceTreeNode } from "../types/workspace.js";
@@ -419,6 +422,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 	const [tab, setTab] = useState<SkillsTab>("mine");
 	const [query, setQuery] = useState("");
 	const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+	const [isStartingGenerator, setIsStartingGenerator] = useState(false);
 
 	useEffect(() => {
 		void skillsStore.load();
@@ -433,6 +437,19 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 		if (!file) return;
 		void skillsStore.upload(file);
 		event.target.value = "";
+	}
+
+	async function startSkillGenerator() {
+		if (isStartingGenerator || chatStore.isSending) return;
+		setIsStartingGenerator(true);
+		try {
+			if (!sessionsStore.currentSessionId) await sessionsStore.createSessionWith();
+			if (!sessionsStore.currentSessionId) return;
+			appStore.setPage("chat");
+			void chatStore.send("/skill-create");
+		} finally {
+			setIsStartingGenerator(false);
+		}
 	}
 
 	const activeSkill = state.selectedSkill ? state.skills.find((s) => s.name === state.selectedSkill) : null;
@@ -524,6 +541,17 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 							<RefreshCw size={15} />
 						</IconButton>
 						<input ref={uploadRef} type="file" className="hidden" accept=".zip,application/zip,.md,text/markdown,text/plain" onChange={handleUpload} />
+						<Button
+							variant="secondary"
+							size="sm"
+							className="shrink-0"
+							disabled={isStartingGenerator}
+							title={t("skills.generateDesc")}
+							onClick={() => void startSkillGenerator()}
+						>
+							<WandSparkles size={14} />
+							{isStartingGenerator ? t("skills.generating") : t("skills.generate")}
+						</Button>
 						<Button
 							variant="primary"
 							size="sm"

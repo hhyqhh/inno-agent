@@ -43,6 +43,14 @@ describe("expandInnoSlashCommand", () => {
 		expect(expanded).toContain("索引");
 	});
 
+	it("expands /skill-create into the guided generation workflow with user input", () => {
+		const expanded = expandInnoSlashCommand("/skill-create hybrid 把我的论文精读流程沉淀下来");
+		expect(expanded).toContain("skill_trace_extract");
+		expect(expanded).toContain("skill_generator_save");
+		expect(expanded).toContain("confirmed=true");
+		expect(expanded).toContain("把我的论文精读流程沉淀下来");
+	});
+
 	it("trims extra whitespace around args", () => {
 		const expanded = expandInnoSlashCommand("/recall   微积分  ");
 		expect(expanded).toContain("微积分");
@@ -50,6 +58,6 @@ describe("expandInnoSlashCommand", () => {
 	});
 
 	it("registers exactly the expandable commands", () => {
-		expect([...INNO_SLASH_COMMAND_NAMES].sort()).toEqual(["recall", "remember", "wiki"]);
+		expect([...INNO_SLASH_COMMAND_NAMES].sort()).toEqual(["recall", "remember", "skill-create", "wiki"]);
 	});
 });

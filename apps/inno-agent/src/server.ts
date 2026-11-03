@@ -327,6 +327,7 @@ function ensureAgentReady(): Promise<void> {
 				runRecordStore,
 				getCurrentSessionId,
 				recordChannelInteraction: (channel) => recordCurrentSessionChannel(channel as SessionChannel),
+				onSkillsChanged: scheduleSkillsReload,
 			},
 		});
 

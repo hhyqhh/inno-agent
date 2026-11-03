@@ -21,6 +21,8 @@ import { createPracticeTools } from "./practice-tools.js";
 import { createDocumentTools } from "./document-tools.js";
 import { createOcrTools } from "./ocr-tools.js";
 import { createOfficeTools } from "./office-tools.js";
+import { createSkillGeneratorTools } from "../skill-generator/tools.js";
+import { buildSkillGeneratorPrompt } from "../skill-generator/methods.js";
 import { createTavilyTools } from "./tavily-tools.js";
 import { ensureWebAccessConfig, resolvePiAiJitiAliases } from "./web-access-config.js";
 import { ensurePermissionSystemConfig, INNO_WEB_AUTHORIZER_NAME, resolvePluginFile } from "./permission-system-config.js";
@@ -60,6 +62,8 @@ export interface InnoExtensionDeps {
 	getCurrentSessionId?: () => string;
 	/** Tag the active session as having interacted with a channel (file send, etc.). */
 	recordChannelInteraction?: (channel: ChannelName) => void;
+	/** Queue a resource reload after a generated skill is saved (server mode). */
+	onSkillsChanged?: () => void;
 }
 
 /** File name for per-workspace agent context, loaded into the prompt each turn. */
@@ -188,6 +192,11 @@ const INNO_SLASH_COMMANDS: InnoSlashCommand[] = [
 			query
 				? `请使用 l2_query 工具检索 Wiki 知识库，并结合检索结果回答：${query}`
 				: "请使用 l2_query 工具查看 Wiki 知识库的索引概览，告诉我里面都归档了哪些内容。",
+	},
+	{
+		name: "skill-create",
+		description: "通过引导、交互轨迹或反馈演化生成技能。用法: /skill-create [目标/方法/技能名]",
+		buildMessage: buildSkillGeneratorPrompt,
 	},
 ];
 
@@ -402,7 +411,22 @@ export function createInnoExtension(
 			}
 		}
 
-		// 4b. Register practice-lab tools (when workspace registry available)
+		// 4e. Register skill-generator tools. Generation is model-driven; these
+		// tools provide bounded evidence extraction, inspection and confirmed saves.
+		const skillGeneratorTools = createSkillGeneratorTools({
+			dataDir: paths.dataDir,
+			sessionDir: paths.sessionDir,
+			skillsDir: paths.skillsDir,
+			l3Memory,
+			isL3Enabled,
+			getWorkspaceDir: () => resolveActiveWorkspaceDir(paths, deps),
+			onSkillsChanged: deps?.onSkillsChanged,
+		});
+		for (const tool of skillGeneratorTools) {
+			pi.registerTool(tool);
+		}
+
+		// 4f. Register practice-lab tools (when workspace registry available)
 		if (deps?.workspaceRegistry && deps.getCurrentSessionId) {
 			const practiceTools = createPracticeTools({
 				registry: deps.workspaceRegistry,

@@ -66,6 +66,7 @@ import { handlePracticeRoutes } from "./server/routes/practice.js";
 import { handleChatRoutes } from "./server/routes/chat.js";
 import { handleCommandsRoutes } from "./server/routes/commands.js";
 import { handleBtwRoutes } from "./server/routes/btw.js";
+import { SkillDisplayCopyService } from "./server/skill-display-copy.js";
 import { parseSessionContent, type ParsedSession } from "./server/session-parser.js";
 import { mergeSessionAgentCommands } from "./server/agent-command-store.js";
 import { recordToolWorkspaceActivity } from "./server/workspace-activity-store.js";
@@ -129,6 +130,10 @@ let config!: InnoConfig;
 const dataDir = paths.dataDir;
 const l2DataDir = paths.l2DataDir;
 const skillsDir = paths.skillsDir;
+const skillDisplayCopyService = new SkillDisplayCopyService(
+	join(dataDir, "skill-display-copy.json"),
+	completePromptOnce,
+);
 const contentHubCatalog = new ContentHubCatalog({
 	dataDir,
 	paths,
@@ -1263,6 +1268,7 @@ const { dispatch: dispatchRoutes } = createRouteDispatcher({
 		installSkillMarkdown,
 		listSkillLibrary,
 		importSkillFromLibrary,
+		polishSkills: (items) => skillDisplayCopyService.getCopies(items),
 	}),
 
 	// --- Sessions API (extracted to server/routes/sessions.ts) ---

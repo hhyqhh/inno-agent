@@ -15,6 +15,7 @@ import {
 	type WorkspaceTreeNode,
 } from "../file-helpers.js";
 import { json, matchRoute, readBody, UPLOAD_MAX_BODY_BYTES } from "../http-helpers.js";
+import type { SkillDisplayCopies, SkillDisplayInput } from "../skill-display-copy.js";
 
 /**
  * Skill-management dependencies owned by server.ts. These helpers close over
@@ -32,6 +33,7 @@ export interface SkillsRouteContext {
 	installSkillMarkdown: (fileName: string, data: Buffer) => { name: string; filePath: string };
 	listSkillLibrary: (forceRefresh?: boolean) => Promise<SkillLibraryItem[]>;
 	importSkillFromLibrary: (name: string) => Promise<{ name: string; filePath: string }>;
+	polishSkills: (items: SkillDisplayInput[]) => Promise<SkillDisplayCopies>;
 }
 
 /**
@@ -53,6 +55,31 @@ export async function handleSkillsRoutes(
 		// loop, so it stalls while an LLM turn is streaming. Listing from
 		// disk is enough for displaying the panel.
 		json(res, 200, ctx.listProjectSkills());
+		return true;
+	}
+
+	if (method === "POST" && url === "/api/skills/display-copy") {
+		const body = (await readBody(req, { maxBytes: 256 * 1024 })) as Record<string, unknown>;
+		if (!Array.isArray(body.skills) || body.skills.length === 0 || body.skills.length > 20) {
+			json(res, 400, { error: "skills must contain between 1 and 20 items" });
+			return true;
+		}
+		const items: SkillDisplayInput[] = [];
+		for (const value of body.skills) {
+			if (!value || typeof value !== "object") {
+				json(res, 400, { error: "Malformed skill display-copy item" });
+				return true;
+			}
+			const item = value as Record<string, unknown>;
+			const name = typeof item.name === "string" ? item.name.trim() : "";
+			const description = typeof item.description === "string" ? item.description : "";
+			if (!name || name.length > 200) {
+				json(res, 400, { error: "Each skill needs a valid name" });
+				return true;
+			}
+			items.push({ name, description });
+		}
+		json(res, 200, { copies: await ctx.polishSkills(items) });
 		return true;
 	}
 

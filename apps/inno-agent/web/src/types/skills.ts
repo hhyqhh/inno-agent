@@ -16,3 +16,15 @@ export interface SkillLibraryItem {
 	installed: boolean;
 	category?: string;
 }
+
+export interface LocalizedSkillText {
+	zh: string;
+	en: string;
+}
+
+export interface SkillDisplayCopy {
+	displayName: LocalizedSkillText;
+	description: LocalizedSkillText;
+}
+
+export type SkillDisplayCopies = Record<string, SkillDisplayCopy>;

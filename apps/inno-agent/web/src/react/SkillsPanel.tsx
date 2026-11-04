@@ -8,11 +8,12 @@ import { appStore } from "../stores/app-store.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { skillRawUrl } from '../api/skills.js';
-import type { SkillInfo, SkillLibraryItem } from "../types/skills.js";
+import type { SkillDisplayCopy, SkillInfo, SkillLibraryItem } from "../types/skills.js";
 import type { WorkspaceFileDetail, WorkspaceFileKind, WorkspaceTreeNode } from "../types/workspace.js";
 import { type ArboristNode, toArboristNodes } from "../types/workspace.js";
 import { normalizeMarkdownMath } from "../utils/markdown-math.js";
 import { groupByCategory, matchesQuery } from "../utils/category-grouping.js";
+import { getFriendlySkillDescription, getFriendlySkillName } from "../i18n/skill-descriptions.js";
 import { useStoreSnapshot } from "./hooks.js";
 import { Spinner } from "./ui/Spinner.js";
 import { LazyCodeEditor } from "./LazyCodeEditor.js";
@@ -233,8 +234,10 @@ function SkillFilePane({ skillName, onToggleSidebar, sidebarOpen }: { skillName:
 
 /* ---------- Skill Detail View ---------- */
 
-function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: () => void; dndManager: DragDropManager }) {
-	const { t } = useTranslation();
+function SkillDetail({ skill, displayCopy, onBack, dndManager }: { skill: SkillInfo; displayCopy?: SkillDisplayCopy; onBack: () => void; dndManager: DragDropManager }) {
+	const { t, i18n } = useTranslation();
+	const friendlyName = getFriendlySkillName(skill.name, i18n.language, displayCopy);
+	const friendlyDescription = getFriendlySkillDescription(skill.name, i18n.language, displayCopy) || t("skills.noDescription");
 	const treeContainerRef = useRef<HTMLDivElement>(null);
 	const [treeHeight, setTreeHeight] = useState(400);
 	const [treeWidth, setTreeWidth] = useState(240);
@@ -299,7 +302,7 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 					</IconButton>
 					<div className="min-w-0 flex-1">
 						<div className="flex items-center gap-2">
-							<span className="truncate text-sm font-medium text-[var(--inno-text)]">{skill.name}</span>
+							<span className="truncate text-sm font-medium text-[var(--inno-text)]" title={skill.name}>{friendlyName}</span>
 							<span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${skill.enabled ? "bg-[var(--inno-success-bg)] text-[var(--inno-success)]" : "bg-[var(--inno-surface-muted)] text-[var(--inno-text-muted)]"}`}>
 								{skill.enabled ? t("common.enabled", "Enabled") : t("common.disabled", "Disabled")}
 							</span>
@@ -350,7 +353,12 @@ function SkillDetail({ skill, onBack, dndManager }: { skill: SkillInfo; onBack: 
 
 			{/* File content pane */}
 			<section className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)]">
-				<SkillFilePane skillName={skill.name} onToggleSidebar={() => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} />
+				<div className="shrink-0 border-b border-[var(--inno-border)] px-4 py-3">
+					<p className="whitespace-pre-wrap text-xs leading-5 text-[var(--inno-text-muted)]">{friendlyDescription}</p>
+				</div>
+				<div className="min-h-0 flex-1">
+					<SkillFilePane skillName={skill.name} onToggleSidebar={() => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} />
+				</div>
 			</section>
 		</div>
 	);
@@ -373,9 +381,11 @@ function tileToneFor(category: string): { bg: string; fg: string } {
 	return TILE_TONES[Math.abs(hash) % TILE_TONES.length];
 }
 
-function SkillCard({ skill, category, onClick }: { skill: SkillInfo; category: string; onClick: () => void }) {
-	const { t } = useTranslation();
+function SkillCard({ skill, displayCopy, category, onClick }: { skill: SkillInfo; displayCopy?: SkillDisplayCopy; category: string; onClick: () => void }) {
+	const { t, i18n } = useTranslation();
 	const tone = tileToneFor(category);
+	const friendlyName = getFriendlySkillName(skill.name, i18n.language, displayCopy);
+	const friendlyDescription = getFriendlySkillDescription(skill.name, i18n.language, displayCopy) || t("skills.noDescription");
 	return (
 		<button
 			className="flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[14px] border border-[var(--inno-border)] bg-[var(--inno-card-bg)] px-4 py-3.5 text-left transition-shadow hover:shadow-[var(--inno-shadow-soft)]"
@@ -388,10 +398,9 @@ function SkillCard({ skill, category, onClick }: { skill: SkillInfo; category: s
 				<Puzzle size={19} strokeWidth={1.8} />
 			</span>
 			<div className="min-w-0 flex-1">
-				<div className="truncate text-[13.5px] font-medium text-[var(--inno-text)]">{skill.name}</div>
-				<div className="mt-0.5 truncate text-[11.5px] text-[var(--inno-text-subtle)]">
-					{skill.description || t("skills.noDescription")} · {formatSize(skill.size)}
-				</div>
+				<div className="truncate text-[13.5px] font-medium text-[var(--inno-text)]" title={skill.name}>{friendlyName}</div>
+				<div className="mt-0.5 text-[11.5px] leading-relaxed text-[var(--inno-text-subtle)]">{friendlyDescription}</div>
+				<div className="mt-1 text-[10px] text-[var(--inno-text-subtle)]">{formatSize(skill.size)}</div>
 			</div>
 			<Tooltip label={skill.enabled ? t("common.enabled", "Enabled") : t("common.disabled", "Disabled")}>
 				<span className={`h-2 w-2 shrink-0 rounded-full ${skill.enabled ? "bg-[var(--inno-success)]" : "bg-[var(--inno-border-strong)]"}`} />
@@ -405,10 +414,11 @@ function SkillCard({ skill, category, onClick }: { skill: SkillInfo; category: s
 type SkillsTab = "mine" | "library";
 
 export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
-	const { t } = useTranslation();
+	const { t, i18n } = useTranslation();
 	const uploadRef = useRef<HTMLInputElement | null>(null);
 	const state = useStoreSnapshot(skillsStore, () => ({
 		skills: skillsStore.skills,
+		displayCopies: skillsStore.displayCopies,
 		selectedSkill: skillsStore.selectedSkill,
 		isLoading: skillsStore.isLoading,
 		isUploading: skillsStore.isUploading,
@@ -464,10 +474,18 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 
 	const groups = useMemo(
 		() => groupByCategory(
-			sourceItems.filter((s) => matchesQuery(s, query, s.category ? t(`categories.${s.category}`, s.category) : undefined)),
+			sourceItems.filter((s) => matchesQuery(
+				{
+					...s,
+					name: `${s.name} ${getFriendlySkillName(s.name, i18n.language, state.displayCopies[s.name])}`,
+					description: getFriendlySkillDescription(s.name, i18n.language, state.displayCopies[s.name]),
+				},
+				query,
+				s.category ? t(`categories.${s.category}`, s.category) : undefined,
+			)),
 			uncategorizedLabel,
 		),
-		[sourceItems, query, uncategorizedLabel, t],
+		[sourceItems, query, uncategorizedLabel, t, i18n.language, state.displayCopies],
 	);
 	const visibleGroups = useMemo(
 		() => (categoryFilter ? groups.filter(([cat]) => cat === categoryFilter) : groups),
@@ -486,7 +504,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 		return (
 			<div className="mx-auto flex h-full w-full max-w-[1160px] flex-col p-5">
 				<div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-					<SkillDetail skill={activeSkill} onBack={() => skillsStore.deselectSkill()} dndManager={dndManager} />
+					<SkillDetail skill={activeSkill} displayCopy={state.displayCopies[activeSkill.name]} onBack={() => skillsStore.deselectSkill()} dndManager={dndManager} />
 				</div>
 			</div>
 		);
@@ -656,10 +674,10 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 														<Puzzle size={19} strokeWidth={1.8} />
 													</span>
 													<div className="min-w-0 flex-1">
-														<div className="truncate text-[13.5px] font-medium text-[var(--inno-text)]">{item.name}</div>
-														{item.description ? (
-															<div className="mt-0.5 line-clamp-2 text-[11.5px] leading-relaxed text-[var(--inno-text-subtle)]">{item.description}</div>
-														) : null}
+														<div className="truncate text-[13.5px] font-medium text-[var(--inno-text)]" title={item.name}>{getFriendlySkillName(item.name, i18n.language, state.displayCopies[item.name])}</div>
+														<div className="mt-0.5 text-[11.5px] leading-relaxed text-[var(--inno-text-subtle)]">
+															{getFriendlySkillDescription(item.name, i18n.language, state.displayCopies[item.name]) || t("skills.noDescription")}
+														</div>
 													</div>
 													{item.installed ? (
 														<span className="flex shrink-0 items-center gap-1 rounded-md bg-[var(--inno-success-bg)] px-2 py-1 text-[11px] font-medium text-[var(--inno-success)]">
@@ -681,7 +699,7 @@ export function SkillsPanel({ dndManager }: { dndManager: DragDropManager }) {
 											);
 										})
 									: (items as SkillInfo[]).map((skill) => (
-											<SkillCard key={skill.name} skill={skill} category={category} onClick={() => void skillsStore.selectSkill(skill.name)} />
+											<SkillCard key={skill.name} skill={skill} displayCopy={state.displayCopies[skill.name]} category={category} onClick={() => void skillsStore.selectSkill(skill.name)} />
 										))}
 							</div>
 						</div>

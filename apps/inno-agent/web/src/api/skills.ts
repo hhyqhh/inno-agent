@@ -1,6 +1,6 @@
 import { apiFetch } from "./client.js";
 import { assertUploadSize } from "../utils/upload-limits.js";
-import type { SkillInfo, SkillLibraryItem } from "../types/skills.js";
+import type { SkillDisplayCopies, SkillInfo, SkillLibraryItem } from "../types/skills.js";
 import type { WorkspaceTreeNode, WorkspaceFileDetail } from "../types/workspace.js";
 
 export async function listSkills(): Promise<SkillInfo[]> {
@@ -9,6 +9,14 @@ export async function listSkills(): Promise<SkillInfo[]> {
 
 export async function listSkillLibrary(forceRefresh = false): Promise<SkillLibraryItem[]> {
 	return apiFetch<SkillLibraryItem[]>(`/api/skill-library${forceRefresh ? "?refresh=1" : ""}`);
+}
+
+export async function polishSkills(skills: Array<Pick<SkillInfo, "name" | "description">>): Promise<SkillDisplayCopies> {
+	const result = await apiFetch<{ copies: SkillDisplayCopies }>("/api/skills/display-copy", {
+		method: "POST",
+		body: JSON.stringify({ skills }),
+	});
+	return result.copies;
 }
 
 export async function importSkillFromLibrary(name: string): Promise<SkillInfo> {

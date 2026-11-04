@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
 	getSkillFile: vi.fn(),
 	inlineSkillHtml: vi.fn(),
 	deleteSkill: vi.fn(),
+	listSkills: vi.fn(),
+	polishSkills: vi.fn(),
 }));
 
 vi.mock("../api/skills.js", () => ({
@@ -12,7 +14,8 @@ vi.mock("../api/skills.js", () => ({
 	getSkillFile: mocks.getSkillFile,
 	inlineSkillHtml: mocks.inlineSkillHtml,
 	deleteSkill: mocks.deleteSkill,
-	listSkills: vi.fn(),
+	listSkills: mocks.listSkills,
+	polishSkills: mocks.polishSkills,
 	reloadSkills: vi.fn(),
 	updateSkill: vi.fn(),
 	uploadSkill: vi.fn(),
@@ -116,5 +119,43 @@ describe("SkillsStore request ownership", () => {
 		await request;
 		expect(store.selectedSkill).toBeNull();
 		expect(store.skillTree).toBeNull();
+	});
+});
+
+describe("SkillsStore AI display copy", () => {
+	beforeEach(() => {
+		mocks.listSkills.mockReset();
+		mocks.polishSkills.mockReset();
+	});
+
+	it("polishes a newly discovered skill in the background", async () => {
+		mocks.listSkills.mockResolvedValue([skill("brand-new")]);
+		mocks.polishSkills.mockResolvedValue({
+			"brand-new": {
+				displayName: { zh: "全新技能", en: "Brand New" },
+				description: { zh: "帮助完成新任务。", en: "Help with a new task." },
+			},
+		});
+		const store = new SkillsStoreImpl();
+		await store.load();
+		await vi.waitFor(() => expect(store.displayCopies["brand-new"]?.displayName.zh).toBe("全新技能"));
+		expect(mocks.polishSkills).toHaveBeenCalledWith([expect.objectContaining({ name: "brand-new" })]);
+	});
+
+	it("does not regenerate skills that already have polished copy", async () => {
+		mocks.listSkills.mockResolvedValue([skill("docx")]);
+		const store = new SkillsStoreImpl();
+		await store.load();
+		expect(mocks.polishSkills).not.toHaveBeenCalled();
+	});
+
+	it("keeps list loading successful when background polishing fails", async () => {
+		mocks.listSkills.mockResolvedValue([skill("brand-new")]);
+		mocks.polishSkills.mockRejectedValue(new Error("model unavailable"));
+		const store = new SkillsStoreImpl();
+		await expect(store.load()).resolves.toBeUndefined();
+		await vi.waitFor(() => expect(mocks.polishSkills).toHaveBeenCalled());
+		expect(store.skills).toHaveLength(1);
+		expect(store.error).toBeNull();
 	});
 });

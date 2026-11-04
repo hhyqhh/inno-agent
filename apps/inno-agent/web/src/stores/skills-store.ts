@@ -1,6 +1,7 @@
 import { EventEmitter } from "./event-emitter.js";
-import { deleteSkill, listSkills, reloadSkills, inlineSkillHtml, updateSkill, uploadSkill, getSkillTree, getSkillFile, saveSkillFile, listSkillLibrary, importSkillFromLibrary } from "../api/skills.js";
-import type { SkillInfo, SkillLibraryItem } from "../types/skills.js";
+import { deleteSkill, listSkills, reloadSkills, inlineSkillHtml, updateSkill, uploadSkill, getSkillTree, getSkillFile, saveSkillFile, listSkillLibrary, importSkillFromLibrary, polishSkills } from "../api/skills.js";
+import type { SkillDisplayCopies, SkillInfo, SkillLibraryItem } from "../types/skills.js";
+import { getFriendlySkillDescription } from "../i18n/skill-descriptions.js";
 import type { WorkspaceTreeNode, WorkspaceFileDetail } from "../types/workspace.js";
 
 interface SkillsStoreEvents {
@@ -9,6 +10,8 @@ interface SkillsStoreEvents {
 
 export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 	skills: SkillInfo[] = [];
+	/** AI-polished metadata for skills added after the bundled initial copy. */
+	displayCopies: SkillDisplayCopies = {};
 	isLoading = false;
 	isUploading = false;
 	error: string | null = null;
@@ -35,6 +38,32 @@ export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 	private noticeTimer: ReturnType<typeof setTimeout> | null = null;
 	private treeRequestId = 0;
 	private fileRequestId = 0;
+	private displayCopyRequests = new Set<string>();
+
+	private ensureDisplayCopies(items: Array<Pick<SkillInfo, "name" | "description">>) {
+		const missing = items.filter((item) =>
+			!getFriendlySkillDescription(item.name, "en")
+			&& !this.displayCopies[item.name]
+			&& !this.displayCopyRequests.has(item.name)
+		);
+		if (!missing.length) return;
+		for (const item of missing) this.displayCopyRequests.add(item.name);
+		void this.requestDisplayCopies(missing);
+	}
+
+	private async requestDisplayCopies(items: Array<Pick<SkillInfo, "name" | "description">>) {
+		try {
+			for (let offset = 0; offset < items.length; offset += 20) {
+				const copies = await polishSkills(items.slice(offset, offset + 20));
+				this.displayCopies = { ...this.displayCopies, ...copies };
+				this.emit("change", undefined);
+			}
+		} catch {
+			// Silent best-effort metadata: the next list load may retry failures.
+		} finally {
+			for (const item of items) this.displayCopyRequests.delete(item.name);
+		}
+	}
 
 	private showNotice(message: string) {
 		this.notice = message;
@@ -52,6 +81,7 @@ export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 		this.emit("change", undefined);
 		try {
 			this.skills = await listSkills();
+			this.ensureDisplayCopies(this.skills);
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : "Failed to load skills";
 			this.skills = [];
@@ -68,6 +98,7 @@ export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 		try {
 			const skill = await uploadSkill(file);
 			this.skills = [skill, ...this.skills.filter((item) => item.name !== skill.name)].sort((a, b) => a.name.localeCompare(b.name));
+			this.ensureDisplayCopies([skill]);
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : "Failed to upload skill";
 		} finally {
@@ -101,6 +132,7 @@ export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 	async reload() {
 		const result = await reloadSkills();
 		this.skills = result.skills;
+		this.ensureDisplayCopies(this.skills);
 		this.emit("change", undefined);
 	}
 
@@ -123,6 +155,7 @@ export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 		this.emit("change", undefined);
 		try {
 			this.library = await listSkillLibrary(forceRefresh);
+			this.ensureDisplayCopies(this.library);
 		} catch (err) {
 			this.libraryError = err instanceof Error ? err.message : "Failed to load skill library";
 			this.library = [];
@@ -141,6 +174,7 @@ export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 			const skill = await importSkillFromLibrary(name);
 			this.skills = [skill, ...this.skills.filter((item) => item.name !== skill.name)].sort((a, b) => a.name.localeCompare(b.name));
 			this.library = this.library.map((item) => (item.name === name ? { ...item, installed: true } : item));
+			this.ensureDisplayCopies([skill]);
 			this.showNotice(skill.name);
 		} catch (err) {
 			this.libraryError = err instanceof Error ? err.message : "Failed to import skill";

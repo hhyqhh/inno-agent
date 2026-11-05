@@ -1202,6 +1202,13 @@
 			"durationLessThanSecond": "<1 sec",
 			"duration": "for {{duration}}",
 			"tool": "Tool",
+			"process": {
+				"expand": "Expand work process ({{count}} steps)",
+				"collapse": "Collapse work process ({{count}} steps)",
+				"expandAction": "Expand",
+				"collapseAction": "Collapse",
+				"stepCount": "{{count}} steps"
+			},
 			"row": {
 				"expand": "Expand {{summary}}",
 				"collapse": "Collapse {{summary}}"

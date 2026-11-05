@@ -573,6 +573,29 @@ function pendingQuestionTraceStep(questionId: string): ChatTraceStep {
 	};
 }
 
+function TraceProcessScroll({ children }: { children: ReactNode }) {
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const followLatestRef = useRef(true);
+
+	useLayoutEffect(() => {
+		const element = scrollRef.current;
+		if (element && followLatestRef.current) element.scrollTop = element.scrollHeight;
+	}, [children]);
+
+	return (
+		<div
+			ref={scrollRef}
+			className="inno-trace-process-scroll"
+			onScroll={(event) => {
+				const element = event.currentTarget;
+				followLatestRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+			}}
+		>
+			{children}
+		</div>
+	);
+}
+
 export function AgentTraceTimeline({
 	steps,
 	isSending = false,
@@ -591,6 +614,8 @@ export function AgentTraceTimeline({
 	const { t } = useTranslation();
 	const [, setClock] = useState(0);
 	const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+	const [processExpansionOverride, setProcessExpansionOverride] = useState<boolean | null>(null);
+	const processListId = useId();
 
 	useEffect(() => {
 		if (!isSending) return;
@@ -650,6 +675,18 @@ export function AgentTraceTimeline({
 	// question pause or a reconnect, `isSending` can briefly be false while the
 	// trace still correctly reports a running/waiting step.
 	const currentLiveStep = [...processSteps].reverse().find((step) => isOpenStatus(step.status));
+	// Keep active work visible, but settle long traces into one summary row.
+	// The override preserves a user's explicit choice across streaming updates.
+	const hasCollapsibleProcess = processSteps.length > 3;
+	const processExpanded = !hasCollapsibleProcess || (processExpansionOverride ?? (isSending || Boolean(currentLiveStep)));
+	const workStatus = workStatusText(isSending, terminalState, visibleSteps, t, error);
+	const workStatusContent = (
+		<>
+			<Clock3 size={14} aria-hidden="true" />
+			<span>{workStatus}</span>
+			{durationMs !== undefined ? <span>· {formatDuration(durationMs, t)}</span> : null}
+		</>
+	);
 
 	const toggle = (id: string) => {
 		setExpanded((current) => {
@@ -660,50 +697,98 @@ export function AgentTraceTimeline({
 		});
 	};
 
+	const renderFlowStep = (step: ChatTraceStep, index: number): ReactNode => {
+		if (isTextKind(step.kind)) {
+			if (isSending) return <LiveTraceBody key={`trace-body:${index}:${step.id}`} content={step.text ?? ""} />;
+			if (liveBodies) return <LiveTraceBody key={`trace-body:${index}:${step.id}`} content={step.text ?? ""} animate={false} />;
+			return <TraceBody key={`trace-body:${index}:${step.id}`} content={step.text ?? ""} />;
+		}
+		const rowId = `trace-row:${index}:${step.id}`;
+		const questionnaire = showText && step.kind === "tool" && step.toolCallId
+			? questionnaireByToolCallId.get(step.toolCallId)
+			: undefined;
+		return (
+			<Fragment key={rowId}>
+				{processExpanded ? (
+					<TraceRow
+						step={step}
+						now={now}
+						isCurrentLiveStep={step === currentLiveStep}
+						expanded={expanded.has(rowId)}
+						onToggle={() => toggle(rowId)}
+						t={t}
+						onOpenSkill={onOpenSkill}
+					/>
+				) : null}
+				{pendingQuestionIndex === index ? (
+					<div className="inno-trace-questionnaire">
+						{pendingQuestion!.card}
+					</div>
+				) : null}
+				{questionnaire ? (
+					<div className="inno-trace-questionnaire">
+						<AnsweredQuestionCard questionnaire={questionnaire.questionnaire} />
+					</div>
+				) : null}
+			</Fragment>
+		);
+	};
+
+	const renderedFlow: ReactNode[] = [];
+	if (hasCollapsibleProcess && processExpanded) {
+		let processGroup: { step: ChatTraceStep; index: number }[] = [];
+		const flushProcessGroup = () => {
+			const first = processGroup[0];
+			if (!first) return;
+			renderedFlow.push(
+				<TraceProcessScroll key={`trace-process:${first.index}:${first.step.id}`}>
+					{processGroup.map(({ step, index }) => renderFlowStep(step, index))}
+				</TraceProcessScroll>,
+			);
+			processGroup = [];
+		};
+		flowSteps.forEach((step, index) => {
+			if (!isTextKind(step.kind)) {
+				processGroup.push({ step, index });
+				return;
+			}
+			flushProcessGroup();
+			renderedFlow.push(renderFlowStep(step, index));
+		});
+		flushProcessGroup();
+	} else {
+		renderedFlow.push(...flowSteps.map(renderFlowStep));
+	}
+
 	return (
 		<div className="inno-trace-timeline" aria-label={t("chat.trace.timeline", "工作过程")}>
 			{showHeader ? (
-				<div className="inno-trace-work-status">
-					<Clock3 size={14} aria-hidden="true" />
-					<span>{workStatusText(isSending, terminalState, visibleSteps, t, error)}</span>
-					{durationMs !== undefined ? <span>· {formatDuration(durationMs, t)}</span> : null}
-				</div>
+				hasCollapsibleProcess ? (
+					<button
+						type="button"
+						className="inno-trace-work-status inno-trace-process-toggle"
+						aria-expanded={processExpanded}
+						aria-controls={processListId}
+						aria-label={processExpanded
+							? t("chat.trace.process.collapse", "收起工作过程（{{count}} 个步骤）", { count: processSteps.length })
+							: t("chat.trace.process.expand", "展开工作过程（{{count}} 个步骤）", { count: processSteps.length })}
+						onClick={() => setProcessExpansionOverride(!processExpanded)}
+					>
+						{workStatusContent}
+						<span className="inno-trace-process-count">{t("chat.trace.process.stepCount", "{{count}} 个步骤", { count: processSteps.length })}</span>
+						<span className="inno-trace-process-action">
+							{processExpanded
+								? t("chat.trace.process.collapseAction", "收起")
+								: t("chat.trace.process.expandAction", "展开")}
+						</span>
+						<ChevronRight size={15} className={`inno-trace-chevron ${processExpanded ? "is-open" : ""}`} aria-hidden="true" />
+					</button>
+				) : (
+					<div className="inno-trace-work-status">{workStatusContent}</div>
+				)
 			) : null}
-			<div className={showText ? "inno-trace-flow" : "inno-trace-list"} role="list">
-				{flowSteps.map((step, index) => {
-					if (isTextKind(step.kind)) {
-						if (isSending) return <LiveTraceBody key={`trace-body:${index}:${step.id}`} content={step.text ?? ""} />;
-						if (liveBodies) return <LiveTraceBody key={`trace-body:${index}:${step.id}`} content={step.text ?? ""} animate={false} />;
-						return <TraceBody key={`trace-body:${index}:${step.id}`} content={step.text ?? ""} />;
-					}
-					const rowId = `trace-row:${index}:${step.id}`;
-					const questionnaire = showText && step.kind === "tool" && step.toolCallId
-						? questionnaireByToolCallId.get(step.toolCallId)
-						: undefined;
-					return (
-						<Fragment key={rowId}>
-							<TraceRow
-								step={step}
-								now={now}
-								isCurrentLiveStep={step === currentLiveStep}
-								expanded={expanded.has(rowId)}
-								onToggle={() => toggle(rowId)}
-								t={t}
-								onOpenSkill={onOpenSkill}
-							/>
-							{pendingQuestionIndex === index ? (
-								<div className="inno-trace-questionnaire">
-									{pendingQuestion!.card}
-								</div>
-							) : null}
-							{questionnaire ? (
-								<div className="inno-trace-questionnaire">
-									<AnsweredQuestionCard questionnaire={questionnaire.questionnaire} />
-								</div>
-							) : null}
-						</Fragment>
-					);
-				})}
+			<div id={processListId} className={showText ? "inno-trace-flow" : "inno-trace-list"} role="list">
+				{renderedFlow}
 				{pendingQuestion && pendingQuestionIndex < 0 ? (
 					<>
 						<TraceRow

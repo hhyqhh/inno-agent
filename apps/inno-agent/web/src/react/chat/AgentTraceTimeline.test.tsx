@@ -497,6 +497,59 @@ describe("AgentTraceTimeline", () => {
 		expect(onOpenSkill).toHaveBeenCalledWith("docs");
 	});
 
+	it("collapses long completed process flows without hiding the answer", () => {
+		const steps: ChatTraceStep[] = Array.from({ length: 5 }, (_, index) => ({
+			...officeTool,
+			id: `tool:${index}`,
+			toolCallId: `tool:${index}`,
+			toolName: "bash",
+			args: { command: `step ${index}` },
+		}));
+		const answer: ChatTraceStep = {
+			id: "answer",
+			kind: "answer",
+			status: "completed",
+			title: "回复",
+			text: "最终答案保持可见",
+		};
+		const view = render(<AgentTraceTimeline showText steps={[...steps, answer]} />);
+
+		const processToggle = screen.getByRole("button", { name: "展开工作过程（5 个步骤）" });
+		expect(processToggle.getAttribute("aria-expanded")).toBe("false");
+		expect(processToggle.textContent).toContain("展开");
+		expect(document.querySelectorAll(".inno-trace-row")).toHaveLength(0);
+		expect(screen.getByText("最终答案保持可见")).toBeTruthy();
+
+		fireEvent.click(processToggle);
+		expect(document.querySelectorAll(".inno-trace-row")).toHaveLength(5);
+		expect(document.querySelector(".inno-trace-process-scroll")).not.toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "收起工作过程（5 个步骤）" }));
+		expect(document.querySelectorAll(".inno-trace-row")).toHaveLength(0);
+
+		view.unmount();
+		const liveSteps = steps.map((step, index) => index === steps.length - 1 ? { ...step, status: "running" as const } : step);
+		const liveView = render(<AgentTraceTimeline isSending steps={liveSteps} />);
+		expect(document.querySelectorAll(".inno-trace-row")).toHaveLength(5);
+		expect(screen.getByRole("button", { name: "收起工作过程（5 个步骤）" })).toBeTruthy();
+
+		const scroll = document.querySelector<HTMLElement>(".inno-trace-process-scroll")!;
+		Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: 500 });
+		Object.defineProperty(scroll, "clientHeight", { configurable: true, value: 250 });
+		const nextSteps: ChatTraceStep[] = [
+			...liveSteps.slice(0, -1),
+			{ ...liveSteps.at(-1)!, status: "completed" },
+			{ ...officeTool, id: "tool:5", toolCallId: "tool:5", toolName: "bash", status: "running", args: { command: "step 5" } },
+		];
+		liveView.rerender(<AgentTraceTimeline isSending steps={nextSteps} />);
+		expect(scroll.scrollTop).toBe(500);
+
+		scroll.scrollTop = 100;
+		fireEvent.scroll(scroll);
+		Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: 650 });
+		liveView.rerender(<AgentTraceTimeline isSending steps={nextSteps} />);
+		expect(scroll.scrollTop).toBe(100);
+	});
+
 	it("keeps internal bookkeeping and child-task timing out of the surface", () => {
 		render(
 			<AgentTraceTimeline

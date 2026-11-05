@@ -121,6 +121,19 @@ describe("univer-xlsx converter", () => {
 		expect(backWs.getCell("A1").value).toBe("merged");
 	});
 
+    it("saves edited merged masters without stale slave values overwriting them", async () => {
+        const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Merged");
+        ws.mergeCells("A1:B1"); ws.getCell("A1").value = "old";
+        const bytes = new Uint8Array(await wb.xlsx.writeBuffer() as ArrayBuffer);
+        const baseline = excelJsToUniver(wb, "merged.xlsx"), current = structuredClone(baseline);
+        current.sheets["sheet-1"].cellData[0][0].v = "new";
+        for (const imported of [undefined, { bytes, baseline }]) {
+            const output = await univerSnapshotToXlsxBytes(current, "merged.xlsx", imported);
+            const back = new ExcelJS.Workbook(); await back.xlsx.load(output as any);
+            expect(back.worksheets[0].getCell("A1").value).toBe("new");
+            expect(back.worksheets[0].model.merges).toEqual(["A1:B1"]);
+        }
+    });
 	it("keeps multi-sheet order and produces valid xlsx bytes", async () => {
 		const wb = new ExcelJS.Workbook();
 		wb.addWorksheet("第一个").addRow(["一"]);
@@ -136,6 +149,97 @@ describe("univer-xlsx converter", () => {
 		expect(reparsed.getWorksheet("第二个")!.getCell("A1").value).toBe("二");
 	});
 
+    it("exports changes into the imported workbook with its existing images, comments and unmodeled styles", async () => {
+        const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Original");
+        ws.getCell("A1").value = "old";
+        ws.getCell("A1").font = { bold: true, underline: true, color: { theme: 4 } };
+        ws.getCell("A1").note = "Keep comment";
+        ws.getCell("A1").alignment = { indent: 2, textRotation: 45 };
+        const imageId = wb.addImage({ base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", extension: "png" });
+        ws.addImage(imageId, "D1:E3");
+        const bytes = new Uint8Array(await wb.xlsx.writeBuffer() as ArrayBuffer);
+        const baseline = excelJsToUniver(wb, "source.xlsx"), current = structuredClone(baseline);
+        current.sheets["sheet-1"].name = "Renamed";
+        current.sheets["sheet-1"].cellData[0][0].v = "updated";
+        current.sheets["sheet-1"].cellData[0][0].s = { ...(current.sheets["sheet-1"].cellData[0][0].s as object), bl: 0, fs: 18, bg: { rgb: "#FF0000" } };
+        current.sheets["new"] = { id: "new", name: "Added", rowCount: 100, columnCount: 26, cellData: { 0: { 0: { v: "new sheet" } } } };
+        current.sheetOrder = ["new", "sheet-1"];
+        const output = await univerSnapshotToXlsxBytes(current, "source.xlsx", { bytes, baseline });
+        const back = new ExcelJS.Workbook(); await back.xlsx.load(output as any);
+        expect(back.worksheets.map(sheet => sheet.name)).toEqual(["Added", "Renamed"]);
+        expect(back.getWorksheet("Added")!.getCell("A1").value).toBe("new sheet");
+        const cell = back.getWorksheet("Renamed")!.getCell("A1");
+        expect(cell.value).toBe("updated"); expect(cell.font.bold).not.toBe(true);
+        expect(cell.font).toMatchObject({ size: 18, underline: true, color: { theme: 4 } });
+        expect(cell.alignment).toMatchObject({ indent: 2, textRotation: 45 });
+        expect(cell.note).toBe("Keep comment");
+        expect(back.getWorksheet("Renamed")!.getImages()).toHaveLength(1);
+    });
+    it("keeps shared formula dependents saveable when their master is replaced", async () => {
+        const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Shared");
+        ws.getCell("B1").value = 1; ws.getCell("B2").value = 2; ws.getCell("B3").value = 3;
+        ws.getCell("A1").value = { formula: "B1", result: 1, shareType: "shared", ref: "A1:A3" } as ExcelJS.CellFormulaValue & { shareType: "shared"; ref: string };
+        ws.getCell("A2").value = { sharedFormula: "A1", result: 2 };
+        ws.getCell("A3").value = { sharedFormula: "A1", result: 3 };
+        const bytes = new Uint8Array(await wb.xlsx.writeBuffer() as ArrayBuffer);
+        const parsed = new ExcelJS.Workbook(); await parsed.xlsx.load(bytes as any);
+        const baseline = excelJsToUniver(parsed, "shared.xlsx"), current = structuredClone(baseline);
+        current.sheets["sheet-1"].cellData[0][0] = { v: 5, t: 2 };
+        const output = await univerSnapshotToXlsxBytes(current, "shared.xlsx", { bytes, baseline });
+        const back = new ExcelJS.Workbook(); await back.xlsx.load(output as any);
+        expect(back.worksheets[0].getCell("A1").value).toBe(5);
+        expect(back.worksheets[0].getCell("A2").value).toEqual({ formula: "B2", result: 2 });
+        expect(back.worksheets[0].getCell("A3").value).toEqual({ formula: "B3", result: 3 });
+        expect(baseline.sheets["sheet-1"].cellData[1][0].f).toBe("=B2");
+    });
+    it("exports document text with inline formatting and line breaks", async () => {
+        const wb = await workbookFromRows([["old"]]), snapshot = excelJsToUniver(wb, "rich.xlsx");
+        snapshot.sheets["sheet-1"].cellData[0][0] = { p: { body: { dataStream: "Bold plain\rnext\r\n", textRuns: [{ st: 0, ed: 4, ts: { bl: 1, cl: { rgb: "#123456" } } }] } } };
+        const bytes = await univerSnapshotToXlsxBytes(snapshot, "rich.xlsx"), back = new ExcelJS.Workbook();
+        await back.xlsx.load(bytes as any);
+        expect(back.worksheets[0].getCell("A1").value).toEqual({ richText: [{ text: "Bold", font: { bold: true, color: { argb: "FF123456" } } }, { text: " plain\nnext" }] });
+    });
+
+    it("saves sheet/row/column visibility and whole-row/column formatting", async () => {
+        const wb = await workbookFromRows([["row", "column"], ["second", "value"]]);
+        wb.addWorksheet("Visible");
+        const bytes = new Uint8Array(await wb.xlsx.writeBuffer() as ArrayBuffer);
+        const baseline = excelJsToUniver(wb, "metadata.xlsx"), current = structuredClone(baseline);
+        const sheet = current.sheets["sheet-1"];
+        sheet.hidden = 1;
+        sheet.rowData = { 0: { hd: 1, h: 40, s: { bl: 1 } } };
+        sheet.columnData = { 1: { hd: 1, w: 145, s: { it: 1, n: { pattern: "0.00" } } } };
+        for (const imported of [undefined, { bytes, baseline }]) {
+            const output = await univerSnapshotToXlsxBytes(current, "metadata.xlsx", imported);
+            const back = new ExcelJS.Workbook(); await back.xlsx.load(output as any);
+            const ws = back.worksheets[0];
+            expect(ws.state).toBe("hidden");
+            expect(ws.getRow(1).hidden).toBe(true);
+            expect(ws.getRow(1).height).toBe(30);
+            expect(ws.getRow(1).font.bold).toBe(true);
+            expect(ws.getColumn(2).hidden).toBe(true);
+            expect(ws.getColumn(2).width).toBe(20);
+            expect(ws.getColumn(2).font?.italic).toBe(true);
+            expect(ws.getCell("A1").font.bold).toBe(true);
+            expect(ws.getCell("B2").font.italic).toBe(true);
+            expect(ws.getCell("B2").numFmt).toBe("0.00");
+            const reopened = excelJsToUniver(back, "metadata.xlsx").sheets["sheet-1"];
+            expect(reopened.hidden).toBe(1);
+            expect(reopened.rowData?.[0]?.hd).toBe(1);
+            expect(reopened.columnData?.[1]?.hd).toBe(1);
+        }
+        // Clearing metadata must unhide the original row/column on the next save.
+        const source = new ExcelJS.Workbook(); await source.xlsx.load(await univerSnapshotToXlsxBytes(current, "metadata.xlsx") as any);
+        const hiddenBaseline = excelJsToUniver(source, "metadata.xlsx"), unhidden = structuredClone(hiddenBaseline);
+        unhidden.sheets["sheet-1"].hidden = 0;
+        unhidden.sheets["sheet-1"].rowData![0].hd = 0;
+        unhidden.sheets["sheet-1"].columnData![1].hd = 0;
+        const output = await univerSnapshotToXlsxBytes(unhidden, "metadata.xlsx", { bytes: new Uint8Array(await source.xlsx.writeBuffer() as ArrayBuffer), baseline: hiddenBaseline });
+        const back = new ExcelJS.Workbook(); await back.xlsx.load(output as any);
+        expect(back.worksheets[0].state).toBe("visible");
+        expect(back.worksheets[0].getRow(1).hidden).toBe(false);
+        expect(back.worksheets[0].getColumn(2).hidden).toBe(false);
+    });
 	it("rejects huge ranges without silently dropping data", async () => {
 		const wb = new ExcelJS.Workbook();
 		const ws = wb.addWorksheet("big");

@@ -1,15 +1,9 @@
 {
   "officeEditor": {
-      "overwriteTitle": "Back up and overwrite the original?",
-      "overwriteNotice": "Write the current edits to the original. A .backup- copy will be created in the same folder first; a failed backup cancels the overwrite. To keep the original, cancel and choose Save copy.",
-      "confirmOverwrite": "Back up and overwrite",
-      "backupSaved": "Original backup:",
-      "saveCopy": "Save copy",
-      "copySaved": "Copy saved",
-      "copyPath": "Copy path:",
-      "xlsxLimits": "Preserving save supports cell values and ordinary formulas, keeping original images, charts and formatting. Formatting, row/column/sheet structure and complex formula changes are unsupported and block saving.",
-      "pptxLimits": "Preserving save supports existing single-paragraph plain text that can be uniquely mapped. Other original content is retained. Formatting, layout, object and slide changes are unsupported and block saving.",
-      "unsupportedCommand": "This operation is unavailable to preserve the original content. Only cell values and ordinary formulas can be edited; use Paste values for clipboard data."
+      "copyName": "Backup",
+      "saveCopy": "Save backup",
+      "copySaved": "Backup saved",
+      "copyPath": "Backup file:"
   },
 	"workspaceStart": {
 		"tab": "Start",

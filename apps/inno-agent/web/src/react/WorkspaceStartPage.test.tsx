@@ -40,6 +40,18 @@ describe("File start page", () => {
 		expect(workspaceStore.activePreviewPath).toBe(previewTabKey({ path: "draft.md", workspaceId: "current" })); expect(workspaceStore.editBuffer).toBe("unsaved draft");
 		expect(workspaceStore.previewTabs.some(isStartTab)).toBe(true);
 	});
+    it("keeps automatic backups out of recent files, including legacy backup names", () => {
+        const names = ["budget.backup-1793372128093-8b9d744f-88dd-47ea-914b-be27d1234567.xlsx", ".office-backups/budget.xlsx/version.xlsx", "budget - 副本.xlsx"];
+        for (const path of names) {
+            workspaceStore.tree!.children!.push({ path, name: path.split("/").at(-1)!, type: "file", updatedAt: new Date().toISOString() });
+            workspaceStore.recentFiles.push({ path, name: path.split("/").at(-1)!, workspaceId: "current", openedAt: Date.now() });
+        }
+        render(<WorkspaceStartPage />);
+        expect(screen.queryByText(names[0])).toBeNull();
+        expect(screen.queryByText("version.xlsx")).toBeNull();
+        expect(screen.getByText("budget - 副本.xlsx")).toBeTruthy();
+    });
+
 	it("filters by path and provides a useful no-results state", () => {
 		render(<WorkspaceStartPage />);
 		fireEvent.change(screen.getByRole("textbox", { name: "workspaceStart.search" }), { target: { value: "docs/" } });

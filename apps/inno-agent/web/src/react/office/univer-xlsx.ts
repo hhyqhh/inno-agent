@@ -1,7 +1,4 @@
-/** ExcelJS ↔ Univer view conversion. This is intentionally an incomplete
- * representation: editor saves use office-ooxml.ts to patch the original ZIP.
- * The standalone converter below must not be used to overwrite an import.
- */
+/** ExcelJS ↔ Univer conversion and complete workbook export. */
 import ExcelJS from "exceljs";
 
 /** Univer CellValueType: STRING=1, NUMBER=2, BOOLEAN=3, FORCE_STRING=4. */
@@ -53,6 +50,10 @@ export interface UniverStyle {
 	ff?: string | null;
 	fs?: number;
 	it?: number;
+    ul?: { s?: number };
+    st?: { s?: number };
+    va?: number;
+    tr?: { a?: number; v?: number };
 	bl?: number;
 	bg?: UniverColorStyle | null;
 	cl?: UniverColorStyle | null;
@@ -72,11 +73,31 @@ export interface UniverCell {
 	v?: string | number | boolean;
 	t?: number;
 	f?: string;
-    p?: { body?: { dataStream?: string } };
+    p?: {
+        body?: {
+            dataStream?: string;
+            textRuns?: { st: number; ed: number; ts?: Record<string, unknown> }[];
+            paragraphs?: { bullet?: unknown; [key: string]: unknown }[];
+            customRanges?: unknown[];
+            customBlocks?: unknown[];
+            tables?: unknown[];
+        };
+        drawings?: Record<string, unknown>;
+    };
 	s?: UniverStyle | string;
 }
 
+interface UniverAxisData {
+    h?: number;
+    ah?: number;
+    ia?: number;
+    w?: number;
+    hd?: number;
+    s?: UniverStyle | string | null;
+}
+
 interface UniverSheetData {
+    hidden?: number;
 	scrollTop?: number;
 	scrollLeft?: number;
 	zoomRatio?: number;
@@ -86,8 +107,8 @@ interface UniverSheetData {
 	columnCount: number;
 	cellData: Record<number, Record<number, UniverCell>>;
 	mergeData?: Array<{ startRow: number; endRow: number; startColumn: number; endColumn: number }>;
-	columnData?: Record<number, { w?: number }>;
-	rowData?: Record<number, { h?: number }>;
+	columnData?: Record<number, UniverAxisData>;
+	rowData?: Record<number, UniverAxisData>;
 }
 
 export interface UniverWorkbookData {
@@ -145,8 +166,8 @@ function staticText(cell: ExcelJS.Cell, value: ExcelJS.CellValue): string | null
 	}
 }
 
-function excelStyleToUniver(cell: ExcelJS.Cell): UniverStyle | undefined {
-	const style = cell.style;
+function excelStyleToUniver(cell: Partial<Pick<ExcelJS.Cell, "style" | "font" | "fill" | "alignment" | "numFmt" | "border">>): UniverStyle | undefined {
+	const style = cell.style ?? cell;
 	const out: UniverStyle = {};
 	const font = style.font;
 	if (font) {
@@ -154,6 +175,9 @@ function excelStyleToUniver(cell: ExcelJS.Cell): UniverStyle | undefined {
 		if (typeof font.size === "number") out.fs = font.size;
 		if (font.bold) out.bl = 1;
 		if (font.italic) out.it = 1;
+        if (font.underline) out.ul = { s: 1 };
+        if (font.strike) out.st = { s: 1 };
+        if (font.vertAlign) out.va = font.vertAlign === "superscript" ? 3 : 2;
 		const fontColor = font.color?.argb;
 		if (fontColor) {
 			const rgb = argbToRgb(fontColor);
@@ -177,6 +201,7 @@ function excelStyleToUniver(cell: ExcelJS.Cell): UniverStyle | undefined {
 		else if (alignment.vertical === "middle") out.vt = VT_MIDDLE;
 		else if (alignment.vertical === "bottom") out.vt = VT_BOTTOM;
 		if (alignment.wrapText) out.tb = TB_WRAP;
+        if (typeof alignment.textRotation === "number") out.tr = { a: alignment.textRotation };
 	}
 	const numFmt = cell.numFmt ?? style.numFmt;
 	if (numFmt && numFmt !== "General") out.n = { pattern: numFmt };
@@ -222,8 +247,8 @@ export function excelJsToUniver(workbook: ExcelJS.Workbook, name: string): Unive
 				}
 				const out: UniverCell = {};
 				if (typeof raw === "object") {
-					if ("formula" in raw && typeof raw.formula === "string") {
-						out.f = `=${raw.formula}`;
+					if (("formula" in raw || "sharedFormula" in raw) && typeof cell.formula === "string") {
+						out.f = `=${cell.formula}`;
 						const result = raw.result;
 						if (typeof result === "number") {
 							out.v = result;
@@ -270,19 +295,20 @@ export function excelJsToUniver(workbook: ExcelJS.Workbook, name: string): Unive
 			const { s, e } = decodeRange(range);
 			return { startRow: s.r, endRow: e.r, startColumn: s.c, endColumn: e.c };
 		});
-		const columnData: Record<number, { w?: number }> = {};
+		const columnData: Record<number, UniverAxisData> = {};
 		for (let c = 1; c <= columnCount; c++) {
-			const width = ws.getColumn(c).width;
-			if (width != null) columnData[c - 1] = { w: CHAR_TO_PX(width) };
+			const col = ws.getColumn(c);
+            columnData[c - 1] = { ...(col.width != null ? { w: CHAR_TO_PX(col.width) } : {}), ...(col.hidden ? { hd: 1 } : {}), s: excelStyleToUniver(col) };
 		}
-		const rowData: Record<number, { h?: number }> = {};
+		const rowData: Record<number, UniverAxisData> = {};
 		for (let r = 1; r <= rowCount; r++) {
-			const height = ws.getRow(r).height;
-			if (height != null) rowData[r - 1] = { h: Math.round(height * 4 / 3) };
+			const row = ws.getRow(r);
+            rowData[r - 1] = { ...(row.height != null ? { h: Math.round(row.height * 4 / 3) } : {}), ...(row.hidden ? { hd: 1 } : {}), s: excelStyleToUniver(row) };
 		}
 		sheets[id] = {
 			id,
 			name: (ws.name || `Sheet${i + 1}`).slice(0, 31),
+            hidden: ws.state === "veryHidden" ? 2 : ws.state === "hidden" ? 1 : 0,
 			rowCount: Math.max(rowCount, 100),
 			columnCount: Math.max(columnCount, 26),
 			cellData,
@@ -295,20 +321,28 @@ export function excelJsToUniver(workbook: ExcelJS.Workbook, name: string): Unive
 	return { id: `wb-${Date.now()}`, name, sheetOrder, sheets, dateSystem: workbook.properties.date1904 ? "date1904" : "date1900" };
 }
 
-function resolveStyle(cell: UniverCell, styles?: Record<string, UniverStyle | null>): UniverStyle | undefined {
+function resolveStyle(cell: { s?: UniverStyle | string | null }, styles?: Record<string, UniverStyle | null>): UniverStyle | undefined {
 	if (!cell.s) return undefined;
 	if (typeof cell.s === "string") return styles?.[cell.s] ?? undefined;
 	return cell.s;
 }
 
-function univerStyleToExcel(cell: ExcelJS.Cell, style: UniverStyle): void {
+function univerFontToExcel(style: UniverStyle): Partial<ExcelJS.Font> {
 	const font: Partial<ExcelJS.Font> = {};
 	if (style.ff) font.name = style.ff;
 	if (typeof style.fs === "number") font.size = style.fs;
-	if (style.bl === 1) font.bold = true;
-	if (style.it === 1) font.italic = true;
+	if (style.bl != null) font.bold = style.bl === 1;
+	if (style.it != null) font.italic = style.it === 1;
+    if (style.ul) font.underline = Boolean(style.ul.s);
+    if (style.st) font.strike = Boolean(style.st.s);
+    if (style.va != null) font.vertAlign = style.va === 3 ? "superscript" : style.va === 2 ? "subscript" : undefined;
 	if (style.cl?.rgb) font.color = { argb: rgbToArgb(style.cl.rgb) };
-	if (Object.keys(font).length) cell.font = font;
+	return font;
+}
+
+function univerStyleToExcel(cell: Partial<Pick<ExcelJS.Cell, "font" | "fill" | "alignment" | "numFmt" | "border">>, style: UniverStyle): void {
+    const font = univerFontToExcel(style);
+    if (Object.keys(font).length) cell.font = font;
 	if (style.bg?.rgb) {
 		cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: rgbToArgb(style.bg.rgb) } };
 	}
@@ -316,10 +350,13 @@ function univerStyleToExcel(cell: ExcelJS.Cell, style: UniverStyle): void {
 	if (style.ht === HT_LEFT) alignment.horizontal = "left";
 	else if (style.ht === HT_CENTER) alignment.horizontal = "center";
 	else if (style.ht === HT_RIGHT) alignment.horizontal = "right";
+    else if (style.ht === 4 || style.ht === 5) alignment.horizontal = "justify";
+    else if (style.ht === 6) alignment.horizontal = "distributed";
 	if (style.vt === VT_TOP) alignment.vertical = "top";
 	else if (style.vt === VT_MIDDLE) alignment.vertical = "middle";
 	else if (style.vt === VT_BOTTOM) alignment.vertical = "bottom";
-	if (style.tb === TB_WRAP) alignment.wrapText = true;
+	if (style.tb != null) alignment.wrapText = style.tb === TB_WRAP;
+    if (style.tr?.a != null) alignment.textRotation = style.tr.a;
 	if (Object.keys(alignment).length) cell.alignment = alignment;
 	if (style.n?.pattern && style.n.pattern !== "General") cell.numFmt = style.n.pattern;
 	if (style.bd) {
@@ -346,9 +383,22 @@ export function univerToExcelJs(snapshot: UniverWorkbookData, name: string): Exc
 		const sheet = snapshot.sheets[sheetId];
 		if (!sheet) continue;
 		const ws = wb.addWorksheet(sheet.name.slice(0, 31) || `Sheet${sheetId}`);
-		for (const merge of sheet.mergeData ?? []) {
-			ws.mergeCells(merge.startRow + 1, merge.startColumn + 1, merge.endRow + 1, merge.endColumn + 1);
-		}
+        ws.state = sheet.hidden === 2 ? "veryHidden" : sheet.hidden === 1 ? "hidden" : "visible";
+        // Univer keeps whole-axis formatting and visibility outside cellData.
+        // Exporting only cells silently lost these enabled editor actions.
+        for (const [c, meta] of Object.entries(sheet.columnData ?? {})) {
+            const col = ws.getColumn(Number(c) + 1), style = resolveStyle(meta, snapshot.styles);
+            if (style) univerStyleToExcel(col, style);
+            col.hidden = meta.hd === 1;
+            if (meta.w != null) col.width = PX_TO_CHAR(meta.w);
+        }
+        for (const [r, meta] of Object.entries(sheet.rowData ?? {})) {
+            const row = ws.getRow(Number(r) + 1), style = resolveStyle(meta, snapshot.styles);
+            if (style) univerStyleToExcel(row, style);
+            row.hidden = meta.hd === 1;
+            const height = meta.ia === 1 ? meta.ah ?? meta.h : meta.h;
+            if (height != null) row.height = height * 3 / 4;
+        }
 		for (const [rStr, row] of Object.entries(sheet.cellData ?? {})) {
 			for (const [cStr, cell] of Object.entries(row)) {
 				const target = ws.getCell(Number(rStr) + 1, Number(cStr) + 1);
@@ -361,29 +411,135 @@ export function univerToExcelJs(snapshot: UniverWorkbookData, name: string): Exc
 				} else if (typeof cell.p?.body?.dataStream === "string") {
                     // Univer stores rich cell input in a document body. Keep
                     // its text even when the formatting subset is unsupported.
-                    target.value = cell.p.body.dataStream.replace(/\r\n$/, "");
+                    const text = cell.p.body.dataStream.replace(/\r\n$/, "");
+                    const runs = cell.p.body.textRuns ?? [];
+                    const boundaries = [...new Set([0, text.length, ...runs.flatMap(run => [Math.min(text.length, Math.max(0, run.st)), Math.min(text.length, Math.max(0, run.ed))])])].sort((a, b) => a - b);
+                    if (!runs.length) target.value = text.replace(/\r/g, "\n");
+                    else target.value = { richText: boundaries.slice(0, -1).filter((start, i) => start < boundaries[i + 1]).map((start, i) => {
+                        const format = Object.assign({}, ...runs.filter(run => run.st <= start && run.ed > start).map(run => run.ts));
+                        // Reuse the same font mapping for inline and cell styles.
+                        const font = univerFontToExcel(format);
+                        return { text: text.slice(start, boundaries[i + 1]).replace(/\r/g, "\n"), ...(Object.keys(font).length ? { font } : {}) };
+                    }) };
                 } else if (cell.t === T_BOOLEAN) {
 					target.value = Boolean(cell.v);
 				} else if (cell.v != null) {
 					target.value = cell.v;
 				}
-				const style = resolveStyle(cell, snapshot.styles);
-				if (style) univerStyleToExcel(target, style);
+				const style = composedCellStyle(sheet, Number(rStr), Number(cStr), snapshot.styles);
+                univerStyleToExcel(target, style);
 			}
 		}
-		for (const [cStr, col] of Object.entries(sheet.columnData ?? {})) {
-			if (col.w != null) ws.getColumn(Number(cStr) + 1).width = PX_TO_CHAR(col.w);
+        // Populate before merging: ExcelJS redirects slave-cell writes to the
+        // master, so stale imported slave values used to undo a master edit.
+		for (const merge of sheet.mergeData ?? []) {
+			ws.mergeCells(merge.startRow + 1, merge.startColumn + 1, merge.endRow + 1, merge.endColumn + 1);
 		}
-		for (const [rStr, rowMeta] of Object.entries(sheet.rowData ?? {})) {
-			if (rowMeta.h != null) ws.getRow(Number(rStr) + 1).height = rowMeta.h * 3 / 4;
-		}
+
 	}
 	if (wb.worksheets.length === 0) wb.addWorksheet("Sheet1");
 	return wb;
 }
 
-export async function univerSnapshotToXlsxBytes(snapshot: UniverWorkbookData, name: string): Promise<Uint8Array> {
-	const wb = univerToExcelJs(snapshot, name);
-	const buf = await wb.xlsx.writeBuffer();
-	return new Uint8Array(buf as ArrayBuffer);
+function composedCellStyle(sheet: UniverSheetData, row: number, col: number, styles?: UniverWorkbookData["styles"]): UniverStyle {
+    return { ...resolveStyle(sheet.columnData?.[col] ?? {}, styles), ...resolveStyle(sheet.rowData?.[row] ?? {}, styles), ...resolveStyle(sheet.cellData?.[row]?.[col] ?? {}, styles) };
+}
+
+function applyStyleChanges(target: { style: Partial<ExcelJS.Style> }, converted: { style: Partial<ExcelJS.Style> }, oldStyle: UniverStyle, nextStyle: UniverStyle): void {
+    const equal = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+    const changed = new Set(Object.keys({ ...oldStyle, ...nextStyle }).filter(key => !equal((oldStyle as any)[key], (nextStyle as any)[key])));
+    target.style = structuredClone(target.style);
+    for (const [key, group, property] of [
+        ["ff", "font", "name"], ["fs", "font", "size"], ["bl", "font", "bold"], ["it", "font", "italic"], ["cl", "font", "color"], ["ul", "font", "underline"], ["st", "font", "strike"], ["va", "font", "vertAlign"],
+        ["ht", "alignment", "horizontal"], ["vt", "alignment", "vertical"], ["tb", "alignment", "wrapText"], ["tr", "alignment", "textRotation"],
+    ]) if (changed.has(key)) {
+        const style = target.style as any, renderedStyle = converted.style as any;
+        style[group] = { ...style[group] };
+        if (renderedStyle[group]?.[property] === undefined) delete style[group][property];
+        else style[group][property] = renderedStyle[group][property];
+    }
+    if (changed.has("bg")) target.style.fill = converted.style.fill;
+    if (changed.has("bd")) {
+        const border = { ...target.style.border };
+        for (const [key, edge] of [["t", "top"], ["r", "right"], ["b", "bottom"], ["l", "left"]] as const) {
+            if (!equal(oldStyle.bd?.[key], nextStyle.bd?.[key])) {
+                if (converted.style.border?.[edge]) border[edge] = converted.style.border[edge];
+                else delete border[edge];
+            }
+        }
+        target.style.border = border;
+    }
+    if (changed.has("n")) target.style.numFmt = converted.style.numFmt || "General";
+}
+
+/** Native ExcelJS serialization keeps the loaded workbook's supported objects.
+ * Apply model differences to it, rather than discarding images/comments and
+ * source theme fonts just because the view converter does not expose them. */
+export async function univerSnapshotToXlsxBytes(snapshot: UniverWorkbookData, name: string, imported?: { bytes: Uint8Array; baseline: UniverWorkbookData }): Promise<Uint8Array> {
+    const generated = univerToExcelJs(snapshot, name);
+    let wb = generated;
+    if (imported) {
+        wb = new ExcelJS.Workbook();
+        await wb.xlsx.load(imported.bytes.slice().buffer as ArrayBuffer);
+        const originals = wb.worksheets;
+        // A source shared-formula slave cannot survive replacing its master.
+        // Translate the group before edits, retaining every dependent formula.
+        for (const ws of originals) ws.eachRow(row => row.eachCell(cell => {
+            const value = cell.value;
+            if (value && typeof value === "object" && ("sharedFormula" in value || ("shareType" in value && value.shareType === "shared"))) {
+                cell.value = { formula: cell.formula, result: cell.result };
+            }
+        }));
+        const sheets = new Map(imported.baseline.sheetOrder.map((id, index) => [id, originals[index]]));
+        // Temporary names allow swaps/renames without duplicate-name failures.
+        for (const sheet of originals) sheet.name = `__inno_export_${sheet.id}`;
+        for (const [id, sheet] of sheets) if (!snapshot.sheetOrder.includes(id) && sheet) wb.removeWorksheet(sheet.id);
+        const order: ExcelJS.Worksheet[] = [];
+        const equal = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+        for (const [index, id] of snapshot.sheetOrder.entries()) {
+            const current = snapshot.sheets[id], baseline = imported.baseline.sheets[id];
+            const ws = sheets.get(id) ?? wb.addWorksheet(current.name);
+            ws.name = current.name; order.push(ws);
+            const rendered = generated.worksheets[index];
+            for (const range of [...ws.model.merges]) ws.unMergeCells(range);
+            const rows = new Set([...Object.keys(baseline?.cellData ?? {}), ...Object.keys(current.cellData ?? {})]);
+            for (const row of rows) {
+                const beforeRow = baseline?.cellData[Number(row)] ?? {}, afterRow = current.cellData[Number(row)] ?? {};
+                for (const col of new Set([...Object.keys(beforeRow), ...Object.keys(afterRow)])) {
+                    const before = beforeRow[Number(col)] ?? {}, after = afterRow[Number(col)] ?? {};
+                    const target = ws.getCell(Number(row) + 1, Number(col) + 1), converted = rendered.getCell(Number(row) + 1, Number(col) + 1);
+                    const value = (cell: UniverCell) => ({ v: cell.v, t: cell.t, f: cell.f, p: cell.p });
+                    if (!equal(value(before), value(after))) target.value = converted.value;
+                    const oldStyle = baseline ? composedCellStyle(baseline, Number(row), Number(col), imported.baseline.styles) : {}, nextStyle = composedCellStyle(current, Number(row), Number(col), snapshot.styles);
+                    applyStyleChanges(target, converted, oldStyle, nextStyle);
+                }
+            }
+            ws.state = rendered.state;
+            for (const [axis, previous, next] of [
+                ["row", baseline?.rowData, current.rowData], ["column", baseline?.columnData, current.columnData],
+            ] as const) for (const key of new Set([...Object.keys(previous ?? {}), ...Object.keys(next ?? {})])) {
+                const i = Number(key), meta = next?.[i] ?? {};
+                // ExcelJS Row has style at runtime, but omits it from its public type.
+                const target = (axis === "row" ? ws.getRow(i + 1) : ws.getColumn(i + 1)) as (ExcelJS.Row | ExcelJS.Column) & { style: Partial<ExcelJS.Style> };
+                const converted = (axis === "row" ? rendered.getRow(i + 1) : rendered.getColumn(i + 1)) as (ExcelJS.Row | ExcelJS.Column) & { style: Partial<ExcelJS.Style> };
+                applyStyleChanges(target, converted, resolveStyle(previous?.[i] ?? {}, imported.baseline.styles) ?? {}, resolveStyle(meta, snapshot.styles) ?? {});
+                target.hidden = meta.hd === 1;
+                if (axis === "row") ws.getRow(i + 1).height = rendered.getRow(i + 1).height ?? 15;
+                else ws.getColumn(i + 1).width = rendered.getColumn(i + 1).width ?? 8.43;
+            }
+            for (const merge of current.mergeData ?? []) ws.mergeCells(merge.startRow + 1, merge.startColumn + 1, merge.endRow + 1, merge.endColumn + 1);
+        }
+        const model = wb.model;
+        // ExcelJS's published WorkbookModel types invert worksheets/sheets;
+        // its runtime setter consumes WorksheetModel[] for both arrays.
+        // Worksheet.model emits merges; its setter consumes mergeCells.
+        // Supply that field when reordering so saved merges survive reload.
+        const orderedModels = order.map(sheet => ({ ...sheet.model, mergeCells: sheet.model.merges }));
+        model.worksheets = orderedModels as unknown as typeof model.worksheets;
+        model.sheets = orderedModels;
+        wb.model = model;
+    }
+    wb.calcProperties.fullCalcOnLoad = true;
+    const buf = await wb.xlsx.writeBuffer();
+    return new Uint8Array(buf as ArrayBuffer);
 }

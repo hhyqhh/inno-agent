@@ -4128,6 +4128,65 @@ inno-workspace-panel textarea {
 	font-variant-numeric: tabular-nums;
 }
 
+.inno-trace-process-toggle {
+	width: 100%;
+	min-height: 44px;
+	margin: 0 0 8px;
+	padding: 10px 12px;
+	border: 1px solid var(--inno-border);
+	border-radius: 12px;
+	background: var(--inno-card-bg);
+	color: var(--inno-text-muted);
+	font-family: inherit;
+	font-weight: 500;
+	line-height: 1.45;
+	text-align: left;
+	cursor: pointer;
+	transition: border-color var(--inno-dur-fast) var(--inno-ease-out),
+		background-color var(--inno-dur-fast) var(--inno-ease-out);
+}
+
+.inno-trace-process-toggle:hover {
+	border-color: var(--inno-accent);
+	background: var(--inno-accent-soft);
+	color: var(--inno-text);
+}
+
+.inno-trace-process-toggle:focus-visible {
+	outline: none;
+	border-color: var(--inno-accent);
+	box-shadow: var(--inno-ring);
+}
+
+.inno-trace-process-count {
+	margin-left: auto;
+	color: var(--inno-text-subtle);
+	white-space: nowrap;
+}
+
+.inno-trace-process-action {
+	color: var(--inno-accent);
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.inno-trace-process-toggle > .inno-trace-chevron {
+	margin-left: 0;
+	color: var(--inno-accent);
+}
+
+.inno-trace-process-scroll {
+	min-width: 0;
+	max-height: 280px; /* Five collapsed process rows; details remain scrollable. */
+	overflow-y: auto;
+	overscroll-behavior-y: contain;
+	scrollbar-gutter: stable;
+}
+
+.inno-trace-process-scroll + .inno-trace-body {
+	margin-top: 14px;
+}
+
 .inno-trace-list {
 	min-width: 0;
 }

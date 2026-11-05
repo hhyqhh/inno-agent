@@ -1202,6 +1202,13 @@
 			"durationLessThanSecond": "<1 秒",
 			"duration": "持续了 {{duration}}",
 			"tool": "工具",
+			"process": {
+				"expand": "展开工作过程（{{count}} 个步骤）",
+				"collapse": "收起工作过程（{{count}} 个步骤）",
+				"expandAction": "展开",
+				"collapseAction": "收起",
+				"stepCount": "{{count}} 个步骤"
+			},
 			"row": {
 				"expand": "展开{{summary}}",
 				"collapse": "收起{{summary}}"

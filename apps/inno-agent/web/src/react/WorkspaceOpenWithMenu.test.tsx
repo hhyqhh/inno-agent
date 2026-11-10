@@ -167,15 +167,17 @@ it("ignores an application-list response after the file changes", async () => {
 	expect(desktop.openWorkspaceFile).not.toHaveBeenCalled();
 });
 
-function reopen() {
+async function reopen() {
+	const trigger = screen.getByRole("button", { name: "使用其他应用打开" });
 	fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
-	fireEvent.keyDown(screen.getByRole("button", { name: "使用其他应用打开" }), { key: "Enter" });
+	await waitFor(() => expect(document.activeElement).toBe(trigger));
+	fireEvent.keyDown(trigger, { key: "Enter" });
 }
 it("reuses the application list and icons when reopening the same file", async () => {
 	const icon = "data:image/png;base64,iVBORw0KGgo=";
 	desktop.getWorkspaceFileApplications.mockResolvedValue({ applications: [{ ...apps[0], icon }], fileManager: "finder" });
 	await open();
-	reopen();
+	await reopen();
 	expect(screen.getByRole("menuitem", { name: "Microsoft Word（默认）" }).querySelector("img")?.getAttribute("src")).toBe(icon);
 	expect(screen.queryByRole("menuitem", { name: "正在读取应用…" })).toBeNull();
 	expect(desktop.getWorkspaceFileApplications).toHaveBeenCalledTimes(1);
@@ -205,12 +207,12 @@ it("retains the stale list while refreshing expired associations in the backgrou
 	let finish!: (value: unknown) => void;
 	desktop.getWorkspaceFileApplications.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
 	now.mockReturnValue(1_000 + 5 * 60_000 + 1);
-	reopen();
+	await reopen();
 	expect(screen.getByRole("menuitem", { name: "Microsoft Word（默认）" })).toBeTruthy();
 	expect(screen.queryByRole("menuitem", { name: "正在读取应用…" })).toBeNull();
 	await act(async () => { finish({ applications: [{ id: "new", name: "New Editor", isDefault: true }], fileManager: "finder" }); });
 	expect(await screen.findByRole("menuitem", { name: "New Editor（默认）" })).toBeTruthy();
-	reopen();
+	await reopen();
 	expect(desktop.getWorkspaceFileApplications).toHaveBeenCalledTimes(2);
 });
 it.each(["reject", "unavailable"])("retries a %s lookup on the next open", async (failure) => {
@@ -219,9 +221,9 @@ it.each(["reject", "unavailable"])("retries a %s lookup on the next open", async
 	render(<WorkspaceOpenWithMenu path="report.docx" workspaceId="owner" />);
 	fireEvent.keyDown(screen.getByRole("button", { name: "使用其他应用打开" }), { key: "Enter" });
 	expect(await screen.findByRole("alert")).toBeTruthy();
-	reopen();
+	await reopen();
 	expect(await screen.findByRole("menuitem", { name: "Microsoft Word（默认）" })).toBeTruthy();
-	reopen();
+	await reopen();
 	expect(desktop.getWorkspaceFileApplications).toHaveBeenCalledTimes(2);
 });
 it("keeps file and workspace cache keys separate", async () => {
@@ -242,12 +244,12 @@ it.each(["reject", "unavailable"])("retains usable associations after a %s backg
 	if (failure === "reject") desktop.getWorkspaceFileApplications.mockRejectedValueOnce(new Error("unavailable"));
 	else desktop.getWorkspaceFileApplications.mockResolvedValueOnce({ applications: [], fileManager: "files", unavailable: true });
 	now.mockReturnValue(1_000 + 5 * 60_000 + 1);
-	reopen();
+	await reopen();
 	expect(await screen.findByRole("alert")).toBeTruthy();
 	expect(screen.getByRole("menuitem", { name: "Microsoft Word（默认）" })).toBeTruthy();
 	expect(screen.getByRole("menuitem", { name: "在访达中显示" })).toBeTruthy();
 	expect(screen.queryByRole("menuitem", { name: "正在读取应用…" })).toBeNull();
-	reopen();
+	await reopen();
 	await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
 	expect(desktop.getWorkspaceFileApplications).toHaveBeenCalledTimes(3);
 });

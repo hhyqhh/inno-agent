@@ -3,7 +3,11 @@ import { Check, ChevronRight } from "lucide-react";
 import { forwardRef, type ComponentPropsWithoutRef, type ComponentRef, type ReactNode } from "react";
 import { Tooltip } from "./Tooltip.js";
 
-export const DropdownMenu = DropdownMenuPrimitive.Root;
+export function DropdownMenu(props: Omit<ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Root>, "modal">) {
+	// Match the shared Popover: an outside click dismisses the menu and still
+	// reaches its target. Radix's modal default consumes that first click.
+	return <DropdownMenuPrimitive.Root {...props} modal={false} />;
+}
 export const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 export const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 export const DropdownMenuSub = DropdownMenuPrimitive.Sub;

@@ -871,7 +871,14 @@ export class ChatStoreImpl extends EventEmitter<ChatStoreEvents> {
 							toolName: event.toolName,
 							args: undefined,
 						}),
-						result: event.toolName === "ask_user_question" ? event.result : compactToolPayload(event.result),
+						// Preserve full result for ask_user_question (nested options) and todo
+						// (full task-list snapshots). Generic compactToolPayload truncates arrays
+						// beyond 24 items by appending a string marker and folds depth>=4 fields
+						// like blockedBy, which causes TodoWidget's parseTasks to reject the
+						// entire snapshot and stall live progress updates.
+						result: event.toolName === "ask_user_question" || event.toolName === "todo"
+							? event.result
+							: compactToolPayload(event.result),
 						isError: event.isError,
 					},
 				];

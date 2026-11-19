@@ -52,6 +52,7 @@ import { ChatStoreImpl } from "./chat-store.js";
 import { workspaceStore } from "./workspace-store.js";
 import type { ChatStreamEvent, QuestionnaireResult, StreamEventEnvelope } from "../types/chat.js";
 import { answeredQuestionnaireFromTool } from "../utils/questionnaire.js";
+import { extractTodoTasks } from "../react/chat/TodoWidget.js";
 
 const CLIENT_REQUEST_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -668,5 +669,76 @@ describe("ChatStore stream ownership", () => {
 		store.detach();
 		release();
 		await Promise.all([first, second]);
+	});
+
+	it("preserves todo tool_end snapshots with more than 24 tasks and blockedBy for live TodoWidget updates", async () => {
+		const buildTasks = (overrides: Record<number, "pending" | "in_progress" | "completed"> = {}) =>
+			Array.from({ length: 28 }, (_, index) => {
+				const id = index + 1;
+				return {
+					id,
+					subject: `Step ${id}`,
+					status: overrides[id] ?? "pending",
+					...(overrides[id] === "in_progress" ? { activeForm: `Working on step ${id}` } : {}),
+					...(id > 1 ? { blockedBy: [id - 1] } : {}),
+				};
+			});
+
+		let releaseSecondUpdate!: () => void;
+		const secondUpdateGate = new Promise<void>((resolve) => { releaseSecondUpdate = resolve; });
+		let releaseDone!: () => void;
+		const doneGate = new Promise<void>((resolve) => { releaseDone = resolve; });
+
+		mocks.streamChat.mockImplementation(async function* () {
+			yield envelope(1, { type: "stream_state", status: "running" });
+			yield envelope(2, { type: "tool_start", toolCallId: "todo-1", toolName: "todo", args: { action: "update", id: 1, status: "in_progress" } });
+			yield envelope(3, {
+				type: "tool_end",
+				toolCallId: "todo-1",
+				toolName: "todo",
+				result: {
+					content: [{ type: "text", text: "Updated #1 (pending → in_progress)" }],
+					details: { action: "update", tasks: buildTasks({ 1: "in_progress" }), nextId: 29 },
+				},
+				isError: false,
+			});
+			await secondUpdateGate;
+			yield envelope(4, { type: "tool_start", toolCallId: "todo-2", toolName: "todo", args: { action: "update", id: 26, status: "in_progress" } });
+			yield envelope(5, {
+				type: "tool_end",
+				toolCallId: "todo-2",
+				toolName: "todo",
+				result: {
+					content: [{ type: "text", text: "Updated #26 (pending → in_progress)" }],
+					details: { action: "update", tasks: buildTasks({ 1: "completed", 26: "in_progress" }), nextId: 29 },
+				},
+				isError: false,
+			});
+			await doneGate;
+			yield envelope(6, { type: "done", fullText: "done", persisted: true, finalMessageCount: 2, finalSessionRevision: "2:2" });
+		});
+
+		const store = new ChatStoreImpl();
+		const sending = store.send("run 28-step plan");
+
+		await vi.waitFor(() => {
+			const tasks = extractTodoTasks(store);
+			expect(tasks).not.toBeNull();
+			expect(tasks).toHaveLength(28);
+		});
+		const firstSnapshot = extractTodoTasks(store)!;
+		expect(firstSnapshot[0]).toMatchObject({ id: 1, status: "in_progress", activeForm: "Working on step 1" });
+		expect(firstSnapshot[1]).toMatchObject({ id: 2, status: "pending", blockedBy: [1] });
+		expect(firstSnapshot[27]).toMatchObject({ id: 28, status: "pending", blockedBy: [27] });
+
+		releaseSecondUpdate();
+		await vi.waitFor(() => {
+			const tasks = extractTodoTasks(store);
+			expect(tasks?.[0]?.status).toBe("completed");
+			expect(tasks?.[25]?.status).toBe("in_progress");
+		});
+
+		releaseDone();
+		await sending;
 	});
 });

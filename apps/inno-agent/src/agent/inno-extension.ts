@@ -28,7 +28,7 @@ import { ensureWebAccessConfig, resolvePiAiJitiAliases } from "./web-access-conf
 import { ensurePermissionSystemConfig, INNO_WEB_AUTHORIZER_NAME, resolvePluginFile } from "./permission-system-config.js";
 import { permissionBridge, type PermissionAskDetails } from "./permission-bridge.js";
 import { checkWorkspaceMutationPath } from "./workspace-path-guard.js";
-import { INNO_SYSTEM_PROMPT, ONBOARDING_GUIDE, WEB_ACCESS_PROMPT_HINT } from "./system-prompt.js";
+import { INNO_SYSTEM_PROMPT, ONBOARDING_GUIDE, TODO_PROMPT_HINT, WEB_ACCESS_PROMPT_HINT } from "./system-prompt.js";
 import { syncProvidersForSubagents } from "./provider-sync.js";
 import { manualThinkingLevelMap, setThinkingLevelResolver } from "./thinking-settings.js";
 import { questionBridge } from "./question-bridge.js";
@@ -526,6 +526,12 @@ export function createInnoExtension(
 				const workspaceDir = resolveActiveWorkspaceDir(paths, deps);
 				sections.push(formatWorkspaceFileInstructions(workspaceDir));
 				sections.push(...buildWorkspaceContextSections(workspaceDir));
+
+				// Mention the rpiv-todo task-list rules only when the plugin is
+				// actually loaded (mirrors the registration gate in section 10).
+				if (configHolder.current.plugins?.todo?.enabled !== false) {
+					sections.push(TODO_PROMPT_HINT);
+				}
 
 				// Mention the pi-web-access fetch tools only when the plugin is
 				// actually loaded (mirrors the registration gate in section 10).

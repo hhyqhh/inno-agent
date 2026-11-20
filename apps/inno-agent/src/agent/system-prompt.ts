@@ -115,6 +115,22 @@ export const WEB_ACCESS_PROMPT_HINT = `
 - 与搜索搭配使用：先搜索拿到链接，再用 fetch_content 精读全文；不要凭搜索结果摘要臆造原文细节。
 - fetch_content 返回内容较长时，可用 get_search_content 按 responseId 分段读取或检索其中的段落。`;
 
+/**
+ * Prompt hint for the rpiv-todo task-list tool, injected only when the
+ * plugin is enabled (config.plugins.todo.enabled !== false).
+ * Reinforces timely status transitions in the main system prompt: mark
+ * in_progress before starting, mark completed immediately after each step,
+ * verify the list before the final reply, and never mark unfinished, failed,
+ * or user-blocked tasks completed.
+ */
+export const TODO_PROMPT_HINT = `
+任务清单与进度同步（todo）：
+- 多步骤任务（3 步及以上）或用户给出多项要求时，用 todo 创建清单并实时同步进度；简单单步问答无需创建。
+- 开始某一步前，先调用 todo（action: "update"）将该任务标记为 in_progress（并填写 activeForm），同一时间只保留一个 in_progress 任务。
+- 每完成一步后，立即调用 todo 将该任务标记为 completed，不要等到全部做完再批量更新。
+- 最终回复用户前，核对 todo 清单，确保已完成的步骤都已标记为 completed。
+- 未完成、执行失败、存在未解决阻塞，或需要等待用户确认/补充/回答的任务，不得误标为 completed（保持 in_progress 或 pending）。`;
+
 export const ONBOARDING_GUIDE = `
 ## 新手引导（仅在用户画像为空时生效）
 

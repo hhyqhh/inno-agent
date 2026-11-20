@@ -27,7 +27,9 @@ function parseTasks(value: unknown): TodoTaskItem[] | null {
 			subject: t.subject,
 			status: t.status as TodoTaskItem["status"],
 			activeForm: typeof t.activeForm === "string" ? t.activeForm : undefined,
-			blockedBy: Array.isArray(t.blockedBy) ? (t.blockedBy as number[]) : undefined,
+			blockedBy: Array.isArray(t.blockedBy)
+				? t.blockedBy.filter((id): id is number => typeof id === "number")
+				: undefined,
 		});
 	}
 	return tasks;

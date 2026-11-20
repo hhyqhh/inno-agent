@@ -3,19 +3,25 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
 	Brain,
-	Check,
 	ChevronRight,
 	CircleAlert,
-	Clock3,
+	ClipboardList,
 	Copy,
+	Eye,
 	FileText,
+	Folder,
+	Globe,
 	LoaderCircle,
+	Pencil,
 	Puzzle,
+	Search,
+	Send,
 	Settings2,
 	TerminalSquare,
 	Wrench,
+	type LucideIcon,
 } from "lucide-react";
-import type { ChatTraceStep, ChatTraceStepKind, ChatTraceStepStatus } from "../../types/chat.js";
+import type { ChatTraceStep, ChatTraceStepStatus } from "../../types/chat.js";
 import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
 import { MarkdownArtifact } from "../MarkdownArtifact.js";
 import { Button, IconButton, TabPanel, Tabs, Tooltip, getTabTriggerId } from "../ui/index.js";
@@ -28,6 +34,14 @@ import {
 	visibleTraceSteps,
 	type ChatTraceTerminalState,
 } from "../../utils/chat-trace.js";
+import {
+	foldTraceFlow,
+	formatCompactDuration,
+	summarizeTraceRun,
+	traceIconKind,
+	type IndexedTraceStep,
+	type TraceIconKind,
+} from "../../utils/trace-summary.js";
 
 export interface AgentTraceTimelineProps {
 	steps: ChatTraceStep[];
@@ -246,17 +260,35 @@ function workStatusText(
 		: t("chat.trace.workStatus.interrupted", "因其他原因中断");
 }
 
-function iconFor(kind: ChatTraceStepKind, status: ChatTraceStepStatus) {
-	if (kind === "thinking") return <Brain size={15} strokeWidth={1.7} aria-hidden="true" />;
-	if (kind === "tool") return status === "running" || status === "preparing" ? <Wrench size={15} strokeWidth={1.7} aria-hidden="true" /> : <TerminalSquare size={15} strokeWidth={1.7} aria-hidden="true" />;
-	if (kind === "skill") return <Puzzle size={15} strokeWidth={1.7} aria-hidden="true" />;
-	if (kind === "system") return <Settings2 size={15} strokeWidth={1.7} aria-hidden="true" />;
-	if (kind === "error") return <CircleAlert size={15} strokeWidth={1.7} aria-hidden="true" />;
-	return <FileText size={15} strokeWidth={1.7} aria-hidden="true" />;
+const TRACE_ICONS: Record<TraceIconKind, LucideIcon> = {
+	read: Eye,
+	modify: Pencil,
+	command: TerminalSquare,
+	search: Search,
+	folder: Folder,
+	web: Globe,
+	plan: ClipboardList,
+	collab: Send,
+	skill: Puzzle,
+	thinking: Brain,
+	wrench: Wrench,
+};
+
+function TraceIcon({ kind }: { kind: TraceIconKind }) {
+	const Icon = TRACE_ICONS[kind];
+	return <Icon size={14} strokeWidth={1.7} aria-hidden="true" />;
 }
 
+function iconFor(step: ChatTraceStep) {
+	if (step.kind === "system") return <Settings2 size={14} strokeWidth={1.7} aria-hidden="true" />;
+	if (step.kind === "error") return <CircleAlert size={14} strokeWidth={1.7} aria-hidden="true" />;
+	if (step.kind === "thinking" || step.kind === "tool" || step.kind === "skill") return <TraceIcon kind={traceIconKind(step)} />;
+	return <FileText size={14} strokeWidth={1.7} aria-hidden="true" />;
+}
+
+/** Settled rows stay quiet like WorkBuddy's flat lines; only live and failed
+ *  steps carry a status mark. */
 function statusIcon(status: ChatTraceStepStatus) {
-	if (status === "completed") return <Check size={13} strokeWidth={2} aria-hidden="true" />;
 	if (status === "error") return <CircleAlert size={13} strokeWidth={2} aria-hidden="true" />;
 	if (status === "active" || status === "preparing" || status === "running" || status === "waiting") {
 		return <LoaderCircle size={13} className="inno-trace-spinner" aria-hidden="true" />;
@@ -486,7 +518,7 @@ function TraceRow({ step, now, isCurrentLiveStep, expanded, onToggle, t, onOpenS
 					: t("chat.trace.row.expand", "展开{{summary}}", { summary })}
 				onClick={onToggle}
 			>
-				<span className="inno-trace-icon">{iconFor(step.kind, step.status)}</span>
+				<span className="inno-trace-icon">{iconFor(step)}</span>
 				<span
 					className={`inno-trace-row-title ${isShimmering ? "is-shimmering" : ""}`}
 				>
@@ -506,10 +538,12 @@ function TraceRow({ step, now, isCurrentLiveStep, expanded, onToggle, t, onOpenS
 						</>
 					) : summary}
 				</span>
-				<Tooltip label={statusLabel(step.status, t)}>
-					<span className={`inno-trace-status ${step.status}`}>{statusIcon(step.status)}</span>
-				</Tooltip>
-				<ChevronRight size={14} className={`inno-trace-chevron ${expanded ? "is-open" : ""}`} aria-hidden="true" />
+				{statusIcon(step.status) ? (
+					<Tooltip label={statusLabel(step.status, t)}>
+						<span className={`inno-trace-status ${step.status}`}>{statusIcon(step.status)}</span>
+					</Tooltip>
+				) : null}
+				<ChevronRight size={12} className={`inno-trace-chevron ${expanded ? "is-open" : ""}`} aria-hidden="true" />
 			</button>
 			{expanded ? <div className="inno-trace-row-details"><TraceDetails step={step} onOpenSkill={onOpenSkill} t={t} /></div> : null}
 		</div>
@@ -573,25 +607,32 @@ function pendingQuestionTraceStep(questionId: string): ChatTraceStep {
 	};
 }
 
-function TraceProcessScroll({ children }: { children: ReactNode }) {
-	const scrollRef = useRef<HTMLDivElement>(null);
-	const followLatestRef = useRef(true);
-
-	useLayoutEffect(() => {
-		const element = scrollRef.current;
-		if (element && followLatestRef.current) element.scrollTop = element.scrollHeight;
-	}, [children]);
-
+/** Two or more settled steps merged into one line, e.g. "运行校验、查看文件：2026-11.md".
+ *  Clicking reveals the individual rows; there is no inner scroll window. */
+function TraceRunRow({ members, expanded, onToggle, t, children }: {
+	members: IndexedTraceStep[];
+	expanded: boolean;
+	onToggle: () => void;
+	t: TFunction;
+	children: ReactNode;
+}) {
+	const { text, icon } = summarizeTraceRun(members.map((member) => member.step), t);
 	return (
-		<div
-			ref={scrollRef}
-			className="inno-trace-process-scroll"
-			onScroll={(event) => {
-				const element = event.currentTarget;
-				followLatestRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
-			}}
-		>
-			{children}
+		<div className="inno-trace-run">
+			<button
+				type="button"
+				className="inno-trace-row-toggle"
+				aria-expanded={expanded}
+				aria-label={expanded
+					? t("chat.trace.row.collapse", "收起{{summary}}", { summary: text })
+					: t("chat.trace.row.expand", "展开{{summary}}", { summary: text })}
+				onClick={onToggle}
+			>
+				<span className="inno-trace-icon"><TraceIcon kind={icon} /></span>
+				<span className="inno-trace-row-title">{text}</span>
+				<ChevronRight size={12} className={`inno-trace-chevron ${expanded ? "is-open" : ""}`} aria-hidden="true" />
+			</button>
+			{expanded ? <div className="inno-trace-run-members">{children}</div> : null}
 		</div>
 	);
 }
@@ -675,16 +716,18 @@ export function AgentTraceTimeline({
 	// question pause or a reconnect, `isSending` can briefly be false while the
 	// trace still correctly reports a running/waiting step.
 	const currentLiveStep = [...processSteps].reverse().find((step) => isOpenStatus(step.status));
-	// Keep active work visible, but settle long traces into one summary row.
-	// The override preserves a user's explicit choice across streaming updates.
-	const hasCollapsibleProcess = processSteps.length > 3;
-	const processExpanded = !hasCollapsibleProcess || (processExpansionOverride ?? (isSending || Boolean(currentLiveStep)));
-	const workStatus = workStatusText(isSending, terminalState, visibleSteps, t, error);
+	// WorkBuddy model: while work is live the flow stays open under a plain
+	// "已处理 5m44s" line; once settled, two or more process steps fold under a
+	// clickable "已完成 5m44s" header that starts collapsed. The override keeps a
+	// user's explicit choice across updates.
+	const settled = !isSending && !currentLiveStep;
+	const hasCollapsibleProcess = settled && processSteps.length >= 2;
+	const processExpanded = !hasCollapsibleProcess || (processExpansionOverride ?? false);
+	const workStatus = isSending ? t("chat.trace.processed", "已处理") : workStatusText(isSending, terminalState, visibleSteps, t, error);
 	const workStatusContent = (
 		<>
-			<Clock3 size={14} aria-hidden="true" />
 			<span>{workStatus}</span>
-			{durationMs !== undefined ? <span>· {formatDuration(durationMs, t)}</span> : null}
+			{durationMs !== undefined ? <span className="inno-trace-work-duration">{formatCompactDuration(durationMs)}</span> : null}
 		</>
 	);
 
@@ -734,31 +777,28 @@ export function AgentTraceTimeline({
 		);
 	};
 
-	const renderedFlow: ReactNode[] = [];
-	if (hasCollapsibleProcess && processExpanded) {
-		let processGroup: { step: ChatTraceStep; index: number }[] = [];
-		const flushProcessGroup = () => {
-			const first = processGroup[0];
-			if (!first) return;
-			renderedFlow.push(
-				<TraceProcessScroll key={`trace-process:${first.index}:${first.step.id}`}>
-					{processGroup.map(({ step, index }) => renderFlowStep(step, index))}
-				</TraceProcessScroll>,
-			);
-			processGroup = [];
-		};
-		flowSteps.forEach((step, index) => {
-			if (!isTextKind(step.kind)) {
-				processGroup.push({ step, index });
-				return;
-			}
-			flushProcessGroup();
-			renderedFlow.push(renderFlowStep(step, index));
-		});
-		flushProcessGroup();
-	} else {
-		renderedFlow.push(...flowSteps.map(renderFlowStep));
-	}
+	const renderedFlow: ReactNode[] = foldTraceFlow(
+		flowSteps.map((step, index) => ({ step, index })),
+		settled,
+		(step) => isTextKind(step.kind),
+	).map((item) => {
+		if (item.type === "step") return renderFlowStep(item.step, item.index);
+		// A collapsed header hides process rows entirely, merged lines included.
+		if (!processExpanded) return null;
+		const first = item.members[0];
+		const runId = `trace-run:${first.index}:${first.step.id}`;
+		return (
+			<TraceRunRow
+				key={runId}
+				members={item.members}
+				expanded={expanded.has(runId)}
+				onToggle={() => toggle(runId)}
+				t={t}
+			>
+				{item.members.map(({ step, index }) => renderFlowStep(step, index))}
+			</TraceRunRow>
+		);
+	});
 
 	return (
 		<div className="inno-trace-timeline" aria-label={t("chat.trace.timeline", "工作过程")}>
@@ -775,13 +815,7 @@ export function AgentTraceTimeline({
 						onClick={() => setProcessExpansionOverride(!processExpanded)}
 					>
 						{workStatusContent}
-						<span className="inno-trace-process-count">{t("chat.trace.process.stepCount", "{{count}} 个步骤", { count: processSteps.length })}</span>
-						<span className="inno-trace-process-action">
-							{processExpanded
-								? t("chat.trace.process.collapseAction", "收起")
-								: t("chat.trace.process.expandAction", "展开")}
-						</span>
-						<ChevronRight size={15} className={`inno-trace-chevron ${processExpanded ? "is-open" : ""}`} aria-hidden="true" />
+						<ChevronRight size={12} className={`inno-trace-chevron ${processExpanded ? "is-open" : ""}`} aria-hidden="true" />
 					</button>
 				) : (
 					<div className="inno-trace-work-status">{workStatusContent}</div>

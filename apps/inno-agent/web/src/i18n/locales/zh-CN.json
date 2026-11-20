@@ -1204,10 +1204,74 @@
 			"tool": "工具",
 			"process": {
 				"expand": "展开工作过程（{{count}} 个步骤）",
-				"collapse": "收起工作过程（{{count}} 个步骤）",
-				"expandAction": "展开",
-				"collapseAction": "收起",
-				"stepCount": "{{count}} 个步骤"
+				"collapse": "收起工作过程（{{count}} 个步骤）"
+			},
+			"processed": "已处理",
+			"summary": {
+				"fallback": "继续处理任务过程",
+				"thinkingOnly": "思考过程",
+				"single": "{{action}} {{object}}",
+				"multiStage": "{{verb1}}、{{verb2}}：{{topic}}",
+				"categories": "{{count}} 类操作",
+				"verb": {
+					"read": "查看文件",
+					"search": "定位代码",
+					"research": "收集资料",
+					"modify": "修改",
+					"command": "运行校验",
+					"diagnostics": "检查诊断",
+					"plan": "整理计划",
+					"collab": "协作分派",
+					"external": "调用服务",
+					"other": "处理"
+				},
+				"group": {
+					"read": "查看 {{topic}}",
+					"search": "定位{{topic}}相关内容",
+					"research": "收集{{topic}}资料",
+					"modify": "修改{{topic}}",
+					"command": "运行 {{topic}}",
+					"diagnostics": "检查 {{topic}}",
+					"plan": "整理 {{topic}} 计划",
+					"collab": "协作处理{{topic}}",
+					"external": "获取 {{topic}}",
+					"other": "处理{{topic}}"
+				},
+				"groupNoTopic": {
+					"read": "查看相关文件",
+					"search": "搜索相关内容",
+					"research": "收集资料",
+					"modify": "修改文件",
+					"command": "运行命令",
+					"diagnostics": "检查诊断",
+					"plan": "整理计划",
+					"collab": "协作分派",
+					"external": "调用外部服务",
+					"other": "处理多个步骤"
+				},
+				"action": {
+					"read": "读取",
+					"list": "查看目录",
+					"open": "打开",
+					"searchFile": "查找文件",
+					"searchContent": "搜索代码",
+					"write": "写入",
+					"create": "创建",
+					"edit": "修改",
+					"archive": "归档",
+					"command": "运行命令",
+					"webSearch": "搜索资料",
+					"webFetch": "读取网页",
+					"recall": "回顾对话",
+					"wikiQuery": "检索知识库",
+					"lints": "检查",
+					"render": "检查排版",
+					"todo": "整理任务",
+					"subtask": "调用子任务",
+					"mcpCall": "调用 MCP",
+					"skill": "加载技能",
+					"run": "执行"
+				}
 			},
 			"row": {
 				"expand": "展开{{summary}}",

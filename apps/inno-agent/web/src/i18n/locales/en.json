@@ -1204,10 +1204,74 @@
 			"tool": "Tool",
 			"process": {
 				"expand": "Expand work process ({{count}} steps)",
-				"collapse": "Collapse work process ({{count}} steps)",
-				"expandAction": "Expand",
-				"collapseAction": "Collapse",
-				"stepCount": "{{count}} steps"
+				"collapse": "Collapse work process ({{count}} steps)"
+			},
+			"processed": "Processed",
+			"summary": {
+				"fallback": "Continuing the task",
+				"thinkingOnly": "Thinking",
+				"single": "{{action}} {{object}}",
+				"multiStage": "{{verb1}} and {{verb2}}: {{topic}}",
+				"categories": "{{count}} kinds of operations",
+				"verb": {
+					"read": "View files",
+					"search": "Locate code",
+					"research": "Gather info",
+					"modify": "Modify",
+					"command": "Run checks",
+					"diagnostics": "Check diagnostics",
+					"plan": "Organize plan",
+					"collab": "Delegate",
+					"external": "Call services",
+					"other": "Handle"
+				},
+				"group": {
+					"read": "View {{topic}}",
+					"search": "Locate {{topic}}-related content",
+					"research": "Gather info on {{topic}}",
+					"modify": "Modify {{topic}}",
+					"command": "Run {{topic}}",
+					"diagnostics": "Check {{topic}}",
+					"plan": "Organize {{topic}} plan",
+					"collab": "Delegate {{topic}}",
+					"external": "Fetch {{topic}}",
+					"other": "Handle {{topic}}"
+				},
+				"groupNoTopic": {
+					"read": "View related files",
+					"search": "Search related content",
+					"research": "Gather info",
+					"modify": "Modify files",
+					"command": "Run commands",
+					"diagnostics": "Check diagnostics",
+					"plan": "Organize plan",
+					"collab": "Delegate tasks",
+					"external": "Call external services",
+					"other": "Handle several steps"
+				},
+				"action": {
+					"read": "Read",
+					"list": "List",
+					"open": "Open",
+					"searchFile": "Find files",
+					"searchContent": "Search code",
+					"write": "Write",
+					"create": "Create",
+					"edit": "Edit",
+					"archive": "Archive",
+					"command": "Run command",
+					"webSearch": "Search",
+					"webFetch": "Fetch",
+					"recall": "Recall",
+					"wikiQuery": "Query wiki",
+					"lints": "Check",
+					"render": "Check layout",
+					"todo": "Organize tasks",
+					"subtask": "Run subtask",
+					"mcpCall": "Call MCP",
+					"skill": "Load skill",
+					"run": "Run"
+				}
 			},
 			"row": {
 				"expand": "Expand {{summary}}",

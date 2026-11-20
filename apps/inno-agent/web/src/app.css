@@ -4122,69 +4122,41 @@ inno-workspace-panel textarea {
 	align-items: center;
 	gap: 6px;
 	min-width: 0;
-	padding: 2px 0 10px;
+	padding: 2px 0 6px;
 	color: var(--inno-text-subtle);
-	font-size: 12px;
+	font-size: 13px;
+	line-height: 1.75;
 	font-variant-numeric: tabular-nums;
 }
 
+/* WorkBuddy-style completed header: plain tertiary text + a 12px chevron,
+   no card. The whole line is the click target. */
 .inno-trace-process-toggle {
-	width: 100%;
-	min-height: 44px;
-	margin: 0 0 8px;
-	padding: 10px 12px;
-	border: 1px solid var(--inno-border);
-	border-radius: 12px;
-	background: var(--inno-card-bg);
-	color: var(--inno-text-muted);
+	width: fit-content;
+	max-width: 100%;
+	margin: 0 0 4px;
+	padding: 0;
+	border: 0;
+	background: transparent;
 	font-family: inherit;
-	font-weight: 500;
-	line-height: 1.45;
 	text-align: left;
 	cursor: pointer;
-	transition: border-color var(--inno-dur-fast) var(--inno-ease-out),
-		background-color var(--inno-dur-fast) var(--inno-ease-out);
+	user-select: none;
+	transition: color var(--inno-dur-fast) var(--inno-ease-out);
 }
 
 .inno-trace-process-toggle:hover {
-	border-color: var(--inno-accent);
-	background: var(--inno-accent-soft);
 	color: var(--inno-text);
 }
 
 .inno-trace-process-toggle:focus-visible {
 	outline: none;
-	border-color: var(--inno-accent);
+	border-radius: 4px;
 	box-shadow: var(--inno-ring);
-}
-
-.inno-trace-process-count {
-	margin-left: auto;
-	color: var(--inno-text-subtle);
-	white-space: nowrap;
-}
-
-.inno-trace-process-action {
-	color: var(--inno-accent);
-	font-weight: 600;
-	white-space: nowrap;
 }
 
 .inno-trace-process-toggle > .inno-trace-chevron {
 	margin-left: 0;
-	color: var(--inno-accent);
-}
-
-.inno-trace-process-scroll {
-	min-width: 0;
-	max-height: 280px; /* Five collapsed process rows; details remain scrollable. */
-	overflow-y: auto;
-	overscroll-behavior-y: contain;
-	scrollbar-gutter: stable;
-}
-
-.inno-trace-process-scroll + .inno-trace-body {
-	margin-top: 14px;
 }
 
 .inno-trace-list {
@@ -4220,38 +4192,19 @@ inno-workspace-panel textarea {
 	margin: 8px 0 16px;
 }
 
-/* Steps card (InnoSpark anatomy): consecutive process rows group into one
-   bordered card — the first row in a run rounds the top, the last rounds the
-   bottom and closes the border. Text bodies between rows break the run into
-   separate cards, matching the mockup's steps-card placement between agent
-   paragraphs. */
-.inno-trace-row {
-	/* Contain the expanded body's bottom margin so it cannot split the
-	   shared card border between consecutive process rows. */
+/* Flat process lines (WorkBuddy anatomy): a light-gray one-liner with a 14px
+   leading icon. No cards, borders or inner scroll window; prose keeps its
+   normal body position between lines. */
+.inno-trace-row,
+.inno-trace-run {
+	/* Contain the expanded body's bottom margin. */
 	display: flow-root;
 	min-width: 0;
-	padding: 0 14px;
-	border: 1px solid var(--inno-border);
-	border-bottom: none;
-	background: var(--inno-card-bg);
 }
 
-.inno-trace-row + .inno-trace-row {
-	border-top: 1px solid color-mix(in srgb, var(--inno-border) 62%, transparent);
-}
-
-.inno-trace-row:not(.inno-trace-row + .inno-trace-row) {
-	border-radius: 14px 14px 0 0;
-}
-
-.inno-trace-row:not(:has(+ .inno-trace-row)) {
-	border-bottom: 1px solid var(--inno-border);
-	border-radius: 0 0 14px 14px;
-	margin-bottom: 4px;
-}
-
-.inno-trace-row:not(.inno-trace-row + .inno-trace-row):not(:has(+ .inno-trace-row)) {
-	border-radius: 14px;
+.inno-trace-run-members {
+	min-width: 0;
+	padding: 2px 0 4px 22px;
 }
 
 .inno-trace-row.is-system {
@@ -4267,15 +4220,15 @@ inno-workspace-panel textarea {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	width: 100%;
+	width: fit-content;
+	max-width: 100%;
 	min-width: 0;
-	min-height: 34px;
-	padding: 10px 0;
+	padding: 2px 0;
 	border: 0;
 	background: transparent;
-	color: inherit;
+	color: var(--inno-text-subtle);
 	font: inherit;
-	line-height: 1.45;
+	line-height: 1.75;
 	text-align: left;
 	cursor: pointer;
 }
@@ -4300,8 +4253,8 @@ inno-workspace-panel textarea {
 }
 
 .inno-trace-icon {
-	width: 18px;
-	color: var(--inno-text-subtle);
+	width: 14px;
+	color: inherit;
 }
 
 .inno-trace-row.is-error .inno-trace-icon,
@@ -4311,7 +4264,7 @@ inno-workspace-panel textarea {
 
 .inno-trace-row-title {
 	position: relative;
-	flex: 1 1 auto;
+	flex: 0 1 auto;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -4320,8 +4273,13 @@ inno-workspace-panel textarea {
 	word-break: normal;
 }
 
+/* Merged summary lines can be long; WorkBuddy caps them at 520px. */
+.inno-trace-run .inno-trace-row-title {
+	max-width: 520px;
+}
+
 .inno-trace-status {
-	margin-left: auto;
+	margin-left: 2px;
 	color: var(--inno-success);
 }
 
@@ -4339,6 +4297,25 @@ inno-workspace-panel textarea {
 
 .inno-trace-chevron.is-open {
 	transform: rotate(90deg);
+}
+
+/* One-liner chevrons appear on hover/focus or while open; the completed
+   header (process toggle) always shows its own. Touch has no hover. */
+.inno-trace-row-toggle > .inno-trace-chevron {
+	opacity: 0;
+	transition: opacity var(--inno-dur-fast) var(--inno-ease-out), transform var(--inno-dur-fast) var(--inno-ease-out);
+}
+
+.inno-trace-row-toggle:hover > .inno-trace-chevron,
+.inno-trace-row-toggle:focus-visible > .inno-trace-chevron,
+.inno-trace-row-toggle[aria-expanded="true"] > .inno-trace-chevron {
+	opacity: 1;
+}
+
+@media (hover: none) {
+	.inno-trace-row-toggle > .inno-trace-chevron {
+		opacity: 1;
+	}
 }
 
 .inno-trace-row-details {

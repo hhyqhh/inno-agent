@@ -101,7 +101,7 @@ describe("AgentTraceTimeline", () => {
 	it("offers full text only when content overflows and keeps short durations readable", () => {
 		vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(600);
 		vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(190);
-		render(<AgentTraceTimeline steps={[{ ...officeTool, result: "长结果\n".repeat(20) }, { ...thinking, durationMs: 100 }]} />);
+		render(<AgentTraceTimeline isSending steps={[{ ...officeTool, result: "长结果\n".repeat(20) }, { ...thinking, durationMs: 100 }]} />);
 		expect(screen.getByRole("button", { name: /展开思考完成/ }).textContent).toContain("<1 秒");
 		fireEvent.click(screen.getByRole("button", { name: /展开创建文档/ }));
 		fireEvent.click(screen.getByRole("button", { name: "展开全文" }));
@@ -188,6 +188,7 @@ describe("AgentTraceTimeline", () => {
 	it("expands only the clicked thinking row when trace ids are duplicated", () => {
 		render(
 			<AgentTraceTimeline
+				isSending
 				steps={[
 					{ ...thinking, text: "第一段思考" },
 					{ ...thinking, text: "第二段思考" },
@@ -450,6 +451,8 @@ describe("AgentTraceTimeline", () => {
 			/>,
 		);
 
+		// Settled work folds under the header; open it to see the ordered flow.
+		fireEvent.click(screen.getByRole("button", { name: "展开工作过程（2 个步骤）" }));
 		const flow = document.querySelector(".inno-trace-flow");
 		expect(flow).not.toBeNull();
 		expect(Array.from(flow!.children).map((child) => child.classList.contains("inno-trace-body"))).toEqual([
@@ -490,14 +493,17 @@ describe("AgentTraceTimeline", () => {
 			/>,
 		);
 
-		const rows = screen.getAllByRole("button");
+		fireEvent.click(screen.getByRole("button", { name: "展开工作过程（2 个步骤）" }));
+		// Two settled steps merge into one line: top two groups + first target.
+		fireEvent.click(screen.getByRole("button", { name: "展开查看文件、处理：notes.md" }));
+		const rows = Array.from(document.querySelectorAll<HTMLButtonElement>(".inno-trace-run-members .inno-trace-row-toggle"));
 		expect(rows).toHaveLength(2);
 		fireEvent.click(rows[1]);
 		fireEvent.click(screen.getByRole("button", { name: "打开 Skills 面板" }));
 		expect(onOpenSkill).toHaveBeenCalledWith("docs");
 	});
 
-	it("collapses long completed process flows without hiding the answer", () => {
+	it("folds settled work under a completed header and merges consecutive steps into one line", () => {
 		const steps: ChatTraceStep[] = Array.from({ length: 5 }, (_, index) => ({
 			...officeTool,
 			id: `tool:${index}`,
@@ -512,42 +518,53 @@ describe("AgentTraceTimeline", () => {
 			title: "回复",
 			text: "最终答案保持可见",
 		};
-		const view = render(<AgentTraceTimeline showText steps={[...steps, answer]} />);
+		const view = render(<AgentTraceTimeline showText steps={[...steps, answer]} startedAt="2026-11-18T15:00:00Z" finishedAt="2026-11-18T15:05:44Z" />);
 
-		const processToggle = screen.getByRole("button", { name: "展开工作过程（5 个步骤）" });
-		expect(processToggle.getAttribute("aria-expanded")).toBe("false");
-		expect(processToggle.textContent).toContain("展开");
+		const header = screen.getByRole("button", { name: "展开工作过程（5 个步骤）" });
+		expect(header.getAttribute("aria-expanded")).toBe("false");
+		expect(header.textContent).toBe("已完成5m44s");
 		expect(document.querySelectorAll(".inno-trace-row")).toHaveLength(0);
+		expect(document.querySelectorAll(".inno-trace-run")).toHaveLength(0);
 		expect(screen.getByText("最终答案保持可见")).toBeTruthy();
 
-		fireEvent.click(processToggle);
-		expect(document.querySelectorAll(".inno-trace-row")).toHaveLength(5);
-		expect(document.querySelector(".inno-trace-process-scroll")).not.toBeNull();
+		// Opening the header shows ONE merged line, not five cards or a scroll window.
+		fireEvent.click(header);
+		expect(document.querySelectorAll(".inno-trace-run")).toHaveLength(1);
+		expect(document.querySelectorAll(".inno-trace-row")).toHaveLength(0);
+		expect(document.querySelector(".inno-trace-process-scroll")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "展开运行命令" }));
+		expect(document.querySelectorAll(".inno-trace-run-members .inno-trace-row")).toHaveLength(5);
+
 		fireEvent.click(screen.getByRole("button", { name: "收起工作过程（5 个步骤）" }));
 		expect(document.querySelectorAll(".inno-trace-row")).toHaveLength(0);
 
+		// While the turn is live there is no clickable header, and the trailing
+		// run stays as individual rows so the running step keeps its shimmer.
 		view.unmount();
 		const liveSteps = steps.map((step, index) => index === steps.length - 1 ? { ...step, status: "running" as const } : step);
-		const liveView = render(<AgentTraceTimeline isSending steps={liveSteps} />);
+		render(<AgentTraceTimeline isSending steps={liveSteps} startedAt={new Date(Date.now() - 3_000).toISOString()} />);
 		expect(document.querySelectorAll(".inno-trace-row")).toHaveLength(5);
-		expect(screen.getByRole("button", { name: "收起工作过程（5 个步骤）" })).toBeTruthy();
+		expect(document.querySelectorAll(".inno-trace-run")).toHaveLength(0);
+		expect(screen.queryByRole("button", { name: /工作过程/ })).toBeNull();
+		expect(document.querySelector(".inno-trace-work-status")?.textContent).toMatch(/^已处理\d+s$/);
+	});
 
-		const scroll = document.querySelector<HTMLElement>(".inno-trace-process-scroll")!;
-		Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: 500 });
-		Object.defineProperty(scroll, "clientHeight", { configurable: true, value: 250 });
-		const nextSteps: ChatTraceStep[] = [
-			...liveSteps.slice(0, -1),
-			{ ...liveSteps.at(-1)!, status: "completed" },
-			{ ...officeTool, id: "tool:5", toolCallId: "tool:5", toolName: "bash", status: "running", args: { command: "step 5" } },
+	it("folds a run as soon as prose follows it while the turn is still streaming", () => {
+		const tool = (id: string, toolName: string, args: Record<string, unknown>): ChatTraceStep => ({
+			id, kind: "tool", status: "completed", title: toolName, toolName, toolCallId: id, args,
+		});
+		const steps: ChatTraceStep[] = [
+			tool("a", "bash", { command: "npm test" }),
+			tool("b", "read", { path: "docs/2026-11.md" }),
+			{ id: "p", kind: "progress", status: "completed", title: "进度", text: "先看一眼结果" },
+			tool("c", "bash", { command: "ls" }),
+			tool("d", "bash", { command: "pwd" }),
 		];
-		liveView.rerender(<AgentTraceTimeline isSending steps={nextSteps} />);
-		expect(scroll.scrollTop).toBe(500);
-
-		scroll.scrollTop = 100;
-		fireEvent.scroll(scroll);
-		Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: 650 });
-		liveView.rerender(<AgentTraceTimeline isSending steps={nextSteps} />);
-		expect(scroll.scrollTop).toBe(100);
+		render(<AgentTraceTimeline isSending showText steps={steps} />);
+		// Earlier run (prose follows) is merged; the trailing run stays expanded.
+		expect(screen.getByRole("button", { name: "展开运行校验、查看文件：2026-11.md" })).toBeTruthy();
+		expect(document.querySelectorAll(".inno-trace-run")).toHaveLength(1);
+		expect(document.querySelectorAll(".inno-trace-row")).toHaveLength(2);
 	});
 
 	it("keeps internal bookkeeping and child-task timing out of the surface", () => {

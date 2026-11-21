@@ -495,6 +495,47 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 		if (el) el.scrollTop = el.scrollHeight;
 	}, [chat.isLoadingHistory, chat.messages.length, sessions.currentSessionId]);
 
+	// Only a real user gesture may release the bottom pin. A scroll event also
+	// fires when streamed content grows by >96px between our pin and the event
+	// dispatch (e.g. the streaming bubble swapping to the taller final render);
+	// treating that as "user scrolled up" strands the view above the reply end.
+	const lastUserScrollGestureRef = useRef(0);
+	const scrollbarDragRef = useRef(false);
+	useEffect(() => {
+		const el = scrollRef.current;
+		if (!el) return;
+		const mark = () => {
+			lastUserScrollGestureRef.current = performance.now();
+		};
+		const onPointerDown = (event: globalThis.PointerEvent) => {
+			const rect = el.getBoundingClientRect();
+			if (event.clientX >= rect.right - 24) {
+				scrollbarDragRef.current = true;
+				mark();
+			}
+		};
+		const onPointerUp = () => {
+			scrollbarDragRef.current = false;
+		};
+		const onKeyDown = (event: globalThis.KeyboardEvent) => {
+			if (["PageUp", "Home", "ArrowUp", "PageDown", "End", "ArrowDown", " "].includes(event.key)) mark();
+		};
+		el.addEventListener("wheel", mark, { passive: true });
+		el.addEventListener("touchstart", mark, { passive: true });
+		el.addEventListener("touchmove", mark, { passive: true });
+		el.addEventListener("pointerdown", onPointerDown);
+		el.addEventListener("keydown", onKeyDown);
+		window.addEventListener("pointerup", onPointerUp);
+		return () => {
+			el.removeEventListener("wheel", mark);
+			el.removeEventListener("touchstart", mark);
+			el.removeEventListener("touchmove", mark);
+			el.removeEventListener("pointerdown", onPointerDown);
+			el.removeEventListener("keydown", onKeyDown);
+			window.removeEventListener("pointerup", onPointerUp);
+		};
+	}, [sessions.currentSessionId, isWelcome]);
+
 	const handleChatScroll = useCallback(() => {
 		const el = scrollRef.current;
 		if (!el) return;
@@ -504,9 +545,16 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 			setShowLatestButton(false);
 			return;
 		}
+		const gestureActive =
+			scrollbarDragRef.current || performance.now() - lastUserScrollGestureRef.current < 1200;
+		if (!gestureActive) {
+			// Layout-driven growth, not the user: re-pin instead of releasing.
+			if (shouldStickToBottomRef.current && !chat.isLoadingHistory) el.scrollTop = el.scrollHeight;
+			return;
+		}
 		shouldStickToBottomRef.current = false;
 		setShowLatestButton(true);
-	}, []);
+	}, [chat.isLoadingHistory]);
 	const pauseAutoScroll = useCallback(() => {
 		shouldStickToBottomRef.current = false;
 		setShowLatestButton(true);

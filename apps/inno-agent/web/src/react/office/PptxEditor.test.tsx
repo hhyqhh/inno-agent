@@ -6,14 +6,13 @@ import type { OfficeEditorHandle } from "./office-editor-handle.js";
 import type { WorkspaceFileDetail } from "../../types/workspace.js";
 
 const snapshot = { slides: [] };
-vi.mock("./office-ooxml.js", () => ({ preservePptx: vi.fn(async (_original, _baseline, current) => new Uint8Array([current.value])) }));
 const file = { path: "deck.pptx", name: "deck.pptx", format: "pptx", url: "/deck?workspaceId=owner" } as WorkspaceFileDetail;
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 async function setup() {
 	vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(3) }));
 	const ref = createRef<OfficeEditorHandle>();
-	const ready = vi.fn(); const dirty = vi.fn();
-	const mounted = render(<PptxEditor ref={ref} file={file} onReadyChange={ready} onInteract={dirty} />);
+	const ready = vi.fn(); const dirty = vi.fn(); const save = vi.fn();
+	const mounted = render(<PptxEditor ref={ref} file={file} onReadyChange={ready} onInteract={dirty} onSaveRequest={save} />);
 	const frame = screen.getByTitle("deck.pptx") as HTMLIFrameElement;
 	const post = vi.spyOn(frame.contentWindow!, "postMessage");
 	const message = async (data: unknown, source: MessageEventSource | null = frame.contentWindow, origin = window.location.origin) => {
@@ -21,7 +20,7 @@ async function setup() {
 	};
 	await message({ type: "pptist:ready" });
 	expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: "pptist:load" }), window.location.origin, expect.any(Array));
-	return { ref, ready, dirty, message, post, mounted };
+	return { ref, ready, dirty, save, message, post, mounted };
 }
 it("waits for completed import and accepts immediate changes only from its iframe", async () => {
 	const { ready, dirty, message } = await setup();
@@ -44,8 +43,8 @@ it("does not let a late timed-out export satisfy the next save", async () => {
 	expect(await first).toBeInstanceOf(Error);
 	const second = ref.current!.exportBytes();
 	const secondId = (post.mock.calls.at(-1)![0] as { requestId: number }).requestId;
-	await message({ type: "pptist:exported", requestId: firstId, snapshot: { ...snapshot, value: 1 } });
-	await message({ type: "pptist:exported", requestId: secondId, snapshot: { ...snapshot, value: 2 } });
+	await message({ type: "pptist:exported", requestId: firstId, buffer: new Uint8Array([1]).buffer });
+	await message({ type: "pptist:exported", requestId: secondId, buffer: new Uint8Array([2]).buffer });
 	expect(await second).toEqual(new Uint8Array([2]));
 });
 it("settles a pending save when the editor is unmounted", async () => {
@@ -54,4 +53,13 @@ it("settles a pending save when the editor is unmounted", async () => {
 	const saved = ref.current!.exportBytes().catch((error) => error);
 	mounted.unmount();
 	expect(await saved).toBeInstanceOf(Error);
+});
+
+it("routes save shortcuts only from the bound PPT iframe", async () => {
+    const { save, message } = await setup();
+    await message({ type: "pptist:save-request" }, window);
+    await message({ type: "pptist:save-request" }, null, "https://other.example");
+    expect(save).not.toHaveBeenCalled();
+    await message({ type: "pptist:save-request" });
+    expect(save).toHaveBeenCalledOnce();
 });

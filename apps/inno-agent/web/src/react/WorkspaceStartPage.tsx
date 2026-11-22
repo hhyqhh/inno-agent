@@ -46,7 +46,11 @@ export function WorkspaceStartPage() {
 	const hasAiWrite = (file: StartFile) => file.workspaceId === state.workspaceId && aiByPath.has(file.path);
 	const matches = (file: StartFile) => {
 		const fileKind = kindFromName(file.name);
-		return (scope === "all" || file.workspaceId === state.workspaceId)
+		// Hide automatic recovery files, including backups made by older
+		// versions; readable user-created copies remain ordinary documents.
+		return !file.path.split("/").includes(".office-backups")
+			&& !/\.backup-\d{13}-[a-f0-9-]{36}\.(xlsx|pptx)$/i.test(file.name)
+			&& (scope === "all" || file.workspaceId === state.workspaceId)
 			&& (kind === "all" || fileKind === kind || (kind === "doc" && fileKind === "pdf"))
 			&& (!aiOnly || hasAiWrite(file))
 			&& `${file.name} ${file.path} ${workspaceName(file.workspaceId)}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());

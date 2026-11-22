@@ -1,3 +1,6 @@
+import { createRef } from "react";
+import { univerSnapshotToXlsxBytes } from "./univer-xlsx.js";
+import type { OfficeEditorHandle } from "./office-editor-handle.js";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import XlsxEditor from "./XlsxEditor.js";
@@ -5,7 +8,7 @@ import type { WorkspaceFileDetail } from "../../types/workspace.js";
 
 const mocks = vi.hoisted(() => ({
 	language: "en", createUnit: vi.fn(), theme: vi.fn(), dispose: vi.fn(),
-	listen: vi.fn(), snapshot: vi.fn(),
+	listen: vi.fn(), snapshot: vi.fn(), commit: vi.fn(),
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ i18n: { language: mocks.language }, t: (key: string) => key }) }));
 vi.mock("exceljs", () => ({ default: { Workbook: class { xlsx = { load: async () => {} }; } } }));
@@ -14,7 +17,7 @@ vi.mock("@univerjs/presets", () => ({
 	LocaleType: { ZH_CN: "zh", EN_US: "en" }, UniverInstanceType: { UNIVER_SHEET: "sheet" }, CommandType: { MUTATION: "mutation" },
 	createUniver: () => ({
 		univer: { createUnit: mocks.createUnit, dispose: vi.fn() },
-		univerAPI: { toggleDarkMode: mocks.theme, dispose: mocks.dispose, Event: { CommandExecuted: "command", BeforeCommandExecute: "before" }, addEvent: mocks.listen, getCurrentTheme: () => ({ gray: { 900: "#123456" } }), getActiveWorkbook: () => ({ save: mocks.snapshot }) },
+		univerAPI: { toggleDarkMode: mocks.theme, dispose: mocks.dispose, Event: { CommandExecuted: "command", BeforeCommandExecute: "before", SheetEditChanging: "edit" }, addEvent: mocks.listen, getCurrentTheme: () => ({ gray: { 900: "#123456" } }), getActiveWorkbook: () => ({ save: mocks.snapshot, endEditingAsync: mocks.commit }) },
 	}),
 }));
 vi.mock("@univerjs/preset-sheets-core", () => ({ UniverSheetsCorePreset: () => ({}) }));
@@ -26,7 +29,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); vi.clear
 it("tracks immediate edits, synchronizes both themes, and preserves the draft on locale/callback changes", async () => {
 	vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(1) })));
 	let mutation!: (event: { type: string; id: string }) => void;
-	mocks.listen.mockImplementation((_event, callback) => { mutation = callback; return { dispose: vi.fn() }; });
+	mocks.listen.mockImplementation((event, callback) => { if (event === "command") mutation = callback; return { dispose: vi.fn() }; });
 	const ready = vi.fn(); const dirty = vi.fn();
 	document.documentElement.dataset.theme = "light";
 	const mounted = render(<XlsxEditor file={file} onReadyChange={ready} onInteract={dirty} />);
@@ -49,61 +52,35 @@ it("tracks immediate edits, synchronizes both themes, and preserves the draft on
 	expect(mocks.dispose).toHaveBeenCalledOnce();
 });
 
-it("cancels structural mutations before the incomplete import can change source references", async () => {
+it("allows cell formatting, paste and structural edits and exports the full current workbook", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(1) })));
-    let before!: (event: { id: string; type: string; cancel?: boolean }) => void;
-    mocks.listen.mockImplementation((name, callback) => { if (name === "before") before = callback; return { dispose: vi.fn() }; });
-    const ready = vi.fn();
-    render(<XlsxEditor file={file} onReadyChange={ready} />);
-    await waitFor(() => expect(ready).toHaveBeenCalledWith(true));
-    for (const id of ["sheet.mutation.insert-row", "sheet.mutation.move-range", "sheet.mutation.remove-sheet", "sheet.command.set-text-color", "doc.command.set-inline-format", "sheet.command.paste", "univer.command.paste"]) {
-        const event = { id, type: "mutation", cancel: false };
-        act(() => before(event));
-        expect(event.cancel).toBe(true);
-    }
-    const inputStyle = { id: "doc.command.set-input-style", type: "command", cancel: false };
-    act(() => before(inputStyle));
-    expect(inputStyle.cancel).toBe(false);
-    const safe = { id: "sheet.mutation.set-range-values", type: "mutation", cancel: false };
-    act(() => before(safe));
-    expect(safe.cancel).toBe(false);
-    const values = { id: "univer.command.paste", type: "command", params: { value: "special-paste-value" }, cancel: false };
-    act(() => before(values));
-    expect(values.cancel).toBe(false);
-});
-
-
-it.each(["light", "dark"])("keeps ordinary cell input silent and dismisses blocked-action feedback in %s", async (theme) => {
-    document.documentElement.dataset.theme = theme;
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(1) })));
-    const listeners = new Map<string, (event: { id: string; type: string; cancel?: boolean }) => void>();
+    const listeners = new Map<string, (event: any) => void>();
     mocks.listen.mockImplementation((name, callback) => { listeners.set(name, callback); return { dispose: vi.fn() }; });
-    const ready = vi.fn(), dirty = vi.fn();
-    const mounted = render(<XlsxEditor file={file} onReadyChange={ready} onInteract={dirty} />);
+    const snapshot = { sheets: { updated: { name: "Renamed", cellData: { 0: { 0: { v: "edited", s: { bl: 1 } } } } } } };
+    mocks.snapshot.mockReturnValue(snapshot);
+    vi.mocked(univerSnapshotToXlsxBytes).mockResolvedValue(new Uint8Array([7, 8]));
+    const ref = createRef<OfficeEditorHandle>(), ready = vi.fn(), dirty = vi.fn();
+    render(<XlsxEditor ref={ref} file={file} onReadyChange={ready} onInteract={dirty} />);
     await waitFor(() => expect(ready).toHaveBeenCalledWith(true));
-    vi.useFakeTimers();
-    const before = listeners.get("before")!, executed = listeners.get("command")!;
-    const input = { id: "doc.command.set-input-style", type: "command", cancel: false };
-    act(() => before(input));
-    expect(input.cancel).toBe(false);
-    expect(mounted.queryByRole("status")).toBeNull();
-    const blocked = () => before({ id: "sheet.command.set-text-color", type: "command" });
-    act(blocked);
-    expect(mounted.getByRole("status").textContent).toBe("officeEditor.unsupportedCommand");
-    expect(mounted.queryByRole("alert")).toBeNull();
-    act(() => vi.advanceTimersByTime(3_000));
-    act(blocked);
-    act(() => vi.advanceTimersByTime(3_999));
-    expect(mounted.getByRole("status")).toBeTruthy();
-    act(() => vi.advanceTimersByTime(1));
-    expect(mounted.queryByRole("status")).toBeNull();
-    act(blocked);
-    act(() => executed({ id: "sheet.mutation.set-range-values", type: "mutation" }));
+    for (const id of ["sheet.mutation.insert-row", "sheet.mutation.move-range", "sheet.mutation.remove-sheet", "sheet.command.set-text-color", "doc.command.set-inline-format", "sheet.command.paste"]) {
+        const event = { id, type: "mutation", cancel: false };
+        act(() => listeners.get("before")?.(event));
+        expect(event.cancel).toBe(false);
+    }
+    // Editor-document initialization is not a workbook modification. Actual
+    // input still marks the draft before the cell has been committed.
+    act(() => listeners.get("command")?.({ type: "mutation", id: "doc.mutation.rich-text-editing" }));
+    expect(dirty).not.toHaveBeenCalled();
+    act(() => listeners.get("edit")?.({}));
     expect(dirty).toHaveBeenCalledOnce();
-    expect(mounted.queryByRole("status")).toBeNull();
-    act(blocked);
-    mounted.unmount();
-    expect(vi.getTimerCount()).toBe(0);
+    mocks.commit.mockImplementationOnce(async () => {
+        listeners.get("edit")?.({});
+        listeners.get("command")?.({ type: "mutation", id: "sheet.mutation.set-range-values" });
+    });
+    expect(await ref.current!.exportBytes()).toEqual(new Uint8Array([7, 8]));
+    expect(mocks.commit).toHaveBeenCalledWith(true);
+    expect(dirty).toHaveBeenCalledOnce();
+    expect(univerSnapshotToXlsxBytes).toHaveBeenCalledWith(snapshot, file.name, expect.objectContaining({ bytes: expect.any(Uint8Array) }));
 });
 
 it("retains workbook loading failures instead of expiring them with action feedback", async () => {

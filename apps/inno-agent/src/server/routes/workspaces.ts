@@ -1,5 +1,5 @@
 import { execFile, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import {
 	constants as fsConstants,
@@ -13,7 +13,7 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { copyFile, open, stat } from "node:fs/promises";
+import { copyFile, mkdir, open, stat } from "node:fs/promises";
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative } from "node:path";
@@ -642,10 +642,22 @@ export async function handleWorkspacesRoutes(
 		const fullPath = root && !normalized.startsWith("/") && !/^[A-Za-z]:/.test(normalized)
 			? await resolveContainedPathAsync(root, normalized) : null;
 		if (!fullPath) { json(res, 403, { error: "Path outside workspace" }); return true; }
-		if (contentBase64 !== null && !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(contentBase64)) {
-			json(res, 400, { error: "Invalid base64 content" }); return true;
+		if (contentBase64 !== null) {
+			// Repeating a four-character regex group exhausted V8's stack on
+			// valid 8 MB Office exports (HTTP 500). Scan characters without
+			// grouped repetition, and check padding positions separately.
+			const paddingStart = contentBase64.indexOf("=");
+			const validPadding = paddingStart === -1 || paddingStart === contentBase64.length - 1
+				|| (paddingStart === contentBase64.length - 2 && contentBase64.endsWith("=="));
+			if (contentBase64.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(contentBase64) || !validPadding) {
+				json(res, 400, { error: "Invalid base64 content" }); return true;
+			}
 		}
 		const createOnly = body.createOnly === true;
+		const expectedContentHash = body.expectedContentHash;
+		if (expectedContentHash !== undefined && (typeof expectedContentHash !== "string" || !/^[a-f0-9]{64}$/.test(expectedContentHash))) {
+			json(res, 400, { error: "Invalid source content hash" }); return true;
+		}
 		const needsOfficeBackup = !createOnly && contentBase64 !== null && [".xlsx", ".pptx"].includes(extname(fullPath).toLowerCase());
 		if (needsOfficeBackup && body.confirmOverwrite !== true) {
 			json(res, 409, { error: "Confirm before overwriting the original file", code: "OFFICE_OVERWRITE_CONFIRMATION_REQUIRED" }); return true;
@@ -656,7 +668,7 @@ export async function handleWorkspacesRoutes(
 			catch (error) {
 				// Exclusive creation makes Save copy incapable of replacing an existing file,
 				// including concurrent saves choosing the same destination.
-				if (createOnly && (error as NodeJS.ErrnoException).code === "EEXIST") { json(res, 409, { error: "File already exists" }); return; }
+				if (createOnly && (error as NodeJS.ErrnoException).code === "EEXIST") { json(res, 409, { error: "File already exists", code: "FILE_EXISTS" }); return; }
 				if (["ENOENT", "EISDIR", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) { json(res, 404, { error: "File not found" }); return; }
 				throw error;
 			}
@@ -665,18 +677,33 @@ export async function handleWorkspacesRoutes(
 				if (!originalInfo.isFile()) { json(res, 404, { error: "File not found" }); return; }
 				// The preserving export is based on the imported source. A newer
 				// external edit must be reloaded, not replaced by that old package.
-				if (!createOnly && typeof body.expectedUpdatedAt === "string" && body.expectedUpdatedAt !== originalInfo.mtime.toISOString()) {
+				// Preview metadata can predate the bytes imported by an editor (also
+				// after our own previous save). Compare those actual bytes, not mtime:
+				// touching an unchanged file must not strand a valid Office draft.
+				let contentChanged = false;
+				if (!createOnly && typeof expectedContentHash === "string") {
+					const hash = createHash("sha256");
+					// An explicit position leaves the write handle's offset at zero.
+					for await (const chunk of output.createReadStream({ start: 0, autoClose: false })) hash.update(chunk);
+					contentChanged = hash.digest("hex") !== expectedContentHash;
+				} else if (!createOnly && typeof body.expectedUpdatedAt === "string") {
+					contentChanged = body.expectedUpdatedAt !== originalInfo.mtime.toISOString();
+				}
+				if (contentChanged) {
 					json(res, 409, { error: "原文件已被其他操作修改，请保存副本或重新打开。 / Original changed; save a copy or reopen.", code: "FILE_CHANGED" }); return;
 				}
 				let backupPath: string | undefined;
-				if (needsOfficeBackup) {
+				if (needsOfficeBackup && body.backupOriginal !== false) {
 					const extension = extname(normalized);
-					backupPath = `${normalized.slice(0, -extension.length)}.backup-${Date.now()}-${randomUUID()}${extension}`;
+					// Keep recovery files out of document/recent-file listings. The
+					// save route remains the only owner of backups and source writes.
+					backupPath = `.office-backups/${normalized.slice(0, -extension.length)}.backup-${Date.now()}-${randomUUID()}${extension}`;
 					const backupFile = await resolveContainedPathAsync(root!, backupPath);
 					// An overwrite still needs a recovery point. A unique,
 					// exclusive byte-for-byte backup must succeed before any write.
 					try {
 						if (!backupFile) throw new Error("Invalid backup path");
+						await mkdir(dirname(backupFile), { recursive: true });
 						await copyFile(fullPath, backupFile, fsConstants.COPYFILE_EXCL);
 					} catch {
 						logger.warn("Office backup failed; overwrite cancelled");
@@ -687,7 +714,7 @@ export async function handleWorkspacesRoutes(
 				await output.writeFile(bytes);
 				await output.truncate(bytes.length);
 				const info = await output.stat();
-				json(res, 200, { path: filePath, saved: true, size: info.size, updatedAt: info.mtime.toISOString(), ...(backupPath ? { backupPath } : {}) });
+				json(res, 200, { path: filePath, saved: true, size: info.size, updatedAt: info.mtime.toISOString(), ...(contentBase64 !== null ? { contentHash: createHash("sha256").update(bytes).digest("hex") } : {}), ...(backupPath ? { backupPath } : {}) });
 			} finally { await output.close(); }
 		});
 		return true;

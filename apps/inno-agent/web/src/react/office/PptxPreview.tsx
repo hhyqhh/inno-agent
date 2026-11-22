@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Download } from "lucide-react";
 import type { PptxPreviewResult, PptxSlide, WorkspaceFileDetail } from "../../types/workspace.js";
@@ -89,14 +89,18 @@ export default function PptxPreview({ file }: { file: WorkspaceFileDetail }) {
 								{t("preview.pptxSlide", "Slide {{n}}", { n: slide.index })}
 							</span>
 						</div>
-						<div
-							className="pptx-slide w-full"
-							style={{ aspectRatio: String(aspect) }}
-							dangerouslySetInnerHTML={{ __html: slide.svg }}
-						/>
+						<PptxSlideSvg svg={slide.svg} aspect={aspect} />
 					</div>
 				))}
 			</div>
 		</div>
 	);
+}
+
+function PptxSlideSvg({ svg, aspect }: { svg: string; aspect: number }) {
+	// React 19 writes dangerouslySetInnerHTML again when its wrapper object
+	// changes. Reuse it until this slide's SVG changes so unrelated store
+	// updates (such as switching chats) don't reparse every slide.
+	const markup = useMemo(() => ({ __html: svg }), [svg]);
+	return <div className="pptx-slide w-full" style={{ aspectRatio: String(aspect) }} dangerouslySetInnerHTML={markup} />;
 }

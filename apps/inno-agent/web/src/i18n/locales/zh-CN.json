@@ -955,6 +955,21 @@
 			"description": "允许 agent 编写 JavaScript 脚本批量调用工具,只有脚本输出占用上下文,适合批量处理文件与资料。注意:聊天 trace 时间线只显示一次 codemode 调用,脚本内的子调用仅在日志中可见。",
 			"restartHint": "更改将在重启后生效。"
 		},
+		"smartCompact": {
+			"title": "智能上下文压缩",
+			"description": "自动整理并压缩长对话，降低 token 消耗；关闭后回退到 Pi 原生压缩。也可以随时在对话框使用 /compact-now 手动压缩。",
+			"restartHint": "开关更改将在重启后生效。",
+			"unsupported": "当前 Node.js 版本不支持 Smart Compact，将继续使用原生压缩。",
+			"thresholdTitle": "自动压缩阈值",
+			"thresholdDescription": "达到约 90% 时在空闲阶段压缩；窗口较小的模型按实际窗口的相同比例触发。档位更改立即生效。",
+			"settingsError": "无法读取 ~/.pi/agent/settings.json，请修复 JSON 后再调整档位。",
+			"presets": {
+				"150k": "约 150K（较早，更省 token）",
+				"300k": "约 300K（推荐）",
+				"500k": "约 500K（保留更多上下文）",
+				"custom": "自定义（当前配置）"
+			}
+		},
 		"permissions": {
 			"title": "工具权限",
 			"description": "控制 agent 执行命令前的审批粒度。危险命令与敏感文件在任何模式下都会被拒绝；切换后立即生效，无需重启。",

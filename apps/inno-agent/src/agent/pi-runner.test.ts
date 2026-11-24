@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import type { AgentSession, AgentSessionEvent, CompactionResult } from "@earendil-works/pi-coding-agent";
 import {
+	compactSessionManually,
 	finalizePromptRun,
 	getSession,
 	getSessionIfInitialized,
@@ -110,5 +112,87 @@ describe("read-only access before Agent initialization", () => {
 		expect(getSessionIfInitialized()).toBeNull();
 		expect(getCurrentSessionId()).toBe("");
 		expect(() => getSession()).toThrow("Session not initialized");
+	});
+});
+
+describe("manual compaction execution", () => {
+	const result: CompactionResult = {
+		summary: "summary",
+		firstKeptEntryId: "entry-1",
+		tokensBefore: 300_000,
+		estimatedTokensAfter: 40_000,
+	};
+
+	function fakeSession() {
+		const listeners = new Set<(event: AgentSessionEvent) => void>();
+		const session = {
+			subscribe: vi.fn((listener: (event: AgentSessionEvent) => void) => {
+				listeners.add(listener);
+				return () => listeners.delete(listener);
+			}),
+			prompt: vi.fn(),
+			compact: vi.fn(),
+		};
+		return {
+			session: session as unknown as AgentSession,
+			mock: session,
+			emit(event: AgentSessionEvent) {
+				for (const listener of listeners) listener(event);
+			},
+			listenerCount: () => listeners.size,
+		};
+	}
+
+	it("uses native compaction when Smart Compact is unavailable", async () => {
+		const fake = fakeSession();
+		const events: AgentSessionEvent[] = [];
+		fake.mock.compact.mockImplementation(async () => {
+			fake.emit({ type: "compaction_start", reason: "manual" } as AgentSessionEvent);
+			fake.emit({ type: "compaction_end", reason: "manual", result, aborted: false, willRetry: false } as AgentSessionEvent);
+			return result;
+		});
+		await expect(compactSessionManually(fake.session, false, (event) => events.push(event))).resolves.toBe(result);
+		expect(fake.mock.compact).toHaveBeenCalledOnce();
+		expect(fake.mock.prompt).not.toHaveBeenCalled();
+		expect(events.map((event) => event.type)).toEqual(["compaction_start", "compaction_end"]);
+		expect(fake.listenerCount()).toBe(0);
+	});
+
+	it("waits for the real manual compaction_end after the Smart command returns", async () => {
+		const fake = fakeSession();
+		fake.mock.prompt.mockImplementation(async (command: string) => {
+			expect(command).toBe("/smart-compact fast");
+			// Model preparation has finished, but ctx.compact() starts on a later
+			// event-loop turn; command return alone is not completion.
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			fake.emit({ type: "compaction_start", reason: "manual" } as AgentSessionEvent);
+			fake.emit({ type: "compaction_end", reason: "manual", result, aborted: false, willRetry: false } as AgentSessionEvent);
+		});
+		await expect(compactSessionManually(fake.session, true, () => {})).resolves.toBe(result);
+		expect(fake.mock.prompt).toHaveBeenCalledWith("/smart-compact fast");
+		expect(fake.mock.compact).not.toHaveBeenCalled();
+	});
+
+	it("fails instead of hanging when the Smart command never starts compaction", async () => {
+		const fake = fakeSession();
+		fake.mock.prompt.mockResolvedValue(undefined);
+		await expect(compactSessionManually(fake.session, true, () => {})).rejects.toThrow("did not start compaction");
+		expect(fake.listenerCount()).toBe(0);
+	});
+
+	it("surfaces a failed manual compaction_end", async () => {
+		const fake = fakeSession();
+		fake.mock.prompt.mockImplementation(async () => {
+			fake.emit({ type: "compaction_start", reason: "manual" } as AgentSessionEvent);
+			fake.emit({
+				type: "compaction_end",
+				reason: "manual",
+				result: undefined,
+				aborted: false,
+				willRetry: false,
+				errorMessage: "Compaction failed: provider unavailable",
+			} as AgentSessionEvent);
+		});
+		await expect(compactSessionManually(fake.session, true, () => {})).rejects.toThrow("provider unavailable");
 	});
 });

@@ -955,6 +955,21 @@
 			"description": "Let the agent write JavaScript scripts that batch-call tools, so only the script output consumes context — useful for bulk file and document work. Note: the chat trace timeline shows a codemode call as a single step; nested calls are only visible in logs.",
 			"restartHint": "Changes take effect after restart."
 		},
+		"smartCompact": {
+			"title": "Smart context compaction",
+			"description": "Automatically organize and compact long conversations to reduce token usage; when disabled, Pi native compaction remains available. Use /compact-now in the composer to compact manually at any time.",
+			"restartHint": "Toggle changes take effect after restart.",
+			"unsupported": "This Node.js version does not support Smart Compact; native compaction will be used.",
+			"thresholdTitle": "Automatic compaction threshold",
+			"thresholdDescription": "Compaction runs at an idle point around 90%; smaller model windows use the same percentage of their actual window. Preset changes apply immediately.",
+			"settingsError": "Cannot read ~/.pi/agent/settings.json. Fix the JSON before choosing a preset.",
+			"presets": {
+				"150k": "About 150K (earlier, saves more tokens)",
+				"300k": "About 300K (recommended)",
+				"500k": "About 500K (retains more context)",
+				"custom": "Custom (current configuration)"
+			}
+		},
 		"permissions": {
 			"title": "Tool permissions",
 			"description": "How strictly tool calls are approved. Dangerous commands and sensitive files are denied in every mode; changes apply immediately, no restart needed.",

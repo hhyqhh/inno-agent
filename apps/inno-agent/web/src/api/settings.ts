@@ -1,5 +1,5 @@
 import { apiFetch } from "./client.js";
-import type { InnoSettings, SmartInputSettings, UpsertProviderRequest, ChannelsSettingsPayload, WindowCloseBehavior, WebAccessSettings, WebAccessSettingsPayload, PermissionPolicyMode } from "../types/settings.js";
+import type { InnoSettings, SmartInputSettings, UpsertProviderRequest, ChannelsSettingsPayload, WindowCloseBehavior, WebAccessSettings, WebAccessSettingsPayload, PermissionPolicyMode, SmartCompactSettingsPatch } from "../types/settings.js";
 
 export async function getSettings(): Promise<InnoSettings> {
 	return apiFetch<InnoSettings>("/api/settings");
@@ -84,6 +84,13 @@ export async function saveCodemodeSettings(enabled: boolean): Promise<InnoSettin
 	return apiFetch<InnoSettings>("/api/settings/codemode", {
 		method: "PUT",
 		body: JSON.stringify({ enabled }),
+	});
+}
+
+export async function saveSmartCompactSettings(patch: SmartCompactSettingsPatch): Promise<InnoSettings> {
+	return apiFetch<InnoSettings>("/api/settings/smart-compact", {
+		method: "PUT",
+		body: JSON.stringify(patch),
 	});
 }
 

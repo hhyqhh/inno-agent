@@ -31,6 +31,11 @@ import {
 } from "../../agent/web-access-config.js";
 import { writePermissionPolicyConfig } from "../../agent/permission-system-config.js";
 import {
+	getSmartCompactSettingsView,
+	isSmartCompactPreset,
+	updateSmartCompactPreset,
+} from "../../agent/smart-compact-extension.js";
+import {
 	deleteManagedServer,
 	getMcpOverview,
 	setManagedServerDisabled,
@@ -151,6 +156,9 @@ function buildSafeSettings(config: InnoConfig) {
 		codemode: {
 			enabled: isCodemodeEnabled(config),
 		},
+		// Enablement lives in Inno config; threshold presets live in the global
+		// Pi file that Smart Compact actually reads.
+		smartCompact: getSmartCompactSettingsView(config),
 	};
 }
 
@@ -477,6 +485,42 @@ export async function handleSettingsRoutes(
 		config.plugins = { ...config.plugins, codemode: { enabled: body.enabled } };
 		save(saveConfig(paths.configPath, config));
 		syncConfig(config);
+		json(res, 200, buildSafeSettings(config));
+		return true;
+	}
+
+	// Smart Compact loads once at startup, so enablement takes effect after a
+	// restart. The plugin stats its global settings file for each operation,
+	// making threshold-preset changes effective at the next compaction.
+	if (method === "PUT" && url === "/api/settings/smart-compact") {
+		const body = (await readBody(req)) as Record<string, unknown>;
+		if (body.enabled === undefined && body.preset === undefined) {
+			json(res, 400, { error: "Provide enabled (boolean) or preset (150k, 300k, 500k)" });
+			return true;
+		}
+		if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
+			json(res, 400, { error: "enabled must be a boolean" });
+			return true;
+		}
+		if (body.preset !== undefined && !isSmartCompactPreset(body.preset)) {
+			json(res, 400, { error: "preset must be one of: 150k, 300k, 500k" });
+			return true;
+		}
+		try {
+			if (body.preset !== undefined) updateSmartCompactPreset(body.preset);
+			if (typeof body.enabled === "boolean") {
+				config.plugins = {
+					...config.plugins,
+					smartCompact: { ...config.plugins?.smartCompact, enabled: body.enabled },
+				};
+				save(saveConfig(paths.configPath, config));
+				syncConfig(config);
+			}
+		} catch (err) {
+			logger.warn({ err }, "failed to update Smart Compact settings");
+			json(res, 500, { error: "Failed to update Smart Compact settings" });
+			return true;
+		}
 		json(res, 200, buildSafeSettings(config));
 		return true;
 	}

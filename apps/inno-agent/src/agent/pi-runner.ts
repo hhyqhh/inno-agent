@@ -13,6 +13,7 @@ import {
 	type AgentSessionEvent,
 	type AgentSessionRuntime,
 	type AgentSessionRuntimeDiagnostic,
+	type CompactionResult,
 	type ExtensionFactory,
 	type SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
@@ -20,12 +21,13 @@ import { complete } from "@earendil-works/pi-ai/compat";
 import type { AssistantMessage, ImageContent, Model, UserMessage } from "@earendil-works/pi-ai";
 import { basename, join, resolve } from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { createInnoExtension, expandInnoSlashCommand, INNO_SLASH_COMMAND_NAMES, type ConfigHolder, type InnoExtensionDeps } from "./inno-extension.js";
+import { createInnoExtension, expandInnoSlashCommand, INNO_WEB_SAFE_COMMAND_NAMES, type ConfigHolder, type InnoExtensionDeps } from "./inno-extension.js";
 import { createMcpStatusExtension, loadMcpAdapterExtension } from "./mcp-extension.js";
+import { loadSmartCompactExtension, isSmartCompactLoaded } from "./smart-compact-extension.js";
 import { manualThinkingLevelMap } from "./thinking-settings.js";
 import { createObservabilityExtension, createPromptObserver, obsLogger } from "./observability-extension.js";
 import type { InnoConfig } from "../config.js";
-import { isCodemodeEnabled } from "../config.js";
+import { isCodemodeEnabled, isSmartCompactEnabled } from "../config.js";
 import type { RuntimePaths } from "../runtime.js";
 import { ensureDir } from "../storage/file-store.js";
 import type { ChannelRegistry } from "../channels/channel.js";
@@ -278,6 +280,8 @@ export async function initSession(
 	// Build extension factories list
 	const observabilityExtension = createObservabilityExtension();
 	const extensionFactories: ExtensionFactory[] = [observabilityExtension, innoExtension];
+	const smartCompact = await loadSmartCompactExtension(config);
+	if (smartCompact) extensionFactories.push(smartCompact);
 	// MCP: the status bridge subscribes before the adapter so no snapshot is
 	// missed; the adapter itself only loads when `mcp.enabled` is set.
 	extensionFactories.push(createMcpStatusExtension());
@@ -538,11 +542,10 @@ export interface SlashCommandItem {
 	description?: string;
 	source: "extension" | "prompt" | "skill";
 	/**
-	 * Extension commands safe to offer in the web composer. Inno's own
-	 * commands (registered in inno-extension.ts, matched by
-	 * INNO_SLASH_COMMAND_NAMES) expand into a normal turn via
-	 * ctx.sendUserMessage; bundled plugins' commands are TUI overlays
-	 * gated on ctx.hasUI and would no-op server-side.
+	 * Extension commands safe to offer in the web composer. Inno's prompt
+	 * commands expand into a normal turn; compact-now has a dedicated action
+	 * runner. Other plugins' commands are TUI overlays gated on ctx.hasUI and
+	 * would no-op server-side.
 	 */
 	webSafe?: boolean;
 }
@@ -569,7 +572,7 @@ export function listSlashCommands(): SlashCommandItem[] {
 				name: command.invocationName,
 				description: command.description,
 				source: "extension",
-				webSafe: INNO_SLASH_COMMAND_NAMES.has(command.invocationName),
+				webSafe: INNO_WEB_SAFE_COMMAND_NAMES.has(command.invocationName),
 			});
 		}
 	} catch {
@@ -1088,18 +1091,18 @@ export function getCurrentSessionChannelHint(): RuntimeChannelHint {
 }
 
 /**
- * Append a scheduler/background notification as an assistant message without
- * invoking the LLM. This keeps reminders authored by the assistant side in the
- * visible session history instead of creating a fake user prompt.
+ * Append a scheduler/background/compaction notification as an assistant message
+ * without invoking the LLM. This keeps the notice authored by the assistant
+ * side in visible session history instead of creating a fake user prompt.
  */
-export function appendAssistantNotification(text: string): void {
+export function appendAssistantNotification(text: string, model = "scheduler"): void {
 	const session = getSession();
 	const message: AssistantMessage = {
 		role: "assistant",
 		content: [{ type: "text", text }],
 		api: "inno-background",
 		provider: "inno",
-		model: "scheduler",
+		model,
 		usage: {
 			input: 0,
 			output: 0,
@@ -1129,6 +1132,121 @@ export function appendAssistantNotificationInSession(sessionPath: string, text: 
 	return enqueue(async () => {
 		await switchToSession(sessionPath);
 		appendAssistantNotification(text);
+	});
+}
+
+function formatCompactionNotification(result: CompactionResult | undefined): string {
+	if (!result) return "上下文压缩完成。";
+	const before = result.tokensBefore;
+	const after = result.estimatedTokensAfter;
+	if (typeof before === "number" && typeof after === "number") {
+		return `上下文压缩完成：约 ${before.toLocaleString("en-US")} → ${after.toLocaleString("en-US")} tokens。`;
+	}
+	return "上下文压缩完成。";
+}
+
+/** Execute one manual compaction and wait until Pi has committed or rejected it. */
+export async function compactSessionManually(
+	session: AgentSession,
+	useSmartCompact: boolean,
+	onEvent: StreamEventCallback,
+): Promise<CompactionResult | undefined> {
+	let sawManualStart = false;
+	let compactionResult: CompactionResult | undefined;
+	let markStarted: () => void = () => {};
+	const started = new Promise<void>((resolve) => { markStarted = resolve; });
+	let markSettled: (error?: Error) => void = () => {};
+	const settled = new Promise<Error | undefined>((resolve) => { markSettled = resolve; });
+	const unsubscribe = session.subscribe((event) => {
+		onEvent(event);
+		if (event.type === "compaction_start" && event.reason === "manual") {
+			sawManualStart = true;
+			markStarted();
+		} else if (event.type === "compaction_end" && event.reason === "manual") {
+			compactionResult = event.result;
+			markSettled(event.result ? undefined : new Error(event.errorMessage ?? "Compaction cancelled"));
+		}
+	});
+	try {
+		if (!useSmartCompact) return await session.compact();
+		await session.prompt("/smart-compact fast");
+		// ctx.compact() starts after an abort/idle await, so the start event may
+		// trail command return by one event-loop turn.
+		if (!sawManualStart) {
+			await Promise.race([started, new Promise<void>((resolve) => setTimeout(resolve, 50))]);
+		}
+		if (!sawManualStart) {
+			throw new Error("Smart Compact did not start compaction; the session may be too small or no summary model is available");
+		}
+		const compactionError = await settled;
+		if (compactionError) throw compactionError;
+		return compactionResult;
+	} finally {
+		unsubscribe();
+	}
+}
+
+/**
+ * Execute /compact-now without creating a model chat turn.
+ *
+ * Smart Compact's own headless command forces a Fast compaction below the
+ * automatic threshold. Its command returns after requesting application, not
+ * after Pi commits the compaction, so this runner also waits for the matching
+ * manual compaction_end event. A zero-usage assistant notification makes the
+ * completed action visible in canonical history and gives the web stream a
+ * persistable terminal result.
+ */
+export function runManualCompactionInSession(
+	sessionPath: string,
+	_prompt: string,
+	onEvent: StreamEventCallback,
+	_images?: ImageContent[],
+	lifecycle?: PromptRunLifecycle,
+	cwdOverride?: string,
+): Promise<string> {
+	return enqueue(async () => {
+		let outcome: PromptRunOutcome = { type: "error", error: new Error("Compaction did not start") };
+		let fullText = "";
+		try {
+			await switchToSession(sessionPath, { cwdOverride });
+			if (lifecycle?.shouldStart && !(await lifecycle.shouldStart())) {
+				outcome = { type: "aborted", reason: "cancelled_before_start", fullText: "" };
+			} else {
+				_activePromptToken = lifecycle?.token ?? null;
+				await lifecycle?.onStart?.();
+				const session = getSession();
+				try {
+					const useSmartCompact = Boolean(
+						_configHolder && isSmartCompactEnabled(_configHolder.current) && isSmartCompactLoaded(),
+					);
+					const compactionResult = await compactSessionManually(session, useSmartCompact, (event) => {
+						notifyPromptEvent(event);
+						onEvent(event);
+					});
+					fullText = formatCompactionNotification(compactionResult);
+					// Once Pi commits compaction, cancellation cannot roll it back. Keep
+					// the visible notification and terminal result consistent with history.
+					appendAssistantNotification(fullText, "compaction");
+					outcome = { type: "completed", fullText };
+				} catch (error) {
+					outcome = lifecycle?.isCancellationRequested?.()
+						? { type: "aborted", reason: "cancelled", error, fullText }
+						: { type: "error", error, fullText };
+				}
+			}
+		} catch (error) {
+			outcome = lifecycle?.isCancellationRequested?.()
+				? { type: "aborted", reason: "cancelled", error, fullText }
+				: { type: "error", error, fullText };
+		}
+
+		try {
+			await finalizePromptRun(outcome, lifecycle, sessionPath);
+		} finally {
+			if (_activePromptToken === lifecycle?.token) _activePromptToken = null;
+		}
+		if (outcome.type === "error") throw outcome.error instanceof Error ? outcome.error : new Error("Compaction failed");
+		return outcome.fullText ?? "";
 	});
 }
 

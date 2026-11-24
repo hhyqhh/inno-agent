@@ -4,7 +4,7 @@ import { themeStore, THEME_IDS, THEME_PREVIEW_COLORS } from "../../stores/theme-
 import { settingsStore } from "../../stores/settings-store.js";
 import { setLocale } from "../../i18n/index.js";
 import { useStoreSnapshot } from "../hooks.js";
-import type { WindowCloseBehavior } from "../../types/settings.js";
+import type { WindowCloseBehavior, SmartCompactPreset } from "../../types/settings.js";
 import { SettingsSection, SettingsCard, SettingsRow } from "./primitives.js";
 import { Select, SelectContent, SelectOption, SelectTrigger, SelectValue, Switch, Button } from "../ui/index.js";
 
@@ -173,6 +173,74 @@ function CodemodeToggle() {
 	);
 }
 
+function SmartCompactToggle() {
+	const { t } = useTranslation();
+	const [changed, setChanged] = useState(false);
+	const state = useStoreSnapshot(settingsStore, () => ({
+		enabled: settingsStore.settings?.smartCompact?.enabled === true,
+		runtimeSupported: settingsStore.settings?.smartCompact?.runtimeSupported !== false,
+		isSaving: settingsStore.isSavingSmartCompact,
+		isReady: settingsStore.settings !== null,
+	}));
+
+	function handleChange(enabled: boolean) {
+		settingsStore
+			.saveSmartCompact({ enabled })
+			.then(() => setChanged(true))
+			.catch(() => undefined);
+	}
+
+	return (
+		<div className="flex max-w-64 flex-col items-end gap-1 text-right">
+			<Switch
+				checked={state.enabled}
+				disabled={!state.isReady || state.isSaving}
+				aria-label={t("settings.smartCompact.title")}
+				onChange={handleChange}
+			/>
+			{changed && <span className="text-[11px] text-[var(--inno-text-muted)]">{t("settings.smartCompact.restartHint")}</span>}
+			{!state.runtimeSupported && <span className="text-[11px] text-[var(--inno-text-muted)]">{t("settings.smartCompact.unsupported")}</span>}
+		</div>
+	);
+}
+
+const SMART_COMPACT_PRESET_IDS: SmartCompactPreset[] = ["150k", "300k", "500k"];
+
+function SmartCompactPresetSelect() {
+	const { t } = useTranslation();
+	const state = useStoreSnapshot(settingsStore, () => ({
+		enabled: settingsStore.settings?.smartCompact?.enabled === true,
+		preset: settingsStore.settings?.smartCompact?.preset ?? "300k",
+		runtimeSupported: settingsStore.settings?.smartCompact?.runtimeSupported !== false,
+		settingsError: settingsStore.settings?.smartCompact?.settingsError === true,
+		isSaving: settingsStore.isSavingSmartCompact,
+		isReady: settingsStore.settings !== null,
+	}));
+
+	function handleChange(value: string) {
+		if (!SMART_COMPACT_PRESET_IDS.includes(value as SmartCompactPreset)) return;
+		void settingsStore.saveSmartCompact({ preset: value as SmartCompactPreset }).catch(() => undefined);
+	}
+
+	return (
+		<div className="flex max-w-72 flex-col items-end gap-1 text-right">
+			<select
+				aria-label={t("settings.smartCompact.thresholdTitle")}
+				className="max-w-full rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-2.5 py-1.5 text-xs text-[var(--inno-text)] disabled:opacity-50"
+				value={state.preset}
+				disabled={!state.isReady || state.isSaving || !state.enabled || !state.runtimeSupported || state.settingsError}
+				onChange={(event) => handleChange(event.target.value)}
+			>
+				{state.preset === "custom" && <option value="custom" disabled>{t("settings.smartCompact.presets.custom")}</option>}
+				{SMART_COMPACT_PRESET_IDS.map((preset) => (
+					<option key={preset} value={preset}>{t(`settings.smartCompact.presets.${preset}`)}</option>
+				))}
+			</select>
+			{state.settingsError && <span className="text-[11px] text-[var(--inno-text-muted)]">{t("settings.smartCompact.settingsError")}</span>}
+		</div>
+	);
+}
+
 export function GeneralSettings() {
 	const { t } = useTranslation();
 	return (
@@ -205,6 +273,18 @@ export function GeneralSettings() {
 					label={t("settings.markdownMath.title")}
 					description={t("settings.markdownMath.description")}
 					control={<MarkdownMathToggle />}
+				/>
+			</SettingsCard>
+			<SettingsCard className="space-y-4">
+				<SettingsRow
+					label={t("settings.smartCompact.title")}
+					description={t("settings.smartCompact.description")}
+					control={<SmartCompactToggle />}
+				/>
+				<SettingsRow
+					label={t("settings.smartCompact.thresholdTitle")}
+					description={t("settings.smartCompact.thresholdDescription")}
+					control={<SmartCompactPresetSelect />}
 				/>
 			</SettingsCard>
 			<SettingsCard>

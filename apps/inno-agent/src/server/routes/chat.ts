@@ -9,11 +9,12 @@ import {
 	persistPendingUserTurn,
 	runPromptInSession,
 	runPromptSerialized,
+	runManualCompactionInSession,
 	runPromptStreamingInSession,
 	type PromptRunOutcome,
 } from "../../agent/pi-runner.js";
 import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
-import { expandInnoSlashCommand } from "../../agent/inno-extension.js";
+import { expandInnoSlashCommand, isCompactNowCommand } from "../../agent/inno-extension.js";
 import { questionBridge, type QuestionBridgeResult } from "../../agent/question-bridge.js";
 import { permissionBridge, type PermissionDecision } from "../../agent/permission-bridge.js";
 import {
@@ -385,6 +386,31 @@ function confirmTurnPersistence(
 	};
 }
 
+/** Compaction replaces history, so normal user/assistant turn-count checks do not apply. */
+export function confirmCompactionPersistence(
+	parseSessionFile: ChatRouteContext["parseSessionFile"],
+	sessionRevision: ChatRouteContext["sessionRevision"],
+	state: SessionStreamState,
+	sessionPath: string,
+	notification: string,
+): StreamPersistence {
+	const parsed = parseSessionFile(sessionPath);
+	const revision = sessionRevision(sessionPath);
+	const latest = parsed?.messages.at(-1);
+	const persisted = Boolean(
+		parsed && revision !== state.baselineSessionRevision &&
+		latest?.role === "assistant" && latest.content === notification,
+	);
+	if (!persisted) {
+		logger.error({ sessionId: state.sessionId, turnId: state.turnId }, "compaction persistence confirmation failed");
+	}
+	return {
+		persisted,
+		finalMessageCount: parsed?.messages.length,
+		finalSessionRevision: revision,
+	};
+}
+
 interface WorkspaceFileChange {
 	path: string;
 	change: "created" | "modified" | "deleted";
@@ -728,6 +754,7 @@ export async function handleChatRoutes(
 		const prompt = body.prompt as string | undefined;
 		const requestedSessionId = typeof body.sessionId === "string" ? body.sessionId : "";
 		const clientRequestId = typeof body.clientRequestId === "string" ? body.clientRequestId : "";
+		const manualCompaction = isCompactNowCommand(prompt ?? "");
 		if (!prompt || !requestedSessionId || !clientRequestId) {
 			json(res, 400, { error: "Missing prompt, sessionId or clientRequestId" });
 			return true;
@@ -944,7 +971,7 @@ export async function handleChatRoutes(
 
 		promptStartTime = Date.now();
 		try {
-			await runPromptStreamingInSession(targetSessionPath, prompt, onEvent, imageArgs, {
+			await (manualCompaction ? runManualCompactionInSession : runPromptStreamingInSession)(targetSessionPath, prompt, onEvent, imageArgs, {
 				token: state.turnId,
 				shouldStart: () => !state.cancelRequested,
 				isCancellationRequested: () => state.cancelRequested,
@@ -991,12 +1018,16 @@ export async function handleChatRoutes(
 					});
 				},
 				onFinish: async (outcome) => {
-					if (outcome.type === "aborted" && outcome.reason === "cancelled_before_start") {
+					if (!manualCompaction && outcome.type === "aborted" && outcome.reason === "cancelled_before_start") {
 						persistCancelledQueuedTurn(prompt, state.sessionId, imageArgs);
-					} else if (outcome.type !== "completed") {
+					} else if (!manualCompaction && outcome.type !== "completed") {
 						persistPendingUserTurn(state.sessionId);
 					}
-					const persistence = confirmTurnPersistence(parseSessionFile, sessionRevision, state, targetSessionPath, outcome);
+					const persistence = manualCompaction && outcome.type === "completed"
+						? confirmCompactionPersistence(parseSessionFile, sessionRevision, state, targetSessionPath, outcome.fullText)
+						: manualCompaction
+							? { persisted: false, finalSessionRevision: sessionRevision(targetSessionPath) }
+							: confirmTurnPersistence(parseSessionFile, sessionRevision, state, targetSessionPath, outcome);
 					questionBridge.unbindTurn({ sessionId: state.sessionId, turnId: state.turnId, reason: outcome.type });
 					permissionBridge.unbindTurn({ sessionId: state.sessionId, turnId: state.turnId, reason: outcome.type });
 					closeWorkspaceChangeMonitor();
@@ -1004,7 +1035,7 @@ export async function handleChatRoutes(
 					recordCurrentSessionChannel("web", state.sessionId, { setOriginIfEmpty: true });
 					if (outcome.type === "completed" && persistence.persisted) {
 						streamRegistry.finishTurn(state, "completed", { type: "done", fullText: outcome.fullText }, persistence);
-						maybeAutoGenerateTopic(state.sessionId);
+						if (!manualCompaction) maybeAutoGenerateTopic(state.sessionId);
 					} else if (outcome.type === "completed") {
 						streamRegistry.finishTurn(state, "error", { type: "error", message: "Final chat history could not be confirmed.", code: "persistence_confirmation_failed" }, persistence);
 					} else if (outcome.type === "aborted") {
@@ -1025,9 +1056,10 @@ export async function handleChatRoutes(
 					if (persistence.persisted && state.history.length > 0) {
 						try {
 							const persistedMessages = parseSessionFile(targetSessionPath)?.messages ?? [];
-							const assistantMessage = persistedMessages[state.baselineMessageCount + 1];
+							const assistantIndex = manualCompaction ? persistedMessages.length - 1 : state.baselineMessageCount + 1;
+							const assistantMessage = persistedMessages[assistantIndex];
 							recordSessionTrace(dataDir, state.sessionId, {
-								assistantIndex: state.baselineMessageCount + 1,
+								assistantIndex,
 								assistantMessageId: assistantMessage?.role === "assistant" ? assistantMessage.entryId : undefined,
 								startedAt: state.startedAt,
 								finishedAt: state.finishedAt ?? new Date().toISOString(),

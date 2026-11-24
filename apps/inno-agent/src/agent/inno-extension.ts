@@ -6,7 +6,7 @@ import {
 	type ExtensionAPI,
 	type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
-import { isComputerUseEnabled, saveConfig, setDefaultModel, type InnoConfig } from "../config.js";
+import { isComputerUseEnabled, isSmartCompactEnabled, saveConfig, setDefaultModel, type InnoConfig } from "../config.js";
 import { createLearnerTools } from "../memory/learner/learner-tools.js";
 import { isProfileEmpty, loadProfile, loadRecentEvents } from "../memory/learner/profile-store.js";
 import { buildContextPack, formatContextPackForPrompt } from "../memory/learner/context-pack.js";
@@ -26,6 +26,7 @@ import { buildSkillGeneratorPrompt } from "../skill-generator/methods.js";
 import { createTavilyTools } from "./tavily-tools.js";
 import { ensureWebAccessConfig, resolvePiAiJitiAliases } from "./web-access-config.js";
 import { ensurePermissionSystemConfig, INNO_WEB_AUTHORIZER_NAME, resolvePluginFile } from "./permission-system-config.js";
+import { isSmartCompactLoaded } from "./smart-compact-extension.js";
 import { permissionBridge, type PermissionAskDetails } from "./permission-bridge.js";
 import { checkWorkspaceMutationPath } from "./workspace-path-guard.js";
 import { INNO_SYSTEM_PROMPT, ONBOARDING_GUIDE, TODO_PROMPT_HINT, WEB_ACCESS_PROMPT_HINT } from "./system-prompt.js";
@@ -155,12 +156,13 @@ function isOpenLaunchCommand(command: string): boolean {
 }
 
 /**
- * Inno's own slash commands. Each expands into a user message that steers the
- * agent to the right memory tool — no TUI overlay needed, so they work
- * identically from the web composer palette and the CLI. The name set is
- * exported so pi-runner.listSlashCommands() can mark them webSafe (inline
- * extension factories receive a synthetic "<inline:N>" sourceInfo, making the
- * command's origin path unusable for this).
+ * Inno's prompt-expanding slash commands. Each expands into a user message that
+ * steers the agent to the right memory tool — no TUI overlay needed, so they
+ * work identically from the web composer palette and the CLI. Action commands
+ * such as compact-now are registered separately below. The name set is exported
+ * so pi-runner.listSlashCommands() can mark commands webSafe (inline extension
+ * factories receive a synthetic "<inline:N>" sourceInfo, making the command's
+ * origin path unusable for this).
  */
 interface InnoSlashCommand {
 	name: string;
@@ -201,6 +203,18 @@ const INNO_SLASH_COMMANDS: InnoSlashCommand[] = [
 ];
 
 export const INNO_SLASH_COMMAND_NAMES: ReadonlySet<string> = new Set(INNO_SLASH_COMMANDS.map((command) => command.name));
+
+/** Manual compaction is an action, not an expandable agent prompt. */
+export const COMPACT_NOW_COMMAND = "compact-now";
+export const COMPACT_NOW_SLASH_COMMAND = `/${COMPACT_NOW_COMMAND}`;
+export const INNO_WEB_SAFE_COMMAND_NAMES: ReadonlySet<string> = new Set([
+	...INNO_SLASH_COMMAND_NAMES,
+	COMPACT_NOW_COMMAND,
+]);
+
+export function isCompactNowCommand(text: string): boolean {
+	return text.trim() === COMPACT_NOW_SLASH_COMMAND;
+}
 
 /**
  * Expand an Inno slash command ("/recall <q>") into its user-message form.
@@ -326,6 +340,23 @@ export function createInnoExtension(
 				},
 			});
 		}
+		pi.registerCommand(COMPACT_NOW_COMMAND, {
+			description: "立即压缩当前会话上下文；优先使用 Smart Compact Fast，未加载时使用 Pi 原生压缩",
+			handler: async (args, ctx) => {
+				if (args.trim()) {
+					if (ctx.hasUI) ctx.ui.notify(`用法: ${COMPACT_NOW_SLASH_COMMAND}`, "warning");
+					return;
+				}
+				if (isSmartCompactEnabled(configHolder.current) && isSmartCompactLoaded()) {
+					// Dispatch the plugin's own headless command so manual compaction is
+					// forced even below its automatic threshold. TUI subscriptions stay
+					// alive for the asynchronous compaction callbacks.
+					pi.sendUserMessage("/smart-compact fast", { expandPromptTemplates: true });
+					return;
+				}
+				ctx.compact();
+			},
+		});
 
 		// 3. Register scheduler tools
 		const jobStore = new JobStore(paths.jobsDir, configHolder.current.scheduler?.timezone);

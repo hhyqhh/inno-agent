@@ -76,6 +76,7 @@
 	"plugins": {
 		"todo": { "enabled": true },
 		"webAccess": { "enabled": true },
+		"smartCompact": { "enabled": true },
 		"codemode": { "enabled": false }
 	}
 }

@@ -324,6 +324,11 @@ export interface InnoConfig {
 	 *   (bundled copy in desktop installers, else system LibreOffice), so
 	 *   enabling this on a machine without LibreOffice only adds graceful
 	 *   error messages, not failures.
+	 * - `smartCompact` (pi-smart-compact): recoverable tool-output cleanup,
+	 *   verified context summaries and manual/automatic compaction. Default
+	 *   ON; managed defaults in ~/.pi/agent/settings.json (the only file read
+	 *   by the plugin) target roughly 300K tokens on large-window models. Its agent-facing tools are off
+	 *   by default to avoid overlapping inno's L1/L2/L3 memory tools.
 	 */
 	plugins?: {
 		todo?: { enabled?: boolean };
@@ -332,6 +337,7 @@ export interface InnoConfig {
 		computerUse?: { enabled?: boolean };
 		codemode?: { enabled?: boolean };
 		officeEngine?: { enabled?: boolean };
+		smartCompact?: { enabled?: boolean };
 	};
 }
 
@@ -737,6 +743,11 @@ export function isComputerUseEnabled(config: InnoConfig): boolean {
  */
 export function isCodemodeEnabled(config: InnoConfig): boolean {
 	return config.plugins?.codemode?.enabled === true;
+}
+
+/** Smart Compact is bundled and enabled unless explicitly opted out. */
+export function isSmartCompactEnabled(config: InnoConfig): boolean {
+	return config.plugins?.smartCompact?.enabled !== false;
 }
 
 /**

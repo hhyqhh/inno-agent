@@ -77,6 +77,20 @@ export interface ChannelsSettingsPayload {
 
 export type WindowCloseBehavior = "ask" | "hide" | "quit";
 
+export type SmartCompactPreset = "150k" | "300k" | "500k";
+
+export interface SmartCompactSettings {
+	enabled: boolean;
+	preset: SmartCompactPreset | "custom";
+	runtimeSupported: boolean;
+	settingsError: boolean;
+}
+
+export interface SmartCompactSettingsPatch {
+	enabled?: boolean;
+	preset?: SmartCompactPreset;
+}
+
 export interface InnoSettings {
 	defaultProvider: string;
 	defaultModel: string;
@@ -118,6 +132,7 @@ export interface InnoSettings {
 		permissionSystem?: { enabled?: boolean; mode?: PermissionPolicyMode };
 		computerUse?: { enabled?: boolean };
 		codemode?: { enabled?: boolean };
+		smartCompact?: { enabled?: boolean };
 	};
 	/** Effective computer-use state from the backend (resolves the
 	 *  INNO_DESKTOP default; `explicit` is the user's override, null = unset). */
@@ -125,6 +140,9 @@ export interface InnoSettings {
 	/** Effective codemode state from the backend; restart-required like
 	 *  computer use (extension registers at session init). */
 	codemode?: { enabled: boolean };
+	/** Effective Smart Compact state. Presets map to roughly 153K/297K/504K
+	 * tokens on large windows; smaller windows use the same percentages. */
+	smartCompact?: SmartCompactSettings;
 	smartInput?: SmartInputSettings;
 	mcp?: { enabled: boolean };
 	ui?: { theme: string; closeBehavior: WindowCloseBehavior; mathSingleDollar: boolean };

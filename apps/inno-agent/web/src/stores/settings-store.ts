@@ -1,7 +1,7 @@
 import { EventEmitter } from "./event-emitter.js";
-import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, savePermissionMode as savePermissionModeApi, saveComputerUseSettings, saveCodemodeSettings, saveSmartInputSettings, saveMcpSettings, saveCloseBehavior, saveMarkdownSettings, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
+import { getSettings, switchBackendModel, upsertProvider, deleteProviderApi, deleteModelApi, saveChannelsSettings, saveMemorySettings, savePermissionMode as savePermissionModeApi, saveComputerUseSettings, saveCodemodeSettings, saveSmartCompactSettings, saveSmartInputSettings, saveMcpSettings, saveCloseBehavior, saveMarkdownSettings, saveGithubSettings, saveOcrSettings, saveTavilySettings, saveContentHubSettings, type MemorySettingsPatch, type ContentHubPayload, type OcrSettingsPayload } from "../api/settings.js";
 import type { WindowCloseBehavior, PermissionPolicyMode } from "../types/settings.js";
-import type { InnoSettings, SmartInputSettings, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
+import type { InnoSettings, SmartInputSettings, SmartCompactSettingsPatch, UpsertProviderRequest, ChannelsSettingsPayload } from "../types/settings.js";
 
 interface SettingsStoreEvents {
 	change: void;
@@ -21,6 +21,7 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 	isSavingPermissionMode = false;
 	isSavingComputerUse = false;
 	isSavingCodemode = false;
+	isSavingSmartCompact = false;
 	isSavingSmartInput = false;
 	isSavingMcp = false;
 	isSavingCloseBehavior = false;
@@ -175,6 +176,22 @@ class SettingsStoreImpl extends EventEmitter<SettingsStoreEvents> {
 			throw err;
 		} finally {
 			this.isSavingCodemode = false;
+			this.emit("change", undefined);
+		}
+	}
+
+	async saveSmartCompact(patch: SmartCompactSettingsPatch): Promise<void> {
+		this.isSavingSmartCompact = true;
+		this.error = null;
+		this.emit("change", undefined);
+		try {
+			this.settings = await saveSmartCompactSettings(patch);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : "Failed to save Smart Compact settings";
+			this.emit("change", undefined);
+			throw err;
+		} finally {
+			this.isSavingSmartCompact = false;
 			this.emit("change", undefined);
 		}
 	}

@@ -7,6 +7,7 @@ import { isCodemodeEnabled, loadConfig } from "./config.js";
 import { applyProviderProxyBypass } from "./utils/proxy-bypass.js";
 import { createInnoExtension } from "./agent/inno-extension.js";
 import { createMcpStatusExtension, loadMcpAdapterExtension } from "./agent/mcp-extension.js";
+import { loadSmartCompactExtension } from "./agent/smart-compact-extension.js";
 import { syncCodemodeDefaultTools } from "./agent/pi-runner.js";
 import { ensureDir } from "./storage/file-store.js";
 import { seedManagedMcpConfig } from "./mcp/mcp-config-store.js";
@@ -57,6 +58,8 @@ const innoExtension = createInnoExtension({ current: config }, paths);
 
 // Build extension factories list (conditionally include sandbox)
 const extensionFactories: ExtensionFactory[] = [innoExtension];
+const smartCompact = await loadSmartCompactExtension(config);
+if (smartCompact) extensionFactories.push(smartCompact);
 
 // MCP: status bridge is always on (no-op without the adapter); the adapter
 // itself only when `mcp.enabled` is set in config. In the CLI the adapter's

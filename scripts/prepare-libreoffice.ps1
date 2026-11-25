@@ -40,7 +40,12 @@ try {
   if ($proc.ExitCode -ne 0) { throw "msiexec /a failed with exit code $($proc.ExitCode)" }
 
   New-Item -ItemType Directory -Path $DestDir -Force | Out-Null
-  Move-Item (Join-Path $ExtractDir "LibreOffice") (Join-Path $DestDir "LibreOffice")
+  $Soffice = Get-ChildItem -Path $ExtractDir -Filter soffice.exe -Recurse -File | Select-Object -First 1
+  if (-not $Soffice) { throw "LibreOffice administrative extract did not contain program/soffice.exe" }
+  # The MSI product directory can change between releases (for example,
+  # "LibreOffice" vs a versioned product name). Anchor on the actual engine.
+  $OfficeRoot = Split-Path -Parent $Soffice.DirectoryName
+  Move-Item $OfficeRoot (Join-Path $DestDir "LibreOffice")
   Write-Host "staged at $DestDir/LibreOffice"
 } finally {
   Remove-Item -Recurse -Force $TmpDir -ErrorAction SilentlyContinue

@@ -81,7 +81,8 @@
 			]
 		},
 		"dmg": {
-			"title": "Inno Agent"
+			"title": "Inno Agent",
+			"size": "3g"
 		},
 		"linux": {
 			"icon": "build/icon.png",

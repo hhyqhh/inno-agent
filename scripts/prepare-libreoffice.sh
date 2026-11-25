@@ -18,7 +18,7 @@
 #   LO_SHA256   optional expected SHA-256 of the DMG; verified when set.
 set -euo pipefail
 
-LO_VERSION="26.8.1"
+LO_VERSION="26.8.3"
 KEEP_LOCALES=0
 while [[ $# -gt 0 ]]; do
   case "$1" in

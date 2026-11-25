@@ -5,9 +5,9 @@
 # extract containing program/soffice.exe), picked up by electron-builder's
 # win.extraResources and found at runtime via INNO_BUNDLED_TOOLS_DIR.
 #
-# Usage: pwsh scripts/prepare-libreoffice.ps1 [-Version 26.8.1] [-Sha256 <hex>]
+# Usage: pwsh scripts/prepare-libreoffice.ps1 [-Version 26.8.3] [-Sha256 <hex>]
 param(
-  [string]$Version = "26.8.1",
+  [string]$Version = "26.8.3",
   [string]$Sha256 = ""
 )
 

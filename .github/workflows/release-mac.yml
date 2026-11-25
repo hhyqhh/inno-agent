@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build-mac:
-    runs-on: macos-14   # Apple Silicon（M1/M2）runner
+    runs-on: macos-15   # Apple Silicon runner; macos-14 retired on 2026-11-02
 
     steps:
       # ── 1. 检出代码 ──────────────────────────────────────────────────────────

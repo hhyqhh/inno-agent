@@ -31,7 +31,7 @@ function font(family: string, localized: string, weight = 400, faceOffset = 0) {
 describe("system font bytes for DOCX layout", () => {
 	it("includes the preview engine's private fonts in the editor catalog", async () => {
 		const dirs = await defaultSystemFontDirs();
-		expect(dirs).toContain(process.platform === "darwin" ? "/opt/inno/Contents/Resources/fonts" : "/opt/inno/Contents/share/fonts");
+		expect(dirs).toContain(join("/opt/inno/Contents", process.platform === "darwin" ? "Resources/fonts" : "share/fonts"));
 	});
 	it("retains localized family names and numeric OS/2 weights", async () => {
 		const root = await temporary(), path = join(root, "song.ttf");

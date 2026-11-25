@@ -4,6 +4,7 @@ import { createServer as createHttpServer, request as httpRequest, type Server, 
 import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -127,7 +128,7 @@ ServerResponse.prototype.end = function (...args) {
 	port = await getFreePort();
 	child = spawn(
 		process.execPath,
-		["--import", errorHook, "--import", "tsx", SERVER_ENTRY, "--home", home, "--data-dir", join(home, "data"), "--workspace", workspace, "--port", String(port)],
+		["--import", pathToFileURL(errorHook).href, "--import", "tsx", SERVER_ENTRY, "--home", home, "--data-dir", join(home, "data"), "--workspace", workspace, "--port", String(port)],
 		{ cwd: REPO_ROOT, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, LOG_LEVEL: "debug" } },
 	);
 	child.stdout?.on("data", (chunk) => (childLog += chunk));

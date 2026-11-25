@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { InnoConfig } from "../config.js";
+import { closeL2Memory } from "../memory/l2/l2-memory.js";
+import { closeL3Memory } from "../memory/l3/l3-tools.js";
 import { resolveRuntimePaths } from "../runtime.js";
 import {
 	createInnoExtension,
@@ -17,7 +19,11 @@ import { loadSmartCompactExtension } from "./smart-compact-extension.js";
 const tempDirs: string[] = [];
 afterEach(() => {
 	vi.unstubAllEnvs();
-	for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+	for (const dir of tempDirs.splice(0)) {
+		closeL2Memory(join(dir, "inno", "data", "l2"));
+		closeL3Memory(join(dir, "inno", "data", "l3"));
+		rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+	}
 });
 
 describe("expandInnoSlashCommand", () => {

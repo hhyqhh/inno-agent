@@ -38,6 +38,9 @@ describe("Smart Compact through a real headless AgentSession", () => {
 		// Keep the fixture small while still leaving Pi enough history to compact.
 		const settingsPath = getSmartCompactSettingsPath();
 		const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+		// Project memory is outside this test's scope; its singleton SQLite handle
+		// otherwise remains open and prevents temp-dir cleanup on Windows.
+		settings.smartCompact.contextGraphEnabled = false;
 		settings.compaction = { enabled: true, reserveTokens: 1_000, keepRecentTokens: 100 };
 		settings.smartCompact.profiles = {
 			aggressive: {

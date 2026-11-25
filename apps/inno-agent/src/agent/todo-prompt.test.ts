@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { InnoConfig } from "../config.js";
+import { closeL2Memory } from "../memory/l2/l2-memory.js";
+import { closeL3Memory } from "../memory/l3/l3-tools.js";
 import { resolveRuntimePaths } from "../runtime.js";
 import { createInnoExtension } from "./inno-extension.js";
 import { TODO_PROMPT_HINT } from "./system-prompt.js";
@@ -58,7 +60,9 @@ function makeConfig(todoEnabled?: boolean): InnoConfig {
 afterEach(() => {
 	while (tempDirs.length > 0) {
 		const dir = tempDirs.pop()!;
-		rmSync(dir, { recursive: true, force: true });
+		closeL2Memory(join(dir, "data", "l2"));
+		closeL3Memory(join(dir, "data", "l3"));
+		rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 	}
 });
 

@@ -471,7 +471,7 @@ function WebResearchSettings() {
 							<SelectContent>
 								<SelectOption value="auto" label="auto（自动选择）" />
 								{data.providers.map((p) => (
-									<SelectOption key={p.id} value={p.id} label={`${p.id}${p.configured ? " ✓" : p.kind === "none" ? `（${t("settings.webResearch.keyless", "免配置")}）` : ""}`} />
+									<SelectOption key={p.id} value={p.id} label={`${p.id}${p.configured ? " ✓" : p.kind === "none" || p.keyOptional ? `（${t("settings.webResearch.keyless", "免配置")}）` : ""}`} />
 								))}
 							</SelectContent>
 						</Select>
@@ -493,7 +493,7 @@ function WebResearchSettings() {
 										setDraft((prev) => ({ ...prev, [p.id]: e.target.value }));
 										setSaved(false);
 									}}
-									placeholder={p.configured ? p.maskedValue : p.kind === "url" ? "https://searxng.example.com" : `${p.id} API Key`}
+									placeholder={p.configured ? p.maskedValue : p.kind === "url" ? "https://searxng.example.com" : p.keyOptional ? `${p.id} API Key (${t("settings.webResearch.optional", "可选")})` : `${p.id} API Key`}
 									autoComplete="off"
 								/>
 								{p.configured && (

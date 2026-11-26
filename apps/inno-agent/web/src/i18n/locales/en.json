@@ -1091,6 +1091,7 @@
 			"summary": "Default: {{provider}} · {{count}} provider(s) configured",
 			"defaultProvider": "Default provider",
 			"keyless": "no key needed",
+			"optional": "optional",
 			"clear": "Clear",
 			"saved": "Saved",
 			"hint": "More providers and advanced options can be edited directly in web-search.json under the config directory."

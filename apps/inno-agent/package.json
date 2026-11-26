@@ -36,7 +36,7 @@
 		"pi-sandbox": "0.4.3",
 		"pi-smart-compact": "^10.8.1",
 		"pi-subagents": "^0.74.0",
-		"pi-web-access": "^0.35.0",
+		"pi-web-access": "^0.36.0",
 		"pino": "^10.3.1",
 		"pino-caller": "^4.0.0",
 		"sharp": "^0.34.5",

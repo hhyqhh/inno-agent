@@ -114,12 +114,16 @@ export interface WebAccessProviderSpec {
 	kind: WebAccessProviderKind;
 	/** web-search.json field holding the credential (e.g. "tavilyApiKey") or base URL. */
 	field?: string;
+	/** The provider also works without the credential (the key only raises limits). */
+	keyOptional?: boolean;
 }
 
 /**
  * Curated provider list exposed in the settings UI. pi-web-access supports
  * ~25 providers; these cover the common key-based ones plus SearXNG
- * (self-hosted, URL instead of key) and DuckDuckGo (keyless fallback).
+ * (self-hosted, URL instead of key), DuckDuckGo (keyless fallback) and
+ * Keenable (explicit-only in pi-web-access: never picked by "auto", works
+ * without a key, an optional key raises the limits).
  * Providers not listed here remain configurable by editing web-search.json.
  */
 export const WEB_ACCESS_PROVIDERS: readonly WebAccessProviderSpec[] = [
@@ -134,6 +138,7 @@ export const WEB_ACCESS_PROVIDERS: readonly WebAccessProviderSpec[] = [
 	{ id: "bocha", kind: "key", field: "bochaApiKey" },
 	{ id: "serper", kind: "key", field: "serperApiKey" },
 	{ id: "valyu", kind: "key", field: "valyuApiKey" },
+	{ id: "keenable", kind: "key", field: "keenableApiKey", keyOptional: true },
 	{ id: "searxng", kind: "url", field: "searxngBaseUrl" },
 	{ id: "duckduckgo", kind: "none" },
 ];
@@ -148,6 +153,8 @@ export interface WebAccessProviderView {
 	configured: boolean;
 	/** Masked credential/URL ("****abcd"); empty when unconfigured or kind === "none". */
 	maskedValue: string;
+	/** True when the provider also works without a credential. */
+	keyOptional: boolean;
 }
 
 export interface WebAccessSettingsView {
@@ -167,6 +174,7 @@ export function getWebAccessSettingsView(configDir: string): WebAccessSettingsVi
 				kind: spec.kind,
 				configured: Boolean(value),
 				maskedValue: spec.kind === "none" ? "" : maskSecret(value),
+				keyOptional: spec.keyOptional === true,
 			};
 		}),
 	};

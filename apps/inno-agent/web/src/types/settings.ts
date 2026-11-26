@@ -161,6 +161,7 @@ export interface WebAccessProvider {
 	kind: WebAccessProviderKind;
 	configured: boolean;
 	maskedValue: string; // "****abcd", empty when unconfigured or kind === "none"
+	keyOptional?: boolean; // works without a credential; the key only raises limits
 }
 
 /** Served by GET /api/settings/web-access (backed by <configDir>/web-search.json). */

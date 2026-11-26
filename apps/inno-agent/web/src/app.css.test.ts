@@ -79,11 +79,13 @@ describe("fullscreen preview toolbar layout", () => {
 		expect(chatContent).toContain("width: max(0px, calc(100% - var(--workspace-w) + 3px))");
 	});
 
-	it("removes toolbar CSS interpolation while dragging a column", async () => {
+	it("moves the toolbar and body directly while dragging the sidebar", async () => {
 		const css = await readFile(new URL("./app.css", import.meta.url), "utf8");
 		const rule = Array.from(css.matchAll(/([^{}]+)\{([^{}]*)\}/g)).find(([, selectors, body]) =>
 			selectors.includes(".inno-ui-resizing-columns .inno-desktop-sidebar-panel") && body.includes("transition: none"));
 		expect(rule?.[1]).toContain(".inno-ui-resizing-columns .inno-window-chrome-preview-tabs");
+		expect(rule?.[1]).toContain(".inno-ui-resizing-columns .inno-window-chrome-divider");
+		expect(rule?.[1]).toContain(".inno-ui-resizing-columns .inno-window-chrome-chat-header > .inno-conversation-header");
 	});
 
 	it("keeps toolbar and body geometry synchronous throughout native window resizing", async () => {
@@ -112,18 +114,36 @@ describe("fullscreen preview toolbar layout", () => {
 	it("lands the full-view panel edge and toolbar travelers on the sidebar timeline", async () => {
 		const css = await readFile(new URL("./app.css", import.meta.url), "utf8");
 		const layoutCurve = "220ms cubic-bezier(0.4, 0, 0.2, 1)";
+		const widthCurve = "var(--inno-workspace-width-duration, 220ms) cubic-bezier(0.4, 0, 0.2, 1)";
 		const rulesFor = (selector: string) => [...css.matchAll(new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`, "gm"))].map((match) => match[1]).join("\n");
 		// Desktop full view: the merged preview's width and the chat content's
 		// clip follow the chat shell's grid track, so all three must share the
 		// sidebar grid's curve; the modal curve let the shared edge drift apart
 		// mid-toggle while the tab track traveled on its own timeline.
 		expect(rulesFor(".app-layout--desktop.app-layout--chat > .inno-desktop-chat-shell")).toContain(`transition: grid-template-columns ${layoutCurve}`);
-		expect(rulesFor(".inno-desktop-workbench > .workspace-panel--merged")).toContain(`transition: width ${layoutCurve}`);
-		expect(rulesFor(".inno-desktop-chat-content")).toContain(`transition:\n\t\twidth ${layoutCurve}`);
+	expect(rulesFor(".inno-desktop-workbench > .workspace-panel--merged")).toContain(`transition: width ${widthCurve}`);
+	expect(rulesFor(".inno-desktop-chat-content")).toContain(`transition:\n\t\twidth ${widthCurve}`);
 		expect(rulesFor(".inno-window-chrome-preview-tabs")).toContain(`transition: left ${layoutCurve}, right ${layoutCurve}`);
+		// The conversation class also matches in fullscreen. An opacity-only
+		// shorthand here used to erase the track's left/right transitions.
+		expect(rulesFor(".inno-window-chrome.has-conversation-tabs .inno-window-chrome-preview-tabs")).not.toMatch(/\btransition\s*:/);
 		expect(rulesFor(".inno-window-chrome-preview-terminal")).toContain(`transition: right ${layoutCurve}`);
 		expect(rulesFor(".app-layout--desktop.app-layout--chat .inno-conversation-header-actions")).toContain(`transition: right ${layoutCurve}`);
 		expect(rulesFor(".app-layout--desktop.app-layout--chat .inno-window-chrome-chat-header > .inno-conversation-header")).toContain(`padding-right ${layoutCurve}`);
+	});
+
+	it("skips only splitter width interpolation for PPT when no panel width animation is active", async () => {
+		const css = await readFile(new URL("./app.css", import.meta.url), "utf8");
+		const widthOverride = [...css.matchAll(/([^{}]*\[data-pptx-viewport\][^{}]*)\{([^}]*)\}/g)]
+			.find(([, , declarations]) => declarations.includes("--inno-workspace-width-duration"));
+		expect(widthOverride?.[1]).toContain(".workspace-panel:not([data-animate-width]) [data-pptx-viewport]:not([inert] *)");
+		expect(widthOverride?.[2].trim()).toBe("--inno-workspace-width-duration: 0s;");
+	});
+
+	it("keeps splitter pointer events in the parent document when crossing the PPT editor", async () => {
+		const css = await readFile(new URL("./app.css", import.meta.url), "utf8");
+		const duringDrag = css.match(/^\.workspace-resizing \.workspace-panel \[data-pptx-viewport\] iframe\s*\{([^}]*)\}/m)?.[1] ?? "";
+		expect(duringDrag).toContain("pointer-events: none");
 	});
 
 	it("keeps the document visible until its owner has slid closed", async () => {

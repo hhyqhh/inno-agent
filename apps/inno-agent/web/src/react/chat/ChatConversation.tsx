@@ -246,7 +246,7 @@ export function ChatConversation({
 		<header className={`inno-conversation-header relative z-[5] flex h-12 shrink-0 items-center gap-2.5 border-b border-[var(--inno-border)] bg-[color-mix(in_srgb,var(--inno-chat-bg)_85%,transparent)] pr-4 backdrop-blur-md ${workspaceCollapsed ? "pr-14" : ""} ${sidebarCollapsed ? "inno-conversation-header--sidebar-collapsed" : "pl-4"}`}>
 			<div className="inno-conversation-heading flex min-w-0 items-center gap-2.5">
 				{!titleIsTab ? <Tooltip label={visibleSessionTitle}>
-					<motion.span layoutId={desktopHeaderHost ? "inno-conversation-title" : undefined} transition={transition} className="inno-conversation-title min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]">{visibleSessionTitle}</motion.span>
+					<motion.span layout={desktopHeaderHost ? "position" : false} layoutId={desktopHeaderHost ? "inno-conversation-title" : undefined} layoutDependency={mode} transition={transition} className="inno-conversation-title min-w-0 truncate text-[14.5px] font-semibold text-[var(--inno-text)]">{visibleSessionTitle}</motion.span>
 				</Tooltip> : null}
 				{workspaceControl ? <div aria-hidden={titleIsTab || undefined} inert={titleIsTab} className="inno-conversation-workspace-control shrink-0">{workspaceControl}</div> : null}
 			</div>

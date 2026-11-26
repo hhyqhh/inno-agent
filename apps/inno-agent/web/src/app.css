@@ -1854,7 +1854,7 @@ inno-app-shell {
 	   sidebar grid's curve; interpolating on the modal curve let the two copies
 	   of the same edge drift apart mid-toggle. */
 	transition:
-		width 220ms cubic-bezier(0.4, 0, 0.2, 1),
+		width var(--inno-workspace-width-duration, 220ms) cubic-bezier(0.4, 0, 0.2, 1),
 		clip-path 220ms cubic-bezier(0.4, 0, 0.2, 1),
 		visibility 0s;
 }
@@ -1914,7 +1914,7 @@ inno-app-shell {
 	   chat shell's grid track on the sidebar grid's curve. Interpolating width
 	   on the modal curve let the preview's left edge swim against the grid
 	   while the sidebar collapsed in the full view. */
-	transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1),
+	transition: width var(--inno-workspace-width-duration, 220ms) cubic-bezier(0.4, 0, 0.2, 1),
 		border-left-color 220ms cubic-bezier(0.4, 0, 0.2, 1),
 		opacity var(--inno-dur-fast) ease, visibility 0s;
 }
@@ -1955,6 +1955,12 @@ inno-app-shell {
 	transition: none;
 }
 
+/* Only animate PPT panel widths when the document viewport is pinned, on
+   splitter release or a mode change. Other width changes apply immediately. */
+:is(.app-layout--workspace-half, .app-layout--workspace-quarter):has(.workspace-panel:not([data-animate-width]) [data-pptx-viewport]:not([inert] *)) {
+	--inno-workspace-width-duration: 0s;
+}
+
 .workspace-panel > .inno-ui-tab-panel {
 	visibility: visible;
 	transition: visibility 0s;
@@ -1977,7 +1983,7 @@ inno-app-shell {
 	width: var(--workspace-w);
 	overflow: hidden;
 	z-index: 2; /* sit above the chat while keeping the session rail visible */
-	transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1);
+	transition: width var(--inno-workspace-width-duration, 220ms) cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .app-layout--workspace-collapsed > :nth-child(3) {
@@ -2392,9 +2398,8 @@ inno-app-shell {
 	   (title-bar behavior, matching the chat header overlay). */
 	-webkit-app-region: drag;
 	pointer-events: auto;
-	/* Positional travels follow the sidebar grid's curve: in the full view the
-	   track's left derives from the sidebar width and must land in step with
-	   the panel edge and the session column, not on the modal curve. */
+	/* The outer track has no Motion projection. Keep these position transitions
+	   with or without a conversation so the track lands with the sidebar grid. */
 	transition: left 220ms cubic-bezier(0.4, 0, 0.2, 1), right 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity var(--inno-dur-fast) ease, visibility 0s;
 }
 
@@ -2518,12 +2523,6 @@ inno-app-shell {
 	flex: 1 1 auto;
 	min-width: 0;
 	height: 100%;
-	transition: opacity var(--inno-dur-fast) ease, visibility 0s;
-}
-
-/* Shared layout projection moves the conversation title and the tab track
-   together. A simultaneous CSS left tween would make their paths diverge. */
-.inno-window-chrome.has-conversation-tabs .inno-window-chrome-preview-tabs {
 	transition: opacity var(--inno-dur-fast) ease, visibility 0s;
 }
 
@@ -6096,11 +6095,14 @@ inno-workspace-panel textarea {
 	user-select: none !important;
 }
 
-/* Follow the pointer directly instead of replaying the collapse animation. */
+/* The sidebar, title and divider share the live width. The title's padding
+   and divider's left must skip the collapse tween along with the body. */
 .inno-ui-resizing-columns .app-layout--desktop > .inno-desktop-sidebar,
 .inno-ui-resizing-columns .app-layout--desktop > .inno-desktop-chat-shell,
 .inno-ui-resizing-columns .inno-desktop-sidebar-panel,
-.inno-ui-resizing-columns .inno-window-chrome-preview-tabs {
+.inno-ui-resizing-columns .inno-window-chrome-preview-tabs,
+.inno-ui-resizing-columns .inno-window-chrome-divider,
+.inno-ui-resizing-columns .inno-window-chrome-chat-header > .inno-conversation-header {
 	transition: none !important;
 }
 
@@ -6947,6 +6949,12 @@ inno-workspace-panel textarea {
 .workspace-resizing {
 	cursor: col-resize;
 	user-select: none;
+}
+
+/* Chromium dropped the splitter's pointer capture on entry into the PPT
+   iframe and delivered pointerup only there. Keep hit testing in the host. */
+.workspace-resizing .workspace-panel [data-pptx-viewport] iframe {
+	pointer-events: none;
 }
 
 /* The panel stays in place only when a requested width cannot be applied to

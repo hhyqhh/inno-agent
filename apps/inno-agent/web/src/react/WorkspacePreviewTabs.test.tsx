@@ -124,6 +124,25 @@ describe("Workspace preview tab activation", () => {
 		expect(workspaceStore.previewTabs.filter(isStartTab)).toHaveLength(1);
 		expect(workspaceStore.previewTabs[0].editBuffer).toBe("unsaved draft");
 	});
+	it("keeps fullscreen tab geometry in the CSS track during sidebar toggles", () => {
+		appStore.workspaceMode = "full";
+		sessionsStore.currentSessionId = "session-a";
+		sessionsStore.sessions = [{ id: "session-a", name: "Conversation", hasTopic: true }] as typeof sessionsStore.sessions;
+		const view = (collapsed: boolean) => (
+			<div className={collapsed ? "app-layout--sidebar-collapsed" : "app-layout--sidebar-expanded"}>
+				<WorkspacePreviewTabs />
+			</div>
+		);
+		const { rerender } = render(view(false));
+		const strip = screen.getByRole("tablist");
+		const conversation = screen.getByRole("tab", { name: "Conversation" });
+		const plus = screen.getByRole("button", { name: "workspaceStart.open" });
+		const measure = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
+		rerender(view(true));
+		rerender(view(false));
+		expect(screen.getByRole("tab", { name: "Conversation" })).toBe(conversation);
+		expect(measure.mock.contexts.some((node) => node === plus || (node instanceof Node && strip.contains(node)))).toBe(false);
+	});
 	it("collapses only when closing the final start page", () => {
 		const collapse = vi.spyOn(appStore, "setWorkspaceMode");
 		workspaceStore.openStartPage();

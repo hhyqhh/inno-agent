@@ -13,7 +13,6 @@ import { ContextMenu, IconButton, Tabs, focusWithoutTooltip, getTabTriggerId, ty
 
 export const WORKSPACE_PREVIEW_TABS_ID = "workspace-previews";
 export const STREAMING_PREVIEW_TAB = "__generated-preview__";
-const MotionIconButton = motion.create(IconButton);
 
 export function WorkspacePreviewTabs({ resizing = false }: { resizing?: boolean }) {
 	const { t } = useTranslation();
@@ -84,7 +83,6 @@ export function WorkspacePreviewTabs({ resizing = false }: { resizing?: boolean 
 				id={WORKSPACE_PREVIEW_TABS_ID}
 				ariaLabel={t("files.previewTabs")}
 				variant="browser"
-				animateLayout={hasConversation && !resizing}
 				value={value}
 				onValueChange={(path) => {
 					if (path === WORKSPACE_CONVERSATION_TAB) { workspaceStore.setActiveSurface("conversation"); return; }
@@ -97,7 +95,19 @@ export function WorkspacePreviewTabs({ resizing = false }: { resizing?: boolean 
 					else if (tab) void workspaceStore.selectFile(tab.path, undefined, tab.workspaceId ?? null);
 				}}
 				items={[
-					...(conversationTab ? [{ value: WORKSPACE_CONVERSATION_TAB, ariaLabel: title, title: `${t("nav.chat")} · ${title}`, label: <><MessageSquare size={14} /><span className="truncate">{title}</span></>, panelId: "workspace-conversation-panel", layoutId: "inno-conversation-title", className: "inno-workspace-conversation-tab" }] : []),
+					...(conversationTab ? [{
+						value: WORKSPACE_CONVERSATION_TAB,
+						ariaLabel: title,
+						title: `${t("nav.chat")} · ${title}`,
+						label: <>
+							<MessageSquare size={14} />
+							{/* The CSS track carries the tab button. Project only its title
+							    on mode changes so a sidebar move cannot offset the tab. */}
+							<motion.span layout={resizing ? false : "position"} layoutId={resizing ? undefined : "inno-conversation-title"} layoutDependency={mode} transition={transition} className="truncate">{title}</motion.span>
+						</>,
+						panelId: "workspace-conversation-panel",
+						className: "inno-workspace-conversation-tab",
+					}] : []),
 					...state.tabs.map((tab) => {
 						const isStart = isStartTab(tab);
 						const name = isStart ? t("workspaceStart.tab") : tab.name;
@@ -118,9 +128,7 @@ export function WorkspacePreviewTabs({ resizing = false }: { resizing?: boolean 
 					...(state.stream ? [{ value: STREAMING_PREVIEW_TAB, ariaLabel: state.stream.title, label: <><Sparkles size={14} /><span className="truncate">{state.stream.title}</span></>, close: { label: t("files.closePreview", { name: state.stream.title }), onClose: () => workspaceStore.clearStreamingPreview() }, onContextMenu: (event: MouseEvent) => openMenu(event, STREAMING_PREVIEW_TAB) }] : []),
 				]}
 			/>
-			{/* Keep the new-tab button in the same projection as the scroll viewport;
-			    otherwise overflow disappearing moves it to the final position at once. */}
-			<MotionIconButton layout={hasConversation && !resizing ? "position" : false} transition={transition} size="xs" className="shrink-0" title={t("workspaceStart.open")} aria-label={t("workspaceStart.open")} onClick={() => workspaceStore.newStartPage()}><Plus size={16} /></MotionIconButton>
+			<IconButton size="xs" className="shrink-0" title={t("workspaceStart.open")} aria-label={t("workspaceStart.open")} onClick={() => workspaceStore.newStartPage()}><Plus size={16} /></IconButton>
 			{ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={menuItems()} onClose={() => setCtxMenu(null)} />}
 		</div>
 	);

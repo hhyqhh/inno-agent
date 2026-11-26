@@ -156,6 +156,37 @@ describe("Workspace header controls", () => {
 		expect(tabPanel.classList.contains("hidden")).toBe(false);
 	});
 
+	it("keeps PPT content at a stable width through fullscreen and restore animations", async () => {
+		render(<Layout />);
+		fireEvent.click(screen.getByRole("button", { name: "workspace.openWorkspace" }));
+		const preview = await screen.findByRole("article", { name: "File preview" });
+		preview.setAttribute("data-pptx-viewport", "");
+		const content = preview.closest<HTMLElement>(".inno-ui-tab-panel")!;
+		const panel = content.closest("aside")!;
+		const finishWidthTransition = () => {
+			const event = new Event("transitionend", { bubbles: true });
+			Object.defineProperty(event, "propertyName", { value: "width" });
+			fireEvent(panel, event);
+		};
+		finishWidthTransition();
+		vi.spyOn(panel.parentElement!, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1000, 700));
+		vi.spyOn(panel, "clientLeft", "get").mockReturnValue(1);
+
+		fireEvent.click(screen.getByRole("button", { name: "workspace.full" }));
+		expect(content.style.width).toBe("999px");
+		expect(panel.hasAttribute("data-animate-width")).toBe(true);
+		finishWidthTransition();
+		expect(content.style.width).toBe("");
+
+		fireEvent.click(screen.getByRole("button", { name: "workspace.half" }));
+		expect(content.style.width).toBe("999px");
+		expect(panel.hasAttribute("data-animate-width")).toBe(true);
+		finishWidthTransition();
+		expect(content.style.width).toBe("");
+		expect(panel.hasAttribute("data-animate-width")).toBe(false);
+		expect(screen.getByRole("article", { name: "File preview" })).toBe(preview);
+	});
+
 	it("shows the shared tooltip over the preview fullscreen button", async () => {
 		render(<Layout />);
 		fireEvent.click(screen.getByRole("button", { name: "workspace.openWorkspace" }));
@@ -537,6 +568,82 @@ describe("Workspace resize render and persistence cost", () => {
 			expect(storage).toHaveBeenCalledExactlyOnceWith("inno.workspaceWidth", "620");
 			expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("");
 		} finally { unsubscribe(); }
+	});
+
+	it("keeps live resizing when a PPT editor is open in a background tab", async () => {
+		const view = render(<PersistentLayout />);
+		const preview = await screen.findByRole("article", { name: "File preview" });
+		const backgroundEditor = document.createElement("div");
+		backgroundEditor.setAttribute("inert", "");
+		const viewport = document.createElement("div");
+		viewport.setAttribute("data-pptx-viewport", "");
+		backgroundEditor.append(viewport);
+		preview.after(backgroundEditor);
+
+		const layout = view.container.firstElementChild as HTMLElement;
+		const handle = screen.getByRole("separator", { name: "workspace.resize" });
+		resizePointer(handle, "pointerdown", 800);
+		resizePointer(window, "pointermove", 760);
+		await flushFrame();
+		expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("560px");
+		resizePointer(window, "pointerup", 760);
+	});
+
+	it.each(["pointerup", "Escape", "lostpointercapture"])("moves only the splitter and chrome for PPT until %s", async (ending) => {
+		const view = render(<PersistentLayout />);
+		const viewport = await screen.findByRole("article", { name: "File preview" });
+		viewport.setAttribute("data-pptx-viewport", "");
+		const layout = view.container.firstElementChild as HTMLElement;
+		const chrome = document.createElement("div");
+		chrome.className = "inno-window-chrome";
+		layout.append(chrome);
+		const handle = screen.getByRole("separator", { name: "workspace.resize" });
+		resizePointer(handle, "pointerdown", 800);
+		for (const x of [760, 845, 720]) {
+			resizePointer(window, "pointermove", x);
+			await flushFrame();
+			expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("520px");
+			expect(layout.style.getPropertyValue("--inno-workspace-drag-left")).toBe("");
+			expect(chrome.style.getPropertyValue("--inno-workspace-drag-width")).toBe(`${520 + 800 - x}px`);
+		}
+		if (ending === "pointerup") {
+			const lostCapture = new MouseEvent("lostpointercapture", { bubbles: true, buttons: 1 });
+			Object.defineProperty(lostCapture, "pointerId", { value: 1 });
+			fireEvent(handle, lostCapture);
+			expect(document.body.classList.contains("workspace-resizing")).toBe(true);
+		}
+		if (ending === "Escape") fireEvent.keyDown(window, { key: "Escape" });
+		else resizePointer(handle, ending, 720);
+		expect(document.body.classList.contains("workspace-resizing")).toBe(false);
+		expect(document.querySelector(".workspace-resize-preview")).toBeNull();
+		expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("");
+		expect(chrome.style.getPropertyValue("--inno-workspace-drag-left")).toBe("");
+		expect(screen.getByRole("article", { name: "File preview" })).toBe(viewport);
+		expect(layout.getAttribute("data-width")).toBe(ending === "pointerup" ? "600" : "520");
+	});
+
+	it.each([440, 600])("holds the PPT viewport while the panel animates to the released width %i", async (targetWidth) => {
+		const view = render(<PersistentLayout />);
+		const preview = await screen.findByRole("article", { name: "File preview" });
+		preview.setAttribute("data-pptx-viewport", "");
+		const content = preview.closest<HTMLElement>(".inno-ui-tab-panel")!;
+		const panel = content.closest("aside")!;
+		vi.spyOn(panel, "clientWidth", "get").mockReturnValue(519);
+		vi.spyOn(panel, "clientLeft", "get").mockReturnValue(1);
+		const handle = screen.getByRole("separator", { name: "workspace.resize" });
+		resizePointer(handle, "pointerdown", 800);
+		expect(content.style.width).toBe("");
+
+		resizePointer(window, "pointerup", 800 + 520 - targetWidth);
+		expect(view.container.firstElementChild?.getAttribute("data-width")).toBe(String(targetWidth));
+		expect(panel.hasAttribute("data-animate-width")).toBe(true);
+		expect(content.style.width).toBe("max(519px, calc(var(--workspace-w) - 1px))");
+
+		const widthTransition = new Event("transitionend", { bubbles: true });
+		Object.defineProperty(widthTransition, "propertyName", { value: "width" });
+		fireEvent(panel, widthTransition);
+		expect(content.style.width).toBe("");
+		expect(panel.hasAttribute("data-animate-width")).toBe(false);
 	});
 
 	it.each(["Escape", "pointercancel", "blur"])("restores stored geometry without saving cancelled moves (%s)", async (cancel) => {

@@ -71,7 +71,7 @@ export default function PptxPreview({ file }: { file: WorkspaceFileDetail }) {
 	}
 
 	return (
-		<div className="workspace-scroll h-full overflow-auto bg-[var(--inno-surface-muted)] p-4">
+		<div data-pptx-viewport className="workspace-scroll h-full overflow-auto bg-[var(--inno-surface-muted)] p-4">
 			<div className="mb-3 flex items-center justify-between gap-2">
 				<div className="text-xs text-[var(--inno-text-muted)]">
 					{t("preview.pptxCount", "{{count}} slides", { count: slides.length })}

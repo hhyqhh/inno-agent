@@ -1,8 +1,6 @@
 import { forwardRef, useRef, type HTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Tooltip } from "./Tooltip.js";
-import { motion } from "motion/react";
-import { useUITransition } from "./motion.js";
 
 export interface TabItem<Value extends string> {
 	value: Value;
@@ -14,7 +12,6 @@ export interface TabItem<Value extends string> {
 	/** Right-click hook so hosts can open a shared ContextMenu for the tab. */
 	onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
 	panelId?: string;
-	layoutId?: string;
 	className?: string;
 }
 
@@ -32,7 +29,6 @@ export interface TabsProps<Value extends string> extends SelectableControlProps<
 	size?: "compact" | "sm";
 	spacing?: "compact" | "comfortable";
 	variant?: "underline" | "pill" | "browser";
-	animateLayout?: boolean;
 }
 
 export function getTabTriggerId(id: string, value: string): string {
@@ -92,20 +88,14 @@ export function Tabs<Value extends string>({
 	size = "sm",
 	spacing = "compact",
 	variant = "underline",
-	animateLayout = false,
 	className = "",
 }: TabsProps<Value>) {
 	const buttons = useRef<Array<HTMLButtonElement | null>>([]);
-	const transition = useUITransition(variant === "browser" ? "layout" : "modal");
 	const selectedIndex = items.findIndex((item) => item.value === value && !item.disabled);
 	const firstEnabledIndex = items.findIndex((item) => !item.disabled);
 
 	return (
-		// The scroll viewport must resize with its projected parent. Snapping its
-		// width changes clipping and clamps scrollLeft before the tabs have moved.
-		<motion.div
-			layout={animateLayout}
-			transition={transition}
+		<div
 			id={`${id}-list`}
 			role="tablist"
 			aria-label={ariaLabel}
@@ -114,11 +104,8 @@ export function Tabs<Value extends string>({
 			{items.map((item, index) => {
 				const selected = index === selectedIndex;
 				const trigger = (
-					<motion.button
+					<button
 						key={item.value}
-						layout={animateLayout ? "position" : false}
-						layoutId={animateLayout ? item.layoutId : undefined}
-						transition={transition}
 						ref={(element) => { buttons.current[index] = element; }}
 						type="button"
 						id={getTabTriggerId(id, item.value)}
@@ -164,11 +151,11 @@ export function Tabs<Value extends string>({
 								</span>
 							</Tooltip>
 						) : null}
-					</motion.button>
+					</button>
 				);
 				return item.title && !item.disabled ? <Tooltip key={item.value} label={item.title}>{trigger}</Tooltip> : trigger;
 			})}
-		</motion.div>
+		</div>
 	);
 }
 

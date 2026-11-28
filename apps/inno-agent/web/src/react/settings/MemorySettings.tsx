@@ -1,35 +1,14 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { settingsStore } from "../../stores/settings-store.js";
-import type { InnoSettings } from "../../types/settings.js";
-import { Switch } from "../ui/Switch.js";
-import { SettingsSection, SettingsCard, SettingsRow } from "./primitives.js";
+import type { InnoSettings, SmartCompactPreset } from "../../types/settings.js";
+import { useStoreSnapshot } from "../hooks.js";
+import { Select, SelectContent, SelectOption, SelectTrigger, SelectValue, Switch } from "../ui/index.js";
+import { SettingsSection, SettingsGroup, SettingsCard, SettingsRow } from "./primitives.js";
 
 /* ---------- Memory layer toggles (L1/L2/L3) ---------- */
 
 type MemoryLayer = "l1Enabled" | "l2Enabled" | "l3Enabled";
-
-function MemoryToggleRow({
-	enabled,
-	saving,
-	title,
-	desc,
-	onToggle,
-}: {
-	enabled: boolean;
-	saving: boolean;
-	title: string;
-	desc: string;
-	onToggle: (next: boolean) => void;
-}) {
-	return (
-		<SettingsRow
-			label={title}
-			description={desc}
-			control={<Switch checked={enabled} onChange={onToggle} disabled={saving} />}
-		/>
-	);
-}
 
 function MemoryLayersCard({ settings }: { settings: InnoSettings }) {
 	const { t } = useTranslation();
@@ -68,34 +47,132 @@ function MemoryLayersCard({ settings }: { settings: InnoSettings }) {
 	];
 
 	return (
-		<SettingsCard>
-			<h4 className="mb-3 text-sm font-medium text-[var(--inno-text)]">{t("settings.memorySection")}</h4>
-			<div className="grid gap-4">
-				{layers.map(({ key, ns }) => {
-					const enabled = state[key];
-					return (
-						<MemoryToggleRow
-							key={key}
-							enabled={enabled}
-							saving={savingKey === key}
-							title={t(`settings.${ns}.title`)}
-							desc={enabled ? t(`settings.${ns}.onDesc`) : t(`settings.${ns}.offDesc`)}
-							onToggle={(next) => void handleToggle(key, next)}
-						/>
-					);
-				})}
-			</div>
+		<SettingsCard divided>
+			{layers.map(({ key, ns }) => {
+				const enabled = state[key];
+				return (
+					<SettingsRow
+						key={key}
+						label={t(`settings.${ns}.title`)}
+						description={enabled ? t(`settings.${ns}.onDesc`) : t(`settings.${ns}.offDesc`)}
+						control={
+							<Switch
+								checked={enabled}
+								aria-label={t(`settings.${ns}.title`)}
+								onChange={(next) => void handleToggle(key, next)}
+								disabled={savingKey === key}
+							/>
+						}
+					/>
+				);
+			})}
 		</SettingsCard>
 	);
 }
 
-/* ---------- Memory category page ---------- */
+/* ---------- Smart Compact (Context management) ---------- */
+
+const SMART_COMPACT_PRESET_IDS: SmartCompactPreset[] = ["150k", "300k", "500k"];
+
+function ContextManagementCard({ settings }: { settings: InnoSettings }) {
+	const { t } = useTranslation();
+	const [changed, setChanged] = useState(false);
+	const state = useStoreSnapshot(settingsStore, () => {
+		const sc = settingsStore.settings?.smartCompact ?? settings.smartCompact;
+		return {
+			enabled: sc?.enabled === true,
+			preset: sc?.preset ?? "300k",
+			runtimeSupported: sc?.runtimeSupported !== false,
+			settingsError: sc?.settingsError === true,
+			isSaving: settingsStore.isSavingSmartCompact,
+			isReady: settingsStore.settings !== null || Boolean(settings),
+		};
+	});
+
+	function handleToggle(enabled: boolean) {
+		settingsStore
+			.saveSmartCompact({ enabled })
+			.then(() => setChanged(true))
+			.catch(() => undefined);
+	}
+
+	function handlePresetChange(value: string) {
+		if (!SMART_COMPACT_PRESET_IDS.includes(value as SmartCompactPreset)) return;
+		void settingsStore.saveSmartCompact({ preset: value as SmartCompactPreset }).catch(() => undefined);
+	}
+
+	const toggleHint = !state.runtimeSupported
+		? t("settings.smartCompact.unsupported")
+		: changed
+			? t("settings.smartCompact.restartHint")
+			: undefined;
+	const toggleHintTone = !state.runtimeSupported || changed ? "warning" : "muted";
+	const thresholdDisabled = !state.isReady || state.isSaving || !state.enabled || !state.runtimeSupported || state.settingsError;
+
+	return (
+		<SettingsCard divided>
+			<SettingsRow
+				label={t("settings.smartCompact.title")}
+				description={t("settings.smartCompact.description")}
+				hint={toggleHint}
+				hintTone={toggleHintTone}
+				control={
+					<Switch
+						checked={state.enabled}
+						disabled={!state.isReady || state.isSaving}
+						aria-label={t("settings.smartCompact.title")}
+						onChange={handleToggle}
+					/>
+				}
+			/>
+			<SettingsRow
+				label={t("settings.smartCompact.thresholdTitle")}
+				description={t("settings.smartCompact.thresholdDescription")}
+				hint={state.settingsError ? t("settings.smartCompact.settingsError") : undefined}
+				hintTone={state.settingsError ? "danger" : "muted"}
+				disabled={!state.enabled}
+				control={
+					<Select
+						value={state.preset}
+						disabled={thresholdDisabled}
+						onValueChange={handlePresetChange}
+					>
+						<SelectTrigger
+							className="min-w-44 text-xs"
+							aria-label={t("settings.smartCompact.thresholdTitle")}
+						>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{state.preset === "custom" ? (
+								<SelectOption value="custom" disabled label={t("settings.smartCompact.presets.custom")} />
+							) : null}
+							{SMART_COMPACT_PRESET_IDS.map((preset) => (
+								<SelectOption key={preset} value={preset} label={t(`settings.smartCompact.presets.${preset}`)} />
+							))}
+						</SelectContent>
+					</Select>
+				}
+			/>
+		</SettingsCard>
+	);
+}
+
+/* ---------- Memory & Context category page ---------- */
 
 export function MemorySettings({ settings }: { settings: InnoSettings }) {
 	const { t } = useTranslation();
 	return (
-		<SettingsSection title={t("settings.tabs.memory")} description={t("settings.sections.memory.desc", "分层记忆开关")}>
-			<MemoryLayersCard settings={settings} />
+		<SettingsSection
+			title={t("settings.tabs.memory")}
+			description={t("settings.sections.memory.desc", "分层记忆开关与长对话上下文管理")}
+		>
+			<SettingsGroup title={t("settings.memorySection", "记忆分层")}>
+				<MemoryLayersCard settings={settings} />
+			</SettingsGroup>
+			<SettingsGroup title={t("settings.groups.contextManagement", "上下文管理")}>
+				<ContextManagementCard settings={settings} />
+			</SettingsGroup>
 		</SettingsSection>
 	);
 }

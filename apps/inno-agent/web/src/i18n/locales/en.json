@@ -94,7 +94,7 @@
 		"importingAction": "Importing…",
 		"noMatchingSkills": "No matching skills",
 		"clearSearch": "Clear search",
-		"linksHint": "Reference materials across workspaces in chat"
+		"linksHint": "Read-only access to linked workspace files and skills in chat"
 	},
   "officeEditor": {
       "copyName": "Backup",
@@ -873,6 +873,7 @@
       }
     },
 		"title": "Settings",
+		"aboutOverview": "Overview",
 		"refresh": "Refresh",
 		"loading": "Loading settings…",
 		"stats": {
@@ -1088,34 +1089,53 @@
 				"confirm": "Allow full access"
 			}
 		},
+		"navGroups": {
+			"basic": "Basic",
+			"intelligence": "Intelligence",
+			"extensions": "Extensions",
+			"system": "System"
+		},
+		"groups": {
+			"appearance": "Appearance & Language",
+			"appAndFormatting": "App & Formatting",
+			"contextManagement": "Context Management",
+			"agentCapabilities": "Agent Capabilities",
+			"webSearch": "Web Search",
+			"mediaAndContent": "Media & Content"
+		},
+		"status": {
+			"configured": "Configured",
+			"notConfigured": "Not configured",
+			"configuredCount": "{{count}} configured"
+		},
 		"tabs": {
 			"general": "General",
 			"lab": "Lab",
 			"models": "Models",
-			"memory": "Memory",
-			"integrations": "Integrations",
+			"memory": "Memory & Context",
+			"integrations": "External Services",
 			"channels": "Channels",
 			"mcp": "MCP",
 			"about": "About"
 		},
 		"sections": {
 			"general": {
-				"desc": "Appearance and language preferences",
+				"desc": "Appearance, language, and basic app preferences",
 				"themeDesc": "Choose the interface color theme",
 				"languageDesc": "Switch the display language",
 				"closeBehaviorDesc": "Choose what happens when you click the window close button. The dialog's “Remember my choice” option saves it here across platforms."
 			},
 			"lab": {
-				"desc": "Experimental features and smart input settings"
+				"desc": "Experimental agent capabilities and smart input settings"
 			},
 			"models": {
 				"desc": "Configure model providers and the default model"
 			},
 			"memory": {
-				"desc": "Simple Mode and layered memory toggles"
+				"desc": "Layered memory toggles and long-conversation context management"
 			},
 			"integrations": {
-				"desc": "External services: content hub, OCR and web search"
+				"desc": "External services: web search, OCR, and content hub"
 			},
 			"channels": {
 				"desc": "Messaging channel integrations (Feishu, WeChat)"

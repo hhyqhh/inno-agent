@@ -498,7 +498,7 @@ export function ToolRecordDetails({ tool, className }: { tool: ChatToolRecord; c
 	);
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, showChannel, collapseUserToFirstLine = false, resolveAttachmentUrl, onOpenAttachment, onOpenSkill, onEdit, showRetry, showActions = true, answeredQuestionnaires: suppliedQuestionnaires, animateEntry = true, liveBodies = false, resultContent, onRetry }: {
+export const MessageBubble = memo(function MessageBubble({ message, showChannel, collapseUserToFirstLine = false, resolveAttachmentUrl, onOpenAttachment, onOpenSkill, onEdit, showRetry, showActions = true, answeredQuestionnaires: suppliedQuestionnaires, animateEntry = true, liveBodies = false, isStreaming = false, pendingQuestion, trailingCard, resultContent, onRetry }: {
 	message: ChatMessage;
 	showChannel?: boolean;
 	/** Render user messages as their first line only (job-prompt turns in
@@ -525,6 +525,16 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 	/** Keep the live stream's markdown DOM shape for text bodies so the
 	 *  finalize swap does not relayout the content. */
 	liveBodies?: boolean;
+	/** Active streaming turn rendered in place; settles into the canonical
+	 *  assistant bubble without unmounting the prose DOM tree. */
+	isStreaming?: boolean;
+	/** Live interactive question card anchored inside the active trace timeline. */
+	pendingQuestion?: {
+		questionId: string;
+		card: ReactNode;
+	};
+	/** Extra trailing card (e.g. permission approval) rendered at the end of a live turn. */
+	trailingCard?: ReactNode;
 	/** Final assistant deliverables, above the message's time and actions. */
 	resultContent?: ReactNode;
 	onRetry?: () => void;
@@ -675,8 +685,10 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 		);
 	}
 
-	// Let the shared questionnaire card own its width. The old percentage
-	// limit on this parent made archived cards narrower than pending cards.
+	// Let assistant messages span the full conversation lane (100% width) so
+	// plain-text replies match live streaming and trace-backed replies without
+	// width reflow on completion.
+	const useTraceRenderer = hasTraceTimeline || isStreaming || liveBodies;
 	return (
 		<motion.div
 			className="flex justify-start"
@@ -684,29 +696,32 @@ export const MessageBubble = memo(function MessageBubble({ message, showChannel,
 			animate={{ opacity: 1 }}
 			transition={{ duration: 0.25, ease: "easeOut" }}
 		>
-			<div className={`inno-message inno-assistant-message group relative min-w-0 ${hasTraceTimeline ? "inno-trace-assistant-message" : resultContent || hasAnsweredQuestionnaire ? "w-full max-w-full" : "max-w-[78%]"} max-md:max-w-full ${showActions ? "" : "inno-assistant-message--no-actions"} overflow-visible px-0 py-0 text-[14px] leading-[1.75] text-[var(--inno-text)]`}>
+			<div className={`inno-message inno-assistant-message group relative min-w-0 ${useTraceRenderer ? "inno-trace-assistant-message" : "w-full max-w-full"} max-md:max-w-full ${showActions || isStreaming ? "" : "inno-assistant-message--no-actions"} overflow-visible px-0 py-0 text-[14px] leading-[1.75] text-[var(--inno-text)]`}>
 				{showChannel && message.channel ? (
 					<div className="mb-1"><ChannelBadge channel={message.channel} /></div>
 				) : null}
-				{hasTraceTimeline ? (
+				{useTraceRenderer ? (
 					<div className="inno-trace-shell">
 						<AgentTraceTimeline
 							steps={traceSteps}
+							isSending={isStreaming}
 							startedAt={message.traceStartedAt}
 							finishedAt={message.traceFinishedAt}
 							error={message.error}
-							terminalState={terminalState}
+							terminalState={isStreaming ? undefined : terminalState}
 							showText
 							liveBodies={liveBodies}
 							fallbackText={message.content}
 							answeredQuestionnaires={answeredQuestionnaires}
+							pendingQuestion={pendingQuestion}
+							trailingCard={trailingCard}
 							onOpenSkill={onOpenSkill}
 						/>
 					</div>
 				) : (
 					<AssistantTimelineContent content={message.content} questionnaires={answeredQuestionnaires} />
 				)}
-				{message.error && !hasTraceError ? (
+				{message.error && !hasTraceError && !useTraceRenderer ? (
 					<div className={message.content.trim() ? "mt-2" : ""}>
 						<ErrorBlock error={message.error} />
 					</div>

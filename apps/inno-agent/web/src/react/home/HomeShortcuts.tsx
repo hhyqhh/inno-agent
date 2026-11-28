@@ -27,8 +27,9 @@ interface Hold {
 	active: boolean;
 }
 
-export function HomeShortcuts({ workspaces, selectedId, onSelect, onOpenSession, onCreate, onEdit, disabled }: {
+export function HomeShortcuts({ workspaces, workspacesLoading = false, selectedId, onSelect, onOpenSession, onCreate, onEdit, disabled }: {
 	workspaces: WorkspaceMeta[];
+	workspacesLoading?: boolean;
 	selectedId: string | null;
 	onSelect: (id: string) => void;
 	onOpenSession?: (sessionId: string) => void;
@@ -39,7 +40,9 @@ export function HomeShortcuts({ workspaces, selectedId, onSelect, onOpenSession,
 	const { t, i18n } = useTranslation();
 	const reduceMotion = useReducedMotion();
 	const cards = useStoreSnapshot(homeShortcutsStore, () => homeShortcutsStore.cards);
-	const jobs = useStoreSnapshot(jobsStore, () => jobsStore.jobs);
+	const jobsState = useStoreSnapshot(jobsStore, () => ({ jobs: jobsStore.jobs, hasLoaded: jobsStore.hasLoaded }));
+	const jobs = jobsState.jobs;
+	const jobsLoading = !jobsState.hasLoaded;
 	const sessions = useStoreSnapshot(sessionsStore, () => sessionsStore.sessions);
 	const [picker, setPicker] = useState(false);
 	const [openMenu, setOpenMenu] = useState<ShortcutKey>();
@@ -69,8 +72,15 @@ export function HomeShortcuts({ workspaces, selectedId, onSelect, onOpenSession,
 		}
 		if (latest) latestSessionByWorkspace.set(ws.id, latest);
 	}
+	// Cold start reads pinned card keys synchronously from localStorage while workspaces/jobs load
+	// asynchronously; keep unresolved pinned cards as skeletons until their source finishes loading
+	// so the board does not flash the empty state.
+	const isCardPending = (card: ShortcutCard) =>
+		(card.key.startsWith(workspacePrefix) && workspacesLoading && !workspaceByKey.has(card.key))
+		|| (card.key.startsWith(reminderPrefix) && jobsLoading && !reminderByKey.has(card.key));
 	const arranged = arrangeShortcuts(cards.filter((card) =>
-		card.key === "reminders" || workspaceByKey.has(card.key) || reminderByKey.has(card.key)), columns);
+		card.key === "reminders" || workspaceByKey.has(card.key) || reminderByKey.has(card.key) || isCardPending(card)), columns);
+	const hasPending = arranged.some(isCardPending);
 
 	useEffect(() => {
 		void jobsStore.load();
@@ -218,14 +228,26 @@ export function HomeShortcuts({ workspaces, selectedId, onSelect, onOpenSession,
 				<h2 className="text-xs font-medium tracking-wide text-[var(--inno-text-subtle)]">{t("home.shortcuts")}</h2>
 				{arranged.length > 0 ? <span className="inno-home-shortcuts-count">{arranged.length}</span> : null}
 			</div>
-			<Button ref={addButton} variant="ghost" size="xs" onClick={() => { setQuery(""); setPicker(true); }} disabled={disabled}><Plus size={14} />{t("home.addCard")}</Button>
+			<div className="inno-home-shortcuts-actions">
+				<Button variant="ghost" size="xs" onClick={onCreate} disabled={disabled}><FolderPlus size={14} />{t("workspace.newWorkspace")}</Button>
+				<Button ref={addButton} variant="ghost" size="xs" onClick={() => { setQuery(""); setPicker(true); }} disabled={disabled}><Plus size={14} />{t("home.addCard")}</Button>
+			</div>
 		</header>
-		<div className="inno-home-board" data-columns={columns} ref={board}
+		<div className="inno-home-board" data-columns={columns} aria-busy={hasPending || undefined} ref={board}
 			onKeyDown={(event) => { if (event.key === "Escape") clearHold(); }}
 			onClickCapture={(event) => {
 				if (suppressClick.current && event.detail > 0) { suppressClick.current = false; event.preventDefault(); event.stopPropagation(); }
 			}}>
 			{arranged.map((card, index) => {
+				if (isCardPending(card)) {
+					return <article key={card.key} className="inno-home-card inno-home-card-skeleton" data-size={card.size} data-skeleton="true" aria-hidden="true">
+						<div className="inno-home-card-skeleton-header">
+							<span className="inno-home-card-skeleton-icon" />
+							<span className="inno-home-card-skeleton-title" />
+						</div>
+						<span className="inno-home-card-skeleton-meta" />
+					</article>;
+				}
 				const workspace = workspaceByKey.get(card.key);
 				const reminder = reminderByKey.get(card.key);
 				const title = workspace?.name ?? reminder?.name ?? t("home.upcoming");
@@ -382,7 +404,6 @@ export function HomeShortcuts({ workspaces, selectedId, onSelect, onOpenSession,
 				)) : <p className="inno-home-picker-empty text-sm text-[var(--inno-text-muted)]">{t("home.noMatches")}</p>}
 			</div>
 			<footer className="inno-home-dialog-footer inno-home-picker-footer">
-				<Button variant="secondary" size="sm" onClick={() => { setPicker(false); onCreate(); }}><FolderPlus size={15} />{t("workspace.newWorkspace")}</Button>
 				<Button variant="ghost" size="sm" onClick={() => setPicker(false)}>{t("common.done")}</Button>
 			</footer>
 		</Dialog> : null}

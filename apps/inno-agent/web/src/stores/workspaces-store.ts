@@ -17,6 +17,7 @@ interface WorkspacesStoreEvents {
 class WorkspacesStoreImpl extends EventEmitter<WorkspacesStoreEvents> {
 	workspaces: WorkspaceMeta[] = [];
 	isLoading = false;
+	hasLoaded = false;
 	error = "";
 
 	get nonTemp(): WorkspaceMeta[] {
@@ -37,6 +38,7 @@ class WorkspacesStoreImpl extends EventEmitter<WorkspacesStoreEvents> {
 			this.error = err instanceof Error ? err.message : "Failed to load workspaces";
 		} finally {
 			this.isLoading = false;
+			this.hasLoaded = true;
 			this.emit("change", undefined);
 		}
 	}
@@ -61,7 +63,8 @@ class WorkspacesStoreImpl extends EventEmitter<WorkspacesStoreEvents> {
 
 	async update(id: string, configuration: WorkspaceConfiguration & { name?: string }): Promise<WorkspaceMeta> {
 		const updated = await updateWorkspace(id, configuration);
-		this.workspaces = this.workspaces.map((workspace) => workspace.id === id ? updated : workspace);
+		// PATCH returns registry metadata. Session IDs and private skills come from the list endpoint.
+		this.workspaces = this.workspaces.map((workspace) => workspace.id === id ? { ...workspace, ...updated } : workspace);
 		this.emit("change", undefined);
 		return updated;
 	}

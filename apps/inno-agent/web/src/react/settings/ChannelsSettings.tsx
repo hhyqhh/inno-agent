@@ -6,36 +6,40 @@ import { settingsStore } from "../../stores/settings-store.js";
 import { feishuQrRegister, feishuQrStatus, wechatQrLogin, wechatQrStatus, wechatStatus } from "../../api/settings.js";
 import type { InnoSettings, ChannelsSettingsPayload, PersonalBridgeChannelConfig } from "../../types/settings.js";
 import { Button, Checkbox, Input, Switch, Textarea } from "../ui/index.js";
-import { SettingsSection } from "./primitives.js";
+import { SettingsSection, SettingsCard, SettingsStatusBadge } from "./primitives.js";
 
 const labelCls = "mb-0.5 block text-xs text-[var(--inno-text-muted)]";
 const checkCls = "flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]";
 
 /* ---------- Shared channel building blocks ---------- */
 
-/** Card shell shared by every channel: icon + title + description, enable Switch on the right. */
-function ChannelCard({ icon, title, desc, enabled, onEnabledChange, children }: {
+/** Card shell shared by every channel: icon + title + status badge + description, enable Switch on the right. */
+function ChannelCard({ icon, title, desc, badge, enabled, onEnabledChange, children }: {
 	icon: ReactNode;
 	title: string;
 	desc: string;
+	badge?: ReactNode;
 	enabled: boolean;
 	onEnabledChange: (next: boolean) => void;
 	children: ReactNode;
 }) {
 	return (
-		<div className="rounded-lg bg-[var(--inno-surface)] p-4">
+		<SettingsCard className="grid gap-3.5">
 			<div className="flex items-start justify-between gap-3">
-				<div className="flex min-w-0 items-start gap-2.5">
-					<span className="mt-0.5 shrink-0 text-[var(--inno-text)]">{icon}</span>
+				<div className="flex min-w-0 items-start gap-3">
+					<span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--inno-surface-muted)] text-[var(--inno-text)]">{icon}</span>
 					<div className="min-w-0">
-						<h4 className="text-sm font-medium text-[var(--inno-text)]">{title}</h4>
+						<div className="flex flex-wrap items-center gap-2">
+							<h4 className="text-sm font-medium text-[var(--inno-text)]">{title}</h4>
+							{badge}
+						</div>
 						<p className="mt-0.5 text-xs leading-relaxed text-[var(--inno-text-muted)]">{desc}</p>
 					</div>
 				</div>
-				<Switch checked={enabled} onChange={onEnabledChange} />
+				<Switch checked={enabled} aria-label={title} onChange={onEnabledChange} />
 			</div>
-			<div className="mt-4 grid gap-3">{children}</div>
-		</div>
+			<div className="grid gap-3 border-t border-[var(--inno-border)] pt-3.5">{children}</div>
+		</SettingsCard>
 	);
 }
 
@@ -46,12 +50,12 @@ function ChannelStatusRow({ connected, label, detail }: {
 	detail?: string | null;
 }) {
 	return (
-		<div className="flex items-center gap-2 rounded border border-[var(--inno-border)] bg-[var(--inno-surface-muted)] px-3 py-2">
+		<div className="flex items-center gap-2 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface-muted)]/60 px-3 py-2">
 			{connected ? (
 				<>
 					<Wifi size={14} className="shrink-0 text-[var(--inno-success)]" />
 					<span className="text-xs font-medium text-[var(--inno-success)]">{label}</span>
-					{detail ? <span className="ml-1 text-xs text-[var(--inno-text-subtle)]">{detail}</span> : null}
+					{detail ? <span className="ml-1 truncate font-mono text-xs text-[var(--inno-text-subtle)]">{detail}</span> : null}
 				</>
 			) : (
 				<>
@@ -66,7 +70,7 @@ function ChannelStatusRow({ connected, label, detail }: {
 /** Dashed container hosting the QR code / QR flow status / action button. */
 function QrPanel({ children }: { children: ReactNode }) {
 	return (
-		<div className="flex flex-col items-center gap-2 rounded border border-dashed border-[var(--inno-border)] bg-[var(--inno-surface)] p-3">
+		<div className="flex flex-col items-center gap-2.5 rounded-lg border border-dashed border-[var(--inno-border-strong)] bg-[var(--inno-surface-muted)]/25 p-3.5">
 			{children}
 		</div>
 	);
@@ -181,9 +185,14 @@ function FeishuChannel({ settings, state, onStateChange }: {
 
 	return (
 		<ChannelCard
-			icon={<Bird size={16} />}
+			icon={<Bird size={15} />}
 			title={t("settings.channels.feishu.title")}
 			desc={t("settings.channels.feishu.desc")}
+			badge={
+				<SettingsStatusBadge tone={configured ? "success" : "neutral"} dot={configured}>
+					{configured ? t("settings.channels.feishu.configured", "已配置") : t("settings.channels.feishu.notConfigured", "未配置")}
+				</SettingsStatusBadge>
+			}
 			enabled={state.enabled}
 			onEnabledChange={(v) => onStateChange({ enabled: v })}
 		>
@@ -312,9 +321,14 @@ function WechatChannel({ state, onStateChange }: {
 
 	return (
 		<ChannelCard
-			icon={<MessageCircle size={16} />}
+			icon={<MessageCircle size={15} />}
 			title={t("settings.channels.wechat.title")}
 			desc={t("settings.channels.wechat.desc")}
+			badge={
+				<SettingsStatusBadge tone={connected ? "success" : "neutral"} dot={connected}>
+					{connected ? t("settings.channels.wechat.connected") : t("settings.channels.wechat.disconnected")}
+				</SettingsStatusBadge>
+			}
 			enabled={state.enabled}
 			onEnabledChange={(v) => onStateChange({ enabled: v })}
 		>

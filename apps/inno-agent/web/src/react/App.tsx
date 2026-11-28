@@ -329,7 +329,7 @@ function MainApp() {
 	}, [isNarrow, isDesktopWindow, ensureWindowForPanel]);
 
 	const openSearchResult = useCallback(async (result: SearchResult) => {
-		if (isNarrow) appStore.setSidebarCollapsed(true);
+		if (!isDesktopWindow && isNarrow) appStore.setSidebarCollapsed(true);
 		if (result.category === "conversation") {
 			if (!result.sessionId) return;
 			appStore.setPage("chat");
@@ -348,7 +348,7 @@ function MainApp() {
 		}
 		appStore.setPage("notebook");
 		if (result.path) await notebookStore.selectPage(result.path);
-	}, [isNarrow, openFilePreview]);
+	}, [isDesktopWindow, isNarrow, openFilePreview]);
 
 	const openSearch = useCallback(() => {
 		sessionsStore.setSearchQuery("");

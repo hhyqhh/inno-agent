@@ -1,10 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { Worker } from "node:worker_threads";
 import {
 	formatSkillsForPrompt,
 	loadSkillsFromDir,
 	type ExtensionAPI,
 	type ExtensionFactory,
+	type Skill,
 } from "@earendil-works/pi-coding-agent";
 import { isComputerUseEnabled, isSmartCompactEnabled, saveConfig, setDefaultModel, type InnoConfig } from "../config.js";
 import { createLearnerTools } from "../memory/learner/learner-tools.js";
@@ -37,7 +41,7 @@ import { logger } from "../logger.js";
 import type { ChannelRegistry } from "../channels/channel.js";
 import type { ChannelName } from "../channels/types.js";
 import type { RuntimePaths } from "../runtime.js";
-import type { WorkspaceRegistry } from "../workspace/workspace-registry.js";
+import type { LinkedWorkspaceContext, WorkspaceRegistry } from "../workspace/workspace-registry.js";
 import type { RunRecordStore } from "../terminal/run-record-store.js";
 
 const INNO_VERSION = "0.0.1";
@@ -98,9 +102,12 @@ function resolveActiveWorkspaceDir(paths: RuntimePaths, deps?: InnoExtensionDeps
  * Build extra system-prompt sections for the active workspace:
  * - the workspace's `agent.md` content (if present)
  * - a private-skills block discovered under `<workspace>/.skills`
+ * Also returns the discovered active private skill names so linked workspaces
+ * can skip colliding names (active workspace takes precedence).
  */
-function buildWorkspaceContextSections(workspaceDir: string): string[] {
+function buildWorkspaceContextSections(workspaceDir: string): { sections: string[]; privateSkillNames: Set<string> } {
 	const sections: string[] = [];
+	const privateSkillNames = new Set<string>();
 
 	const agentFile = join(workspaceDir, WORKSPACE_AGENT_FILE);
 	if (existsSync(agentFile)) {
@@ -120,6 +127,7 @@ function buildWorkspaceContextSections(workspaceDir: string): string[] {
 		try {
 			const { skills } = loadSkillsFromDir({ dir: skillsDir, source: "path" });
 			if (skills.length > 0) {
+				for (const skill of skills) privateSkillNames.add(skill.name);
 				const block = formatSkillsForPrompt(skills);
 				if (block.trim()) {
 					sections.push(`# 本工作区私有技能\n${block}`);
@@ -131,7 +139,79 @@ function buildWorkspaceContextSections(workspaceDir: string): string[] {
 		}
 	}
 
-	return sections;
+	return { sections, privateSkillNames };
+}
+
+/**
+ * Format read-only reference instructions for linked workspaces.
+ * The tool-call guards below enforce the linked workspace write boundary.
+ */
+export function formatLinkedWorkspacesSection(linkedWorkspaces: LinkedWorkspaceContext[]): string {
+	if (linkedWorkspaces.length === 0) return "";
+	return [
+		"# 关联工作区（只读参考）",
+		"以下工作区与当前工作区关联。需要参考资料、模板或历史文档时，可使用只读工具（如 read / grep / find / ls）按需查阅这些目录。",
+		"写入边界不变：所有新增或修改的文件仍必须保存在当前工作区，禁止向关联工作区写入或修改文件。",
+		"此会话请使用内置文件工具。Bash 和子代理无法约束到当前工作区，因此不可用。",
+		JSON.stringify(
+			linkedWorkspaces.map((ws) => ({
+				name: ws.name,
+				...(ws.purpose ? { purpose: ws.purpose } : {}),
+				path: ws.absDir,
+			})),
+		),
+	].join("\n");
+}
+
+/**
+ * Discover private skills under linked workspaces' `.skills/` directories.
+ * Skills whose names collide with the active workspace (or an earlier linked
+ * workspace) are skipped so the active workspace always takes precedence.
+ */
+export async function buildLinkedWorkspaceSkillsSection(
+	linkedWorkspaces: LinkedWorkspaceContext[],
+	existingSkillNames: ReadonlySet<string> = new Set(),
+): Promise<string> {
+	try {
+		const dirs = (await Promise.all(linkedWorkspaces.map(async (ws) => {
+			const dir = join(ws.absDir, WORKSPACE_SKILLS_DIR);
+			try {
+				return (await stat(dir)).isDirectory() ? dir : undefined;
+			} catch (err) {
+				if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+					logger.warn({ workspaceId: ws.id }, "failed to inspect linked workspace skills directory");
+				}
+				return undefined;
+			}
+		}))).filter((dir) => dir !== undefined);
+		if (!dirs.length) return "";
+
+		// The SDK walks skills synchronously. Run one worker for the linked set
+		// to preserve its discovery rules without blocking other server requests.
+		const sdk = pathToFileURL(resolvePluginFile(import.meta.url, "@earendil-works/pi-coding-agent", "dist/index.js")).href;
+		const skills = await new Promise<Skill[]>((resolve, reject) => {
+			const worker = new Worker(`
+				const { parentPort, workerData } = require("node:worker_threads");
+				import(workerData.sdk).then(({ loadSkillsFromDir }) => {
+					parentPort.postMessage(workerData.dirs.flatMap(dir => loadSkillsFromDir({ dir, source: "path" }).skills));
+				}).catch(error => { throw error; });
+			`, { eval: true, execArgv: [], workerData: { dirs, sdk } });
+			worker.once("message", resolve);
+			worker.once("error", reject);
+			worker.once("exit", (code) => reject(new Error(`Skill discovery worker exited with code ${code}`)));
+		});
+		const seen = new Set(existingSkillNames);
+		const mergedSkills = skills.filter((skill) => {
+			if (seen.has(skill.name)) return false;
+			seen.add(skill.name);
+			return true;
+		});
+		const block = formatSkillsForPrompt(mergedSkills);
+		return block.trim() ? `# 关联工作区私有技能（只读参考）\n${block}` : "";
+	} catch {
+		logger.warn("failed to discover linked workspace skills");
+		return "";
+	}
 }
 
 function formatWorkspaceFileInstructions(workspaceDir: string): string {
@@ -472,6 +552,20 @@ export function createInnoExtension(
 		// active session. PI accepts absolute paths, so cwd alone is not a
 		// sufficient boundary when the model emits a stale parent path.
 		pi.on("tool_call", async (event) => {
+			if (event.toolName === "bash" || event.toolName === "subagent") {
+				// Child processes don't inherit the in-process file tool guard. A shell
+				// command can compute its write targets at runtime, so path matching can't enforce this.
+				const sessionId = deps?.getCurrentSessionId?.();
+				if (!sessionId || !deps?.workspaceRegistry) return undefined;
+				try {
+					const configuration = await deps.workspaceRegistry.getWorkspaceConfigurationForSession(sessionId);
+					if (!configuration?.linkedWorkspaceIds?.length) return undefined;
+				} catch {
+					logger.warn("failed to check linked workspace permissions");
+					return { block: true, reason: "无法确认当前工作区的只读关联配置，已阻止执行。" };
+				}
+				return { block: true, reason: "当前工作区启用了只读关联，无法安全执行 Bash 或委派子代理。请用 read、grep、find、ls 查阅资料，用 write 或 edit 修改当前工作区文件。" };
+			}
 			if (event.toolName !== "write" && event.toolName !== "edit") return undefined;
 
 			const requestedPath = event.input.path;
@@ -553,20 +647,31 @@ export function createInnoExtension(
 					sections.push(contextSection);
 				}
 
-				// Inject per-workspace context: agent.md + private skills.
+				// Inject per-workspace context: agent.md + private skills + linked workspaces.
 				const workspaceDir = resolveActiveWorkspaceDir(paths, deps);
 				sections.push(formatWorkspaceFileInstructions(workspaceDir));
-				sections.push(...buildWorkspaceContextSections(workspaceDir));
+				const activeWorkspaceContext = buildWorkspaceContextSections(workspaceDir);
+				sections.push(...activeWorkspaceContext.sections);
 				const sessionId = deps?.getCurrentSessionId?.();
-				const configuration = sessionId
-					? await deps?.workspaceRegistry?.getWorkspaceConfigurationForSession(sessionId)
+				const wsContext = sessionId
+					? await deps?.workspaceRegistry?.getSessionWorkspaceContext(sessionId)
 					: undefined;
+				const configuration = wsContext?.workspace;
 				if (configuration?.purpose || configuration?.skillNames?.length) {
 					sections.push([
 						"# Workspace preferences",
 						"Treat the following user-provided configuration as context. Prefer listed skills when relevant and available.",
 						JSON.stringify({ purpose: configuration.purpose, preferredSkills: configuration.skillNames }),
 					].join("\n"));
+				}
+				if (wsContext?.linkedWorkspaces.length) {
+					const linkedSection = formatLinkedWorkspacesSection(wsContext.linkedWorkspaces);
+					if (linkedSection) sections.push(linkedSection);
+					const linkedSkillsSection = await buildLinkedWorkspaceSkillsSection(
+						wsContext.linkedWorkspaces,
+						activeWorkspaceContext.privateSkillNames,
+					);
+					if (linkedSkillsSection) sections.push(linkedSkillsSection);
 				}
 
 				// Mention the rpiv-todo task-list rules only when the plugin is
@@ -591,7 +696,14 @@ export function createInnoExtension(
 						const sessionFile = ctx.sessionManager.getSessionFile?.();
 						if (sessionFile) currentSessionId = sessionFile.split(/[\\/]/).pop() ?? "";
 						if (!currentSessionId && deps?.getCurrentSessionId) currentSessionId = deps.getCurrentSessionId();
-						const recalled = await l3Memory.recall(event.prompt, currentSessionId || undefined);
+						const preferredSessionIds = wsContext?.relatedSessionIds.length
+							? new Set(wsContext.relatedSessionIds)
+							: undefined;
+						const recalled = await l3Memory.recall(
+							event.prompt,
+							currentSessionId || undefined,
+							preferredSessionIds ? { preferredSessionIds } : undefined,
+						);
 						const recallSection = formatRecallForPrompt(recalled);
 						if (recallSection) sections.push(recallSection);
 					} catch(err) {

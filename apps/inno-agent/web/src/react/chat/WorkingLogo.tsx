@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { memo, useId } from "react";
 import { useReducedMotion } from "motion/react";
 
 const CYCLE_DURATION = "4.4s";
@@ -102,7 +102,7 @@ function createStardust(): { particles: Particle[]; eroders: Particle[] } {
 const { particles: STARDUST, eroders: ERODERS } = createStardust();
 
 /** Animated curved-ribbon /A <-> AI morphing mark with lightweight stardust dissolve. */
-export function WorkingLogo({ className = "" }: { className?: string }) {
+export const WorkingLogo = memo(function WorkingLogo({ className = "" }: { className?: string }) {
 	const uid = useId().replace(/:/g, "");
 	const reduceMotion = useReducedMotion();
 	const maskLettersId = `inno-work-letters-${uid}`;
@@ -285,4 +285,4 @@ export function WorkingLogo({ className = "" }: { className?: string }) {
 			) : null}
 		</svg>
 	);
-}
+});

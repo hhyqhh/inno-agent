@@ -94,7 +94,7 @@
 		"importingAction": "导入中…",
 		"noMatchingSkills": "没有匹配的技能",
 		"clearSearch": "清除搜索",
-		"linksHint": "对话时可跨工作区引用资料"
+		"linksHint": "对话时可只读参考关联工作区的资料与私有技能"
 	},
   "officeEditor": {
       "copyName": "备份",
@@ -873,6 +873,7 @@
       }
     },
 		"title": "设置",
+		"aboutOverview": "运行概览",
 		"refresh": "刷新",
 		"loading": "正在加载设置…",
 		"stats": {
@@ -1088,34 +1089,53 @@
 				"confirm": "允许完全权限"
 			}
 		},
+		"navGroups": {
+			"basic": "基础",
+			"intelligence": "智能与能力",
+			"extensions": "连接与扩展",
+			"system": "系统"
+		},
+		"groups": {
+			"appearance": "外观与语言",
+			"appAndFormatting": "应用与排版",
+			"contextManagement": "上下文管理",
+			"agentCapabilities": "Agent 能力",
+			"webSearch": "联网检索",
+			"mediaAndContent": "多媒体与内容源"
+		},
+		"status": {
+			"configured": "已配置",
+			"notConfigured": "未配置",
+			"configuredCount": "{{count}} 个已配置"
+		},
 		"tabs": {
 			"general": "通用",
 			"lab": "实验室",
 			"models": "模型",
-			"memory": "记忆",
-			"integrations": "集成",
-			"channels": "渠道",
+			"memory": "记忆与上下文",
+			"integrations": "外部服务",
+			"channels": "消息渠道",
 			"mcp": "MCP",
 			"about": "关于"
 		},
 		"sections": {
 			"general": {
-				"desc": "外观与语言偏好",
+				"desc": "外观、语言与应用基础偏好",
 				"themeDesc": "选择界面配色主题",
 				"languageDesc": "切换界面显示语言",
 				"closeBehaviorDesc": "设置点击窗口关闭按钮时的处理方式；确认框中的“记住我的选择”会保存到这里，所有平台通用。"
 			},
 			"lab": {
-				"desc": "实验功能与便捷输入设置"
+				"desc": "实验性 Agent 能力与便捷输入设置"
 			},
 			"models": {
 				"desc": "配置模型提供商与默认模型"
 			},
 			"memory": {
-				"desc": "简单模式与分层记忆开关"
+				"desc": "分层记忆开关与长对话上下文管理"
 			},
 			"integrations": {
-				"desc": "内容源、OCR 与联网搜索等外部服务"
+				"desc": "联网搜索、OCR 与内容源等外部服务"
 			},
 			"channels": {
 				"desc": "飞书、微信等消息渠道接入"

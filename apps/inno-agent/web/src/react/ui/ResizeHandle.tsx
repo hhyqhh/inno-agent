@@ -40,6 +40,13 @@ export function ResizeHandle(props: ResizeHandleProps) {
 			latestClientX = event.clientX;
 			if (frame === 0) frame = requestAnimationFrame(() => applyMove(latestClientX));
 		};
+		const flushPendingMove = () => {
+			if (frame !== 0) {
+				cancelAnimationFrame(frame);
+				frame = 0;
+				applyMove(latestClientX);
+			}
+		};
 		const finish = (cancel: boolean, point: ResizePoint | null) => {
 			if (frame !== 0) {
 				cancelAnimationFrame(frame);
@@ -66,7 +73,20 @@ export function ResizeHandle(props: ResizeHandleProps) {
 		const cancel = (event: PointerEvent) => {
 			if (event.pointerId === start.current?.pointerId) finish(true, event);
 		};
-		const blur = () => finish(true, null);
+		// Chromium/Electron can drop pointer capture mid-drag while the button is
+		// still pressed, or deliver lostpointercapture without a preceding pointerup
+		// when releasing across regions. Keep dragging while pressed, and commit the
+		// latest dragged width instead of rolling back once released.
+		const lostCapture = (event: PointerEvent) => {
+			if (event.pointerId !== start.current?.pointerId) return;
+			if (event.buttons !== 0) return;
+			flushPendingMove();
+			finish(false, event);
+		};
+		const blur = () => {
+			flushPendingMove();
+			finish(false, null);
+		};
 		const key = (event: KeyboardEvent) => {
 			if (event.key === "Escape") { event.preventDefault(); finish(true, null); }
 		};
@@ -74,7 +94,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
 		window.addEventListener("pointermove", move);
 		window.addEventListener("pointerup", up);
 		window.addEventListener("pointercancel", cancel);
-		window.addEventListener("lostpointercapture", cancel);
+		window.addEventListener("lostpointercapture", lostCapture);
 		window.addEventListener("blur", blur);
 		window.addEventListener("keydown", key);
 		return () => {
@@ -83,7 +103,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
 			window.removeEventListener("pointermove", move);
 			window.removeEventListener("pointerup", up);
 			window.removeEventListener("pointercancel", cancel);
-			window.removeEventListener("lostpointercapture", cancel);
+			window.removeEventListener("lostpointercapture", lostCapture);
 			window.removeEventListener("blur", blur);
 			window.removeEventListener("keydown", key);
 			if (start.current) {

@@ -86,30 +86,31 @@ describe("compressObject", () => {
 describe("foldTraceFlow", () => {
 	const isText = (step: ChatTraceStep) => step.kind === "progress" || step.kind === "answer";
 	const flow = (steps: ChatTraceStep[]) => steps.map((step, index) => ({ step, index }));
-	const shape = (items: ReturnType<typeof foldTraceFlow>) => items.map((item) => item.type === "run" ? `run${item.members.length}` : "step");
+	const shape = (items: ReturnType<typeof foldTraceFlow>) =>
+		items.map((item) => item.type === "run" ? `run${item.members.length}:${item.isLiveTail ? "live" : "closed"}` : "step");
 
 	it("never merges a single step", () => {
 		expect(shape(foldTraceFlow(flow([tool("bash")]), true, isText))).toEqual(["step"]);
 	});
 
-	it("folds every run of two or more once the turn is finished", () => {
+	it("folds every run of two or more as closed once the turn is finished", () => {
 		expect(shape(foldTraceFlow(flow([tool("bash"), tool("read"), prose, tool("bash"), tool("bash"), tool("bash")]), true, isText)))
-			.toEqual(["run2", "step", "run3"]);
+			.toEqual(["run2:closed", "step", "run3:closed"]);
 	});
 
-	it("keeps the trailing run open while streaming, folding earlier runs once prose follows", () => {
+	it("marks the trailing run as a live rolling group while streaming and closes earlier runs once prose follows", () => {
 		expect(shape(foldTraceFlow(flow([tool("bash"), tool("read"), prose, tool("bash"), tool("bash")]), false, isText)))
-			.toEqual(["run2", "step", "step", "step"]);
-		expect(shape(foldTraceFlow(flow([tool("bash"), tool("read")]), false, isText))).toEqual(["step", "step"]);
+			.toEqual(["run2:closed", "step", "run2:live"]);
+		expect(shape(foldTraceFlow(flow([tool("bash"), tool("read")]), false, isText))).toEqual(["run2:live"]);
 	});
 
-	it("leaves open steps and question steps as their own rows", () => {
+	it("keeps question steps as standalone rows while grouping active steps into live runs", () => {
 		const running = tool("bash", undefined, { status: "running" });
 		const ask = tool("ask_user_question", undefined, { questionId: "q1" });
 		expect(isFoldableTraceStep(running)).toBe(false);
 		expect(isFoldableTraceStep(ask)).toBe(false);
 		expect(shape(foldTraceFlow(flow([tool("bash"), tool("read"), ask, tool("bash"), tool("read"), running]), true, isText)))
-			.toEqual(["run2", "step", "run2", "step"]);
+			.toEqual(["run2:closed", "step", "run3:live"]);
 	});
 });
 

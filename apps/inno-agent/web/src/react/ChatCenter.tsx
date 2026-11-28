@@ -238,6 +238,7 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 	}));
 	const workspaces = useStoreSnapshot(workspacesStore, () => ({
 		list: workspacesStore.workspaces,
+		hasLoaded: workspacesStore.hasLoaded,
 	}));
 	// Active workspace for the current session — drives upload target + button
 	// availability. Synced by sessionsStore on openSession/createSession, and
@@ -460,13 +461,8 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 	useEffect(() => {
 		if (isWelcome && wsMode === "existing" && wsExistingId) {
 			void workspaceStore.setActiveWorkspace(wsExistingId);
-			appStore.setRightPanelTab("preview");
-			if (appStore.workspaceMode === "collapsed" && sessions.preselectedWorkspaceId === wsExistingId) {
-				appStore.setWorkspaceWidth(300);
-				appStore.setWorkspaceMode("quarter");
-			}
 		}
-	}, [isWelcome, wsMode, wsExistingId, sessions.preselectedWorkspaceId]);
+	}, [isWelcome, wsMode, wsExistingId]);
 
 	const stickToBottomNow = useCallback(() => {
 		if (chat.isLoadingHistory || !shouldStickToBottomRef.current) return;
@@ -1536,7 +1532,7 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 				smartToast={smartToastNode}
 				composer={renderComposer(t("chat.welcomePlaceholder"))}
 				wsError={wsError}
-				shortcuts={<HomeShortcuts workspaces={workspaces.list} selectedId={selectedWorkspaceId}
+				shortcuts={<HomeShortcuts workspaces={workspaces.list} workspacesLoading={!workspaces.hasLoaded} selectedId={selectedWorkspaceId}
 					disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
 					onSelect={(workspaceId) => {
 						void handleWorkspaceChange({ kind: "workspace", workspaceId });

@@ -3,8 +3,8 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ResizeHandle } from "./ResizeHandle.js";
 
-function pointer(target: HTMLElement | Window, type: string, clientX: number, pointerId = 1) {
-	const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX, clientY: 100 });
+function pointer(target: HTMLElement | Window, type: string, clientX: number, pointerId = 1, buttons = 0) {
+	const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons, clientX, clientY: 100 });
 	Object.defineProperty(event, "pointerId", { value: pointerId });
 	fireEvent(target, event);
 }
@@ -66,15 +66,41 @@ describe("ResizeHandle", () => {
 		expect(handle.getAttribute("aria-valuenow")).toBe("346");
 	});
 
-	it.each(["Escape", "pointercancel", "lostpointercapture", "blur"])("restores the starting width on %s", (cancel) => {
+	it.each(["Escape", "pointercancel"])("restores the starting width on %s", (cancel) => {
 		render(<Splitter />);
 		const handle = screen.getByRole("separator", { name: "Resize" });
 		pointer(handle, "pointerdown", 300);
 		pointer(window, "pointermove", 360);
 		if (cancel === "Escape") fireEvent.keyDown(handle, { key: "Escape" });
-		else if (cancel === "pointercancel" || cancel === "lostpointercapture") pointer(window, cancel, 360);
-		else fireEvent.blur(window);
+		else pointer(window, cancel, 360);
 		expect(handle.getAttribute("aria-valuenow")).toBe("246");
+		expect(document.body.classList.contains("inno-ui-resizing-columns")).toBe(false);
+	});
+
+	it("keeps dragging when lostpointercapture fires while the button is still pressed", async () => {
+		render(<Splitter />);
+		const handle = screen.getByRole("separator", { name: "Resize" });
+		pointer(handle, "pointerdown", 300, 1, 1);
+		pointer(window, "pointermove", 360, 1, 1);
+		await flushFrame();
+		expect(handle.getAttribute("aria-valuenow")).toBe("306");
+		pointer(window, "lostpointercapture", 360, 1, 1);
+		expect(document.body.classList.contains("inno-ui-resizing-columns")).toBe(true);
+		expect(handle.getAttribute("aria-valuenow")).toBe("306");
+		pointer(window, "pointermove", 400, 1, 1);
+		pointer(window, "pointerup", 400, 1, 0);
+		expect(handle.getAttribute("aria-valuenow")).toBe("346");
+		expect(document.body.classList.contains("inno-ui-resizing-columns")).toBe(false);
+	});
+
+	it.each(["lostpointercapture", "blur"])("commits the latest dragged width on %s after release", (end) => {
+		render(<Splitter />);
+		const handle = screen.getByRole("separator", { name: "Resize" });
+		pointer(handle, "pointerdown", 300, 1, 1);
+		pointer(window, "pointermove", 360, 1, 1);
+		if (end === "lostpointercapture") pointer(window, "lostpointercapture", 360, 1, 0);
+		else fireEvent.blur(window);
+		expect(handle.getAttribute("aria-valuenow")).toBe("306");
 		expect(document.body.classList.contains("inno-ui-resizing-columns")).toBe(false);
 	});
 

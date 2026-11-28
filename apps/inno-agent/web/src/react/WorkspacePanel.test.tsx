@@ -589,20 +589,23 @@ describe("Workspace resize render and persistence cost", () => {
 		resizePointer(window, "pointerup", 760);
 	});
 
-	it.each(["pointerup", "Escape", "lostpointercapture"])("moves only the splitter and chrome for PPT until %s", async (ending) => {
+	it.each(["pointerup", "Escape", "lostpointercapture"])("live-resizes the shell in the safe area while pinning PPT content until %s", async (ending) => {
 		const view = render(<PersistentLayout />);
 		const viewport = await screen.findByRole("article", { name: "File preview" });
 		viewport.setAttribute("data-pptx-viewport", "");
+		const content = viewport.closest<HTMLElement>(".inno-ui-tab-panel")!;
 		const layout = view.container.firstElementChild as HTMLElement;
 		const chrome = document.createElement("div");
 		chrome.className = "inno-window-chrome";
 		layout.append(chrome);
 		const handle = screen.getByRole("separator", { name: "workspace.resize" });
 		resizePointer(handle, "pointerdown", 800);
+		// PPT inner viewport stays pinned during the drag so SVG/iframe avoids per-frame reflows.
+		expect(content.style.width).not.toBe("");
 		for (const x of [760, 845, 720]) {
 			resizePointer(window, "pointermove", x);
 			await flushFrame();
-			expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("520px");
+			expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe(`${520 + 800 - x}px`);
 			expect(layout.style.getPropertyValue("--inno-workspace-drag-left")).toBe("");
 			expect(chrome.style.getPropertyValue("--inno-workspace-drag-width")).toBe(`${520 + 800 - x}px`);
 		}
@@ -618,11 +621,12 @@ describe("Workspace resize render and persistence cost", () => {
 		expect(document.querySelector(".workspace-resize-preview")).toBeNull();
 		expect(layout.style.getPropertyValue("--inno-workspace-live-width")).toBe("");
 		expect(chrome.style.getPropertyValue("--inno-workspace-drag-left")).toBe("");
+		expect(content.style.width).toBe("");
 		expect(screen.getByRole("article", { name: "File preview" })).toBe(viewport);
 		expect(layout.getAttribute("data-width")).toBe(ending === "pointerup" ? "600" : "520");
 	});
 
-	it.each([440, 600])("holds the PPT viewport while the panel animates to the released width %i", async (targetWidth) => {
+	it.each([440, 600])("pins the PPT viewport during safe-area drag and adapts once on release to %i", async (targetWidth) => {
 		const view = render(<PersistentLayout />);
 		const preview = await screen.findByRole("article", { name: "File preview" });
 		preview.setAttribute("data-pptx-viewport", "");
@@ -632,16 +636,16 @@ describe("Workspace resize render and persistence cost", () => {
 		vi.spyOn(panel, "clientLeft", "get").mockReturnValue(1);
 		const handle = screen.getByRole("separator", { name: "workspace.resize" });
 		resizePointer(handle, "pointerdown", 800);
-		expect(content.style.width).toBe("");
+		expect(content.style.width).toBe("519px");
+		expect(panel.hasAttribute("data-animate-width")).toBe(false);
+
+		resizePointer(window, "pointermove", 800 + 520 - targetWidth);
+		await flushFrame();
+		expect(content.style.width).toBe("519px");
 
 		resizePointer(window, "pointerup", 800 + 520 - targetWidth);
 		expect(view.container.firstElementChild?.getAttribute("data-width")).toBe(String(targetWidth));
-		expect(panel.hasAttribute("data-animate-width")).toBe(true);
-		expect(content.style.width).toBe("max(519px, calc(var(--workspace-w) - 1px))");
-
-		const widthTransition = new Event("transitionend", { bubbles: true });
-		Object.defineProperty(widthTransition, "propertyName", { value: "width" });
-		fireEvent(panel, widthTransition);
+		expect(document.body.classList.contains("workspace-resizing")).toBe(false);
 		expect(content.style.width).toBe("");
 		expect(panel.hasAttribute("data-animate-width")).toBe(false);
 	});

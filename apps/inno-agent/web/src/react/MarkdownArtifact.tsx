@@ -219,8 +219,10 @@ export function MarkdownArtifact({ content, streaming = false, animate, compact 
 		compact,
 		className,
 	};
+	// Do not key the error boundary on `streaming`: flipping streaming from true
+	// to false when a turn settles must update Streamdown in place instead of
+	// unmounting/remounting code blocks, charts, and prose DOM.
 	const resetKey = [
-		streaming ? "streaming" : "static",
 		compact ? "compact" : "full",
 		hasMermaid ? (mermaidRuntime ? "mermaid-ready" : mermaidRuntimeFailed ? "mermaid-failed" : "mermaid-loading") : "plain",
 	].join("\u0000");

@@ -15,9 +15,9 @@ import {
 	Tooltip,
 	useUITransition,
 } from "../ui/index.js";
+import { ActiveAssistantTurn, type SettledAssistantBubbleProps } from "./ActiveAssistantTurn.js";
 import { MessageBubble } from "./MessageBubble.js";
 import { JobStreamBubbles } from "./JobStreamBubbles.js";
-import { StreamingBubbles } from "./StreamingBubbles.js";
 import { TodoWidget, extractTodoTasks } from "./TodoWidget.js";
 import { answeredQuestionnaireFromTool } from "../../utils/questionnaire.js";
 import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
@@ -148,35 +148,9 @@ export function ChatConversation({
 		}
 		return indexes;
 	}, [chat.messages, conversationTurns]);
-	// Finalizing a turn mounts the canonical assistant record (a full static
-	// markdown re-parse) in place of the live stream tree. Defer that swap to
-	// a transition-scheduled render so React can slice the expensive mount
-	// across frames while StreamingBubbles keeps showing the finished stream.
-	const liveTurn = chat.isSending || (chat.jobStreaming && chat.jobStreamInCurrentSession);
-	const settledLiveTurn = useDeferredValue(liveTurn);
-	const activeTurnStartMessage = settledLiveTurn ? conversationTurns.at(-1)?.startMessageIndex : undefined;
-	// The assistant record for a finished stream mounts at the same render the
-	// live trace unmounts; skip its entrance fade so the swap is seamless.
-	// Messages mounted any other way (e.g. switching conversations) still fade in.
-	const skipFadeKeysRef = useRef<Set<string>>(new Set());
-	const wasLiveTurnRef = useRef(liveTurn);
-	const knownKeysRef = useRef<Set<string>>(new Set());
-	const currentKeys = chat.messages.map((message, index) => `${message.timestamp}-${index}`);
-	// Fresh conversation load: none of the previously seen keys survive, so
-	// per-turn flags (skip fade, live body shape) must not leak across chats.
-	if (knownKeysRef.current.size > 0 && !currentKeys.some((key) => knownKeysRef.current.has(key))) {
-		skipFadeKeysRef.current.clear();
-	}
-	knownKeysRef.current = new Set(currentKeys);
-	if (wasLiveTurnRef.current && !liveTurn) {
-		for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
-			if (chat.messages[index]?.role === "assistant") {
-				skipFadeKeysRef.current.add(`${chat.messages[index].timestamp}-${index}`);
-				break;
-			}
-		}
-	}
-	wasLiveTurnRef.current = liveTurn;
+	const liveChatTurn = chat.isSending && !chat.jobStreamInCurrentSession;
+	const liveJobTurn = chat.jobStreaming && chat.jobStreamInCurrentSession;
+	const settledLiveJobTurn = useDeferredValue(liveJobTurn);
 	const traceTurnPresentation = useMemo(() => {
 		const coveredAssistantIndexes = new Set<number>();
 		const actionOwnerIndexes = new Set<number>();
@@ -204,6 +178,60 @@ export function ChatConversation({
 		}
 		return { coveredAssistantIndexes, actionOwnerIndexes, questionnairesByOwner };
 	}, [chat.messages, conversationTurns]);
+	const lastTurn = conversationTurns.at(-1);
+	const lastTurnStart = lastTurn?.startMessageIndex ?? null;
+	const lastTurnAssistantOwnerIndex = useMemo(() => {
+		if (!lastTurn) return -1;
+		for (let index = lastTurn.startMessageIndex; index <= lastTurn.endMessageIndex; index += 1) {
+			if (chat.messages[index]?.role === "assistant" && traceTurnPresentation.actionOwnerIndexes.has(index)) {
+				return index;
+			}
+		}
+		for (let index = lastTurn.endMessageIndex; index >= lastTurn.startMessageIndex; index -= 1) {
+			if (chat.messages[index]?.role === "assistant" && !traceTurnPresentation.coveredAssistantIndexes.has(index)) {
+				return index;
+			}
+		}
+		return -1;
+	}, [chat.messages, lastTurn, traceTurnPresentation]);
+	// Keep the active turn mounted under one stable slot key across live ->
+	// settled handoff (ZCode single-tree continuity) so prose, code blocks,
+	// charts, and collapsible process steps transition in place instead of
+	// unmounting/remounting when the turn finishes.
+	const [handedOffTurn, setHandedOffTurn] = useState<{ turnStart: number; ownerKey: string | null } | null>(null);
+	const handedOffKeysRef = useRef<Set<string>>(new Set());
+	const currentOwnerMessage = lastTurnAssistantOwnerIndex >= 0 ? chat.messages[lastTurnAssistantOwnerIndex] : undefined;
+	const currentOwnerKey = currentOwnerMessage
+		? `${currentOwnerMessage.entryId ?? currentOwnerMessage.timestamp}-${lastTurnAssistantOwnerIndex}`
+		: null;
+	useEffect(() => {
+		if (liveChatTurn && lastTurnStart !== null) {
+			setHandedOffTurn((prev) => (prev?.turnStart === lastTurnStart && prev.ownerKey === null ? prev : { turnStart: lastTurnStart, ownerKey: null }));
+			return;
+		}
+		if (!liveChatTurn && handedOffTurn !== null) {
+			if (lastTurnStart === null || lastTurnStart !== handedOffTurn.turnStart || !currentOwnerKey) {
+				setHandedOffTurn(null);
+				return;
+			}
+			if (handedOffTurn.ownerKey === null) {
+				handedOffKeysRef.current.add(currentOwnerKey);
+				setHandedOffTurn({ turnStart: handedOffTurn.turnStart, ownerKey: currentOwnerKey });
+			} else if (handedOffTurn.ownerKey !== currentOwnerKey) {
+				setHandedOffTurn(null);
+			}
+		}
+	}, [liveChatTurn, lastTurnStart, handedOffTurn, currentOwnerKey]);
+	const activeSlotTurnStart = liveChatTurn
+		? lastTurnStart
+		: (handedOffTurn !== null
+			&& handedOffTurn.turnStart === lastTurnStart
+			&& currentOwnerKey !== null
+			&& (handedOffTurn.ownerKey === null || handedOffTurn.ownerKey === currentOwnerKey)
+			? handedOffTurn.turnStart
+			: null);
+	const renderActiveSlot = liveChatTurn || activeSlotTurnStart !== null;
+	const activeTurnStartMessage = settledLiveJobTurn ? lastTurn?.startMessageIndex : undefined;
 	// The message that carries "regenerate": the last visible assistant record of
 	// the final turn. A trailing record folded into the trace timeline (e.g. a
 	// scheduler push merged into the previous turn) renders nothing, so anchoring
@@ -289,44 +317,77 @@ export function ChatConversation({
 						{(() => {
 							const channels = new Set(chat.messages.map((message) => message.channel).filter(Boolean));
 							const multiChannel = channels.size > 1;
-							return chat.messages.map((message, index) => {
-								const turnIndex = turnIndexByStartMessage.get(index);
-								const messageKey = `${message.timestamp}-${index}`;
-								if (message.role === "assistant" && traceTurnPresentation.coveredAssistantIndexes.has(index)) return null;
-								// The canonical assistant record can arrive just before the
-								// terminal stream event. Keep the live trace as the only
-								// visible representation until the turn is finalized, so the
-								// trace does not briefly duplicate or change its geometry.
-								if (settledLiveTurn && index === chat.messages.length - 1 && message.role === "assistant") return null;
-								const isActiveTurnAssistant = activeTurnStartMessage !== undefined && index >= activeTurnStartMessage && message.role === "assistant";
-								const isTurnActionOwner = lastAssistantMessageIndexes.has(index) || traceTurnPresentation.actionOwnerIndexes.has(index);
-								const showActions = message.role === "user" || (isTurnActionOwner && !isActiveTurnAssistant);
-								const documents = !isActiveTurnAssistant ? documentsByOwner.get(index) ?? [] : [];
-								return (
-									<div key={messageKey} data-conversation-turn={turnIndex} data-entry-id={message.entryId}>
-										<MessageBubble
-											message={message}
-											collapseUserToFirstLine={collapseUserMessages}
-											animateEntry={!skipFadeKeysRef.current.has(messageKey)}
-											liveBodies={skipFadeKeysRef.current.has(messageKey)}
-											showChannel={multiChannel}
-											resolveAttachmentUrl={resolveAttachmentUrl}
-											onOpenAttachment={onOpenAttachment}
+							let settledSlotProps: SettledAssistantBubbleProps | null = null;
+							if (renderActiveSlot && lastTurnAssistantOwnerIndex >= 0) {
+								const ownerMessage = chat.messages[lastTurnAssistantOwnerIndex]!;
+								const documents = documentsByOwner.get(lastTurnAssistantOwnerIndex) ?? [];
+								const isTurnActionOwner = lastAssistantMessageIndexes.has(lastTurnAssistantOwnerIndex)
+									|| traceTurnPresentation.actionOwnerIndexes.has(lastTurnAssistantOwnerIndex);
+								settledSlotProps = {
+									message: ownerMessage,
+									turnIndex: turnIndexByStartMessage.get(lastTurnAssistantOwnerIndex),
+									showChannel: multiChannel,
+									collapseUserToFirstLine: collapseUserMessages,
+									resolveAttachmentUrl,
+									onOpenAttachment,
+									onOpenSkill,
+									showRetry: canRetry && lastTurnAssistantOwnerIndex === retryOwnerIndex,
+									showActions: isTurnActionOwner,
+									answeredQuestionnaires: traceTurnPresentation.questionnairesByOwner.get(lastTurnAssistantOwnerIndex),
+									resultContent: onOpenDocument && documents.length ? <OfficeDocumentCards files={documents} onOpen={onOpenDocument} /> : undefined,
+									onRetry,
+								};
+							}
+							return (
+								<>
+									{chat.messages.map((message, index) => {
+										const turnIndex = turnIndexByStartMessage.get(index);
+										const messageKey = `${message.timestamp}-${index}`;
+										const entryKey = `${message.entryId ?? message.timestamp}-${index}`;
+										if (message.role === "assistant" && traceTurnPresentation.coveredAssistantIndexes.has(index)) return null;
+										// Assistant messages belonging to the active/just-settled turn are
+										// owned by ActiveAssistantTurn so live -> settled never unmounts.
+										if (activeSlotTurnStart !== null && index >= activeSlotTurnStart && message.role === "assistant") return null;
+										if (settledLiveJobTurn && index === chat.messages.length - 1 && message.role === "assistant") return null;
+										const isActiveTurnAssistant = activeTurnStartMessage !== undefined && index >= activeTurnStartMessage && message.role === "assistant";
+										const isTurnActionOwner = lastAssistantMessageIndexes.has(index) || traceTurnPresentation.actionOwnerIndexes.has(index);
+										const showActions = message.role === "user" || (isTurnActionOwner && !isActiveTurnAssistant);
+										const documents = !isActiveTurnAssistant ? documentsByOwner.get(index) ?? [] : [];
+										const wasHandedOff = handedOffKeysRef.current.has(entryKey);
+										return (
+											<div key={messageKey} data-conversation-turn={turnIndex} data-entry-id={message.entryId}>
+												<MessageBubble
+													message={message}
+													collapseUserToFirstLine={collapseUserMessages}
+													animateEntry={!wasHandedOff}
+													liveBodies={wasHandedOff}
+													showChannel={multiChannel}
+													resolveAttachmentUrl={resolveAttachmentUrl}
+													onOpenAttachment={onOpenAttachment}
+													onOpenSkill={onOpenSkill}
+													onEdit={chat.isSending || chat.pendingQuestion ? undefined : onEditMessage}
+													showRetry={canRetry && index === retryOwnerIndex}
+													showActions={showActions}
+													answeredQuestionnaires={traceTurnPresentation.questionnairesByOwner.get(index)}
+													resultContent={onOpenDocument && documents.length ? <OfficeDocumentCards files={documents} onOpen={onOpenDocument} /> : undefined}
+													onRetry={onRetry}
+												/>
+											</div>
+										);
+									})}
+									{renderActiveSlot ? (
+										<ActiveAssistantTurn
+											key={`active-turn:${activeSlotTurnStart ?? "pending"}`}
+											isLive={liveChatTurn}
+											settled={settledSlotProps}
 											onOpenSkill={onOpenSkill}
-												onEdit={chat.isSending || chat.pendingQuestion ? undefined : onEditMessage}
-											showRetry={canRetry && index === retryOwnerIndex}
-											showActions={showActions}
-											answeredQuestionnaires={traceTurnPresentation.questionnairesByOwner.get(index)}
-											resultContent={onOpenDocument && documents.length ? <OfficeDocumentCards files={documents} onOpen={onOpenDocument} /> : undefined}
-											onRetry={onRetry}
 										/>
-									</div>
-								);
-							});
+									) : null}
+								</>
+							);
 						})()}
 
-						{!chat.jobStreamInCurrentSession ? <StreamingBubbles onOpenSkill={onOpenSkill} holdCompleted={settledLiveTurn} /> : null}
-						<JobStreamBubbles holdCompleted={settledLiveTurn} />
+						<JobStreamBubbles holdCompleted={settledLiveJobTurn} />
 					</div>
 				</div>
 				<ConversationMinimap messages={chat.messages} scrollContainerRef={scrollRef} onNavigateStart={onPauseAutoScroll} />

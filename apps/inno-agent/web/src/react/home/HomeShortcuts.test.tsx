@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { homeShortcutsStore } from "../../stores/home-shortcuts-store.js";
 import { sessionsStore } from "../../stores/sessions-store.js";
@@ -35,9 +35,49 @@ describe("chat welcome shortcuts", () => {
 		expect(screen.getByRole("region", { name: "home.shortcuts" })).toBeTruthy();
 		expect(screen.getByText("home.empty")).toBeTruthy();
 		expect(screen.getByText("home.emptyAction")).toBeTruthy();
-		fireEvent.click(screen.getByText("home.empty"));
 		fireEvent.click(screen.getByRole("button", { name: "workspace.newWorkspace" }));
 		expect(onCreate).toHaveBeenCalledOnce();
+		fireEvent.click(screen.getByText("home.empty"));
+		const pickerDialog = screen.getByRole("dialog", { name: "home.addCard" });
+		expect(within(pickerDialog).queryByRole("button", { name: "workspace.newWorkspace" })).toBeNull();
+	});
+
+	it("renders skeleton cards instead of flashing empty state while workspaces are loading on cold start", () => {
+		homeShortcutsStore.update([
+			{ key: "workspace:ws-1", size: "standard" },
+			{ key: "workspace:ws-2", size: "wide" },
+		]);
+
+		const { container, rerender } = render(
+			<HomeShortcuts workspaces={[]} workspacesLoading selectedId={null} onSelect={vi.fn()} onEdit={vi.fn()} onCreate={vi.fn()} />,
+		);
+
+		expect(screen.queryByText("home.empty")).toBeNull();
+		const skeletons = container.querySelectorAll("[data-skeleton='true']");
+		expect(skeletons).toHaveLength(2);
+		expect(skeletons[1]?.getAttribute("data-size")).toBe("wide");
+
+		// Once workspaces load, skeletons resolve into actual cards.
+		rerender(
+			<HomeShortcuts
+				workspaces={[
+					{ id: "ws-1", name: "AI4Math", relPath: "ai4math", createdAt: "2026-11-20T00:00:00.000Z", updatedAt: "2026-11-28T00:00:00.000Z", isTemp: false },
+				]}
+				workspacesLoading={false}
+				selectedId={null}
+				onSelect={vi.fn()}
+				onEdit={vi.fn()}
+				onCreate={vi.fn()}
+			/>,
+		);
+		expect(container.querySelectorAll("[data-skeleton='true']")).toHaveLength(0);
+		expect(screen.getByText("AI4Math")).toBeTruthy();
+
+		// If none of the pinned workspaces exist after loading finishes, fall back to empty state.
+		rerender(
+			<HomeShortcuts workspaces={[]} workspacesLoading={false} selectedId={null} onSelect={vi.fn()} onEdit={vi.fn()} onCreate={vi.fn()} />,
+		);
+		expect(screen.getByText("home.empty")).toBeTruthy();
 	});
 
 	it("shows the latest conversation on unconfigured workspace cards and filters grouped picker items", () => {

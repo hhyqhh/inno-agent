@@ -62,7 +62,7 @@ import {
 	Languages,
 } from "lucide-react";
 import { appStore, type AppPage } from "../stores/app-store.js";
-import { CHAT_ONLY_BP, canOpenWorkspaceBesideSidebar, DESKTOP_SIDEBAR_MIN_WIDTH, getEffectiveWorkspaceWidth, getMaximumSidebarWidth, WORKSPACE_DEFAULT_WIDTH } from "../stores/app-layout.js";
+import { CHAT_ONLY_BP, DESKTOP_SIDEBAR_MIN_WIDTH, getEffectiveWorkspaceWidth, getMaximumSidebarWidth, WORKSPACE_DEFAULT_WIDTH } from "../stores/app-layout.js";
 import { chatStore } from "../stores/chat-store.js";
 import { sessionsStore } from "../stores/sessions-store.js";
 import { workspacesStore } from "../stores/workspaces-store.js";
@@ -89,7 +89,7 @@ export function startNewChat(): void {
 		appStore.setPage("chat");
 		appStore.setRightPanelTab("preview");
 		appStore.setWorkspaceMode("collapsed");
-		if (typeof window !== "undefined" && window.matchMedia(`(max-width: ${CHAT_ONLY_BP}px)`).matches) {
+		if (typeof window !== "undefined" && !window.innoDesktop && window.matchMedia(`(max-width: ${CHAT_ONLY_BP}px)`).matches) {
 			appStore.setSidebarCollapsed(true);
 		}
 	})();
@@ -1296,48 +1296,25 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, onPre
 		void workspaceStore.setActiveWorkspace(group.id);
 	}, []);
 
-	// Start a new chat pre-bound to this workspace → preview its files (quarter, tree only).
+	// Start a new chat pre-bound to this workspace without auto-opening the
+	// right file panel or collapsing the desktop session sidebar.
 	const newChatIn = useCallback((group: WsGroup) => {
 		appStore.setPage("chat");
 		sessionsStore.beginNewSessionIn(group.id);
 		void workspaceStore.setActiveWorkspace(group.id);
-		// At narrow widths the composer for the fresh chat matters more than a
-		// file preview; leave the workspace panel closed (chat-first).
-		if (typeof window !== "undefined" && window.matchMedia(`(max-width: ${CHAT_ONLY_BP}px)`).matches) {
+		// Only narrow browser layouts render the sidebar as a scrim overlay drawer.
+		if (!isDesktopWindow && typeof window !== "undefined" && window.matchMedia(`(max-width: ${CHAT_ONLY_BP}px)`).matches) {
 			appStore.setSidebarCollapsed(true);
-			return;
 		}
-		appStore.setRightPanelTab("preview");
-		appStore.setWorkspaceWidth(300);
-		appStore.setWorkspaceMode("quarter");
-	}, []);
+	}, [isDesktopWindow]);
 
-	// Open a session → preview its workspace files (quarter, tree only).
+	// Open a session without auto-opening the right file panel or collapsing
+	// the desktop session sidebar at narrow window widths.
 	const openSession = useCallback((session: SessionMeta) => {
 		appStore.setPage("chat");
-		// Drawer navigation at narrow widths: close the drawer and show the
-		// conversation. The workspace preview stays closed — at this width it
-		// only exists as an explicit full-screen overlay.
-		if (typeof window !== "undefined" && window.matchMedia(`(max-width: ${CHAT_ONLY_BP}px)`).matches) {
+		// Only narrow browser layouts render the sidebar as a scrim overlay drawer.
+		if (!isDesktopWindow && typeof window !== "undefined" && window.matchMedia(`(max-width: ${CHAT_ONLY_BP}px)`).matches) {
 			appStore.setSidebarCollapsed(true);
-			void sessionsStore.openSession(session.id);
-			return;
-		}
-		const workspaceWasCollapsed = appStore.workspaceMode === "collapsed";
-		// At the narrowest split layout, opening the preview would make the
-		// layout hide the session sidebar to reclaim its width. Keep both the
-		// current conversation and the session list accessible in that case.
-		const canOpenWorkspace = appStore.workspaceMode !== "collapsed"
-			|| typeof window === "undefined"
-			|| appStore.sidebarCollapsed
-			|| canOpenWorkspaceBesideSidebar(window.innerWidth, 300, isDesktopWindow, appStore.sidebarWidth);
-		if (canOpenWorkspace) {
-			appStore.setRightPanelTab("preview");
-			// 300px is the default only when opening the workspace from its
-			// collapsed state. Switching conversations must preserve a width the
-			// user already chose instead of nudging the panel narrower each time.
-			if (workspaceWasCollapsed) appStore.setWorkspaceWidth(300);
-			appStore.setWorkspaceMode("quarter");
 		}
 		void sessionsStore.openSession(session.id);
 	}, [isDesktopWindow]);

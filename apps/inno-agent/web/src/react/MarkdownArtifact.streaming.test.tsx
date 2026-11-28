@@ -93,6 +93,15 @@ describe("streaming code block stability", () => {
 		expect(container.querySelector("[data-inno-code-body]")).toBe(body);
 	});
 
+	it("keeps the code body mounted when streaming transitions to static", async () => {
+		const { container, rerender } = render(<MarkdownArtifact content={PYTHON_REPLY} streaming />);
+		const body = container.querySelector("[data-inno-code-body]");
+
+		expect(body).not.toBeNull();
+		rerender(<MarkdownArtifact content={PYTHON_REPLY} streaming={false} />);
+		expect(container.querySelector("[data-inno-code-body]")).toBe(body);
+	});
+
 	it("keeps run code as a primary Python toolbar action", () => {
 		const { container, getByRole, queryByRole } = render(<MarkdownArtifact content={PYTHON_REPLY} />);
 		const runButton = getByRole("button", { name: "运行代码" });

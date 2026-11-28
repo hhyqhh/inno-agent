@@ -24,6 +24,12 @@ export interface RecallOptions {
 	limit?: number;
 	/** Session id to exclude from results (the active conversation). */
 	excludeSessionId?: string;
+	/**
+	 * Session IDs belonging to the active workspace or its linked workspaces.
+	 * Hits still must clear `threshold`, but receive a slight ranking boost so
+	 * workspace-scoped history ranks ahead of equally-matched unrelated sessions.
+	 */
+	preferredSessionIds?: ReadonlySet<string>;
 }
 
 export interface RecallResult {
@@ -37,6 +43,8 @@ export interface RecallResult {
 
 const DEFAULT_THRESHOLD = 0.5;
 const DEFAULT_LIMIT = 4;
+/** Slight ranking boost for sessions in the active or linked workspaces. */
+const PREFERRED_SESSION_BOOST = 0.15;
 /** Trim each injected snippet so the prompt stays compact. */
 const SNIPPET_MAX_CHARS = 320;
 
@@ -88,11 +96,16 @@ export function recall(store: L3Store | null, query: string, opts: RecallOptions
 	// Over-fetch candidates by bm25, then gate by absolute token coverage.
 	const raw: L3SearchHit[] = store.searchLexical(q, Math.max(limit * 4, 16));
 
+	const preferred = opts.preferredSessionIds;
 	const scored = raw
-		.map((hit) => ({ hit, score: coverage(queryTokens, hit.text) }))
+		.map((hit) => {
+			const score = coverage(queryTokens, hit.text);
+			const rankScore = score + (preferred?.has(hit.sessionId) ? PREFERRED_SESSION_BOOST : 0);
+			return { hit, score, rankScore };
+		})
 		.filter(({ score }) => score >= threshold)
-		// Higher coverage first; bm25 (more negative) breaks ties.
-		.sort((a, b) => (b.score - a.score) || (a.hit.bm25 - b.hit.bm25));
+		// Higher (boosted) relevance first; bm25 (more negative) breaks ties.
+		.sort((a, b) => (b.rankScore - a.rankScore) || (a.hit.bm25 - b.hit.bm25));
 
 	const seen = new Set<string>();
 	const results: RecallResult[] = [];

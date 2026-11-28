@@ -197,7 +197,7 @@ describe("Desktop sidebar message/file navigation", () => {
 		else if (end === "blur") fireEvent.blur(window);
 		else pointer(window, end, 380);
 		expect(onResizingChange.mock.calls).toEqual([[true], [false]]);
-		expect(appStore.sidebarWidth).toBe(end === "pointerup" ? 326 : 246);
+		expect(appStore.sidebarWidth).toBe(end === "pointerup" || end === "blur" ? 326 : 246);
 		expect(document.body.classList.contains("inno-ui-resizing-columns")).toBe(false);
 	});
 
@@ -287,5 +287,87 @@ describe("Desktop sidebar message/file navigation", () => {
 		expect(appStore.page).toBe("chat");
 		expect(appStore.sidebarCollapsed).toBe(true);
 		expect(onPreviewFile).toHaveBeenCalledWith(560);
+	});
+
+	it("keeps the left session sidebar open and right file sidebar collapsed when opening a workspace conversation in a narrow desktop window", () => {
+		vi.stubGlobal("innerWidth", 900);
+		vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+		const openSessionSpy = vi.spyOn(sessionsStore, "openSession").mockResolvedValue(undefined);
+		workspacesStore.workspaces = [{
+			id: "ws-1",
+			name: "Demo Workspace",
+			path: "/tmp/demo",
+			kind: "directory",
+			createdAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-01T00:00:00.000Z",
+		} as any];
+		sessionsStore.sessions = [{
+			id: "sess-1",
+			name: "Workspace Chat",
+			workspaceId: "ws-1",
+			channels: [],
+			createdAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-01T00:00:00.000Z",
+		} as any];
+
+		render(<Layout />);
+		fireEvent.click(screen.getAllByText("Workspace Chat")[0]);
+
+		expect(openSessionSpy).toHaveBeenCalledWith("sess-1");
+		expect(appStore.sidebarCollapsed).toBe(false);
+		expect(appStore.workspaceMode).toBe("collapsed");
+		openSessionSpy.mockRestore();
+	});
+
+	it("does not auto-open the right file sidebar when opening a workspace conversation in a wide desktop window", () => {
+		vi.stubGlobal("innerWidth", 1600);
+		const openSessionSpy = vi.spyOn(sessionsStore, "openSession").mockResolvedValue(undefined);
+		workspacesStore.workspaces = [{
+			id: "ws-1",
+			name: "Demo Workspace",
+			path: "/tmp/demo",
+			kind: "directory",
+			createdAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-01T00:00:00.000Z",
+		} as any];
+		sessionsStore.sessions = [{
+			id: "sess-1",
+			name: "Workspace Chat",
+			workspaceId: "ws-1",
+			channels: [],
+			createdAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-01T00:00:00.000Z",
+		} as any];
+
+		render(<Layout />);
+		fireEvent.click(screen.getAllByText("Workspace Chat")[0]);
+
+		expect(openSessionSpy).toHaveBeenCalledWith("sess-1");
+		expect(appStore.sidebarCollapsed).toBe(false);
+		expect(appStore.workspaceMode).toBe("collapsed");
+		openSessionSpy.mockRestore();
+	});
+
+	it("keeps the left session sidebar open and right file sidebar collapsed when starting a new chat in a workspace", () => {
+		vi.stubGlobal("innerWidth", 900);
+		vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+		const beginNewSessionSpy = vi.spyOn(sessionsStore, "beginNewSessionIn").mockImplementation(() => {});
+		workspacesStore.workspaces = [{
+			id: "ws-1",
+			name: "Demo Workspace",
+			path: "/tmp/demo",
+			kind: "directory",
+			createdAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-01T00:00:00.000Z",
+		} as any];
+		sessionsStore.sessions = [];
+
+		render(<Layout />);
+		fireEvent.click(screen.getByRole("button", { name: "sidebar.newChatInWorkspace" }));
+
+		expect(beginNewSessionSpy).toHaveBeenCalledWith("ws-1");
+		expect(appStore.sidebarCollapsed).toBe(false);
+		expect(appStore.workspaceMode).toBe("collapsed");
+		beginNewSessionSpy.mockRestore();
 	});
 });

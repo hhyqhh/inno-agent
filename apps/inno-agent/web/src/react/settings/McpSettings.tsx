@@ -6,7 +6,7 @@ import { mcpStore } from "../../stores/mcp-store.js";
 import { useStoreSnapshot } from "../hooks.js";
 import type { InnoSettings } from "../../types/settings.js";
 import type { McpServerEntry, McpServerView, McpServerRuntimeStatus } from "../../types/mcp.js";
-import { Button, IconButton, Input, Select, SelectContent, SelectOption, SelectTrigger, SelectValue, Switch, Textarea, Tooltip } from "../ui/index.js";
+import { Button, IconButton, Input, SegmentedControl, Select, SelectContent, SelectOption, SelectTrigger, SelectValue, Switch, Textarea, Tooltip } from "../ui/index.js";
 import { SettingsSection, SettingsCard, SettingsRow } from "./primitives.js";
 
 /* ---------- Master switch ---------- */
@@ -29,11 +29,10 @@ function McpMasterCard({ settings }: { settings: InnoSettings }) {
 			<SettingsRow
 				label={t("settings.mcp.masterTitle")}
 				description={enabled ? t("settings.mcp.masterOnDesc") : t("settings.mcp.masterOffDesc")}
+				hint={restartPending ? t("settings.mcp.restartHint") : undefined}
+				hintTone="warning"
 				control={<Switch checked={enabled} onChange={(v) => void settingsStore.saveMcp(v)} disabled={isSavingMcp} />}
 			/>
-			{restartPending ? (
-				<p className="mt-2 text-xs text-[var(--inno-warning)]">{t("settings.mcp.restartHint")}</p>
-			) : null}
 		</SettingsCard>
 	);
 }
@@ -187,17 +186,14 @@ function ServerForm({
 		: form.name.trim().length > 0 && (form.transport === "stdio" ? form.command.trim().length > 0 : form.url.trim().length > 0);
 
 	return (
-		<div className="grid gap-2.5 rounded-md border border-[var(--inno-border)] p-3">
+		<div className="grid gap-3 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface-muted)]/35 p-3.5">
 			<div className="flex items-center justify-between gap-2">
 				<h5 className="text-sm font-medium text-[var(--inno-text)]">
 					{editing ? t("settings.mcp.editServer") : t("settings.mcp.addServer")}
 				</h5>
-				<button
-					onClick={toggleJsonMode}
-					className="text-xs text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]"
-				>
+				<Button variant="ghost" size="xs" onClick={toggleJsonMode}>
 					{form.jsonMode ? t("settings.mcp.formMode") : t("settings.mcp.jsonMode")}
-				</button>
+				</Button>
 			</div>
 
 			<Input
@@ -219,16 +215,16 @@ function ServerForm({
 				/>
 			) : (
 				<>
-					<div className="flex flex-wrap items-center gap-1.5">
-						{(["stdio", "http"] as Transport[]).map((tr) => (
-							<button
-								key={tr}
-								onClick={() => patch({ transport: tr })}
-								className={`flex h-8 items-center rounded-md border px-2.5 text-sm ${form.transport === tr ? "border-[var(--inno-accent)] bg-[var(--inno-accent-soft)] text-[var(--inno-accent)]" : "border-[var(--inno-border)] text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)]"}`}
-							>
-								{tr === "stdio" ? t("settings.mcp.transportStdio") : t("settings.mcp.transportHttp")}
-							</button>
-						))}
+					<div>
+						<SegmentedControl
+							value={form.transport}
+							onValueChange={(tr) => patch({ transport: tr })}
+							ariaLabel={t("settings.mcp.addServer")}
+							items={[
+								{ value: "stdio", label: t("settings.mcp.transportStdio") },
+								{ value: "http", label: t("settings.mcp.transportHttp") },
+							]}
+						/>
 					</div>
 
 					{form.transport === "stdio" ? (
@@ -403,22 +399,24 @@ function ServerRow({ view, onEdit }: { view: McpServerView; onEdit: () => void }
 					</p>
 				) : null}
 				{confirmDelete ? (
-					<div className="mt-2 flex items-center gap-2">
+					<div className="mt-2 flex flex-wrap items-center gap-2">
 						<span className="text-xs text-[var(--inno-danger)]">{t("settings.mcp.deleteConfirm", { name: view.name })}</span>
-						<button
+						<Button
+							variant="danger"
+							size="xs"
 							disabled={busy}
 							onClick={() => void handleDelete()}
-							className="flex h-6 items-center rounded border border-[var(--inno-danger)] px-2 text-xs text-[var(--inno-danger)] hover:bg-[var(--inno-surface-muted)]"
 						>
 							{t("common.delete")}
-						</button>
-						<button
+						</Button>
+						<Button
+							variant="secondary"
+							size="xs"
 							disabled={busy}
 							onClick={() => setConfirmDelete(false)}
-							className="flex h-6 items-center rounded border border-[var(--inno-border)] px-2 text-xs text-[var(--inno-text-muted)] hover:text-[var(--inno-text)]"
 						>
 							{t("common.cancel")}
-						</button>
+						</Button>
 					</div>
 				) : null}
 			</div>

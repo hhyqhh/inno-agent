@@ -1955,6 +1955,11 @@ inno-app-shell {
 	transition: none;
 }
 
+/* Prevent the PPTist iframe from stealing pointer events while dragging the splitter. */
+.workspace-resizing [data-pptx-viewport] iframe {
+	pointer-events: none;
+}
+
 /* Only animate PPT panel widths when the document viewport is pinned, on
    splitter release or a mode change. Other width changes apply immediately. */
 :is(.app-layout--workspace-half, .app-layout--workspace-quarter):has(.workspace-panel:not([data-animate-width]) [data-pptx-viewport]:not([inert] *)) {
@@ -4148,9 +4153,17 @@ inno-workspace-panel textarea {
 .inno-trace-timeline {
 	width: 100%;
 	min-width: 0;
-	margin: 4px 0 16px;
+	/* Keep bottom margin compact (8px) so trailing document cards and the
+	   message action bar sit close to the final prose paragraph. */
+	margin: 4px 0 8px;
 	color: var(--inno-text-muted);
 	font-size: 13px;
+}
+
+.inno-trace-settled-header {
+	padding-bottom: 8px;
+	margin-bottom: 8px;
+	border-bottom: 1px solid color-mix(in srgb, var(--inno-border) 65%, transparent);
 }
 
 .inno-trace-work-status {
@@ -4158,11 +4171,45 @@ inno-workspace-panel textarea {
 	align-items: center;
 	gap: 6px;
 	min-width: 0;
-	padding: 2px 0 6px;
+	padding: 3px 0;
 	color: var(--inno-text-subtle);
 	font-size: 13px;
-	line-height: 1.75;
+	line-height: 1.55;
 	font-variant-numeric: tabular-nums;
+}
+
+.inno-trace-settled-header > .inno-trace-work-status {
+	margin: 0;
+	padding: 2px 0;
+}
+
+/* Bottom running indicator (ZCode ChatLoading slot): sits below all live
+   work rows and prose, keeping the top clean while streaming. */
+.inno-trace-live-footer {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	margin-top: 8px;
+	padding: 3px 0;
+	color: var(--inno-text-subtle);
+	font-size: 13px;
+	line-height: 1.55;
+	font-variant-numeric: tabular-nums;
+}
+
+.inno-trace-work-duration {
+	color: var(--inno-text-subtle);
+	font-variant-numeric: tabular-nums;
+}
+
+.inno-trace-collapsible {
+	overflow: hidden;
+	min-width: 0;
+}
+
+.inno-trace-collapsible-inner {
+	min-width: 0;
 }
 
 .inno-trace-working-logo {
@@ -4170,6 +4217,8 @@ inno-workspace-panel textarea {
 	width: 22px;
 	height: 17px;
 	color: var(--inno-text);
+	/* Isolate SMIL particle repaints from surrounding streaming text layers. */
+	contain: layout style paint;
 }
 
 /* WorkBuddy-style completed header: plain tertiary text + a 12px chevron,
@@ -4203,27 +4252,43 @@ inno-workspace-panel textarea {
 }
 
 .inno-trace-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
 	min-width: 0;
 }
 
 /* The ordered trace flow contains both process rows and ordinary assistant
    Markdown blocks. Text has no row chrome so it remains normal body content. */
 .inno-trace-flow {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
 	min-width: 0;
 }
 
 .inno-trace-body {
 	min-width: 0;
 	max-width: 100%;
-	margin: 4px 0 16px;
+	margin: 4px 0 12px;
 	color: var(--inno-text);
 	font-size: 13px;
 	line-height: 1.625;
 }
 
-/* Give the first body block after the process rows a readable breathing gap. */
-.inno-trace-row + .inno-trace-body {
-	margin-top: 14px;
+/* Flex .inno-trace-flow disables margin collapsing; zero out the final body's
+   bottom margin so it does not stack with .inno-trace-timeline's margin and
+   push document cards / timestamps away from the prose. */
+.inno-trace-flow > .inno-trace-body:last-child,
+.inno-trace-fallback-body > .inno-trace-body:last-child {
+	margin-bottom: 0;
+}
+
+/* Give the first body block after process rows or collapsed runs a readable gap. */
+.inno-trace-row + .inno-trace-body,
+.inno-trace-run + .inno-trace-body,
+.inno-trace-collapsible + .inno-trace-body {
+	margin-top: 10px;
 }
 
 .inno-trace-fallback-body {
@@ -4245,9 +4310,83 @@ inno-workspace-panel textarea {
 	min-width: 0;
 }
 
-.inno-trace-run-members {
+.inno-trace-run-scroll {
+	max-height: 280px;
+	overflow-y: auto;
 	min-width: 0;
-	padding: 2px 0 4px 22px;
+	margin-top: 4px;
+}
+
+/* Single shared vertical guide rail for consecutive process runs:
+   aligns under the 14px header icon center (7px) while preserving every
+   member row's leading icon and consistent 2px vertical rhythm. */
+.inno-trace-run-members {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+	margin-left: 7px;
+	padding: 2px 0 4px 14px;
+}
+
+.inno-trace-run-members::before {
+	content: "";
+	position: absolute;
+	inset-block: 2px;
+	left: 0;
+	border-left: 1px solid var(--inno-border);
+}
+
+.inno-trace-run-members .inno-trace-row-details {
+	margin: 2px 0 8px 7px;
+	padding: 2px 0 2px 14px;
+}
+
+.inno-trace-roll,
+.inno-trace-roll-static {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	min-width: 0;
+	max-width: 100%;
+	overflow: hidden;
+	vertical-align: middle;
+}
+
+.inno-trace-roll-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	max-width: 100%;
+}
+
+.inno-trace-run-preview {
+	flex: 0 1 auto;
+	min-width: 0;
+}
+
+.inno-trace-run-preview-line {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	max-width: 100%;
+}
+
+.inno-trace-streaming-line {
+	flex: 1 1 0%;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	color: var(--inno-text-subtle);
+	opacity: 0.78;
+}
+
+.inno-trace-streaming-text {
+	display: inline-block;
+	min-width: max-content;
 }
 
 .inno-trace-row.is-system {
@@ -4266,12 +4405,12 @@ inno-workspace-panel textarea {
 	width: fit-content;
 	max-width: 100%;
 	min-width: 0;
-	padding: 2px 0;
+	padding: 3px 0;
 	border: 0;
 	background: transparent;
 	color: var(--inno-text-subtle);
 	font: inherit;
-	line-height: 1.75;
+	line-height: 1.55;
 	text-align: left;
 	cursor: pointer;
 }
@@ -4314,6 +4453,10 @@ inno-workspace-panel textarea {
 	white-space: nowrap;
 	overflow-wrap: normal;
 	word-break: normal;
+}
+
+.inno-trace-row-title.is-fixed-label {
+	flex: 0 0 auto;
 }
 
 /* Merged summary lines can be long; WorkBuddy caps them at 520px. */
@@ -4396,8 +4539,23 @@ inno-workspace-panel textarea {
 	overflow: hidden;
 }
 
+.inno-trace-thinking-scroll {
+	max-height: 240px;
+	overflow-y: auto;
+	min-width: 0;
+}
+
 .inno-trace-thinking {
 	white-space: normal;
+}
+
+.inno-trace-thinking.is-live-plain {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.inno-trace-raw-collapse-pad {
+	padding-top: 8px;
 }
 
 .inno-trace-thinking .inno-markdown {
@@ -4534,7 +4692,8 @@ inno-workspace-panel textarea {
 	animation: inno-trace-spin 1s linear infinite;
 }
 
-.inno-trace-row-title.is-shimmering {
+.inno-trace-row-title.is-shimmering,
+.inno-trace-live-label.is-shimmering {
 	/* Keep the real labels opaque. The moving highlight only covers the
 	   active title span below, so details never shimmer or disappear. */
 	color: var(--inno-text-muted);
@@ -4560,12 +4719,14 @@ inno-workspace-panel textarea {
 	inset: 0;
 	pointer-events: none;
 	color: transparent;
+	/* High-contrast highlight sweep: light theme washes muted text toward surface
+	   brightness (--inno-background); dark theme sweeps bright --inno-text highlight. */
 	background-image: linear-gradient(105deg,
-		transparent 40%,
-		color-mix(in srgb, var(--inno-text-muted) 24%, white) 50%,
-		transparent 60%);
+		transparent 30%,
+		color-mix(in srgb, var(--inno-background) 78%, transparent) 50%,
+		transparent 70%);
 	background-position: 140% 0;
-	background-size: 140% 100%;
+	background-size: 240% 100%;
 	background-repeat: no-repeat;
 	background-clip: text;
 	-webkit-background-clip: text;
@@ -4576,7 +4737,14 @@ inno-workspace-panel textarea {
 	overflow-wrap: inherit;
 	word-break: inherit;
 	will-change: background-position;
-	animation: inno-trace-shimmer 2s linear infinite;
+	animation: inno-trace-shimmer 2.4s linear infinite;
+}
+
+:root[data-theme="dark"] .inno-trace-title-shimmer {
+	background-image: linear-gradient(105deg,
+		transparent 30%,
+		color-mix(in srgb, var(--inno-text) 85%, transparent) 50%,
+		transparent 70%);
 }
 
 .inno-latest-row {
@@ -4617,8 +4785,8 @@ inno-workspace-panel textarea {
 }
 
 @keyframes inno-trace-shimmer {
-	0%, 8% { background-position: 140% 0; }
-	88%, 100% { background-position: -140% 0; }
+	0% { background-position: 140% 0; }
+	65%, 100% { background-position: -140% 0; }
 }
 
 @keyframes inno-mermaid-loading-spin {
@@ -6109,6 +6277,11 @@ inno-workspace-panel textarea {
 	user-select: none !important;
 }
 
+/* Prevent embedded iframes from stealing pointer events if capture is dropped mid-drag. */
+.inno-ui-resizing-columns iframe {
+	pointer-events: none !important;
+}
+
 /* The sidebar, title and divider share the live width. The title's padding
    and divider's left must skip the collapse tween along with the body. */
 .inno-ui-resizing-columns .app-layout--desktop > .inno-desktop-sidebar,
@@ -7356,13 +7529,14 @@ button.inno-smart-ref-chip:hover {
 	font-weight: inherit;
 	letter-spacing: inherit;
 }
+/* Keep the mirrored selection flush with inline text boxes: expanding it via
+   spread box-shadow makes adjacent selected lines (and neighboring keyword
+   spans) overlap by several pixels on 20px line-height CJK text, doubling the
+   translucent --inno-selection-bg alpha into dark bands. */
 .inno-smart-selection {
 	background: var(--inno-selection-bg, rgba(37, 99, 235, 0.16));
-	border-radius: 2px;
-	/* Paint the leading between line boxes without changing text metrics. */
 	box-decoration-break: clone;
 	-webkit-box-decoration-break: clone;
-	box-shadow: 0 0 0 3px var(--inno-selection-bg, rgba(37, 99, 235, 0.16));
 }
 /* Slot tokens reserve the textarea width for the overlaid bubble, but must
    not be painted as raw token text beneath it. */

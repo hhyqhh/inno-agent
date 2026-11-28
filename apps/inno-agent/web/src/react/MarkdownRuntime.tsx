@@ -1,4 +1,4 @@
-import { useId, useMemo } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
@@ -159,6 +159,15 @@ const MERMAID_OPTIONS = {
 	},
 } as const;
 const MAX_ANIMATED_CONTENT_LENGTH = 64 * 1024;
+// Allow the trailing characters' fadeIn animation (180ms + stagger backlog)
+// to finish naturally after streaming ends instead of snapping to full opacity.
+const STREAM_ANIMATION_SETTLE_MS = 360;
+
+function prefersReducedMotion(): boolean {
+	return typeof window !== "undefined"
+		&& typeof window.matchMedia === "function"
+		&& window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 export function MarkdownRuntime({ content, streaming = false, animate, compact = false, className, mermaidPlugin }: MarkdownRuntimeProps) {
 	const { t } = useTranslation();
@@ -197,10 +206,31 @@ export function MarkdownRuntime({ content, streaming = false, animate, compact =
 		zoomOut: t("markdown.zoomOut", "缩小"),
 		resetView: t("markdown.resetView", "重置视图"),
 	}), [t]);
-	const shouldAnimate = (animate ?? streaming) && content.length <= MAX_ANIMATED_CONTENT_LENGTH;
+	const requestedAnimate = (animate ?? streaming) && content.length <= MAX_ANIMATED_CONTENT_LENGTH;
+	// Once an instance has rendered in streaming mode, keep Streamdown's
+	// block-level streaming DOM shape so settling never unmounts/remounts
+	// code blocks or diagrams on a mode="streaming" -> "static" flip.
+	const everStreamedRef = useRef(streaming);
+	if (streaming) everStreamedRef.current = true;
+	const [settledGeneration, setSettledGeneration] = useState(0);
+	const settleGenerationRef = useRef(0);
+	const wasAnimatingRef = useRef(requestedAnimate);
+	const justStoppedAnimating = wasAnimatingRef.current && !requestedAnimate && !prefersReducedMotion();
+	if (justStoppedAnimating) {
+		settleGenerationRef.current += 1;
+	}
+	wasAnimatingRef.current = requestedAnimate;
+	const isSettling = !requestedAnimate && settleGenerationRef.current > settledGeneration;
+	useEffect(() => {
+		if (!isSettling) return;
+		const targetGeneration = settleGenerationRef.current;
+		const timer = window.setTimeout(() => setSettledGeneration(targetGeneration), STREAM_ANIMATION_SETTLE_MS);
+		return () => window.clearTimeout(timer);
+	}, [isSettling]);
+	const shouldAnimate = requestedAnimate || isSettling;
 	return (
 		<Streamdown
-			mode={streaming ? "streaming" : "static"}
+			mode={everStreamedRef.current || shouldAnimate ? "streaming" : "static"}
 			parseIncompleteMarkdown={streaming}
 			normalizeHtmlIndentation
 			isAnimating={shouldAnimate}

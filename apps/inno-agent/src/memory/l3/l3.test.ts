@@ -120,6 +120,19 @@ describe.skipIf(!nodeSqliteFts5Available())("L3 store + recall (node:sqlite + FT
 		expect(recall(null, "机器学习")).toEqual([]);
 	});
 
+	it("recall boosts preferredSessionIds among hits that clear threshold", () => {
+		upsert("s-other", ["贝叶斯定理在医学检测中的条件概率计算示例"]);
+		upsert("s-linked", ["贝叶斯定理的直观生活案例和课堂讲解步骤"]);
+		upsert("s-linked-irrelevant", ["今天晚上吃火锅还是烧烤"]);
+
+		const boosted = recall(store, "贝叶斯定理", {
+			preferredSessionIds: new Set(["s-linked", "s-linked-irrelevant"]),
+		});
+		expect(boosted.map((r) => r.sessionId)).toEqual(["s-linked", "s-other"]);
+		// Irrelevant linked session must still be gated out by threshold.
+		expect(boosted.some((r) => r.sessionId === "s-linked-irrelevant")).toBe(false);
+	});
+
 	it("deleteSession removes chunks, FTS rows, and index state", () => {
 		upsert("s1", ["我们在整理机器学习的学习笔记和公式推导"]);
 		store!.setIndexState("s1", 100, 200, 1);

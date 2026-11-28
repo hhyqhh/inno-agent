@@ -19,7 +19,15 @@
 
 .inno-home-shortcuts-header {
 	flex: none;
+	flex-wrap: wrap;
 	margin-bottom: 10px;
+}
+
+.inno-home-shortcuts-actions {
+	display: inline-flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 4px;
 }
 
 .inno-home-shortcuts-title {
@@ -187,6 +195,50 @@
 .inno-home-card[data-target] {
 	border-color: var(--inno-accent);
 	outline: 1px solid var(--inno-accent);
+}
+
+.inno-home-card-skeleton {
+	padding: 12px 14px;
+	gap: 12px;
+	pointer-events: none;
+}
+.inno-home-card-skeleton:hover {
+	border-color: var(--inno-border);
+	background: var(--inno-surface-raised);
+	box-shadow: 0 1px 2px color-mix(in srgb, var(--inno-text) 4%, transparent);
+	transform: none;
+}
+.inno-home-card-skeleton-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.inno-home-card-skeleton-icon,
+.inno-home-card-skeleton-title,
+.inno-home-card-skeleton-meta {
+	display: block;
+	background: var(--inno-surface-muted);
+	animation: inno-home-skeleton-pulse 1.4s ease-in-out infinite;
+}
+.inno-home-card-skeleton-icon {
+	width: 24px;
+	height: 24px;
+	flex: none;
+	border-radius: 6px;
+}
+.inno-home-card-skeleton-title {
+	width: 56%;
+	height: 14px;
+	border-radius: 4px;
+}
+.inno-home-card-skeleton-meta {
+	width: 38%;
+	height: 12px;
+	border-radius: 4px;
+}
+@keyframes inno-home-skeleton-pulse {
+	0%, 100% { opacity: 0.45; }
+	50% { opacity: 0.85; }
 }
 
 /* Align the 28px menu button vertically with the header row (padding-top: 10px/11px, 28px icon/range). */
@@ -1131,7 +1183,7 @@
 }
 
 .inno-home-picker-footer {
-	justify-content: space-between;
+	justify-content: flex-end;
 }
 
 /* Anchor the welcome greeting and composer at a balanced lower position based on
@@ -1177,5 +1229,11 @@
 	.inno-home-card:hover {
 		transition: none;
 		transform: none;
+	}
+	.inno-home-card-skeleton-icon,
+	.inno-home-card-skeleton-title,
+	.inno-home-card-skeleton-meta {
+		animation: none;
+		opacity: 0.65;
 	}
 }

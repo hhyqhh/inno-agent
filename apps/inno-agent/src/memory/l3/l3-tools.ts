@@ -96,10 +96,14 @@ export class L3Memory {
 	}
 
 	/** Threshold-gated recall for prompt injection. */
-	async recall(query: string, excludeSessionId?: string): Promise<RecallResult[]> {
+	async recall(
+		query: string,
+		excludeSessionId?: string,
+		opts?: { preferredSessionIds?: ReadonlySet<string> },
+	): Promise<RecallResult[]> {
 		const store = await this.ensureStore();
 		if (!store) return [];
-		return recall(store, query, { excludeSessionId });
+		return recall(store, query, { excludeSessionId, preferredSessionIds: opts?.preferredSessionIds });
 	}
 
 	/**

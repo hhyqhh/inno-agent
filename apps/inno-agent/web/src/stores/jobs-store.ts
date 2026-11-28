@@ -9,6 +9,7 @@ interface JobsStoreEvents {
 class JobsStoreImpl extends EventEmitter<JobsStoreEvents> {
 	jobs: ScheduledJob[] = [];
 	isLoading = false;
+	hasLoaded = false;
 	runningJobId: string | null = null;
 
 	private reminderEditor: { id: string | null } | undefined;
@@ -33,6 +34,7 @@ class JobsStoreImpl extends EventEmitter<JobsStoreEvents> {
 			// Retain the last successful list during transient failures.
 		} finally {
 			this.isLoading = false;
+			this.hasLoaded = true;
 			this.emit("change", undefined);
 		}
 	}

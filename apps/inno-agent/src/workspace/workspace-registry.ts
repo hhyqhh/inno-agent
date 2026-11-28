@@ -35,6 +35,20 @@ export interface WorkspaceWithSessions extends WorkspaceMeta {
 	sessionIds: string[];
 }
 
+export interface LinkedWorkspaceContext {
+	id: string;
+	name: string;
+	purpose?: string;
+	absDir: string;
+}
+
+export interface SessionWorkspaceContext {
+	workspace: WorkspaceMeta;
+	linkedWorkspaces: LinkedWorkspaceContext[];
+	/** Session IDs belonging to the active workspace or its linked workspaces (excluding the queried session). */
+	relatedSessionIds: string[];
+}
+
 export const DEFAULT_WORKSPACE_ID = "default";
 export const TEMP_WORKSPACE_ID = "tmp";
 const DEFAULT_WORKSPACE_REL_PATH = ".pub";
@@ -386,6 +400,48 @@ export class WorkspaceRegistry {
 		return reg.workspaces.find((workspace) => workspace.id === map[sessionId]);
 	}
 
+	/**
+	 * Resolve the active workspace, its valid linked workspaces (with contained
+	 * absolute directories), and related session IDs for a given session.
+	 */
+	async getSessionWorkspaceContext(sessionId: string): Promise<SessionWorkspaceContext | undefined> {
+		const [reg, map] = await Promise.all([
+			readJsonAsync<RegistryFile>(this.registryPath(), { workspaces: [] }),
+			readJsonAsync<SessionWorkspaceMap>(this.sessionMapPath(), {}),
+		]);
+		const workspace = reg.workspaces.find((item) => item.id === map[sessionId]);
+		if (!workspace) return undefined;
+
+		const byId = new Map(reg.workspaces.map((item) => [item.id, item]));
+		const linkedWorkspaces: LinkedWorkspaceContext[] = [];
+		const seenLinked = new Set<string>([workspace.id]);
+
+		for (const linkedId of workspace.linkedWorkspaceIds ?? []) {
+			if (seenLinked.has(linkedId)) continue;
+			seenLinked.add(linkedId);
+			const target = byId.get(linkedId);
+			if (!target || target.isTemp || target.id.startsWith("channel-")) continue;
+			const absDir = await this.resolveWorkspaceDirAsync(target);
+			if (!absDir) continue;
+			linkedWorkspaces.push({
+				id: target.id,
+				name: target.name,
+				...(target.purpose ? { purpose: target.purpose } : {}),
+				absDir,
+			});
+		}
+
+		const relatedWorkspaceIds = new Set<string>([workspace.id, ...linkedWorkspaces.map((item) => item.id)]);
+		const relatedSessionIds: string[] = [];
+		for (const [sid, wsId] of Object.entries(map)) {
+			if (sid !== sessionId && relatedWorkspaceIds.has(wsId)) {
+				relatedSessionIds.push(sid);
+			}
+		}
+
+		return { workspace, linkedWorkspaces, relatedSessionIds };
+	}
+
 	/** Delete a workspace. Refuses only the shared tmp (the unbound fallback). */
 	deleteWorkspace(id: string, options: { removeFiles?: boolean } = {}): boolean {
 		if (id === TEMP_WORKSPACE_ID) return false;
@@ -394,6 +450,12 @@ export class WorkspaceRegistry {
 		if (index < 0) return false;
 		const ws = reg.workspaces[index];
 		reg.workspaces.splice(index, 1);
+		// Remove dangling linkedWorkspaceIds references from remaining workspaces.
+		for (const other of reg.workspaces) {
+			if (other.linkedWorkspaceIds?.includes(id)) {
+				other.linkedWorkspaceIds = other.linkedWorkspaceIds.filter((linkedId) => linkedId !== id);
+			}
+		}
 		this.saveRegistry(reg);
 
 		// Unbind all sessions pointing to this workspace.

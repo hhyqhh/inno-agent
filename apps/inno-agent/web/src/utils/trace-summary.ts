@@ -292,12 +292,10 @@ export interface IndexedTraceStep {
 
 export type TraceFlowItem =
 	| { type: "step"; step: ChatTraceStep; index: number }
-	| { type: "run"; members: IndexedTraceStep[] };
+	| { type: "run"; members: IndexedTraceStep[]; isLiveTail: boolean };
 
 /**
- * Only quiet, settled work is foldable. Open steps keep their live row (the
- * shimmer and partial output are the point), and question steps own cards
- * that are anchored to their row.
+ * Only quiet, settled work is foldable into a static summary.
  */
 export function isFoldableTraceStep(step: ChatTraceStep): boolean {
 	if (step.kind !== "thinking" && step.kind !== "tool" && step.kind !== "skill") return false;
@@ -307,9 +305,25 @@ export function isFoldableTraceStep(step: ChatTraceStep): boolean {
 }
 
 /**
- * Group consecutive foldable steps. A run of >= 2 folds when the turn is
- * finished or prose follows it, so the trailing run of a streaming turn stays
- * as individual rows. `isTextStep` marks the prose records that split runs.
+ * ZCode-style consecutive summary grouping: thinking, tool, and skill steps
+ * (excluding interactive question rows) form a continuous run even while live.
+ * An unclosed trailing run rolls the latest active step on one line instead of
+ * expanding vertically; once prose follows or the turn settles it switches to
+ * the merged statistics summary.
+ */
+export function isGroupableTraceStep(step: ChatTraceStep): boolean {
+	if (step.kind !== "thinking" && step.kind !== "tool" && step.kind !== "skill") return false;
+	if (step.questionId || step.toolName === "ask_user_question") return false;
+	return true;
+}
+
+/**
+ * Group consecutive process steps (thinking / tool / skill).
+ * A run of >= 2 becomes a collapsible group:
+ * - While live and unclosed (trailing without following prose, or still having
+ *   an open step), `isLiveTail` is true so the header rolls the active step.
+ * - Once prose follows or the turn settles, `isLiveTail` is false and the
+ *   header shows the merged summary text.
  */
 export function foldTraceFlow(
 	flow: IndexedTraceStep[],
@@ -325,12 +339,20 @@ export function foldTraceFlow(
 	let runEnd = -1;
 	const flush = () => {
 		if (!run.length) return;
-		if (run.length >= 2 && (finished || lastTextPosition > runEnd)) items.push({ type: "run", members: run });
-		else for (const member of run) items.push({ type: "step", ...member });
+		if (run.length >= 2) {
+			const hasOpen = run.some((member) => isOpenStatus(member.step.status));
+			const isLiveTail = (!finished && lastTextPosition < runEnd) || hasOpen;
+			items.push({ type: "run", members: run, isLiveTail });
+		} else {
+			for (const member of run) items.push({ type: "step", ...member });
+		}
 		run = [];
 	};
 	flow.forEach((entry, position) => {
-		if (isFoldableTraceStep(entry.step)) {
+		// A live group's rolling summary would replace a failed tool with the
+		// next active tool. Keep the failure visible as its own row during the turn.
+		const liveFailure = !finished && (entry.step.status === "error" || entry.step.isError);
+		if (!liveFailure && isGroupableTraceStep(entry.step)) {
 			run.push(entry);
 			runEnd = position;
 			return;

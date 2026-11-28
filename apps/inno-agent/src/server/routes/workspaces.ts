@@ -13,13 +13,14 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { copyFile, mkdir, open, stat } from "node:fs/promises";
+import { copyFile, mkdir, open, readdir, stat } from "node:fs/promises";
 import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { promisify } from "node:util";
 import { applyWorkspaceCwd, completePromptOnce, getCurrentSessionId, getLoadedSkills } from "../../agent/pi-runner.js";
 import { streamRegistry } from "../../chat/stream-registry.js";
+import type { SkillLibraryItem } from "../../content-source/types.js";
 import { logger } from "../../logger.js";
 import { getWordPdfPreview, WordPreviewError } from "../../office/word-preview.js";
 import type { RuntimePaths } from "../../runtime.js";
@@ -75,6 +76,7 @@ export interface WorkspacesRouteContext {
 	installSkillZip: (fileName: string, data: Buffer, targetRoot?: string) => { name: string; filePath: string };
 	installSkillMarkdown: (fileName: string, data: Buffer, targetRoot?: string) => { name: string; filePath: string };
 	importWorkspaceZip: (fileName: string, data: Buffer, name?: string) => WorkspaceMeta;
+	listSkillLibrary: () => Promise<SkillLibraryItem[]>;
 	scheduleSkillsReload: () => void;
 	sessionFileFromId: (sessionDir: string, id: string) => string | null;
 	releaseQueueFromQuestionBlockedTurn: (sessionId: string) => void;
@@ -107,6 +109,31 @@ function workspaceIdFromBody(body: Record<string, unknown>): string {
 
 /** Per-workspace private skills directory (matches inno-extension WORKSPACE_SKILLS_DIR). */
 const WORKSPACE_PRIVATE_SKILLS_DIR = ".skills";
+
+/** Read installed private skill names from `<workspace>/.skills` without blocking the event loop. */
+async function readPrivateSkillNames(skillsRoot: string): Promise<string[]> {
+	let entries: Dirent<string>[];
+	try {
+		entries = await readdir(skillsRoot, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+	const names = new Set<string>();
+	await Promise.all(entries.map(async (entry) => {
+		if (entry.name.startsWith(".")) return;
+		if (entry.isDirectory() || entry.isSymbolicLink()) {
+			try {
+				const skillFile = await stat(join(skillsRoot, entry.name, "SKILL.md"));
+				if (skillFile.isFile()) names.add(entry.name);
+			} catch { /* ignore directories without SKILL.md */ }
+			return;
+		}
+		if (entry.isFile() && entry.name.toLowerCase().endsWith(".md") && entry.name.toLowerCase() !== "readme.md") {
+			names.add(entry.name.slice(0, -3));
+		}
+	}));
+	return [...names].sort((a, b) => a.localeCompare(b));
+}
 
 function workspaceRelativePath(rootDir: string, filePath: string): string {
 	return relative(rootDir, filePath) || "";
@@ -909,22 +936,53 @@ export async function handleWorkspacesRoutes(
 			return true;
 		}
 		try {
-			const workspaces = (await workspaceRegistry.listWorkspacesAsync())
+			// Degrade gracefully when the remote skill library is temporarily unreachable
+			// so draft generation still succeeds with locally installed skills.
+			const [allWorkspaces, library] = await Promise.all([
+				workspaceRegistry.listWorkspacesAsync(),
+				ctx.listSkillLibrary().catch((err) => {
+					logger.warn({ err }, "skill library unavailable during workspace draft generation; continuing with local skills");
+					return [] as SkillLibraryItem[];
+				}),
+			]);
+			const workspaces = allWorkspaces
 				.filter((workspace) => !workspace.isTemp && !workspace.id.startsWith("channel-") && workspace.id !== body.workspaceId);
-			const draft = await proposeWorkspaceDraft(body.description, getLoadedSkills().skills, workspaces, completePromptOnce);
-			json(res, 200, draft);
-		} catch {
-			json(res, 503, { error: "Workspace draft generation is unavailable" });
+			const localSkills = getLoadedSkills().skills;
+			const localNames = new Set(localSkills.map(({ name }) => name));
+			const libraryByName = new Map(library.filter(({ installed, name }) => !installed && !localNames.has(name))
+				.map((skill) => [skill.name, skill]));
+			const draft = await proposeWorkspaceDraft(body.description, [...localSkills, ...libraryByName.values()], workspaces, completePromptOnce);
+			json(res, 200, {
+				...draft,
+				// Only loaded skills can be preselected. Library suggestions still need the user to import them.
+				skillNames: draft.skillNames.filter((name) => localNames.has(name)),
+				librarySkills: draft.skillNames.flatMap((name) => libraryByName.get(name) ?? []),
+				alternativeSkills: draft.alternativeSkills.map(({ name, description, category }) => ({
+					name, description, category, installed: localNames.has(name),
+				})),
+			});
+		} catch (err) {
+			const reason = err instanceof Error ? err.message.slice(0, 120) : "unknown";
+			logger.warn({ err, reason }, "workspace draft generation failed");
+			json(res, 503, { error: "Workspace draft generation is unavailable", reason });
 		}
 		return true;
 	}
 
 	if (method === "GET" && url === "/api/workspaces") {
 		const sessionDir = join(dataDir, "sessions");
-		const allSessionIds = existsSync(sessionDir)
-			? readdirSync(sessionDir).filter((f) => f.endsWith(".jsonl"))
-			: [];
-		json(res, 200, workspaceRegistry.listWorkspaces(allSessionIds));
+		let allSessionIds: string[] = [];
+		try {
+			allSessionIds = (await readdir(sessionDir)).filter((f) => f.endsWith(".jsonl"));
+		} catch { /* sessions directory may not exist yet */ }
+		const workspaces = workspaceRegistry.listWorkspaces(allSessionIds);
+		const enriched = await Promise.all(workspaces.map(async (ws) => {
+			if (ws.isTemp || ws.id.startsWith("channel-")) return ws;
+			const skillsRoot = safeWorkspacePath(ws.id, WORKSPACE_PRIVATE_SKILLS_DIR);
+			const privateSkillNames = skillsRoot ? await readPrivateSkillNames(skillsRoot) : [];
+			return privateSkillNames.length ? { ...ws, privateSkillNames } : ws;
+		}));
+		json(res, 200, enriched);
 		return true;
 	}
 

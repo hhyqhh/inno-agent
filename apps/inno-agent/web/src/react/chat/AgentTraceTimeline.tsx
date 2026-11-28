@@ -26,6 +26,7 @@ import type { AnsweredQuestionnaireView } from "../../utils/questionnaire.js";
 import { MarkdownArtifact } from "../MarkdownArtifact.js";
 import { Button, IconButton, TabPanel, Tabs, Tooltip, getTabTriggerId } from "../ui/index.js";
 import { AnsweredQuestionCard } from "./AnsweredQuestionCard.js";
+import { WorkingLogo } from "./WorkingLogo.js";
 import {
 	isOpenStatus,
 	isTextKind,
@@ -726,6 +727,7 @@ export function AgentTraceTimeline({
 	const workStatus = isSending ? t("chat.trace.processed", "已处理") : workStatusText(isSending, terminalState, visibleSteps, t, error);
 	const workStatusContent = (
 		<>
+			{isSending ? <WorkingLogo /> : null}
 			<span>{workStatus}</span>
 			{durationMs !== undefined ? <span className="inno-trace-work-duration">{formatCompactDuration(durationMs)}</span> : null}
 		</>

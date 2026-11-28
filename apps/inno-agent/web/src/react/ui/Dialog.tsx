@@ -22,6 +22,15 @@ export function Dialog({ children, label, className, onClose, scoped = false }: 
 		const dialog = ref.current;
 		if (!dialog) return;
 		if (!scoped) {
+			// React's autoFocus prop does not emit an HTML autofocus attribute, so
+			// native showModal() would otherwise focus the first focusable control
+			// (often a close IconButton with a Tooltip). Promote [data-autofocus]
+			// before showModal() so initial focus lands directly on it without
+			// firing a transient focus event on the close button.
+			const autoFocusTarget = dialog.querySelector<HTMLElement>("[data-autofocus]");
+			if (autoFocusTarget && !autoFocusTarget.hasAttribute("autofocus")) {
+				autoFocusTarget.setAttribute("autofocus", "");
+			}
 			dialog.showModal();
 			return () => { if (dialog.open) dialog.close(); };
 		}
@@ -41,7 +50,7 @@ export function Dialog({ children, label, className, onClose, scoped = false }: 
 		};
 		isolate(document.body);
 		dialog.show();
-		const focusTarget = dialog.querySelector<HTMLElement>("[autofocus], button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+		const focusTarget = dialog.querySelector<HTMLElement>("[autofocus], [data-autofocus], button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
 		(focusTarget ?? dialog).focus();
 		const escape = (event: KeyboardEvent) => {
 			if (event.key === "Escape" && !event.defaultPrevented && !Array.from(document.querySelectorAll("dialog[open]")).some((node) => node !== dialog && !node.contains(dialog))) {

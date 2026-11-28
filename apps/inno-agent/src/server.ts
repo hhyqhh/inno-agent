@@ -1297,7 +1297,7 @@ const { dispatch: dispatchRoutes } = createRouteDispatcher({
 	// --- Workspace API + registry + session binding (extracted to server/routes/workspaces.ts) ---
 	workspaces: (req, res, method, url) => handleWorkspacesRoutes(req, res, method, url, {
 		workspaceRegistry, dataDir, paths,
-		installSkillZip, installSkillMarkdown, scheduleSkillsReload, importWorkspaceZip,
+		installSkillZip, installSkillMarkdown, scheduleSkillsReload, importWorkspaceZip, listSkillLibrary,
 		sessionFileFromId,
 		releaseQueueFromQuestionBlockedTurn, runQueueOpWithTimeout,
 	}),

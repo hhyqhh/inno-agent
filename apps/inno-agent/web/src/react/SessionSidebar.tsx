@@ -77,6 +77,7 @@ import { useStoreSnapshot, useTitleMarquee } from "./hooks.js";
 import { getLongPressHandlers } from "./ui/long-press.js";
 import { useSidebarPreview } from "./use-sidebar-preview.js";
 import { DesktopWorkbench } from "./DesktopWorkbench.js";
+import { WorkspaceConfigurationDialog } from "./home/WorkspaceConfigurationDialog.js";
 
 const SidebarWorkspaceBrowser = lazy(() => import("./WorkspaceBrowser.js").then((module) => ({ default: module.WorkspaceBrowser })));
 type SidebarView = "messages" | "files";
@@ -366,6 +367,7 @@ function GroupHeader({
 	onEditChange,
 	onEditSave,
 	onEditCancel,
+	onConfigure,
 	onDelete,
 	reorderMode,
 	dragging,
@@ -390,6 +392,7 @@ function GroupHeader({
 	onEditChange: (v: string) => void;
 	onEditSave: () => void;
 	onEditCancel: () => void;
+	onConfigure: () => void;
 	onDelete: () => void;
 	reorderMode: boolean;
 	dragging: boolean;
@@ -421,6 +424,7 @@ function GroupHeader({
 			: []),
 		...(group.manageable
 			? [
+				{ label: menuLabel(<SettingsIcon size={14} aria-hidden="true" />, t("home.editWorkspace")), onSelect: onConfigure },
 				{ label: menuLabel(<Pencil size={14} aria-hidden="true" />, t("sidebar.renameWorkspace")), onSelect: onStartEdit },
 				{ label: menuLabel(<Trash2 size={14} aria-hidden="true" />, t("sidebar.deleteWorkspace")), danger: true, onSelect: onDelete },
 			]
@@ -851,6 +855,7 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, onPre
 	const groupExpansionInitialized = useRef(false);
 	const collapsedGroupsBeforeCustomSort = useRef<Set<string> | null>(null);
 	const [editingWsId, setEditingWsId] = useState<string | null>(null);
+	const [configuringWorkspace, setConfiguringWorkspace] = useState<WorkspaceMeta | null>(null);
 	const [editingWsName, setEditingWsName] = useState("");
 	const [workspaceSort, setWorkspaceSort] = useState<WorkspaceSort>(readWorkspaceSort);
 	const [customOrder, setCustomOrder] = useState<string[]>(readWorkspaceCustomOrder);
@@ -1495,6 +1500,10 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, onPre
 					onEditChange={setEditingWsName}
 					onEditSave={() => saveWsName(group.id)}
 					onEditCancel={() => setEditingWsId(null)}
+					onConfigure={() => {
+						const ws = wsState.list.find((item) => item.id === group.id);
+						if (ws) setConfiguringWorkspace(ws);
+					}}
 					onDelete={() => handleDeleteWorkspace(group)}
 					reorderMode={isCustomSorting && group.sortable}
 					dragging={draggingWorkspaceId === group.id}
@@ -1933,6 +1942,15 @@ export function SessionSidebar({ collapsed, isDesktopWindow, onOpenSearch, onPre
 				<div className="border-t border-[var(--inno-border)] p-2">
 					<SidebarUserMenu />
 				</div>
+			) : null}
+
+			{configuringWorkspace ? (
+				<WorkspaceConfigurationDialog
+					workspace={configuringWorkspace}
+					workspaces={wsState.list}
+					onClose={() => setConfiguringWorkspace(null)}
+					onSaved={() => setConfiguringWorkspace(null)}
+				/>
 			) : null}
 		</>
 	);

@@ -546,7 +546,9 @@ describe("AgentTraceTimeline", () => {
 		expect(document.querySelectorAll(".inno-trace-row")).toHaveLength(5);
 		expect(document.querySelectorAll(".inno-trace-run")).toHaveLength(0);
 		expect(screen.queryByRole("button", { name: /工作过程/ })).toBeNull();
-		expect(document.querySelector(".inno-trace-work-status")?.textContent).toMatch(/^已处理\d+s$/);
+		const liveWorkStatus = document.querySelector(".inno-trace-work-status");
+		expect(liveWorkStatus?.textContent).toMatch(/^已处理\d+s$/);
+		expect(liveWorkStatus?.firstElementChild?.classList.contains("inno-trace-working-logo")).toBe(true);
 	});
 
 	it("folds a run as soon as prose follows it while the turn is still streaming", () => {

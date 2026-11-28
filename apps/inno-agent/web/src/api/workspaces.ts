@@ -1,5 +1,6 @@
 import { apiFetch } from "./client.js";
 import { arrayBufferToBase64 } from "./uploads.js";
+import type { SkillLibraryItem } from "../types/skills.js";
 
 export interface WorkspaceConfiguration {
 	purpose?: string;
@@ -15,6 +16,8 @@ export interface WorkspaceMeta extends WorkspaceConfiguration {
 	updatedAt: string;
 	isTemp: boolean;
 	sessionIds?: string[];
+	/** Read-only private skills installed under `<workspace>/.skills`. */
+	privateSkillNames?: string[];
 }
 
 export type WorkspaceFileAccess = "read" | "write" | "read_write";
@@ -98,7 +101,11 @@ export async function updateWorkspace(id: string, input: WorkspaceConfiguration 
 	});
 }
 
-export async function generateWorkspaceDraft(description: string, workspaceId?: string, signal?: AbortSignal): Promise<Required<WorkspaceConfiguration> & { name: string }> {
+export async function generateWorkspaceDraft(description: string, workspaceId?: string, signal?: AbortSignal): Promise<Required<WorkspaceConfiguration> & {
+	name: string;
+	librarySkills?: SkillLibraryItem[];
+	alternativeSkills?: SkillLibraryItem[];
+}> {
 	return apiFetch("/api/workspaces/draft", { method: "POST", body: JSON.stringify({ description, workspaceId }), signal });
 }
 

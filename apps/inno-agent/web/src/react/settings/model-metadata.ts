@@ -6,6 +6,8 @@
  * editable in the advanced section afterwards.
  */
 
+import { findCatalogModel } from "./model-catalog.js";
+
 export interface ModelMetadata {
 	contextWindow: number;
 	maxTokens: number;
@@ -64,7 +66,18 @@ export const DEFAULT_MODEL_METADATA: ModelMetadata = {
 	supportsImages: false,
 };
 
-export function inferModelMetadata(modelId: string): ModelMetadata {
+export function inferModelMetadata(modelId: string, providerId?: string): ModelMetadata {
+	// Exact catalog entry first (real vendor numbers); regex rules only cover
+	// ids the catalog does not know (older models, custom gateways).
+	const known = findCatalogModel(modelId, providerId);
+	if (known) {
+		return {
+			contextWindow: known.contextWindow,
+			maxTokens: known.maxTokens,
+			reasoning: known.reasoning,
+			supportsImages: known.supportsImages,
+		};
+	}
 	const rule = RULES.find((r) => r.pattern.test(modelId));
 	if (!rule) return { ...DEFAULT_MODEL_METADATA };
 	return {

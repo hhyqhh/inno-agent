@@ -28,7 +28,7 @@ export function ChatWelcome({
 			<div className="inno-chat-top-drag-region" aria-hidden="true" />
 			{topOverlay}
 			{smartToast}
-			<div className="relative z-[1] flex min-h-0 flex-1 justify-center overflow-y-auto px-4">
+			<div className="inno-chat-welcome-viewport relative z-[1] flex min-h-0 flex-1 justify-center overflow-hidden px-4">
 				<div className="inno-chat-welcome-layout w-full max-w-[760px]">
 					<div className="inno-chat-welcome-stage">
 						<div className="inno-chat-welcome-heading">

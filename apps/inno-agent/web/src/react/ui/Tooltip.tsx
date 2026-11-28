@@ -1,5 +1,5 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-import { cloneElement, useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
+import { cloneElement, useCallback, useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
 
 export const TooltipProvider = TooltipPrimitive.Provider;
 
@@ -78,6 +78,12 @@ export function Tooltip({
 	open: controlledOpen,
 }: TooltipProps) {
 	const [open, setOpen] = useState(false);
+	const [portalContainer, setPortalContainer] = useState<HTMLDialogElement | null>(null);
+	const setTrigger = useCallback((node: HTMLElement | null) => {
+		// Native modal dialogs paint above body portals. Mount the tooltip at
+		// the dialog root so it shares that layer and escapes the scrolling body.
+		setPortalContainer(node?.closest("dialog") ?? null);
+	}, []);
 	const [watchPointerMovement, setWatchPointerMovement] = useState(false);
 	const suppressTooltipRef = useRef(false);
 	const suppressUntilPointerMoveRef = useRef(false);
@@ -175,8 +181,8 @@ export function Tooltip({
 				setOpen(nextOpen);
 			}}
 		>
-			<TooltipPrimitive.Trigger asChild>{trigger}</TooltipPrimitive.Trigger>
-			<TooltipPrimitive.Portal>
+			<TooltipPrimitive.Trigger asChild ref={setTrigger}>{trigger}</TooltipPrimitive.Trigger>
+			<TooltipPrimitive.Portal container={portalContainer ?? undefined}>
 				<TooltipPrimitive.Content
 					className={`inno-tooltip-content${contentClassName ? ` ${contentClassName}` : ""}`}
 					side={side}

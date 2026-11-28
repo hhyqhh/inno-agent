@@ -17,6 +17,21 @@ describe("Tooltip focus restoration", () => {
 		// A later keyboard focus is independent of the silent restoration.
 		fireEvent.keyDown(document, { key: "Tab" });
 		act(() => target.focus());
-		expect(await screen.findByRole("tooltip")).toBeTruthy();
+		const tooltip = await screen.findByRole("tooltip");
+		expect(tooltip.closest("[data-radix-popper-content-wrapper]")?.parentElement).toBe(document.body);
+	});
+});
+
+describe("Tooltip portal", () => {
+	it.each(["light", "dark"])("renders at the dialog root in %s", (theme) => {
+		document.documentElement.dataset.theme = theme;
+		render(<dialog open aria-label="Workspace settings">
+			<div style={{ overflow: "auto" }}>
+				<Tooltip label="Skill description" open><button>Import skill</button></Tooltip>
+			</div>
+		</dialog>);
+		const dialog = screen.getByRole("dialog", { name: "Workspace settings" });
+		const tooltip = screen.getByRole("tooltip");
+		expect(tooltip.closest("[data-radix-popper-content-wrapper]")?.parentElement).toBe(dialog);
 	});
 });

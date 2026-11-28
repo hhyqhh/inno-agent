@@ -1542,6 +1542,9 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 						void handleWorkspaceChange({ kind: "workspace", workspaceId });
 						inputRef.current?.focus();
 					}}
+					onOpenSession={(sessionId) => {
+						void sessionsStore.openSession(sessionId);
+					}}
 					onCreate={() => setConfigurationWorkspace("new")}
 					onEdit={setConfigurationWorkspace} />}
 			/>

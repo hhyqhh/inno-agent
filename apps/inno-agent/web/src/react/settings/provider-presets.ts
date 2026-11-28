@@ -33,7 +33,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 	{
 		id: "deepseek",
 		name: "DeepSeek",
-		description: "深度求索 · deepseek-chat / reasoner",
+		description: "深度求索 · DeepSeek V4",
 		brandColor: "#4D6BFE",
 		iconSrc: "/provider-icons/deepseek.png",
 		glyph: "DS",
@@ -45,7 +45,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 	{
 		id: "kimi",
 		name: "Kimi",
-		description: "月之暗面 · kimi-k2 系列",
+		description: "月之暗面 · Kimi K3",
 		brandColor: "#6366F1",
 		iconSrc: "/provider-icons/kimi-rounded.png",
 		glyph: "K",
@@ -57,7 +57,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 	{
 		id: "minimax",
 		name: "MiniMax",
-		description: "MiniMax-M2 系列",
+		description: "MiniMax-M3 系列",
 		brandColor: "#FF6B6B",
 		iconSrc: "/provider-icons/minimax-user-icon.png",
 		glyph: "MM",
@@ -82,7 +82,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 	{
 		id: "xiaomimimo",
 		name: "小米 MiMo",
-		description: "小米 · mimo 系列",
+		description: "小米 · MiMo V2.6",
 		brandColor: "#FF6900",
 		iconSrc: "/provider-icons/xiaomi-mi.png",
 		glyph: "Mi",
@@ -94,7 +94,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 	{
 		id: "bailian",
 		name: "阿里百炼",
-		description: "阿里云 · 通义千问 Qwen",
+		description: "阿里云 · 通义千问 Qwen3.x",
 		brandColor: "#624AFF",
 		iconSrc: "/provider-icons/bailian.svg",
 		glyph: "百",

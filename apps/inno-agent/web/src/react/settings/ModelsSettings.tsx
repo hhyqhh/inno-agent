@@ -2,19 +2,29 @@ import { ThinkingLevelField } from "./ThinkingLevelField.js";
 import type { InnoThinkingLevel } from "../../types/settings.js";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Trash2, Pencil, X, ChevronDown, ChevronRight } from "lucide-react";
+import { Trash2, Pencil, X, ChevronDown, ChevronRight, RotateCcw, Check, ExternalLink, Cpu } from "lucide-react";
 import { settingsStore } from "../../stores/settings-store.js";
 import type { InnoModelInfo, InnoProviderModel as ProviderModel, InnoSettings } from "../../types/settings.js";
 import { useStoreSnapshot } from "../hooks.js";
 import { Button, Checkbox, IconButton, Input, Select, SelectContent, SelectOption, SelectTrigger, SelectValue } from "../ui/index.js";
-import { SettingsSection, SettingsCard } from "./primitives.js";
+import { SettingsSection } from "./primitives.js";
 import { formatTokens, modelKey } from "./shared.js";
 import { AddProviderWizard, ProviderIcon } from "./AddProviderWizard.js";
 import { findPreset } from "./provider-presets.js";
+import { findCatalogModel } from "./model-catalog.js";
 
 const apiOptions = ["openai-completions", "openai-responses", "anthropic-messages"];
 
-const labelCls = "mb-0.5 block text-xs text-[var(--inno-text-muted)]";
+const labelCls = "mb-1 block text-xs font-medium text-[var(--inno-text-muted)]";
+
+function extractHost(url?: string): string | null {
+	if (!url) return null;
+	try {
+		return new URL(url).host;
+	} catch {
+		return null;
+	}
+}
 
 interface ModelEditFormState {
 	thinkingLevel?: InnoThinkingLevel;
@@ -60,6 +70,21 @@ function ModelEditForm({ model, settings, onClose }: {
 	const [formError, setFormError] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
 
+	// Known catalog entry for this provider/model; manual action only, so user
+	// customisations are never silently overwritten.
+	const presetProviderId = findPreset(model.provider)?.id;
+	const presetMeta = presetProviderId ? findCatalogModel(form.modelId, presetProviderId) : undefined;
+	function restorePreset() {
+		if (!presetMeta) return;
+		setForm({
+			...form,
+			contextWindow: String(presetMeta.contextWindow),
+			maxTokens: String(presetMeta.maxTokens),
+			reasoning: presetMeta.reasoning,
+			supportsImages: presetMeta.supportsImages,
+		});
+	}
+
 	async function handleSave() {
 		const contextWindow = Number(form.contextWindow);
 		const maxTokens = Number(form.maxTokens);
@@ -103,17 +128,17 @@ function ModelEditForm({ model, settings, onClose }: {
 	}
 
 	return (
-		<div className="rounded-lg bg-[var(--inno-surface)] p-3">
-			<div className="mb-2 flex items-center justify-between">
+		<div className="bg-[var(--inno-surface-muted)]/35 p-4">
+			<div className="mb-3 flex items-center justify-between gap-2">
 				<div className="flex items-center gap-2">
-					<ProviderIcon providerId={model.provider} size={22} />
-					<span className="text-xs font-medium text-[var(--inno-text)]">{t("settings.editModel", "Edit Model")}</span>
+					<ProviderIcon providerId={model.provider} size={20} />
+					<span className="text-sm font-medium text-[var(--inno-text)]">{t("settings.editModel", "编辑模型")}</span>
 				</div>
 				<IconButton size="xs" aria-label={t("common.close", "关闭")} title={t("common.close", "关闭")} onClick={onClose}>
 					<X size={14} />
 				</IconButton>
 			</div>
-			<div className="grid grid-cols-2 gap-2">
+			<div className="grid grid-cols-2 gap-3">
 				<div>
 					<label className={labelCls}>{t("settings.form.modelId")}</label>
 					<Input size="sm" value={form.modelId} onChange={(e) => setForm({ ...form, modelId: e.target.value })} />
@@ -124,7 +149,7 @@ function ModelEditForm({ model, settings, onClose }: {
 				</div>
 				<div className="col-span-2">
 					<label className={labelCls}>
-						{t("settings.form.apiKey")} {provider?.apiKey ? <span className="text-[var(--inno-text-subtle)]">(••••••••)</span> : null}
+						{t("settings.form.apiKey")} {provider?.apiKey ? <span className="font-normal text-[var(--inno-text-subtle)]">(••••••••)</span> : null}
 					</label>
 					<Input size="sm" type="password" placeholder={provider?.apiKey ? t("settings.form.apiKeyPreserved") ?? "" : ""} value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} />
 				</div>
@@ -142,12 +167,19 @@ function ModelEditForm({ model, settings, onClose }: {
 				</div>
 			</div>
 
-			<button className="mt-2 flex items-center gap-1 text-xs text-[var(--inno-text-subtle)] hover:text-[var(--inno-text)]" onClick={() => setShowAdvanced((v) => !v)}>
-				{showAdvanced ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-				{t("settings.wizard.advanced", "高级选项")}
-			</button>
+			<div className="mt-3 flex flex-wrap items-center gap-3">
+				{presetMeta ? (
+					<button type="button" className="flex items-center gap-1 text-xs text-[var(--inno-accent)] hover:underline" onClick={restorePreset}>
+						<RotateCcw size={12} />{t("settings.wizard.restorePreset", "恢复预置参数")}
+					</button>
+				) : null}
+				<button type="button" className="flex items-center gap-1 text-xs text-[var(--inno-text-subtle)] transition-colors hover:text-[var(--inno-text)]" onClick={() => setShowAdvanced((v) => !v)}>
+					{showAdvanced ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+					{t("settings.wizard.advanced", "高级选项")}
+				</button>
+			</div>
 			{showAdvanced && (
-				<div className="mt-1.5 grid gap-2 rounded-md bg-[var(--inno-surface-muted)] p-2.5">
+				<div className="mt-2.5 grid gap-3 rounded-lg border border-[var(--inno-border)] bg-[var(--inno-surface)] p-3">
 					<div>
 						<label className={labelCls}>{t("settings.form.apiType", "API Type")}</label>
 						<Select value={form.api} onValueChange={(api) => setForm({ ...form, api })}>
@@ -157,7 +189,7 @@ function ModelEditForm({ model, settings, onClose }: {
 							</SelectContent>
 						</Select>
 					</div>
-					<div className="flex flex-wrap items-center gap-3 text-xs text-[var(--inno-text-muted)]">
+					<div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[var(--inno-text-muted)]">
 						<label className="flex items-center gap-1.5"><Checkbox checked={form.reasoning} onChange={(e) => setForm({ ...form, reasoning: e.target.checked })} /> {t("settings.form.reasoning")}</label>
 						<label className="flex items-center gap-1.5"><Checkbox checked={form.supportsImages} onChange={(e) => setForm({ ...form, supportsImages: e.target.checked })} /> {t("settings.form.supportsImages")}</label>
 						<label className="flex items-center gap-1.5"><Checkbox checked={form.authHeader} onChange={(e) => setForm({ ...form, authHeader: e.target.checked })} /> {t("settings.form.authHeader")}</label>
@@ -168,18 +200,21 @@ function ModelEditForm({ model, settings, onClose }: {
 				</div>
 			)}
 
-			<label className="mt-2 flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
-				<Checkbox checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} />
-				{t("settings.form.makeDefault")}
-			</label>
-			{formError ? <div className="mt-2 rounded bg-[var(--inno-danger-bg)] px-2 py-1 text-xs text-[var(--inno-danger)]">{formError}</div> : null}
-			<div className="mt-2 flex gap-2">
-				<Button variant="primary" size="sm" disabled={saving} onClick={() => void handleSave()}>
-					{saving ? t("settings.savingProvider") : t("settings.saveProvider")}
-				</Button>
-				<Button variant="secondary" size="sm" onClick={onClose}>
-					{t("common.cancel", "Cancel")}
-				</Button>
+			{formError ? <div className="mt-3 rounded-lg bg-[var(--inno-danger-bg)] px-3 py-2 text-xs text-[var(--inno-danger)]">{formError}</div> : null}
+
+			<div className="mt-3.5 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--inno-border)] pt-3">
+				<label className="flex items-center gap-1.5 text-xs text-[var(--inno-text-muted)]">
+					<Checkbox checked={form.makeDefault} onChange={(e) => setForm({ ...form, makeDefault: e.target.checked })} />
+					{t("settings.form.makeDefault")}
+				</label>
+				<div className="flex items-center gap-2">
+					<Button variant="secondary" size="xs" onClick={onClose}>
+						{t("common.cancel", "取消")}
+					</Button>
+					<Button variant="primary" size="xs" disabled={saving} onClick={() => void handleSave()}>
+						{saving ? t("settings.savingProvider") : t("settings.saveProvider")}
+					</Button>
+				</div>
 			</div>
 		</div>
 	);
@@ -208,26 +243,81 @@ export function ModelsSettings({ settings }: { settings: InnoSettings }) {
 		groups.set(model.provider, list);
 	}
 
+	// Count how many distinct providerIds map to the same preset so duplicate
+	// preset headers (e.g. two DeepSeek endpoints) surface their providerId/host.
+	const presetCounts = new Map<string, number>();
+	for (const providerId of groups.keys()) {
+		const presetId = findPreset(providerId)?.id;
+		if (presetId) presetCounts.set(presetId, (presetCounts.get(presetId) ?? 0) + 1);
+	}
+
 	return (
-		<SettingsSection title={t("settings.tabs.models")} description={t("settings.sections.models.desc", "配置模型提供商与默认模型")}>
-			<SettingsCard>
-				<h4 className="mb-3 text-sm font-medium text-[var(--inno-text)]">{t("settings.models")}</h4>
-				{storeError ? <div className="mb-3 rounded bg-[var(--inno-danger-bg)] p-2 text-sm text-[var(--inno-danger)]">{storeError}</div> : null}
-				<div className="grid gap-4">
+		<SettingsSection
+			title={t("settings.tabs.models")}
+			description={t("settings.sections.models.desc", "配置模型提供商与默认模型")}
+			action={<AddProviderWizard providers={settings.providers} />}
+		>
+			{storeError ? (
+				<div className="rounded-lg bg-[var(--inno-danger-bg)] px-3.5 py-2.5 text-sm text-[var(--inno-danger)]">
+					{storeError}
+				</div>
+			) : null}
+
+			{groups.size === 0 ? (
+				<div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--inno-border-strong)] bg-[var(--inno-surface-muted)]/35 px-6 py-12 text-center">
+					<div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--inno-surface-muted)] text-[var(--inno-text-subtle)]">
+						<Cpu size={20} />
+					</div>
+					<p className="text-sm font-medium text-[var(--inno-text)]">{t("settings.modelsEmpty", "尚未配置模型")}</p>
+					<p className="mt-1 text-xs text-[var(--inno-text-subtle)]">{t("settings.modelsEmptyHint", "点击右上角「添加模型」接入模型提供商")}</p>
+				</div>
+			) : (
+				<div className="grid gap-3.5">
 					{[...groups.entries()].map(([providerId, providerModels]) => {
 						const preset = findPreset(providerId);
+						const providerConfig = settings.providers[providerId];
+						const host = extractHost(providerConfig?.baseUrl);
+						const isDuplicatePreset = preset ? (presetCounts.get(preset.id) ?? 0) > 1 : false;
+						const showProviderIdTag = Boolean(preset && (isDuplicatePreset || providerId.toLowerCase() !== preset.id));
+
 						return (
-							<div key={providerId}>
-								<div className="mb-1.5 flex items-center gap-2">
-									<ProviderIcon providerId={providerId} size={20} />
-									<span className="text-xs font-medium text-[var(--inno-text)]">{preset?.name ?? providerId}</span>
-									{preset?.docsUrl && (
-										<a className="text-xs text-[var(--inno-text-subtle)] hover:text-[var(--inno-accent)]" href={preset.docsUrl} target="_blank" rel="noreferrer">
-											{t("settings.wizard.docs", "文档")}
-										</a>
-									)}
+							<div
+								key={providerId}
+								className="overflow-hidden rounded-xl border border-[var(--inno-border)] bg-[var(--inno-card-bg)]"
+							>
+								{/* Provider group header */}
+								<div className="flex items-center justify-between gap-3 border-b border-[var(--inno-border)] bg-[var(--inno-surface-muted)]/55 px-4 py-2.5">
+									<div className="flex min-w-0 items-center gap-2">
+										<ProviderIcon providerId={providerId} size={20} />
+										<span className="truncate text-sm font-medium text-[var(--inno-text)]">
+											{preset?.name ?? providerId}
+										</span>
+										{showProviderIdTag ? (
+											<span className="shrink-0 rounded-md border border-[var(--inno-border)] bg-[var(--inno-surface)] px-1.5 py-0.5 font-mono text-xs text-[var(--inno-text-subtle)]">
+												{providerId}
+											</span>
+										) : null}
+										{host && (isDuplicatePreset || !preset) ? (
+											<span className="truncate text-xs text-[var(--inno-text-subtle)]">{host}</span>
+										) : null}
+									</div>
+									<div className="flex shrink-0 items-center gap-3">
+										{preset?.docsUrl ? (
+											<a
+												className="inline-flex items-center gap-1 text-xs text-[var(--inno-text-subtle)] transition-colors hover:text-[var(--inno-accent)]"
+												href={preset.docsUrl}
+												target="_blank"
+												rel="noreferrer"
+											>
+												{t("settings.wizard.docs", "文档")}
+												<ExternalLink size={12} />
+											</a>
+										) : null}
+									</div>
 								</div>
-								<div className="grid gap-2">
+
+								{/* Model rows */}
+								<div className="divide-y divide-[var(--inno-border)]">
 									{providerModels.map((model) => {
 										const key = modelKey(model);
 										const current = settings.defaultProvider === model.provider && settings.defaultModel === model.id;
@@ -245,51 +335,78 @@ export function ModelsSettings({ settings }: { settings: InnoSettings }) {
 										}
 
 										return (
-											<div key={key} className={`group flex items-center justify-between rounded border p-3 ${current ? "border-[var(--inno-accent-soft)] bg-[var(--inno-accent-soft)]" : "border-[var(--inno-border)] bg-[var(--inno-surface)]"}`}>
+											<div
+												key={key}
+												className={`group relative flex items-center justify-between gap-4 px-4 py-3 transition-colors ${
+													current
+														? "bg-[var(--inno-accent-soft)]/35 before:absolute before:inset-y-2.5 before:left-0 before:w-[3px] before:rounded-r-full before:bg-[var(--inno-accent)]"
+														: "hover:bg-[var(--inno-surface-muted)]/45"
+												}`}
+											>
 												<div className="min-w-0 flex-1">
-													<div className="flex items-center gap-1.5 text-sm font-medium text-[var(--inno-text)]">
-														{model.name || model.id}
-														{model.reasoning && <span className="rounded bg-[var(--inno-surface-muted)] px-1 py-px text-xs font-normal text-[var(--inno-text-muted)]">{t("settings.form.reasoning")}</span>}
-														{model.input.includes("image") && <span className="rounded bg-[var(--inno-surface-muted)] px-1 py-px text-xs font-normal text-[var(--inno-text-muted)]">{t("settings.wizard.vision", "视觉")}</span>}
+													<div className="flex flex-wrap items-center gap-1.5">
+														<span className="truncate text-sm font-medium text-[var(--inno-text)]">
+															{model.name || model.id}
+														</span>
+														{model.reasoning ? (
+															<span className="shrink-0 rounded-full bg-[var(--inno-surface-muted)] px-2 py-0.5 text-xs text-[var(--inno-text-muted)]">
+																{t("settings.form.reasoning")}
+															</span>
+														) : null}
+														{model.input.includes("image") ? (
+															<span className="shrink-0 rounded-full bg-[var(--inno-surface-muted)] px-2 py-0.5 text-xs text-[var(--inno-text-muted)]">
+																{t("settings.wizard.vision", "视觉")}
+															</span>
+														) : null}
 													</div>
-													<div className="text-xs text-[var(--inno-text-muted)]">{formatTokens(model.contextWindow)} context · {formatTokens(model.maxTokens)} max</div>
+													<div className="mt-1 flex items-center gap-1.5 text-xs tabular-nums text-[var(--inno-text-subtle)]">
+														<span>{formatTokens(model.contextWindow)} context</span>
+														<span aria-hidden="true">·</span>
+														<span>{formatTokens(model.maxTokens)} max</span>
+													</div>
 												</div>
-												<div className="flex items-center gap-1.5">
-								<IconButton
-									size="xs"
-									className="opacity-0 transition-opacity group-hover:opacity-100"
-									title={t("common.edit", "Edit")}
-									aria-label={t("common.edit", "Edit")}
-									onClick={() => setEditingModel(key)}
-								>
-									<Pencil size={14} />
-								</IconButton>
-								{!current && (
-									<IconButton
-										variant="danger"
-										size="xs"
-										className="opacity-0 transition-opacity group-hover:opacity-100"
-										title={t("common.delete", "Delete")}
-										aria-label={t("common.delete", "Delete")}
-										onClick={() => {
-										if (window.confirm(t("settings.confirmDelete", { id: `${model.provider}/${model.id}` }) ?? "")) {
-											void settingsStore.deleteModel(model.provider, model.id);
-										}
-									}}
-									>
-										<Trash2 size={14} />
-									</IconButton>
-													)}
-													{!current && (
-														<button
-															className="rounded-md border border-[var(--inno-border)] px-2.5 py-1 text-xs text-[var(--inno-text-muted)] hover:bg-[var(--inno-surface-muted)] hover:text-[var(--inno-text)]"
+
+												<div className="flex shrink-0 items-center gap-1.5">
+													<IconButton
+														size="xs"
+														className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+														title={t("common.edit", "编辑")}
+														aria-label={t("common.edit", "编辑")}
+														onClick={() => setEditingModel(key)}
+													>
+														<Pencil size={14} />
+													</IconButton>
+													{!current ? (
+														<IconButton
+															variant="danger"
+															size="xs"
+															className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+															title={t("common.delete", "删除")}
+															aria-label={t("common.delete", "删除")}
+															onClick={() => {
+																if (window.confirm(t("settings.confirmDelete", { id: `${model.provider}/${model.id}` }) ?? "")) {
+																	void settingsStore.deleteModel(model.provider, model.id);
+																}
+															}}
+														>
+															<Trash2 size={14} />
+														</IconButton>
+													) : null}
+													{current ? (
+														<span className="inline-flex h-7 items-center gap-1 rounded-full bg-[var(--inno-accent-soft)] px-2.5 text-xs font-medium text-[var(--inno-accent)]">
+															<Check size={12} strokeWidth={2.5} />
+															{t("settings.current")}
+														</span>
+													) : (
+														<Button
+															variant="secondary"
+															size="xs"
 															disabled={isSavingModel}
 															onClick={() => void settingsStore.switchModel(model.provider, model.id)}
 														>
 															{t("settings.use")}
-														</button>
+														</Button>
 													)}
-													{current && <span className="rounded-md bg-[var(--inno-accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--inno-accent)]">{t("settings.current")}</span>}
 												</div>
 											</div>
 										);
@@ -299,10 +416,7 @@ export function ModelsSettings({ settings }: { settings: InnoSettings }) {
 						);
 					})}
 				</div>
-			</SettingsCard>
-
-			{/* New Provider */}
-			<AddProviderWizard providers={settings.providers} />
+			)}
 		</SettingsSection>
 	);
 }

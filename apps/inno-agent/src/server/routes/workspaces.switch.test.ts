@@ -70,6 +70,7 @@ beforeEach(() => {
 		installSkillZip: () => { throw new Error("not used"); },
 		installSkillMarkdown: () => { throw new Error("not used"); },
 		importWorkspaceZip: () => { throw new Error("not used"); },
+		listSkillLibrary: async () => [],
 		scheduleSkillsReload: () => undefined,
 		sessionFileFromId: (_sessionDir, id) => id === sessionId ? sessionPath : null,
 		releaseQueueFromQuestionBlockedTurn: () => undefined,

@@ -176,6 +176,7 @@ export class SkillsStoreImpl extends EventEmitter<SkillsStoreEvents> {
 			this.library = this.library.map((item) => (item.name === name ? { ...item, installed: true } : item));
 			this.ensureDisplayCopies([skill]);
 			this.showNotice(skill.name);
+			return skill;
 		} catch (err) {
 			this.libraryError = err instanceof Error ? err.message : "Failed to import skill";
 		} finally {

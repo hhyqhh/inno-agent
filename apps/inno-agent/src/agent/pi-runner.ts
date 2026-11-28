@@ -1584,14 +1584,25 @@ export function runPromptInSession(
  * exact "new conversation hangs, sidebar won't load" lockup. We also hard-cap it
  * with an abortable timeout so it can never wait on the provider's long default.
  */
+const ANTHROPIC_CLEAN_EOF_ERROR = "Anthropic stream ended before message_stop";
+
 export async function completePromptOnce(prompt: string, maxTokens = 64, timeoutMs = 20_000): Promise<string> {
-	if (!_runtime) return "";
+	if (!_runtime) {
+		logger.warn("completePromptOnce skipped: runtime not initialized");
+		return "";
+	}
 	const session = _runtime.session;
 	const model = session.model;
-	if (!model) return "";
+	if (!model) {
+		logger.warn("completePromptOnce skipped: no active model");
+		return "";
+	}
 
 	const auth = await registryOf(session).getApiKeyAndHeaders(model);
-	if (!auth.ok || !auth.apiKey) return "";
+	if (!auth.ok || !auth.apiKey) {
+		logger.warn({ modelId: model.id, provider: model.provider, authOk: auth.ok }, "completePromptOnce skipped: missing auth");
+		return "";
+	}
 
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -1614,21 +1625,52 @@ export async function completePromptOnce(prompt: string, maxTokens = 64, timeout
 				maxTokens,
 				signal: controller.signal,
 				timeoutMs,
+				onPayload: (payload) => {
+					// DeepSeek Flash thinks by default. PI omits the toggle when the
+					// configured model has reasoning=false, so thinking can exhaust
+					// the entire output budget before a draft or title is emitted.
+					if (model.api === "openai-completions" && model.id === "deepseek-flash"
+						&& URL.canParse(model.baseUrl) && new URL(model.baseUrl).hostname === "api.deepseek.com"
+						&& payload && typeof payload === "object") {
+						return { ...payload, thinking: { type: "disabled" } };
+					}
+				},
 			},
 		);
 
-		if (response.stopReason === "error") {
-			logger.warn({ errorMessage: response.errorMessage, stopReason: response.stopReason }, "completePromptOnce received error stopReason");
-			return "";
-		}
-		return response.content
+		const text = response.content
 			.filter((item): item is { type: "text"; text: string } => item.type === "text")
 			.map((item) => item.text)
 			.join("\n")
 			.trim();
+
+		// Anthropic-compatible gateways sometimes close SSE cleanly without emitting
+		// the final `message_stop` event. PI marks that as stopReason="error" even when
+		// the full text arrived; accept it if text was emitted (mirrors wiki-llm-compat).
+		const acceptedCleanEof = response.stopReason === "error" && response.errorMessage === ANTHROPIC_CLEAN_EOF_ERROR && text.length > 0;
+		if (response.stopReason === "error" && !acceptedCleanEof) {
+			logger.warn(
+				{ modelId: model.id, api: model.api, errorMessage: response.errorMessage, stopReason: response.stopReason, elapsedMs: Date.now() - promptStartTime },
+				"completePromptOnce received error stopReason",
+			);
+			return "";
+		}
+		if (!text) {
+			logger.warn(
+				{
+					modelId: model.id,
+					api: model.api,
+					stopReason: response.stopReason,
+					contentTypes: response.content.map((item) => item.type),
+					elapsedMs: Date.now() - promptStartTime,
+				},
+				"completePromptOnce returned empty text",
+			);
+		}
+		return text;
 	} catch (err) {
 		// best-effort metadata generation — timeout/abort/network errors are non-fatal
-		logger.warn({ err, elapsedMs: Date.now() - promptStartTime }, "completePromptOnce failed (non-fatal)");
+		logger.warn({ err, modelId: model.id, api: model.api, elapsedMs: Date.now() - promptStartTime }, "completePromptOnce failed (non-fatal)");
 		return "";
 	} finally {
 		clearTimeout(timer);

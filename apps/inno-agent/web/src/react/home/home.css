@@ -1,6 +1,9 @@
 .inno-home-shortcuts {
-	margin-top: 48px;
-	padding-bottom: 8px;
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	min-height: 0;
+	margin-top: 28px;
 }
 
 .inno-home-shortcuts-header,
@@ -14,91 +17,447 @@
 	gap: 8px;
 }
 
-.inno-home-shortcuts-header { margin-bottom: 8px; }
+.inno-home-shortcuts-header {
+	flex: none;
+	margin-bottom: 10px;
+}
+
+.inno-home-shortcuts-title {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.inno-home-shortcuts-count {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 18px;
+	height: 18px;
+	padding-inline: 5px;
+	border-radius: 999px;
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-subtle);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	line-height: 1;
+}
+
 .inno-home-board {
 	--inno-home-columns: 3;
+	flex: 0 1 auto;
+	min-height: 0;
 	display: grid;
 	grid-template-columns: repeat(var(--inno-home-columns), minmax(0, 1fr));
-	gap: 12px;
+	/* Scroll the board when space runs out so grid rows keep their content height. */
+	grid-auto-rows: max-content;
+	align-content: start;
+	gap: 10px;
+	/* Reserve slight breathing room so hover lift, shadow, and focus rings are not clipped by the scrollport. */
+	margin-inline: -4px;
+	padding: 2px 4px 12px;
+	overflow-x: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	scrollbar-width: thin;
+	scrollbar-color: var(--inno-scrollbar-thumb) transparent;
+}
+.inno-home-board::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+.inno-home-board::-webkit-scrollbar-track {
+	background: transparent;
+}
+.inno-home-board::-webkit-scrollbar-thumb {
+	border: 2px solid transparent;
+	border-radius: 999px;
+	background: var(--inno-scrollbar-thumb);
+	background-clip: padding-box;
+}
+.inno-home-board:hover::-webkit-scrollbar-thumb {
+	background: var(--inno-scrollbar-thumb-hover);
+	background-clip: padding-box;
 }
 .inno-home-board[data-columns="2"] { --inno-home-columns: 2; }
 .inno-home-board[data-columns="1"] { --inno-home-columns: 1; }
-.inno-home-empty { grid-column: 1 / -1; padding: 8px 0; }
+
+.inno-home-empty {
+	grid-column: 1 / -1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	width: 100%;
+	min-height: 84px;
+	padding: 16px;
+	border: 1px dashed var(--inno-border);
+	border-radius: 12px;
+	background: color-mix(in srgb, var(--inno-surface-muted) 35%, transparent);
+	color: var(--inno-text-muted);
+	text-align: center;
+	cursor: pointer;
+	transition:
+		background-color var(--inno-dur-ui) var(--inno-ease-out),
+		border-color var(--inno-dur-ui) var(--inno-ease-out),
+		color var(--inno-dur-ui) var(--inno-ease-out);
+}
+.inno-home-empty:hover:not(:disabled) {
+	border-color: var(--inno-border-strong);
+	background: color-mix(in srgb, var(--inno-surface-muted) 65%, transparent);
+}
+.inno-home-empty:focus-visible {
+	outline: none;
+	border-color: var(--inno-accent);
+	box-shadow: var(--inno-ring);
+}
+.inno-home-empty:disabled {
+	cursor: not-allowed;
+	opacity: 0.56;
+}
+.inno-home-empty-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	margin-bottom: 2px;
+	border-radius: 999px;
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-subtle);
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
+}
+.inno-home-empty:hover:not(:disabled) .inno-home-empty-icon {
+	background: var(--inno-accent-soft);
+	color: var(--inno-accent);
+}
+.inno-home-empty-text {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--inno-text-muted);
+}
+.inno-home-empty-action {
+	font-size: 12px;
+	color: var(--inno-text-subtle);
+}
+.inno-home-empty:hover:not(:disabled) .inno-home-empty-action {
+	color: var(--inno-accent);
+}
+
 .inno-home-card {
 	position: relative;
 	display: flex;
 	flex-direction: column;
-	min-height: 120px;
+	min-height: 88px;
 	min-width: 0;
 	border: 1px solid var(--inno-border);
 	border-radius: 12px;
-	background: var(--inno-surface);
+	background: var(--inno-surface-raised);
+	box-shadow: 0 1px 2px color-mix(in srgb, var(--inno-text) 4%, transparent);
 	user-select: none;
 	-webkit-touch-callout: none;
+	transition:
+		background-color var(--inno-dur-ui) var(--inno-ease-out),
+		border-color var(--inno-dur-ui) var(--inno-ease-out),
+		box-shadow var(--inno-dur-ui) var(--inno-ease-out),
+		transform var(--inno-dur-ui) var(--inno-ease-out);
 }
+
+.inno-home-card:hover {
+	border-color: var(--inno-border-strong);
+	background: var(--inno-surface);
+	box-shadow: 0 4px 12px color-mix(in srgb, var(--inno-text) 6%, transparent);
+	transform: translateY(-1px);
+}
+
 .inno-home-card[data-size="wide"] { grid-column: span 2; }
 .inno-home-board[data-columns="1"] .inno-home-card[data-size="wide"] { grid-column: auto; }
-.inno-home-card[data-dragging] { opacity: .55; cursor: grabbing; }
-.inno-home-card[data-target], .inno-home-card[aria-current="true"] { border-color: var(--inno-border-strong); }
-.inno-home-card[data-target] { outline: 1px solid var(--inno-accent); }
+.inno-home-card[data-dragging] { opacity: 0.55; cursor: grabbing; transform: none; }
+
+.inno-home-card[aria-current="true"] {
+	border-color: color-mix(in srgb, var(--inno-accent) 42%, var(--inno-border));
+	background: color-mix(in srgb, var(--inno-accent-soft) 52%, var(--inno-surface));
+}
+.inno-home-card[aria-current="true"]:hover {
+	border-color: color-mix(in srgb, var(--inno-accent) 58%, var(--inno-border));
+	background: color-mix(in srgb, var(--inno-accent-soft) 68%, var(--inno-surface));
+}
+
+.inno-home-card[data-target] {
+	border-color: var(--inno-accent);
+	outline: 1px solid var(--inno-accent);
+}
+
+/* Align the 28px menu button vertically with the header row (padding-top: 10px/11px, 28px icon/range). */
 .inno-home-card-menu {
 	position: absolute;
-	inset: 6px 6px auto auto;
+	inset: 10px 6px auto auto;
 	z-index: 1;
 	opacity: 0;
+	transition: opacity var(--inno-dur-fast) var(--inno-ease-out);
 }
 .inno-home-card:hover .inno-home-card-menu,
 .inno-home-card:focus-within .inno-home-card-menu,
 .inno-home-card-menu:has([data-state="open"]) { opacity: 1; }
 @media (hover: none) { .inno-home-card-menu { opacity: 1; } }
+
 .inno-home-card-popover { display: grid; gap: 4px; padding: 6px; min-width: 176px; }
 .inno-home-card-popover > button { justify-content: flex-start; }
-.inno-home-options-row { padding-inline: 6px; font-size: var(--inno-text-xs); }
-.inno-home-options-row + button { border-top: 1px solid var(--inno-border); }
+.inno-home-options-row { padding-inline: 6px; font-size: 12px; color: var(--inno-text-muted); }
+.inno-home-options-row + button { border-top: 1px solid var(--inno-border); padding-top: 4px; }
+
 .inno-home-card-main, .inno-home-wide { display: flex; flex: 1; min-width: 0; }
 .inno-home-wide { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
-.inno-home-card .inno-home-card-hit {
+.inno-home-card-body {
+	display: flex;
 	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.inno-home-card .inno-home-card-hit {
+	/* The recent-session row is a sibling. Filling the full card height here
+	   lets a wrapped title push that row past the card border. */
+	flex: 1 0 auto;
 	align-items: stretch;
 	justify-content: flex-start;
 	flex-direction: column;
+	gap: 6px;
 	min-width: 0;
-	height: 100%;
-	padding: 12px 14px;
+	height: auto;
+	padding: 11px 12px;
+	border: 0;
+	border-radius: 11px;
+	background: transparent;
 	text-align: start;
 	white-space: normal;
 }
-.inno-home-card-title { display: flex; align-items: center; gap: 6px; padding-inline-end: 22px; min-width: 0; }
-.inno-home-card-title > svg { flex: none; stroke-width: 1.5; color: var(--inno-text-muted); }
-.inno-home-card-title strong, .inno-home-card-details button, .inno-home-reminder-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.inno-home-card-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--inno-text-muted); }
-.inno-home-card-meta { margin-top: auto; color: var(--inno-text-muted); }
+.inno-home-card .inno-home-card-hit.has-session-action {
+	padding-bottom: 4px;
+}
+.inno-home-card .inno-home-card-hit:hover:not(:disabled) {
+	background: transparent;
+}
+
+.inno-home-card-title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding-inline-end: 18px;
+	min-width: 0;
+}
+
+.inno-home-card-icon {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: 8px;
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-muted);
+	transition: background-color var(--inno-dur-ui) var(--inno-ease-out), color var(--inno-dur-ui) var(--inno-ease-out);
+}
+.inno-home-card-icon[data-kind="reminder"] {
+	background: color-mix(in srgb, var(--inno-warning) 12%, transparent);
+	color: var(--inno-warning);
+}
+.inno-home-card[aria-current="true"] .inno-home-card-icon[data-kind="workspace"] {
+	background: var(--inno-accent-soft);
+	color: var(--inno-accent);
+}
+.inno-home-card-icon > svg { stroke-width: 1.75; }
+
+.inno-home-card-name {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	font-size: 13px;
+	font-weight: 500;
+	line-height: 1.32;
+	color: var(--inno-text);
+	overflow: hidden;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	text-wrap: balance;
+}
+.inno-home-card[aria-current="true"] .inno-home-card-name {
+	color: var(--inno-accent);
+}
+
+.inno-home-card-details .inno-home-detail-chip > span,
+.inno-home-reminder-row > span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.inno-home-card-note {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 1;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 1.4;
+	color: var(--inno-text-muted);
+}
+
+.inno-home-card-meta,
+.inno-home-card-placeholder {
+	margin-top: auto;
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 1.3;
+	color: var(--inno-text-subtle);
+	overflow-wrap: anywhere;
+}
 .inno-home-card-meta:empty { display: none; }
+
+.inno-home-card-session-btn {
+	display: flex;
+	flex: none;
+	align-items: center;
+	gap: 5px;
+	width: calc(100% - 12px);
+	min-width: 0;
+	margin: 0 6px 6px;
+	padding: 4px 6px;
+	border: 0;
+	border-radius: 7px;
+	background: transparent;
+	color: var(--inno-text-subtle);
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 1.3;
+	text-align: start;
+	cursor: pointer;
+	transition: background-color var(--inno-dur-fast) var(--inno-ease-out), color var(--inno-dur-fast) var(--inno-ease-out);
+}
+.inno-home-card-session-btn:hover:not(:disabled) {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+.inno-home-card-session-btn:focus-visible {
+	outline: none;
+	box-shadow: var(--inno-ring);
+}
+.inno-home-card-session-btn:disabled {
+	cursor: not-allowed;
+	opacity: 0.56;
+}
+.inno-home-card-session-btn > svg {
+	flex: none;
+	opacity: 0.72;
+}
+.inno-home-card-session-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.inno-home-session-time {
+	flex: none;
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	opacity: 0.8;
+	white-space: nowrap;
+}
+.inno-home-session-arrow {
+	opacity: 0;
+	transition: opacity var(--inno-dur-fast) var(--inno-ease-out), transform var(--inno-dur-fast) var(--inno-ease-out);
+}
+.inno-home-card-session-btn:hover:not(:disabled) .inno-home-session-arrow,
+.inno-home-card-session-btn:focus-visible .inno-home-session-arrow {
+	opacity: 0.85;
+	transform: translate(1px, -1px);
+}
+
 .inno-home-card-details {
 	display: flex;
 	flex-direction: column;
+	justify-content: center;
 	align-items: stretch;
-	margin-block: 12px;
-	padding-inline: 8px 30px;
+	gap: 5px;
+	margin-block: 10px;
+	padding-inline: 10px 26px;
 	min-width: 0;
 	border-inline-start: 1px solid var(--inno-border);
 }
-.inno-home-card-details > button { justify-content: flex-start; }
+.inno-home-card-details .inno-home-detail-chip {
+	justify-content: flex-start;
+	min-height: 24px;
+	padding: 0 8px;
+	gap: 5px;
+	border-radius: 6px;
+	background: var(--inno-surface-muted);
+	font-size: 12px;
+	font-weight: 400;
+	color: var(--inno-text-muted);
+}
+.inno-home-card-details .inno-home-detail-chip:hover:not(:disabled) {
+	color: var(--inno-text);
+}
+.inno-home-detail-icon {
+	flex: none;
+	opacity: 0.7;
+}
+
 .inno-home-board[data-columns="1"] .inno-home-wide { grid-template-columns: minmax(0, 1fr); }
 .inno-home-board[data-columns="1"] .inno-home-card-details {
-	margin: 0 12px 8px;
+	margin: 0 12px 10px;
+	padding-inline: 0;
+	padding-top: 8px;
 	border-inline-start: 0;
 	border-block-start: 1px solid var(--inno-border);
 }
-.inno-home-overview-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 36px 4px 12px; gap: 4px; }
+
+.inno-home-overview-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 10px 38px 4px 12px;
+	gap: 6px;
+}
 .inno-home-overview-header .inno-home-card-title { padding-inline-end: 0; }
-.inno-home-range { border-color: transparent; background: transparent; }
-.inno-home-reminder-list { display: grid; padding-inline: 6px; }
+.inno-home-card[data-size="standard"] .inno-home-overview-header {
+	flex-wrap: wrap;
+	row-gap: 4px;
+	padding-inline-end: 12px;
+}
+.inno-home-card[data-size="standard"] .inno-home-overview-header .inno-home-card-title {
+	flex: 1 0 100%;
+	padding-inline-end: 24px;
+}
+.inno-home-range {
+	flex: none;
+	min-height: 28px;
+	padding: 2px 6px;
+	gap: 4px;
+	border-color: transparent;
+	border-radius: 6px;
+	background: transparent;
+	font-size: 12px;
+	line-height: 1.2;
+	color: var(--inno-text-muted);
+	white-space: nowrap;
+}
+.inno-home-card[data-size="standard"] .inno-home-range {
+	margin-inline-start: -6px;
+}
+.inno-home-reminder-list { display: grid; gap: 2px; padding-inline: 6px; }
 .inno-home-reminder-list .inno-home-reminder-row { display: flex; justify-content: space-between; gap: 6px; width: 100%; }
-.inno-home-reminder-footer { margin-top: auto; padding: 4px 6px; color: var(--inno-accent); }
+.inno-home-reminder-footer { margin-top: auto; padding: 4px 6px 6px; flex-wrap: wrap; color: var(--inno-accent); }
+
 .inno-home-time { display: inline-grid; grid-template-columns: auto 5ch; gap: 6px; font-variant-numeric: tabular-nums; text-align: end; white-space: nowrap; }
 .inno-home-card-meta .inno-home-time { text-align: start; }
 .inno-home-reminder-row .inno-home-time { color: var(--inno-text-muted); }
+
+/* Dialogs shared by HomeShortcuts & WorkspaceConfigurationDialog */
 .inno-home-dialog {
 	display: flex;
 	flex-direction: column;
@@ -116,16 +475,707 @@
 .inno-home-dialog-footer { border-top: 1px solid var(--inno-border); justify-content: flex-end; flex-wrap: wrap; }
 .inno-home-dialog-form { display: flex; flex-direction: column; min-height: 0; }
 .inno-home-dialog-body { display: grid; align-content: start; min-height: 0; gap: 16px; padding: 16px; overflow-y: auto; }
-.inno-home-loading { min-height: 192px; display: grid; place-content: center; justify-items: center; gap: 12px; color: var(--inno-text-muted); }
-.inno-home-choices { display: flex; flex-wrap: wrap; gap: 6px; }
-.inno-home-choice, .inno-home-choice label { display: inline-flex; align-items: center; gap: 6px; }
-.inno-home-choice { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--inno-border); }
-.inno-home-choice:has(input:checked) { background: var(--inno-accent-soft); border-color: var(--inno-accent); }
-.inno-home-choice small { color: var(--inno-text-muted); }
+.inno-home-loading { min-height: 224px; display: grid; place-content: center; justify-items: center; gap: 12px; text-align: center; color: var(--inno-text-muted); }
+.inno-ws-loading-logo { width: 56px; height: 42px; color: var(--inno-text); }
 
-/* The composer subrow used to float into the vacant welcome-page footer. */
+/* WorkspaceConfigurationDialog */
+.inno-ws-dialog {
+	width: min(600px, calc(100vw - 24px));
+	box-shadow: var(--inno-shadow-panel);
+}
+
+.inno-ws-dialog-header {
+	padding: 14px 20px;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.inno-ws-dialog-title-group {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-width: 0;
+	flex: 1 1 200px;
+}
+
+.inno-ws-dialog-icon {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	border-radius: 8px;
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-muted);
+}
+
+.inno-ws-dialog-titles {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	gap: 2px;
+}
+
+.inno-ws-dialog-subtitle {
+	color: var(--inno-text-subtle);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.inno-ws-dialog-header-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: none;
+}
+
+.inno-ws-dialog-body {
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+	padding: 20px;
+	min-width: 0;
+	min-height: 0;
+	overflow-y: auto;
+}
+.inno-ws-dialog-body > * {
+	min-width: 0;
+}
+
+.inno-ws-dialog-footer {
+	padding: 12px 20px;
+	justify-content: space-between;
+	background: var(--inno-surface-raised);
+}
+
+.inno-ws-dialog-footer-left,
+.inno-ws-dialog-footer-right {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.inno-ws-dialog-footer-right {
+	margin-inline-start: auto;
+}
+
+/* Describe step */
+.inno-ws-describe {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+.inno-ws-describe-intro {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.inno-ws-describe-meta {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-top: 6px;
+	color: var(--inno-text-subtle);
+}
+
+.inno-ws-starters {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.inno-ws-starter-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.inno-ws-starter-chip {
+	display: inline-flex;
+	align-items: center;
+	max-width: 100%;
+	padding: 6px 10px;
+	border: 1px solid var(--inno-border);
+	border-radius: 8px;
+	background: var(--inno-surface-raised);
+	color: var(--inno-text-muted);
+	text-align: start;
+	line-height: 1.4;
+	cursor: pointer;
+	transition:
+		border-color var(--inno-dur-ui) var(--inno-ease-out),
+		background-color var(--inno-dur-ui) var(--inno-ease-out),
+		color var(--inno-dur-ui) var(--inno-ease-out);
+}
+.inno-ws-starter-chip:hover {
+	border-color: var(--inno-border-strong);
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+.inno-ws-starter-chip:focus-visible {
+	outline: none;
+	border-color: var(--inno-accent);
+	box-shadow: var(--inno-ring);
+}
+
+/* Review banner & form sections */
+.inno-ws-review-banner {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 10px 12px;
+	border-radius: 8px;
+	background: var(--inno-accent-soft);
+	color: var(--inno-text);
+	line-height: 1.45;
+}
+.inno-ws-review-banner-icon {
+	flex: none;
+	margin-top: 2px;
+	color: var(--inno-accent);
+}
+
+.inno-ws-form-sections {
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+	min-width: 0;
+}
+
+.inno-ws-section {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	min-width: 0;
+	/* HTML <fieldset> defaults to min-inline-size: min-content, which lets
+	   nowrap skill descriptions blow past the dialog width and clip trailing buttons. */
+	min-inline-size: 0;
+	max-width: 100%;
+}
+.inno-ws-section + .inno-ws-section {
+	padding-top: 16px;
+	border-top: 1px solid var(--inno-border);
+}
+
+.inno-ws-field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.inno-ws-field-header,
+.inno-ws-section-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.inno-ws-section-title {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.inno-ws-section-actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.inno-ws-required {
+	color: var(--inno-danger);
+	margin-inline-start: 2px;
+}
+
+.inno-ws-count-pill {
+	display: inline-flex;
+	align-items: center;
+	height: 20px;
+	padding: 0 8px;
+	border-radius: 999px;
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-subtle);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Selected skills tags */
+.inno-ws-selected-skills {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.inno-ws-skill-tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 28px;
+	padding: 0 6px 0 10px;
+	border: 1px solid var(--inno-border-strong);
+	border-radius: 6px;
+	background: var(--inno-surface-raised);
+	color: var(--inno-text);
+}
+
+.inno-ws-skill-tag--private {
+	padding-inline-end: 10px;
+	border-color: color-mix(in srgb, var(--inno-accent) 36%, var(--inno-border));
+	background: var(--inno-accent-soft);
+}
+.inno-ws-skill-tag--private .inno-ws-skill-tag-lock {
+	color: var(--inno-accent);
+	flex: none;
+}
+
+.inno-ws-skill-tag-meta {
+	color: var(--inno-text-subtle);
+}
+
+.inno-ws-skill-tag-remove {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	border: 0;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--inno-text-subtle);
+	cursor: pointer;
+	transition: background-color var(--inno-dur-fast) var(--inno-ease-out), color var(--inno-dur-fast) var(--inno-ease-out);
+}
+.inno-ws-skill-tag-remove:hover:not(:disabled) {
+	background: var(--inno-surface-muted);
+	color: var(--inno-text);
+}
+.inno-ws-skill-tag-remove:focus-visible {
+	outline: none;
+	box-shadow: var(--inno-ring);
+}
+
+.inno-ws-empty-skills {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 12px;
+	border: 1px dashed var(--inno-border);
+	border-radius: 8px;
+	background: color-mix(in srgb, var(--inno-surface-muted) 40%, transparent);
+	color: var(--inno-text-subtle);
+}
+
+/* Inline AI skill recommender in edit mode */
+.inno-ws-ai-inline {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 12px;
+	border: 1px solid var(--inno-border);
+	border-radius: 8px;
+	background: var(--inno-surface-muted);
+}
+
+.inno-ws-ai-inline-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+/* Structured skill browser */
+.inno-ws-skill-browser {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	width: 100%;
+	border: 1px solid var(--inno-border);
+	border-radius: 8px;
+	background: var(--inno-surface-raised);
+	overflow: hidden;
+}
+
+.inno-ws-skill-browser-head {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--inno-border);
+	background: var(--inno-surface);
+}
+
+.inno-ws-search-wrap {
+	position: relative;
+	display: flex;
+	align-items: center;
+}
+
+.inno-ws-search-clear {
+	position: absolute;
+	inset-inline-end: 6px;
+}
+
+.inno-ws-filter-pills {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.inno-ws-skill-list {
+	max-height: 264px;
+	overflow-y: auto;
+	overflow-x: hidden;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.inno-ws-skill-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-width: 0;
+	width: 100%;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--inno-border);
+	transition: background-color var(--inno-dur-fast) var(--inno-ease-out);
+}
+.inno-ws-skill-row > .inno-ui-button,
+.inno-ws-skill-row > .inno-ws-badge {
+	flex: none;
+}
+
+.inno-ws-skill-tooltip {
+	max-width: 320px;
+	white-space: normal;
+}
+.inno-ws-skill-row:last-child {
+	border-bottom: 0;
+}
+.inno-ws-skill-row--selectable {
+	cursor: pointer;
+}
+.inno-ws-skill-row--selectable:hover {
+	background: var(--inno-surface-muted);
+}
+.inno-ws-skill-row--disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.inno-ws-skill-row-icon {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	color: var(--inno-text-subtle);
+}
+
+.inno-ws-skill-row-main {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+	gap: 2px;
+}
+
+.inno-ws-skill-row-top {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+	min-width: 0;
+}
+
+.inno-ws-skill-name {
+	font-weight: 500;
+	color: var(--inno-text);
+	overflow-wrap: anywhere;
+}
+
+.inno-ws-skill-desc {
+	color: var(--inno-text-subtle);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.inno-ws-badge {
+	display: inline-flex;
+	align-items: center;
+	height: 18px;
+	padding: 0 6px;
+	border-radius: 4px;
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-subtle);
+	line-height: 1;
+	white-space: nowrap;
+}
+.inno-ws-badge--accent {
+	background: var(--inno-accent-soft);
+	color: var(--inno-accent);
+	font-weight: 500;
+}
+
+.inno-ws-skill-empty {
+	padding: 24px 12px;
+	text-align: center;
+	color: var(--inno-text-subtle);
+}
+
+/* Linked workspaces 2-column grid */
+.inno-ws-link-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px;
+}
+
+.inno-ws-link-card {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-width: 0;
+	padding: 8px 10px;
+	border: 1px solid var(--inno-border);
+	border-radius: 8px;
+	background: var(--inno-surface-raised);
+	cursor: pointer;
+	transition:
+		border-color var(--inno-dur-fast) var(--inno-ease-out),
+		background-color var(--inno-dur-fast) var(--inno-ease-out);
+}
+.inno-ws-link-card:hover {
+	border-color: var(--inno-border-strong);
+	background: var(--inno-surface-muted);
+}
+.inno-ws-link-card:has(input:checked) {
+	border-color: color-mix(in srgb, var(--inno-accent) 45%, var(--inno-border));
+	background: var(--inno-accent-soft);
+}
+
+.inno-ws-link-icon {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	border-radius: 6px;
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-muted);
+}
+.inno-ws-link-card:has(input:checked) .inno-ws-link-icon {
+	background: transparent;
+	color: var(--inno-accent);
+}
+
+.inno-ws-link-info {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+}
+
+.inno-ws-link-name {
+	font-weight: 500;
+	color: var(--inno-text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.inno-ws-link-card:has(input:checked) .inno-ws-link-name {
+	color: var(--inno-accent);
+}
+
+.inno-ws-link-meta {
+	color: var(--inno-text-subtle);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.inno-ws-pin-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	color: var(--inno-text-muted);
+	cursor: pointer;
+	user-select: none;
+}
+
+@media (max-width: 520px) {
+	.inno-ws-link-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+/* Add Card Picker Dialog */
+.inno-home-picker-dialog {
+	width: min(460px, calc(100vw - 24px));
+}
+
+.inno-home-picker-search {
+	flex: none;
+	padding: 12px 16px;
+	border-bottom: 1px solid var(--inno-border);
+}
+
+.inno-home-picker-list {
+	flex: 1;
+	min-height: 160px;
+	max-height: 360px;
+	overflow-y: auto;
+	padding: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.inno-home-picker-group {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.inno-home-picker-group-label {
+	padding: 4px 10px;
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: 0.02em;
+	color: var(--inno-text-subtle);
+}
+
+.inno-home-picker-items {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.inno-home-picker-item {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 10px;
+	width: 100%;
+	min-height: 38px;
+	padding: 6px 10px;
+	border-radius: 8px;
+	text-align: start;
+}
+
+.inno-home-picker-icon {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	border-radius: 6px;
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-muted);
+}
+.inno-home-picker-icon[data-kind="reminder"] {
+	background: color-mix(in srgb, var(--inno-warning) 12%, transparent);
+	color: var(--inno-warning);
+}
+
+.inno-home-picker-label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 13px;
+	color: var(--inno-text);
+}
+
+.inno-home-picker-badge {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	border-radius: 999px;
+	background: var(--inno-surface-muted);
+	color: var(--inno-text-subtle);
+	font-size: 11px;
+}
+
+.inno-home-picker-add {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	font-size: 12px;
+	color: var(--inno-accent);
+	opacity: 0;
+	transition: opacity var(--inno-dur-fast) var(--inno-ease-out);
+}
+.inno-home-picker-item:hover:not(:disabled) .inno-home-picker-add,
+.inno-home-picker-item:focus-visible:not(:disabled) .inno-home-picker-add {
+	opacity: 1;
+}
+
+.inno-home-picker-empty {
+	padding: 28px 16px;
+	text-align: center;
+}
+
+.inno-home-picker-footer {
+	justify-content: space-between;
+}
+
+/* Anchor the welcome greeting and composer at a balanced lower position based on
+   available viewport height, and keep overflow scrolling strictly inside .inno-home-board
+   so the outer welcome page never develops a scrollbar regardless of card count. */
+.inno-chat-welcome-layout:has(.inno-home-shortcuts) {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	padding-top: clamp(16px, calc(40cqh - 130px), 200px);
+	padding-bottom: 16px;
+}
+.inno-chat-welcome-stage:has(.inno-home-shortcuts) {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	min-height: 0;
+}
+.inno-chat-welcome-stage:has(.inno-home-shortcuts) > .inno-chat-welcome-heading {
+	position: static;
+	flex: none;
+	margin-bottom: 24px;
+}
+.app-layout--desktop.app-layout--chat .inno-chat-welcome-stage:has(.inno-home-shortcuts) > .inno-chat-welcome-heading {
+	margin-bottom: 28px;
+}
+.inno-chat-welcome-stage:has(.inno-home-shortcuts) > .inno-composer {
+	flex: none;
+}
 .inno-chat-welcome-stage:has(.inno-home-shortcuts) > .inno-composer > .inno-composer-subrow {
 	position: static;
 	margin-top: 10px;
 }
-.inno-home-shortcuts { margin-top: 28px; }
+.inno-chat-welcome-stage:has(.inno-home-shortcuts) > .inno-chat-welcome-error {
+	position: static;
+	flex: none;
+	margin-top: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.inno-home-card,
+	.inno-home-card:hover {
+		transition: none;
+		transform: none;
+	}
+}

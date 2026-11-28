@@ -1,0 +1,131 @@
+.inno-home-shortcuts {
+	margin-top: 48px;
+	padding-bottom: 8px;
+}
+
+.inno-home-shortcuts-header,
+.inno-home-options-row,
+.inno-home-reminder-footer,
+.inno-home-dialog-header,
+.inno-home-dialog-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.inno-home-shortcuts-header { margin-bottom: 8px; }
+.inno-home-board {
+	--inno-home-columns: 3;
+	display: grid;
+	grid-template-columns: repeat(var(--inno-home-columns), minmax(0, 1fr));
+	gap: 12px;
+}
+.inno-home-board[data-columns="2"] { --inno-home-columns: 2; }
+.inno-home-board[data-columns="1"] { --inno-home-columns: 1; }
+.inno-home-empty { grid-column: 1 / -1; padding: 8px 0; }
+.inno-home-card {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	min-height: 120px;
+	min-width: 0;
+	border: 1px solid var(--inno-border);
+	border-radius: 12px;
+	background: var(--inno-surface);
+	user-select: none;
+	-webkit-touch-callout: none;
+}
+.inno-home-card[data-size="wide"] { grid-column: span 2; }
+.inno-home-board[data-columns="1"] .inno-home-card[data-size="wide"] { grid-column: auto; }
+.inno-home-card[data-dragging] { opacity: .55; cursor: grabbing; }
+.inno-home-card[data-target], .inno-home-card[aria-current="true"] { border-color: var(--inno-border-strong); }
+.inno-home-card[data-target] { outline: 1px solid var(--inno-accent); }
+.inno-home-card-menu {
+	position: absolute;
+	inset: 6px 6px auto auto;
+	z-index: 1;
+	opacity: 0;
+}
+.inno-home-card:hover .inno-home-card-menu,
+.inno-home-card:focus-within .inno-home-card-menu,
+.inno-home-card-menu:has([data-state="open"]) { opacity: 1; }
+@media (hover: none) { .inno-home-card-menu { opacity: 1; } }
+.inno-home-card-popover { display: grid; gap: 4px; padding: 6px; min-width: 176px; }
+.inno-home-card-popover > button { justify-content: flex-start; }
+.inno-home-options-row { padding-inline: 6px; font-size: var(--inno-text-xs); }
+.inno-home-options-row + button { border-top: 1px solid var(--inno-border); }
+.inno-home-card-main, .inno-home-wide { display: flex; flex: 1; min-width: 0; }
+.inno-home-wide { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.inno-home-card .inno-home-card-hit {
+	flex: 1;
+	align-items: stretch;
+	justify-content: flex-start;
+	flex-direction: column;
+	min-width: 0;
+	height: 100%;
+	padding: 12px 14px;
+	text-align: start;
+	white-space: normal;
+}
+.inno-home-card-title { display: flex; align-items: center; gap: 6px; padding-inline-end: 22px; min-width: 0; }
+.inno-home-card-title > svg { flex: none; stroke-width: 1.5; color: var(--inno-text-muted); }
+.inno-home-card-title strong, .inno-home-card-details button, .inno-home-reminder-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inno-home-card-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--inno-text-muted); }
+.inno-home-card-meta { margin-top: auto; color: var(--inno-text-muted); }
+.inno-home-card-meta:empty { display: none; }
+.inno-home-card-details {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	margin-block: 12px;
+	padding-inline: 8px 30px;
+	min-width: 0;
+	border-inline-start: 1px solid var(--inno-border);
+}
+.inno-home-card-details > button { justify-content: flex-start; }
+.inno-home-board[data-columns="1"] .inno-home-wide { grid-template-columns: minmax(0, 1fr); }
+.inno-home-board[data-columns="1"] .inno-home-card-details {
+	margin: 0 12px 8px;
+	border-inline-start: 0;
+	border-block-start: 1px solid var(--inno-border);
+}
+.inno-home-overview-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 36px 4px 12px; gap: 4px; }
+.inno-home-overview-header .inno-home-card-title { padding-inline-end: 0; }
+.inno-home-range { border-color: transparent; background: transparent; }
+.inno-home-reminder-list { display: grid; padding-inline: 6px; }
+.inno-home-reminder-list .inno-home-reminder-row { display: flex; justify-content: space-between; gap: 6px; width: 100%; }
+.inno-home-reminder-footer { margin-top: auto; padding: 4px 6px; color: var(--inno-accent); }
+.inno-home-time { display: inline-grid; grid-template-columns: auto 5ch; gap: 6px; font-variant-numeric: tabular-nums; text-align: end; white-space: nowrap; }
+.inno-home-card-meta .inno-home-time { text-align: start; }
+.inno-home-reminder-row .inno-home-time { color: var(--inno-text-muted); }
+.inno-home-dialog {
+	display: flex;
+	flex-direction: column;
+	width: min(544px, calc(100vw - 24px));
+	max-height: 85dvh;
+	overflow: hidden;
+	border: 1px solid var(--inno-border);
+	border-radius: 12px;
+	background: var(--inno-surface);
+	color: var(--inno-text);
+}
+.inno-home-dialog:not([open]) { display: none; }
+.inno-home-dialog-header, .inno-home-dialog-footer { padding: 12px 16px; flex: none; }
+.inno-home-dialog-header { border-bottom: 1px solid var(--inno-border); }
+.inno-home-dialog-footer { border-top: 1px solid var(--inno-border); justify-content: flex-end; flex-wrap: wrap; }
+.inno-home-dialog-form { display: flex; flex-direction: column; min-height: 0; }
+.inno-home-dialog-body { display: grid; align-content: start; min-height: 0; gap: 16px; padding: 16px; overflow-y: auto; }
+.inno-home-loading { min-height: 192px; display: grid; place-content: center; justify-items: center; gap: 12px; color: var(--inno-text-muted); }
+.inno-home-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.inno-home-choice, .inno-home-choice label { display: inline-flex; align-items: center; gap: 6px; }
+.inno-home-choice { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--inno-border); }
+.inno-home-choice:has(input:checked) { background: var(--inno-accent-soft); border-color: var(--inno-accent); }
+.inno-home-choice small { color: var(--inno-text-muted); }
+
+/* The composer subrow used to float into the vacant welcome-page footer. */
+.inno-chat-welcome-stage:has(.inno-home-shortcuts) > .inno-composer > .inno-composer-subrow {
+	position: static;
+	margin-top: 10px;
+}
+.inno-home-shortcuts { margin-top: 28px; }

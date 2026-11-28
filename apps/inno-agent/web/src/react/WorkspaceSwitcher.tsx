@@ -8,7 +8,7 @@ import {
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
-import { Ban, Check, ChevronDown, Folder, FolderInput, LoaderCircle, Plus, X } from "lucide-react";
+import { Ban, Check, ChevronDown, Folder, FolderInput, LoaderCircle, Settings2, Plus, X } from "lucide-react";
 import type { WorkspaceMeta } from "../api/workspaces.js";
 
 export type WorkspaceChoice =
@@ -32,6 +32,8 @@ interface WorkspaceSwitcherProps {
 	conversationMode?: boolean;
 	className?: string;
 	onChange: (choice: WorkspaceChoice) => void;
+	onCreate?: () => void;
+	onEdit?: (workspace: WorkspaceMeta) => void;
 	/** Import a workspace from a .zip archive picked via the menu action. */
 	onImport?: (file: File) => void;
 }
@@ -51,6 +53,8 @@ export function WorkspaceSwitcher({
 	conversationMode = false,
 	className = "",
 	onChange,
+	onCreate,
+	onEdit,
 	onImport,
 }: WorkspaceSwitcherProps) {
 	const uiTransition = useUITransition();
@@ -148,11 +152,18 @@ export function WorkspaceSwitcher({
 			label: t("workspace.newWorkspace"),
 			icon: <Plus size={15} />,
 			onSelect: () => {
+				if (onCreate) { close(); onCreate(); return; }
 				setDraftName(newWorkspaceName);
 				setCreating(true);
 			},
-			closeOnSelect: false,
+			closeOnSelect: Boolean(onCreate),
 		},
+		...(onEdit && selectedWorkspace && !selectedWorkspace.isTemp ? [{
+			id: "edit-workspace",
+			label: t("home.editWorkspace"),
+			icon: <Settings2 size={15} />,
+			onSelect: () => { close(); onEdit(selectedWorkspace); },
+		}] : []),
 		...(onImport
 			? [{
 				id: "import-workspace",

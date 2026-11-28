@@ -8,7 +8,13 @@ import { ensureDir, readJson, readJsonAsync, writeJson } from "../storage/file-s
 // Types
 // ---------------------------------------------------------------------------
 
-export interface WorkspaceMeta {
+export interface WorkspaceConfiguration {
+	purpose?: string;
+	skillNames?: string[];
+	linkedWorkspaceIds?: string[];
+}
+
+export interface WorkspaceMeta extends WorkspaceConfiguration {
 	id: string;
 	name: string;
 	relPath: string;       // relative to workspaceDir; "" for default
@@ -204,7 +210,7 @@ export class WorkspaceRegistry {
 	 * - isTemp=true → returns the shared `tmp` workspace (does not allocate a new directory).
 	 * - isTemp=false → places it at `<slug>-<hash>/`, where slug comes from the name and hash is 8 random hex chars.
 	 */
-	createWorkspace(input: { name?: string; isTemp?: boolean }): WorkspaceMeta {
+	createWorkspace(input: WorkspaceConfiguration & { name?: string; isTemp?: boolean }): WorkspaceMeta {
 		const reg = this.loadRegistry();
 		const now = new Date().toISOString();
 
@@ -231,6 +237,7 @@ export class WorkspaceRegistry {
 			return tmp;
 		}
 
+		const configuration = this.validateConfiguration(reg, input);
 		const rawName = input.name?.trim() || "工作区";
 		const slugBase = slugify(rawName) || "workspace";
 		// Always append a hash so we never collide and never need -2/-3 suffixes.
@@ -244,6 +251,7 @@ export class WorkspaceRegistry {
 		}
 
 		const ws: WorkspaceMeta = {
+			...configuration,
 			id,
 			name: rawName,
 			relPath,
@@ -342,13 +350,40 @@ export class WorkspaceRegistry {
 	}
 
 	renameWorkspace(id: string, name: string): WorkspaceMeta | null {
+		return this.updateWorkspace(id, { name });
+	}
+
+	updateWorkspace(id: string, input: WorkspaceConfiguration & { name?: string }): WorkspaceMeta | null {
 		const reg = this.loadRegistry();
 		const ws = reg.workspaces.find((w) => w.id === id);
 		if (!ws) return null;
-		ws.name = name.trim() || ws.name;
+		Object.assign(ws, this.validateConfiguration(reg, input, ws));
+		ws.name = input.name?.trim() || ws.name;
 		ws.updatedAt = new Date().toISOString();
 		this.saveRegistry(reg);
 		return ws;
+	}
+
+	private validateConfiguration(reg: RegistryFile, input: WorkspaceConfiguration, current?: WorkspaceMeta): WorkspaceConfiguration {
+		const settings: WorkspaceConfiguration = {};
+		if (input.purpose !== undefined) settings.purpose = input.purpose.trim();
+		if (input.skillNames !== undefined) settings.skillNames = [...new Set(input.skillNames)];
+		if (input.linkedWorkspaceIds !== undefined) {
+			settings.linkedWorkspaceIds = [...new Set(input.linkedWorkspaceIds)];
+			const valid = new Set(reg.workspaces
+				.filter((workspace) => !workspace.isTemp && !workspace.id.startsWith("channel-") && workspace.id !== current?.id)
+				.map((workspace) => workspace.id));
+			if (settings.linkedWorkspaceIds.some((id) => !valid.has(id))) throw new Error("Invalid linked workspace");
+		}
+		return settings;
+	}
+
+	async getWorkspaceConfigurationForSession(sessionId: string): Promise<WorkspaceConfiguration | undefined> {
+		const [reg, map] = await Promise.all([
+			readJsonAsync<RegistryFile>(this.registryPath(), { workspaces: [] }),
+			readJsonAsync<SessionWorkspaceMap>(this.sessionMapPath(), {}),
+		]);
+		return reg.workspaces.find((workspace) => workspace.id === map[sessionId]);
 	}
 
 	/** Delete a workspace. Refuses only the shared tmp (the unbound fallback). */

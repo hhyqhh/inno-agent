@@ -56,6 +56,7 @@ export async function executeJob(
 	const startedAt = new Date();
 	const isCheckInReminder = job.taskType === "check_in_reminder";
 	const isReminderJob = job.taskType === "push_reminder" || isCheckInReminder;
+	const oneShot = isReminderJob && (Boolean(job.runAt) || isOneShotCron(job.cron));
 	const requestedOccurrenceId = options?.occurrenceId
 		?? (options?.scheduledAt ? occurrenceIdFor(job.id, options.scheduledAt) : undefined);
 	const requestedOccurrence = !isReminderJob && checkInStore && requestedOccurrenceId
@@ -111,7 +112,6 @@ export async function executeJob(
 				outputPreview: output,
 				trigger,
 			});
-			const oneShot = isOneShotCron(job.cron) && isReminderJob;
 			if (options?.sessionPath) {
 				await appendAssistantNotificationInSession(options.sessionPath, output);
 			}
@@ -119,7 +119,7 @@ export async function executeJob(
 				lastRunAt: finishedAt.toISOString(),
 				lastStatus: "skipped",
 				lastError: undefined,
-				enabled: oneShot ? false : current.enabled,
+				enabled: oneShot && current.runAt === job.runAt && current.cron === job.cron ? false : current.enabled,
 				runCount: current.runCount + 1,
 			}));
 		logger.info({ jobId: job.id, runId, trigger, occurrenceId: requestedOccurrenceId }, "Job run skipped: already checked in today");
@@ -143,7 +143,9 @@ export async function executeJob(
 		let pushedToChannel: string | undefined;
 		let pushSkippedReason: string | undefined;
 		const target = job.channel ? (job.target ?? channelRegistry.getDefaultTarget(job.channel)) : undefined;
-		if (job.channel && target) {
+		if (job.delivery === "in_app") {
+			// The conversation notification above is the configured destination.
+		} else if (job.channel && target) {
 			const channel = channelRegistry.get(job.channel);
 			if (channel) {
 				await channel.push(target, output);
@@ -176,10 +178,9 @@ export async function executeJob(
 		// the entire point of the job —
 		// if it could not be delivered, treat the run as a failure so the
 		// user sees an alert in the UI instead of a silent skip.
-		const reminderDeliveryFailed = isReminderJob && Boolean(job.channel) && !pushedToChannel;
+		const reminderDeliveryFailed = isReminderJob && job.delivery !== "in_app" && Boolean(job.channel) && !pushedToChannel;
 
 		const finishedAt = new Date();
-		const oneShot = isOneShotCron(job.cron) && isReminderJob;
 
 		if (reminderDeliveryFailed) {
 			const error = pushSkippedReason ?? "Reminder could not be delivered";
@@ -206,7 +207,7 @@ export async function executeJob(
 				lastRunAt: finishedAt.toISOString(),
 				lastStatus: "error",
 				lastError: error,
-				enabled: oneShot ? false : current.enabled,
+				enabled: oneShot && current.runAt === job.runAt && current.cron === job.cron ? false : current.enabled,
 				runCount: current.runCount + 1,
 				failureCount: current.failureCount + 1,
 			}));
@@ -246,7 +247,7 @@ export async function executeJob(
 			lastRunAt: finishedAt.toISOString(),
 			lastStatus: "success",
 			lastError: undefined,
-			enabled: oneShot ? false : current.enabled,
+			enabled: oneShot && current.runAt === job.runAt && current.cron === job.cron ? false : current.enabled,
 			runCount: current.runCount + 1,
 			...(nextRunAt ? { nextRunAt } : {}),
 		}));
@@ -264,7 +265,7 @@ export async function executeJob(
 	} catch (err) {
 		const error = err instanceof Error ? err.message : String(err);
 		logger.error({ err, jobId: job.id, jobName: job.name, taskType: job.taskType, trigger }, "Job execution failed");
-		if (trigger === "scheduled") {
+		if (trigger === "scheduled" && job.delivery !== "in_app") {
 			// A scheduled failure has no one watching — mirror the error to the
 			// user's default channel so it does not pass unnoticed.
 			await pushThroughDefaultChannel(
@@ -274,7 +275,6 @@ export async function executeJob(
 			);
 		}
 		const finishedAt = new Date();
-		const oneShot = isOneShotCron(job.cron) && isReminderJob;
 		jobStore.appendRun({
 			id: runId,
 			jobId: job.id,
@@ -299,7 +299,7 @@ export async function executeJob(
 			lastRunAt: finishedAt.toISOString(),
 			lastStatus: "error",
 			lastError: error,
-			enabled: oneShot ? false : current.enabled,
+			enabled: oneShot && current.runAt === job.runAt && current.cron === job.cron ? false : current.enabled,
 			runCount: current.runCount + 1,
 			failureCount: current.failureCount + 1,
 		}));
@@ -387,6 +387,7 @@ function formatCheckInReminderOutput(prompt: string): string {
 }
 
 function inferChannel(job: ScheduledJob, channelRegistry: ChannelRegistry): ScheduledJob["channel"] | undefined {
+	if (job.delivery === "in_app") return undefined;
 	if (job.channel) return job.channel;
 	if (job.taskType === "push_reminder") {
 		const hinted = getCurrentSessionChannelHint();

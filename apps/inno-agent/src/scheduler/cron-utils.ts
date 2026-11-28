@@ -184,3 +184,12 @@ export function isOneShotCron(cron: string): boolean {
 	const literal = /^\d+$/;
 	return literal.test(m) && literal.test(h) && literal.test(dom) && literal.test(mon);
 }
+
+/** Resolve the selected calendar year using the job's own IANA time zone. */
+export function resolveReminderRunAt(date: string, cron: string, timezone: string): string | undefined {
+	if (!DATE_KEY_RE.test(date) || !isOneShotCron(cron)) return undefined;
+	const midnight = new Date(`${date}T00:00:00.000Z`);
+	if (!Number.isFinite(+midnight) || midnight.toISOString().slice(0, 10) !== date) return undefined;
+	const runAt = computeNextRunAt(cron, timezone, new Date(+midnight - 2 * 86_400_000));
+	return runAt && dateKeyForTimeZone(new Date(runAt), timezone) === date ? runAt : undefined;
+}

@@ -1,5 +1,5 @@
 import { apiFetch, streamSSE } from "./client.js";
-import type { CreateJobInput, JobRunResult, JobRunStreamEvent, ScheduledJob } from "../types/jobs.js";
+import type { CreateJobInput, JobRunResult, JobRunStreamEvent, ScheduledJob, UpdateJobInput } from "../types/jobs.js";
 
 export async function listJobs(): Promise<ScheduledJob[]> {
 	return apiFetch<ScheduledJob[]>("/api/jobs");
@@ -12,7 +12,7 @@ export async function createJob(data: CreateJobInput): Promise<ScheduledJob> {
 	});
 }
 
-export async function updateJob(id: string, patch: Partial<ScheduledJob>): Promise<ScheduledJob> {
+export async function updateJob(id: string, patch: UpdateJobInput): Promise<ScheduledJob> {
 	return apiFetch<ScheduledJob>(`/api/jobs/${id}`, {
 		method: "PATCH",
 		body: JSON.stringify(patch),

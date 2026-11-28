@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeNextRunAt, getCronDueAt, getCronOccurrencesForDate, isCronDue, isOneShotCron, validateCron } from "./cron-utils.js";
+import { computeNextRunAt, getCronDueAt, getCronOccurrencesForDate, isCronDue, isOneShotCron, resolveReminderRunAt, validateCron } from "./cron-utils.js";
 
 describe("validateCron", () => {
 	it("accepts a valid 5-field expression", () => {
@@ -109,5 +109,18 @@ describe("isOneShotCron", () => {
 	it("returns false for malformed input", () => {
 		expect(isOneShotCron("")).toBe(false);
 		expect(isOneShotCron("* * *")).toBe(false);
+	});
+});
+
+describe("resolveReminderRunAt", () => {
+	it("keeps the explicitly selected year and timezone", () => {
+		expect(resolveReminderRunAt("2028-02-29", "15 9 29 2 *", "Asia/Shanghai"))
+			.toBe("2028-02-29T01:15:00.000Z");
+	});
+
+	it("rejects invalid calendar days and dates mismatched with the cron", () => {
+		expect(resolveReminderRunAt("2027-02-29", "15 9 29 2 *", "UTC")).toBeUndefined();
+		expect(resolveReminderRunAt("2028-02-29", "15 9 28 2 *", "UTC")).toBeUndefined();
+		expect(resolveReminderRunAt("2028-02-29", "15 9 * * *", "UTC")).toBeUndefined();
 	});
 });

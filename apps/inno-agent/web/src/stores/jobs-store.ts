@@ -1,6 +1,6 @@
 import { EventEmitter } from "./event-emitter.js";
 import { listJobs, createJob, updateJob, deleteJob, streamJobRun } from "../api/jobs.js";
-import type { CreateJobInput, JobRunResult, JobRunStreamEvent, ScheduledJob } from "../types/jobs.js";
+import type { CreateJobInput, JobRunResult, JobRunStreamEvent, ScheduledJob, UpdateJobInput } from "../types/jobs.js";
 
 interface JobsStoreEvents {
 	change: void;
@@ -11,13 +11,26 @@ class JobsStoreImpl extends EventEmitter<JobsStoreEvents> {
 	isLoading = false;
 	runningJobId: string | null = null;
 
+	private reminderEditor: { id: string | null } | undefined;
+
+	requestReminderEditor(id?: string | null) {
+		this.reminderEditor = id === undefined ? undefined : { id };
+	}
+
+	takeReminderEditor() {
+		const intent = this.reminderEditor;
+		this.reminderEditor = undefined;
+		return intent;
+	}
+
 	async load(): Promise<void> {
+		if (this.isLoading) return;
 		this.isLoading = true;
 		this.emit("change", undefined);
 		try {
 			this.jobs = await listJobs();
 		} catch {
-			this.jobs = [];
+			// Retain the last successful list during transient failures.
 		} finally {
 			this.isLoading = false;
 			this.emit("change", undefined);
@@ -31,7 +44,7 @@ class JobsStoreImpl extends EventEmitter<JobsStoreEvents> {
 		return job;
 	}
 
-	async update(id: string, patch: Partial<ScheduledJob>): Promise<void> {
+	async update(id: string, patch: UpdateJobInput): Promise<void> {
 		const updated = await updateJob(id, patch);
 		this.jobs = this.jobs.map((j) => (j.id === id ? updated : j));
 		this.emit("change", undefined);

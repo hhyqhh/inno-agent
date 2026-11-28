@@ -1,7 +1,13 @@
 import { apiFetch } from "./client.js";
 import { arrayBufferToBase64 } from "./uploads.js";
 
-export interface WorkspaceMeta {
+export interface WorkspaceConfiguration {
+	purpose?: string;
+	skillNames?: string[];
+	linkedWorkspaceIds?: string[];
+}
+
+export interface WorkspaceMeta extends WorkspaceConfiguration {
 	id: string;
 	name: string;
 	relPath: string;
@@ -56,7 +62,7 @@ export interface WorkspaceSwitchResult {
 	trackingIncomplete: boolean;
 }
 
-export interface CreateWorkspaceInput {
+export interface CreateWorkspaceInput extends WorkspaceConfiguration {
 	name?: string;
 	isTemp?: boolean;
 }
@@ -82,10 +88,18 @@ export async function importWorkspaceZip(file: File, name?: string): Promise<Wor
 }
 
 export async function renameWorkspace(id: string, name: string): Promise<WorkspaceMeta> {
+	return updateWorkspace(id, { name });
+}
+
+export async function updateWorkspace(id: string, input: WorkspaceConfiguration & { name?: string }): Promise<WorkspaceMeta> {
 	return apiFetch<WorkspaceMeta>(`/api/workspaces/${encodeURIComponent(id)}`, {
 		method: "PATCH",
-		body: JSON.stringify({ name }),
+		body: JSON.stringify(input),
 	});
+}
+
+export async function generateWorkspaceDraft(description: string, workspaceId?: string, signal?: AbortSignal): Promise<Required<WorkspaceConfiguration> & { name: string }> {
+	return apiFetch("/api/workspaces/draft", { method: "POST", body: JSON.stringify({ description, workspaceId }), signal });
 }
 
 export async function deleteWorkspace(id: string, removeFiles = false): Promise<{ id: string; deleted: boolean; removedFiles: boolean }> {

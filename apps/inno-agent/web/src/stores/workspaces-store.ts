@@ -4,7 +4,8 @@ import {
 	deleteWorkspace,
 	importWorkspaceZip,
 	listWorkspaces,
-	renameWorkspace,
+	updateWorkspace,
+	type WorkspaceConfiguration,
 	type CreateWorkspaceInput,
 	type WorkspaceMeta,
 } from "../api/workspaces.js";
@@ -42,7 +43,7 @@ class WorkspacesStoreImpl extends EventEmitter<WorkspacesStoreEvents> {
 
 	async create(input: CreateWorkspaceInput): Promise<WorkspaceMeta> {
 		const ws = await createWorkspace(input);
-		this.workspaces = [...this.workspaces, ws];
+		this.workspaces = [...this.workspaces.filter((item) => item.id !== ws.id), ws];
 		this.emit("change", undefined);
 		return ws;
 	}
@@ -55,9 +56,14 @@ class WorkspacesStoreImpl extends EventEmitter<WorkspacesStoreEvents> {
 	}
 
 	async rename(id: string, name: string): Promise<void> {
-		const updated = await renameWorkspace(id, name);
-		this.workspaces = this.workspaces.map((w) => (w.id === id ? { ...w, ...updated } : w));
+		await this.update(id, { name });
+	}
+
+	async update(id: string, configuration: WorkspaceConfiguration & { name?: string }): Promise<WorkspaceMeta> {
+		const updated = await updateWorkspace(id, configuration);
+		this.workspaces = this.workspaces.map((workspace) => workspace.id === id ? updated : workspace);
 		this.emit("change", undefined);
+		return updated;
 	}
 
 	async remove(id: string, removeFiles = false): Promise<void> {

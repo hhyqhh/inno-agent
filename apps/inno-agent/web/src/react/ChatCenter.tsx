@@ -39,6 +39,10 @@ import { ChatConversation } from "./chat/ChatConversation.js";
 import { ScheduledRunBanner } from "./chat/ScheduledRunBanner.js";
 import { BusyBlocker, QuestionHint } from "./chat/ChatStatusBanners.js";
 import { ChatUploadChips } from "./chat/ChatUploadChips.js";
+import { HomeShortcuts } from "./home/HomeShortcuts.js";
+import { WorkspaceConfigurationDialog } from "./home/WorkspaceConfigurationDialog.js";
+import { homeShortcutsStore } from "../stores/home-shortcuts-store.js";
+import type { WorkspaceMeta } from "../api/workspaces.js";
 import { ChatWelcome } from "./chat/ChatWelcome.js";
 import { SlashCommandPalette } from "./chat/SlashCommandPalette.js";
 import {
@@ -75,7 +79,7 @@ import { SmartInputOverlay, type SmartPanelState } from "./chat/smart-input/Smar
 import { skillMessageFromContent } from "./chat/skill-message-collapse.js";
 import { parseAgentCommandMessage } from "./chat/agent-command-message.js";
 
-type WsMode = "temp" | "new" | "existing";
+type WsMode = "temp" | "existing";
 
 // Remember the user's last workspace choice for a new chat so the bottom
 // "新建对话" button doesn't always reset to temp.
@@ -93,7 +97,7 @@ interface ChatCenterProps {
 function readLastWsMode(): WsMode {
 	if (typeof window === "undefined") return "temp";
 	const value = window.localStorage.getItem(LAST_WS_MODE_KEY);
-	return value === "new" || value === "existing" ? value : "temp";
+	return value === "existing" ? value : "temp";
 }
 
 function readLastWsId(): string {
@@ -177,7 +181,7 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 	// New-chat workspace selection is draft state until the first message creates
 	// a session. The active session path is bound in handleWorkspaceChange.
 	const [wsMode, setWsMode] = useState<WsMode>(() => readLastWsMode());
-	const [wsName, setWsName] = useState("");
+	const [configurationWorkspace, setConfigurationWorkspace] = useState<WorkspaceMeta | "new" | null>(null);
 	const [wsExistingId, setWsExistingId] = useState(() => readLastWsId());
 	const [wsError, setWsError] = useState("");
 	const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
@@ -293,7 +297,6 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 		if (isWelcome) {
 			if (choice.kind === "temp") {
 				setWsMode("temp");
-				setWsName("");
 				setWsExistingId("");
 				// The welcome-page choice is draft state, but the workspace panel
 				// should still preview the same workspace before a session exists.
@@ -304,11 +307,8 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 			} else if (choice.kind === "workspace") {
 				setWsMode("existing");
 				setWsExistingId(choice.workspaceId);
-				setWsName("");
 			} else {
-				setWsMode("new");
-				setWsName(choice.name);
-				setWsExistingId("");
+				setConfigurationWorkspace("new");
 			}
 			return;
 		}
@@ -872,14 +872,9 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 
 	const buildSessionInput = useCallback((): CreateSessionInput | { __error: string } => {
 		if (wsMode === "temp") return { newWorkspace: { isTemp: true } };
-		if (wsMode === "new") {
-			const trimmed = wsName.trim();
-			if (!trimmed) return { __error: t("chat.errWsName") };
-			return { newWorkspace: { name: trimmed, isTemp: false } };
-		}
 		if (!wsExistingId) return { __error: t("chat.errWsSelect") };
 		return { workspaceId: wsExistingId };
-	}, [wsMode, wsName, wsExistingId, t]);
+	}, [wsMode, wsExistingId, t]);
 
 
 	const handleSend = useCallback(() => {
@@ -1439,7 +1434,8 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 			workspaces={workspaces.list}
 			selectedWorkspaceId={selectedWorkspaceId}
 			selectedKind={selectedKind}
-			newWorkspaceName={wsMode === "new" ? wsName : ""}
+			onCreate={() => setConfigurationWorkspace("new")}
+			onEdit={setConfigurationWorkspace}
 			busy={isSwitchingWorkspace}
 			disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
 			onChange={handleWorkspaceChange}
@@ -1540,7 +1536,28 @@ export function ChatCenter({ onPreviewFile, desktopHeaderHost, terminalControl }
 				smartToast={smartToastNode}
 				composer={renderComposer(t("chat.welcomePlaceholder"))}
 				wsError={wsError}
+				shortcuts={<HomeShortcuts workspaces={workspaces.list} selectedId={selectedWorkspaceId}
+					disabled={isUploading || Boolean(chat.pendingQuestion) || Boolean(chat.pendingPermission)}
+					onSelect={(workspaceId) => {
+						void handleWorkspaceChange({ kind: "workspace", workspaceId });
+						inputRef.current?.focus();
+					}}
+					onCreate={() => setConfigurationWorkspace("new")}
+					onEdit={setConfigurationWorkspace} />}
 			/>
+			{configurationWorkspace ? <WorkspaceConfigurationDialog
+				workspace={configurationWorkspace === "new" ? undefined : configurationWorkspace}
+				workspaces={workspaces.list}
+				onClose={() => setConfigurationWorkspace(null)}
+				onSaved={(workspace, pin) => {
+					if (pin) homeShortcutsStore.add(`workspace:${workspace.id}`);
+					if (configurationWorkspace === "new") {
+						void handleWorkspaceChange({ kind: "workspace", workspaceId: workspace.id });
+						rememberWsChoice("existing", workspace.id);
+					}
+					setConfigurationWorkspace(null);
+				}}
+			/> : null}
 			</>
 		);
 	}

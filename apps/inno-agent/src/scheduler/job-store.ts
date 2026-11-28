@@ -60,7 +60,7 @@ export class JobStore {
 			timezone,
 			runCount: input.runCount ?? 0,
 			failureCount: input.failureCount ?? 0,
-			nextRunAt: input.nextRunAt ?? computeNextRunAt(input.cron, timezone),
+			nextRunAt: input.enabled ? (input.runAt ?? input.nextRunAt ?? computeNextRunAt(input.cron, timezone)) : undefined,
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -75,8 +75,8 @@ export class JobStore {
 		if (idx < 0) return undefined;
 		const current = jobs[idx];
 		const next = { ...current, ...patch, updatedAt: new Date().toISOString() };
-		if (patch.cron || patch.timezone || patch.lastRunAt || patch.enabled !== undefined) {
-			next.nextRunAt = next.enabled ? computeNextRunAt(next.cron, next.timezone) : undefined;
+		if (patch.cron || patch.timezone || patch.lastRunAt || patch.enabled !== undefined || "runAt" in patch) {
+			next.nextRunAt = next.enabled ? (next.runAt ?? computeNextRunAt(next.cron, next.timezone)) : undefined;
 		}
 		jobs[idx] = next;
 		writeJson(this.filePath, jobs);
@@ -105,8 +105,8 @@ export class JobStore {
 				// A run tied to a concrete planned slot may provide the next slot
 				// explicitly. Preserve it even though lastRunAt also changes.
 				merged.nextRunAt = patch.nextRunAt;
-			} else if (patch.cron || patch.timezone || patch.lastRunAt || patch.enabled !== undefined) {
-				merged.nextRunAt = merged.enabled ? computeNextRunAt(merged.cron, merged.timezone) : undefined;
+			} else if (patch.cron || patch.timezone || patch.lastRunAt || patch.enabled !== undefined || "runAt" in patch) {
+				merged.nextRunAt = merged.enabled ? (merged.runAt ?? computeNextRunAt(merged.cron, merged.timezone)) : undefined;
 			}
 			jobs[idx] = merged;
 			writeJson(this.filePath, jobs);
@@ -169,6 +169,8 @@ export class JobStore {
 			id: job.id ?? `job_${randomUUID().slice(0, 8)}`,
 			name: job.name ?? "Untitled job",
 			cron: job.cron ?? "0 9 * * *",
+			runAt: job.runAt,
+			delivery: job.delivery,
 			timezone,
 			enabled,
 			channel: job.channel,
@@ -176,7 +178,7 @@ export class JobStore {
 			taskType: job.taskType ?? "custom_prompt",
 			prompt: job.prompt ?? "",
 			lastRunAt: job.lastRunAt,
-			nextRunAt: enabled ? (job.nextRunAt ?? computeNextRunAt(job.cron ?? "0 9 * * *", timezone)) : undefined,
+			nextRunAt: enabled ? (job.runAt ?? job.nextRunAt ?? computeNextRunAt(job.cron ?? "0 9 * * *", timezone)) : undefined,
 			lastStatus: job.lastStatus,
 			lastError: job.lastError,
 			runCount: job.runCount ?? 0,

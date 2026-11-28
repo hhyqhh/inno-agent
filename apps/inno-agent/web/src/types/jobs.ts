@@ -17,6 +17,9 @@ export interface ScheduledJob {
 	id: string;
 	name: string;
 	cron: string;
+	/** Absolute instant for an explicitly dated one-time reminder. */
+	runAt?: string | null;
+	delivery?: "in_app";
 	timezone: string;
 	enabled: boolean;
 	channel?: string;
@@ -58,7 +61,8 @@ export type JobRunStreamEvent =
 	| { type: "job_result"; result: JobRunResult }
 	| { type: "error"; message: string };
 
-export type CreateJobInput = Omit<ScheduledJob, "id" | "createdAt" | "updatedAt" | "lastRunAt" | "nextRunAt">;
+export type CreateJobInput = Omit<ScheduledJob, "id" | "createdAt" | "updatedAt" | "lastRunAt" | "nextRunAt" | "runAt"> & { scheduledDate?: string };
+export type UpdateJobInput = Partial<Omit<ScheduledJob, "runAt">> & { scheduledDate?: string | null };
 
 export const TASK_TYPE_LABELS: Record<TaskType, string> = {
 	daily_review: "Daily Review",

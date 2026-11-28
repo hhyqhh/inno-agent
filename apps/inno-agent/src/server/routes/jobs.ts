@@ -4,7 +4,7 @@ import type { ChannelRegistry } from "../../channels/channel.js";
 import type { JobStore } from "../../scheduler/job-store.js";
 import type { ScheduledJob } from "../../scheduler/types.js";
 import { executeJob, type JobRunResult } from "../../scheduler/job-runner.js";
-import { validateCron } from "../../scheduler/cron-utils.js";
+import { resolveReminderRunAt, validateCron } from "../../scheduler/cron-utils.js";
 import { json, matchRoute, readBody } from "../http-helpers.js";
 import { isLearningJob, type CheckInStore } from "../../checkins/check-in-store.js";
 import { logger } from "../../logger.js";
@@ -164,7 +164,8 @@ export async function handleJobsRoutes(
 	}
 
 	if (method === "POST" && url === "/api/jobs") {
-		const body = await readBody(req) as Record<string, unknown> & Parameters<JobStore["create"]>[0];
+		const { scheduledDate, runAt: ignoredRunAt, ...body } = await readBody(req) as Parameters<JobStore["create"]>[0] & { scheduledDate?: unknown };
+		void ignoredRunAt;
 		if (typeof body.cron !== "string") {
 			json(res, 400, { error: "cron is required" });
 			return true;
@@ -178,7 +179,12 @@ export async function handleJobsRoutes(
 			json(res, 400, { error: `Channel not registered: ${body.channel}. Enable it in settings first.` });
 			return true;
 		}
-		const job = jobStore.create(body);
+		const runAt = reminderRunAt(scheduledDate, body, jobStore.defaultTimezone);
+		if (scheduledDate != null && !runAt) {
+			json(res, 400, { error: "A future date matching the reminder schedule is required" });
+			return true;
+		}
+		const job = jobStore.create({ ...body, runAt });
 		json(res, 201, job);
 		return true;
 	}
@@ -385,9 +391,30 @@ export async function handleJobsRoutes(
 
 	const patchMatch = matchRoute("PATCH", method, url, "/api/jobs/:id");
 	if (patchMatch) {
-		const body = await readBody(req) as Partial<ScheduledJob>;
+		const { scheduledDate, runAt: ignoredRunAt, ...body } = await readBody(req) as Partial<ScheduledJob> & { scheduledDate?: unknown };
+		void ignoredRunAt;
+		const patch: Partial<ScheduledJob> = body;
+		const current = jobStore.get(patchMatch.id);
+		if (!current) {
+			json(res, 404, { error: "Job not found" });
+			return true;
+		}
+		if (scheduledDate !== undefined) {
+			const runAt = reminderRunAt(scheduledDate, { ...current, ...body }, jobStore.defaultTimezone);
+			if (scheduledDate !== null && !runAt) {
+				json(res, 400, { error: "A future date matching the reminder schedule is required" });
+				return true;
+			}
+			patch.runAt = runAt ?? null;
+		} else if (current.runAt && ((body.cron !== undefined && body.cron !== current.cron)
+			|| (body.timezone !== undefined && body.timezone !== current.timezone)
+			|| (body.taskType !== undefined && body.taskType !== current.taskType)
+			|| (body.enabled && !current.enabled && +new Date(current.runAt) <= Date.now()))) {
+			json(res, 400, { error: "Set a new date or select a repeating schedule" });
+			return true;
+		}
 		if (typeof body.cron === "string") {
-			const cronCheck = validateCron(body.cron, body.timezone);
+			const cronCheck = validateCron(body.cron, body.timezone ?? current.timezone);
 			if (!cronCheck.ok) {
 				json(res, 400, { error: `Invalid cron: ${cronCheck.error}` });
 				return true;
@@ -397,7 +424,7 @@ export async function handleJobsRoutes(
 			json(res, 400, { error: `Channel not registered: ${body.channel}. Enable it in settings first.` });
 			return true;
 		}
-		const updated = jobStore.update(patchMatch.id, body);
+		const updated = jobStore.update(patchMatch.id, patch);
 		if (!updated) {
 			json(res, 404, { error: "Job not found" });
 			return true;
@@ -418,4 +445,10 @@ export async function handleJobsRoutes(
 	}
 
 	return false;
+}
+
+function reminderRunAt(value: unknown, job: Pick<ScheduledJob, "cron" | "timezone" | "taskType">, fallbackTimezone: string): string | undefined {
+	if (typeof value !== "string" || (job.taskType !== "push_reminder" && job.taskType !== "check_in_reminder")) return undefined;
+	const runAt = resolveReminderRunAt(value, job.cron, job.timezone || fallbackTimezone);
+	return runAt && +new Date(runAt) > Date.now() ? runAt : undefined;
 }

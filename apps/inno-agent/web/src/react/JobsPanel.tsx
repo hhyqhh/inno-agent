@@ -61,9 +61,16 @@ function formatDate(iso?: string): string {
 	}
 }
 
+function localJobDate(value: string, timeZone: string): string {
+	const parts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
+		.formatToParts(new Date(value));
+	return ["year", "month", "day"].map((key) => parts.find((part) => part.type === key)?.value).join("-");
+}
+
 export function JobsPanel() {
 	const { t } = useTranslation();
 	const [showForm, setShowForm] = useState(false);
+	const [newReminder, setNewReminder] = useState(false);
 	const [editingJob, setEditingJob] = useState<ScheduledJob | null>(null);
 	const [form, setForm] = useState<JobFormState>(defaultForm);
 	const [formError, setFormError] = useState<string | null>(null);
@@ -90,20 +97,29 @@ export function JobsPanel() {
 
 	useEffect(() => {
 		void jobsStore.load();
+		const intent = jobsStore.takeReminderEditor();
+		if (!intent) return;
+		if (intent.id === null) openNewForm(true);
+		else {
+			const job = jobsStore.jobs.find((item) => item.id === intent.id);
+			if (job) openEditForm(job);
+		}
 	}, []);
 
-	function openNewForm() {
+	function openNewForm(reminder = false) {
 		setEditingJob(null);
-		setForm(defaultForm);
+		setNewReminder(reminder);
+		setForm(reminder ? { ...defaultForm, taskType: "push_reminder" } : defaultForm);
 		setFormError(null);
 		setShowForm(true);
 	}
 
 	function openEditForm(job: ScheduledJob) {
 		setEditingJob(job);
+		setNewReminder(false);
 		setForm({
 			name: job.name,
-			schedule: cronToSchedule(job.cron),
+			schedule: job.runAt ? { ...cronToSchedule(job.cron), date: localJobDate(job.runAt, job.timezone) } : cronToSchedule(job.cron),
 			taskType: job.taskType,
 			prompt: job.prompt,
 			enabled: job.enabled,
@@ -135,6 +151,8 @@ export function JobsPanel() {
 			setFormError(t("jobs.errors.dateRequired"));
 			return;
 		}
+		const isReminder = !requiresCheckIn(form.taskType);
+		const scheduledDate = isReminder && form.schedule.frequency === "once" ? form.schedule.date : undefined;
 		setFormError(null);
 		setIsSaving(true);
 		try {
@@ -143,16 +161,19 @@ export function JobsPanel() {
 					name: form.name,
 					cron,
 					taskType: form.taskType,
-					prompt: form.prompt,
+					prompt: form.prompt || (isReminder ? form.name : ""),
 					enabled: form.enabled,
+					...(scheduledDate !== undefined || editingJob.runAt ? { scheduledDate: scheduledDate ?? null } : {}),
 				});
 			} else {
 				const input: CreateJobInput = {
 					name: form.name,
 					cron,
-					timezone: "Asia/Shanghai",
+					timezone: newReminder ? Intl.DateTimeFormat().resolvedOptions().timeZone : "Asia/Shanghai",
+					...(newReminder && isReminder ? { delivery: "in_app" as const } : {}),
+					scheduledDate,
 					taskType: form.taskType,
-					prompt: form.prompt,
+					prompt: form.prompt || (isReminder ? form.name : ""),
 					enabled: form.enabled,
 				};
 				await jobsStore.create(input);
@@ -197,7 +218,7 @@ export function JobsPanel() {
 							<h3 className="text-sm font-medium text-[var(--inno-text)]">{t("jobs.title")}</h3>
 							<p className="text-xs text-[var(--inno-text-muted)]">{t("jobs.subtitle")}</p>
 						</div>
-						<Button variant="primary" size="sm" onClick={openNewForm}>
+						<Button variant="primary" size="sm" onClick={() => openNewForm()}>
 							<Plus size={14} />
 							{t("jobs.newJob")}
 						</Button>
@@ -225,7 +246,7 @@ export function JobsPanel() {
 								<div className="flex flex-col gap-2">
 									{group.jobs.map((job) => {
 										const isRunning = state.runningJobId === job.id;
-										const human = humanizeCron(job.cron, humanI18n);
+										const human = job.runAt ? humanizeSchedule({ ...cronToSchedule(job.cron), date: localJobDate(job.runAt, job.timezone) }, humanI18n) : humanizeCron(job.cron, humanI18n);
 										const todayPlanJob = requiresCheckIn(job.taskType)
 											? checkInStatus?.jobs.find((entry) => entry.jobId === job.id)
 											: undefined;

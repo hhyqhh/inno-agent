@@ -7,6 +7,7 @@ interface ChatWelcomeProps {
 	busyBlocker: ReactNode;
 	smartToast: ReactNode;
 	composer: ReactNode;
+	shortcuts?: ReactNode;
 	wsError: string;
 	/** Floating notice rendered over the welcome area. */
 	topOverlay?: ReactNode;
@@ -17,6 +18,7 @@ export function ChatWelcome({
 	busyBlocker,
 	smartToast,
 	composer,
+	shortcuts,
 	wsError,
 	topOverlay,
 }: ChatWelcomeProps) {
@@ -40,6 +42,7 @@ export function ChatWelcome({
 						{composer}
 
 						{wsError ? <p className="inno-chat-welcome-error text-xs text-[var(--inno-danger)]">{wsError}</p> : null}
+						{shortcuts}
 					</div>
 				</div>
 			</div>

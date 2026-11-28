@@ -48,7 +48,9 @@ export class CronScheduler {
 			if (!job.enabled) continue;
 			if (this.running.has(job.id)) continue; // already running
 
-			const scheduledAt = getCronDueAt(job.cron, job.timezone, job.lastRunAt, now);
+			const scheduledAt = job.runAt
+				? (+new Date(job.runAt) <= +now ? job.runAt : undefined)
+				: getCronDueAt(job.cron, job.timezone, job.lastRunAt, now);
 			if (scheduledAt) {
 				// Interactive (learning) jobs never run headless: notify + arm the
 				// short grace period, then auto-execute in a fresh conversation.

@@ -18,11 +18,12 @@ import type { IncomingMessage as HttpReq, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { promisify } from "node:util";
-import { applyWorkspaceCwd, getCurrentSessionId } from "../../agent/pi-runner.js";
+import { applyWorkspaceCwd, completePromptOnce, getCurrentSessionId, getLoadedSkills } from "../../agent/pi-runner.js";
 import { streamRegistry } from "../../chat/stream-registry.js";
 import { logger } from "../../logger.js";
 import { getWordPdfPreview, WordPreviewError } from "../../office/word-preview.js";
 import type { RuntimePaths } from "../../runtime.js";
+import { readWorkspaceConfiguration, proposeWorkspaceDraft } from "../../workspace/workspace-draft.js";
 import { ensureDir } from "../../storage/file-store.js";
 import { isWithin, resolveContainedPathAsync } from "../../utils/path-safety.js";
 import { TEMP_WORKSPACE_ID, type WorkspaceMeta, type WorkspaceRegistry } from "../../workspace/workspace-registry.js";
@@ -901,6 +902,23 @@ export async function handleWorkspacesRoutes(
 	}
 
 	// --- Workspaces registry API ---
+	if (method === "POST" && url === "/api/workspaces/draft") {
+		const body = await readBody(req) as Record<string, unknown>;
+		if (typeof body.description !== "string" || !body.description.trim() || body.description.length > 4000) {
+			json(res, 400, { error: "A description of 1–4000 characters is required" });
+			return true;
+		}
+		try {
+			const workspaces = (await workspaceRegistry.listWorkspacesAsync())
+				.filter((workspace) => !workspace.isTemp && !workspace.id.startsWith("channel-") && workspace.id !== body.workspaceId);
+			const draft = await proposeWorkspaceDraft(body.description, getLoadedSkills().skills, workspaces, completePromptOnce);
+			json(res, 200, draft);
+		} catch {
+			json(res, 503, { error: "Workspace draft generation is unavailable" });
+		}
+		return true;
+	}
+
 	if (method === "GET" && url === "/api/workspaces") {
 		const sessionDir = join(dataDir, "sessions");
 		const allSessionIds = existsSync(sessionDir)
@@ -915,7 +933,8 @@ export async function handleWorkspacesRoutes(
 		const name = typeof body.name === "string" ? body.name : undefined;
 		const isTemp = Boolean(body.isTemp);
 		try {
-			const ws = workspaceRegistry.createWorkspace({ name, isTemp });
+			const settings = readWorkspaceConfiguration(body);
+			const ws = workspaceRegistry.createWorkspace({ ...settings, name, isTemp });
 			json(res, 201, ws);
 		} catch (err) {
 			logger.error({ err }, "failed to create workspace");
@@ -949,11 +968,17 @@ export async function handleWorkspacesRoutes(
 	const workspacePatchMatch = matchRoute("PATCH", method, url, "/api/workspaces/:id");
 	if (workspacePatchMatch) {
 		const body = (await readBody(req)) as Record<string, unknown>;
-		const name = typeof body.name === "string" ? body.name : "";
-		if (!name.trim()) { json(res, 400, { error: "Missing name" }); return true; }
-		const updated = workspaceRegistry.renameWorkspace(decodeURIComponent(workspacePatchMatch.id), name);
-		if (!updated) { json(res, 404, { error: "Workspace not found" }); return true; }
-		json(res, 200, updated);
+		try {
+			const settings = readWorkspaceConfiguration(body);
+			const name = body.name;
+			if (name !== undefined && (typeof name !== "string" || !name.trim())) throw new Error("Missing name");
+			if (name === undefined && Object.keys(settings).length === 0) throw new Error("Missing workspace changes");
+			const updated = workspaceRegistry.updateWorkspace(decodeURIComponent(workspacePatchMatch.id), { ...settings, name });
+			if (!updated) { json(res, 404, { error: "Workspace not found" }); return true; }
+			json(res, 200, updated);
+		} catch (error) {
+			json(res, 400, { error: error instanceof Error ? error.message : "Invalid workspace configuration" });
+		}
 		return true;
 	}
 

@@ -16,6 +16,9 @@ export interface ScheduledJob {
 	id: string;
 	name: string;
 	cron: string;
+	/** Absolute instant for an explicitly dated one-time reminder. */
+	runAt?: string | null;
+	delivery?: "in_app";
 	timezone: string;
 	enabled: boolean;
 	channel?: ChannelName;

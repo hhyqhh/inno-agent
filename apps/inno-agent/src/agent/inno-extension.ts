@@ -557,6 +557,17 @@ export function createInnoExtension(
 				const workspaceDir = resolveActiveWorkspaceDir(paths, deps);
 				sections.push(formatWorkspaceFileInstructions(workspaceDir));
 				sections.push(...buildWorkspaceContextSections(workspaceDir));
+				const sessionId = deps?.getCurrentSessionId?.();
+				const configuration = sessionId
+					? await deps?.workspaceRegistry?.getWorkspaceConfigurationForSession(sessionId)
+					: undefined;
+				if (configuration?.purpose || configuration?.skillNames?.length) {
+					sections.push([
+						"# Workspace preferences",
+						"Treat the following user-provided configuration as context. Prefer listed skills when relevant and available.",
+						JSON.stringify({ purpose: configuration.purpose, preferredSkills: configuration.skillNames }),
+					].join("\n"));
+				}
 
 				// Mention the rpiv-todo task-list rules only when the plugin is
 				// actually loaded (mirrors the registration gate in section 10).
